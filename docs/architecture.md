@@ -1,48 +1,46 @@
 # Arquitetura Android-first
 
-## Fluxo de alto nível
+## Fluxo implementado e fluxo final
 
-`UI → Job Coordinator → Compatibility Layer → Preparation Backend → Validator → Importer`
+O marco atual implementa:
 
-Cada etapa reporta progresso estruturado e pode cancelar com segurança. A UI não deve executar trabalho pesado na thread principal.
+UI Android → Importador → Staging no armazenamento privado → Validação básica → Ativação
 
-## 1. Compatibility Layer
+O fluxo alvo é:
 
-A camada deve ser independente da interface e evitar referências diretas ao Horizon na lógica central.
+UI → Job Coordinator → Compatibility Layer → Preparation Backend → Validator → Importer
 
-Responsabilidades:
-- identificar versão do Android, ABI, arquitetura e capacidades disponíveis;
-- verificar presença, arquitetura e hash de bibliotecas nativas antes de carregá-las;
-- consultar uma matriz explícita de compatibilidade entre formato de entrada, versão do backend e destino;
-- expor capacidades como `nativePreparation`, `horizonBackend`, `safeImport` e `progressReporting`;
-- selecionar adaptador compatível ou retornar erro acionável; nunca fingir que houve fallback bem-sucedido;
-- manter integração com Horizon atrás de uma interface, para permitir outro backend Android no futuro.
+O app não executa I/O pesado na thread principal. A importação reporta a fase atual, a contagem de arquivos e os bytes processados. A barra é indeterminada enquanto a origem ZIP não tem total extraído confiável; não é inventada uma porcentagem.
 
-A camada não deve tentar contornar restrições do Android, carregar binários de arquitetura incompatível ou depender de caminhos privados fixos.
+## 1. Camada de compatibilidade
 
-## 2. Interfaces conceituais
+Os modelos e o verificador vivem no módulo core, sem depender da UI Android:
 
-- `DeviceCapabilities`: SDK, ABI suportada, recursos de armazenamento e capacidades verificadas.
-- `BackendDescriptor`: nome, versão, ABI, hash e capacidades declaradas.
-- `CompatibilityReport`: compatível/incompatível, verificações executadas, avisos e motivo.
-- `PreparationJob`: estado, etapa atual, progresso, cancelamento e resumo final.
-- `ImportResult`: arquivos instalados, ignorados, falhas e validações.
+- DeviceCapabilities: SDK, ABIs, disponibilidade do SAF e memória disponível quando conhecida.
+- BackendDescriptor: id, versão, ABIs aceitas, SDK mínimo, capacidades e SHA-256 opcional.
+- CompatibilityReport: status, problemas codificados e indicação de bloqueio.
+- PreparationBackend: interface para implementação de preparação assíncrona com progresso.
+- PreparationProgress / PreparationResult: progresso e resultado estruturados.
 
-Os tipos concretos devem ser definidos no código Android quando a estrutura Gradle for introduzida.
+O verificador aplica os requisitos declarados pelo backend. O SAF só é bloqueador para backends que declaram IMPORT_OUTPUT; uma tarefa headless não deve ser rejeitada só porque não usa o seletor de documentos. Para integrações Horizon, o hash declarado é obrigatório e precisa ter formato SHA-256 válido. Isso valida o descritor, não verifica por si só os bytes do arquivo — essa comparação cabe ao adaptador ao carregar o artefato.
 
-## 3. Segurança e robustez
+## 2. Importação segura
 
-- Usar Storage Access Framework (`ACTION_OPEN_DOCUMENT`/`ACTION_OPEN_DOCUMENT_TREE`) em vez de depender de `/storage/emulated/0` fixo.
-- Validar caminhos de arquivo e impedir path traversal em arquivos compactados.
-- Extrair para uma área temporária e só promover o resultado depois da validação.
-- Evitar sobrescrita silenciosa; preservar backup/rollback quando necessário.
-- Mostrar progresso por etapas e distinguir erro, aviso, cancelamento e conclusão.
-- Registrar diagnósticos úteis sem incluir conteúdo privado dos arquivos.
+- A origem vem de ACTION_OPEN_DOCUMENT_TREE ou ACTION_OPEN_DOCUMENT.
+- Os arquivos são copiados para prepared-resources.importing, dentro do armazenamento privado do app.
+- ZIPs não podem escrever fora da área temporária, usar caminhos absolutos, repetir caminhos nem exceder os limites definidos no importador.
+- A pasta ativa só é substituída quando a extração termina e a validação básica passa. A versão anterior é guardada temporariamente para rollback.
+- Se existir horizon-resources.json na raiz, o JSON e os campos numéricos schema e data_version são verificados. Não é imposta uma versão global específica à importação genérica.
+- Sem manifesto, a UI deixa claro que os arquivos foram importados, mas não validados para um motor específico.
 
-## 4. Backends
+## 3. Backends isolados
 
-`PreparationBackend` deve permitir ao menos um backend Android nativo e um adaptador Horizon opcional. A implementação Horizon só pode ser ativada quando sua API, artefatos e licenças estiverem verificadas. A camada de compatibilidade deve conseguir desativá-la sem quebrar a UI nem o fluxo de importação.
+O backend de importação é portátil e não exige a biblioteca Horizon. O futuro backend de preparação Android deve implementar PreparationBackend. O adaptador Horizon é opcional e só pode ficar disponível quando ABI, hash binário, dependências, permissões e inicialização no dispositivo forem verificados. Um backend incompatível deve ficar desativado com motivo legível, sem bloquear o restante da app.
+
+## 4. Limites de compatibilidade
+
+SDK e ABI informam compatibilidade estrutural, não garantem desempenho. A memória disponível pode ser observada, mas precisa de um requisito explícito do backend antes de se tornar um bloqueio automático. Vulkan, drivers GPU, lifecycle nativo e carregamento do jogo exigem testes reais em ARM64; a verificação estática de uma biblioteca não substitui esses testes.
 
 ## 5. Testabilidade
 
-Testes unitários para matriz de compatibilidade, validação de manifestos, progresso e caminhos de erro. Testes instrumentados para seleção de arquivos, cancelamento, armazenamento com SAF e importação. A integração real deve ser testada em ARM64 e em dispositivos Android representativos; emulador sozinho não valida drivers GPU.
+Os testes de core cobrem SDK/ABI/SAF, requisitos do adaptador Horizon, formatos de hash e progresso. A CI também tenta compilar o APK. Ainda faltam testes instrumentados de SAF/importação, cancelamento sob carga, recuperação após encerramento do processo e testes em aparelhos físicos.
