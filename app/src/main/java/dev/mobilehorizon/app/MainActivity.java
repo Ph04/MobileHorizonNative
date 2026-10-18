@@ -524,6 +524,12 @@ public final class MainActivity extends Activity {
             progressDetails.setText("");
             setStatus("Download não concluído", message == null ? "Verifique a conexão e tente novamente." : message);
         }
+        try {
+            startService(new Intent(this, OfficialDownloadService.class)
+                    .setAction(OfficialDownloadService.ACTION_ACK));
+        } catch (Exception ignored) {
+            // The current UI already consumed the result; failure to clear persisted replay is harmless.
+        }
     }
 
     private void prepareConversionInputs() {
