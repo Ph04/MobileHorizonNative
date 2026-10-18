@@ -88,7 +88,15 @@ final class HorizonPrepareRunner {
 
         report(listener, "Convertendo recursos Horizon",
                 "Os oráculos do Minecraft podem consumir bastante RAM e CPU; mantenha espaço livre", 3, 6);
+        File systemLinker = new File("/system/bin/linker64");
+        if (!systemLinker.isFile() || !systemLinker.canExecute()) {
+            throw new IOException("Este aparelho não disponibiliza /system/bin/linker64 para ARM64; "
+                    + "não é possível executar o preparador sem violar as restrições W^X do Android.");
+        }
+        // targetSdk 35 cannot directly exec() ELF files downloaded/extracted into filesDir.
+        // The Android system linker loads the verified ARM64 preparer from its absolute path.
         ProcessBuilder builder = new ProcessBuilder(
+                systemLinker.getAbsolutePath(),
                 tool.getAbsolutePath(),
                 "--prepare",
                 "--server-jar", new File(context.getFilesDir(), "minecraft/server.jar").getAbsolutePath(),
