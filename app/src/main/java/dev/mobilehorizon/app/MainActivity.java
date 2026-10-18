@@ -567,31 +567,7 @@ public final class MainActivity extends Activity {
 
     private void openNativeClient() {
         showRuntimeError("Autenticação oficial pendente",
-                "A integração de autenticação Microsoft/Minecraft e a verificação de licença ainda não foram implementadas neste marco. Por isso, o cliente não será iniciado em modo offline. O teste Vulkan abaixo continua disponível para validar apenas a superfície gráfica.");
-        return;
-        /*
-         * Do not remove this gate until an official Microsoft/Minecraft session provider
-         * has verified both the signed-in profile and Java Edition entitlement.
-         */
-        if (!isHorizonNativeLibraryAvailable()) {
-            showRuntimeError("Biblioteca Horizon ARM64 ausente",
-                    "Este APK não contém lib/arm64-v8a/libhorizon_android.so. A compilação precisa passar pela etapa de verificação do runtime nativo.");
-            return;
-        }
-        if (!Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a")) {
-            showRuntimeError("Arquitetura não suportada",
-                    "Este motor pré-compilado exige Android ARM64 (arm64-v8a).");
-            return;
-        }
-        File resources = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
-        try {
-            String summary = HorizonResourceConverter.validatePreparedResources(resources);
-            setStatus("Abrindo cliente Horizon", summary);
-            startActivity(new Intent(this, android.app.NativeActivity.class));
-        } catch (Exception error) {
-            showRuntimeError("Recursos Horizon ausentes ou incompletos",
-                    safeMessage(error) + "\n\nO download de JARs/asset objects não gera estes recursos. Importe uma saída preparada compatível enquanto o exportador nativo não é portado.");
-        }
+                "A integração de autenticação Microsoft/Minecraft e a verificação de licença ainda não foram implementadas neste marco. Por isso, o cliente não será iniciado em modo offline. O teste Vulkan continua disponível para validar apenas a superfície gráfica.");
     }
 
     private void openNativeSmokeTest() {
