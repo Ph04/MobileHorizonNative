@@ -9,6 +9,7 @@ import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -88,7 +89,7 @@ final class PreparedResourceImporter {
         return withStaging(filesDir, cancelled, listener, stage -> {
             String rootId = DocumentsContract.getTreeDocumentId(treeUri);
             TreeTotals totals = new TreeTotals();
-            scanTree(resolver, treeUri, rootId, new HashSet<>(), totals, cancelled, 0);
+            scanTree(resolver, treeUri, rootId, new HashSet<>(), totals, cancelled, listener, 0);
             if (totals.files <= 0) throw new IllegalArgumentException("A pasta selecionada não contém arquivos.");
             Counter copied = new Counter();
             copyTree(resolver, treeUri, rootId, "", stage, new HashSet<>(),
@@ -102,6 +103,7 @@ final class PreparedResourceImporter {
         return withStaging(filesDir, cancelled, listener, stage -> {
             Counter copied = new Counter();
             report(listener, new Progress("Lendo arquivo ZIP", 0, -1, 0, -1));
+            Set<String> seenPaths = new HashSet<>();
             InputStream raw = resolver.openInputStream(zipUri);
             if (raw == null) throw new IllegalArgumentException("O Android não conseguiu abrir o arquivo ZIP.");
             try (ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
@@ -113,6 +115,9 @@ final class PreparedResourceImporter {
                         throw new IllegalArgumentException("O arquivo contém muitos itens; limite: " + MAX_ENTRIES + ".");
                     }
                     String relative = safeRelativePath(entry.getName());
+                    if (!seenPaths.add(relative)) {
+                        throw new IllegalArgumentException("O ZIP contém um caminho repetido: " + relative);
+                    }
                     File target = childFile(stage, relative);
                     if (entry.isDirectory()) {
                         if (!target.isDirectory() && !target.mkdirs()) {
@@ -185,7 +190,7 @@ final class PreparedResourceImporter {
 
     private static void scanTree(ContentResolver resolver, Uri treeUri, String documentId,
                                  Set<String> visited, TreeTotals totals,
-                                 AtomicBoolean cancelled, int depth) throws Exception {
+                                 AtomicBoolean cancelled, ProgressListener listener, int depth) throws Exception {
         checkCancelled(cancelled);
         if (depth > MAX_DEPTH) throw new IllegalArgumentException("A pasta é profunda demais para importar com segurança.");
         if (!visited.add(documentId)) throw new IllegalArgumentException("O provedor de arquivos retornou uma referência repetida.");
@@ -212,7 +217,7 @@ final class PreparedResourceImporter {
                 totals.entries++;
                 enforceEntryLimit(totals.entries);
                 if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
-                    scanTree(resolver, treeUri, childId, visited, totals, cancelled, depth + 1);
+                    scanTree(resolver, treeUri, childId, visited, totals, cancelled, listener, depth + 1);
                 } else {
                     totals.files++;
                     if (sizeCol < 0 || cursor.isNull(sizeCol) || cursor.getLong(sizeCol) < 0) {
@@ -224,6 +229,7 @@ final class PreparedResourceImporter {
                         }
                     }
                 }
+                report(listener, new Progress("Analisando pasta", totals.files, -1, totals.bytes, -1));
             }
         }
     }
@@ -332,6 +338,9 @@ final class PreparedResourceImporter {
             throw new IllegalArgumentException("O ZIP contém um caminho absoluto ou inválido: " + raw);
         }
         String[] segments = path.split("/", -1);
+        if (segments.length > MAX_DEPTH) {
+            throw new IllegalArgumentException("O ZIP contém um caminho profundo demais.");
+        }
         for (String segment : segments) {
             if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) {
                 throw new IllegalArgumentException("O ZIP contém tentativa de sair da pasta de destino.");
