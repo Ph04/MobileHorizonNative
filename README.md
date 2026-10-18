@@ -1,56 +1,55 @@
 # MobileHorizonNative
 
-Aplicativo Android nativo para importar e validar saídas de preparação de recursos, com uma camada de compatibilidade desacoplada do backend Horizon.
+Launcher Android-first para preparar entradas de Minecraft Java 26.3, validá-las e, gradualmente, substituir o fluxo externo de preparação do Horizon. A camada de compatibilidade mantém o motor nativo isolado da interface e impede que uma cópia de arquivos seja confundida com uma instalação jogável.
 
-> Estado atual: primeiro marco do app nativo. A importação de pasta/ZIP e o relatório de compatibilidade estão implementados no código. O build Gradle/Android ainda precisa ser confirmado pela execução da CI; o preparador de recursos nativo e o motor Horizon não estão incluídos nesta versão inicial.
+> **Estado real do projeto:** download oficial, verificação de integridade, extração inicial dos recursos vanilla, importação de uma saída Horizon completa e um teste Vulkan isolado já existem. A conversão completa que produz todas as tabelas de gameplay/worldgen do Horizon e a autenticação Microsoft/Minecraft ainda não estão implementadas. O botão do cliente não inicia gameplay offline enquanto essas partes faltarem.
 
-## O que já existe
+## O que já funciona no código
 
-- **UI Android nativa em Java**, sem WebView, com uma tela principal e duas ações essenciais: importar uma pasta preparada ou importar um ZIP.
-- **Importação por Storage Access Framework (SAF)**, sem pedir permissão ampla para ler o armazenamento.
-- **Progresso visível** durante a análise/cópia, com contagem de arquivos e bytes, além de cancelamento cooperativo.
-- **Importação transacional**: os dados vão para uma pasta temporária do app e só substituem o conjunto ativo depois de terminar e passar pela validação básica. Em caso de erro, a importação anterior é preservada.
-- **Proteções para arquivos ZIP e pastas preparadas**: caminhos absolutos e .. são recusados; caminhos duplicados e profundidade excessiva são bloqueados. O limite agora é de 250.000 itens e 2 GiB descompactados, para aceitar árvores grandes de recursos sem remover as proteções contra arquivos abusivos.
-- **Camada de compatibilidade Kotlin** com SDK mínimo, ABI, capacidades exigidas e validação do formato do SHA-256 declarado pelo backend.
-- **Testes unitários do núcleo** para combinações compatíveis/incompatíveis e requisitos do backend.
-- **GitHub Actions** para executar os testes e tentar compilar um APK de depuração, publicado como artifact da execução.
+- **Download dos arquivos base oficiais** de Minecraft 26.3: manifesto da versão, cliente JAR, servidor JAR, índice de assets e bibliotecas aplicáveis ao Android. O código verifica tamanho e SHA-1 a partir dos metadados oficiais antes de ativar os arquivos.
+- **Download opcional de todos os asset objects**, com três transferências paralelas, deduplicação por hash, progresso por bytes/itens e cancelamento.
+- **Serviço Android em primeiro plano** para downloads longos, notificação de andamento/cancelamento e recuperação do estado final quando a interface retorna.
+- **Preflight de conversão**: verifica manifesto, hashes dos JARs, bibliotecas e índice de assets; também confere por SHA-1 cada asset object presente.
+- **Extração vanilla de entrada**: extrai `assets/minecraft/` do JAR do cliente e `data/minecraft/` do JAR do servidor para uma área de trabalho versionada, preservando os JARs oficiais. A extração usa pasta temporária, valida caminhos, limita tamanho/quantidade e só ativa a árvore depois de validar os arquivos essenciais.
+- **Plano de conversão** em `.local/horizon-input/26.3/conversion-plan.json`, acompanhado de `.local/horizon-input/26.3/vanilla/source-input-manifest.json`. O estado deixa explícito que essa é uma entrada vanilla, não a saída final do Horizon.
+- **Importação SAF de pasta ou ZIP** para `.local/horizon-client/26.3`. Exige manifesto compatível (`schema=7`, `data_version=5023`) e arquivos essenciais, usa staging e mantém rollback quando a importação falha. Limites atuais: 250.000 entradas e 2 GiB descompactados.
+- **Renderer nativo ARM64** empacotado pelo workflow: o CI recupera a biblioteca pré-compilada da fonte anterior, confere o SHA-256 e os símbolos esperados antes de incluir `libhorizon_android.so) no APK.
+- **Teste Vulkan isolado**: abre NativeActivity e verifica inicialização de Winit/WGPU/Vulkan e apresentação de um frame. O resultado é exibido de volta na interface. Esse teste não é um teste de Minecraft ou de gameplay.
+- **Camada de compatibilidade Kotlin**, testes unitários e GitHub Actions para compilar um APK de depuração.
 
-## Compilar
+## Compilar e obter o APK de teste
 
-Requisitos: JDK 17, Android SDK 35 e Gradle 8.9.
+O workflow **Android build, official downloader and Horizon runtime** configura JDK 17, Android SDK 35 e Gradle 8.9, recupera/verifica a biblioteca ARM64, executa testes e compila o APK. Depois de uma execução bem-sucedida, abra a aba Actions e baixe o artifact `mobilehorizon-native-download0-debug`. Ele é um APK de depuração, destinado a testes e não a uma release estável.
 
-Na raiz:
+Com o ambiente Gradle/Android instalado, o núcleo e o APK também podem ser compilados localmente:
 
 ~~~bash
 gradle --no-daemon test :app:assembleDebug
 ~~~
 
-O APK de depuração fica em app/build/outputs/apk/debug/. No GitHub, abra a execução do workflow **Android build and compatibility tests** e baixe o artifact mobilehorizon-native-debug quando o job passar.
+O comando local não baixa automaticamente o runtime nativo que o CI injeta; para testar o renderer, use um APK gerado pelo workflow, no qual a verificação do binário e de seu empacotamento também seja executada.
 
-## Importar uma saída já preparada
+## Como testar o marco atual
 
-1. Instale o APK de teste e toque em **Selecionar pasta preparada** ou **Selecionar arquivo ZIP**.
-2. Escolha a saída gerada anteriormente.
-3. Acompanhe a fase atual, os arquivos/bytes processados e a barra de progresso (quando o tamanho da origem for conhecido).
-4. Se já houver uma importação ativa, confirme a substituição. A nova cópia só passa a ser ativa depois do término da operação e da validação básica.
+1. Instale o APK de teste. Ele usa um identificador de aplicação separado para não substituir os dados privados dos APKs anteriores.
+2. Toque em **Baixar arquivos base oficiais** para baixar manifesto, JARs, índice e bibliotecas. É possível escolher separadamente **Baixar base + todos os assets**, o que pode transferir centenas de MB.
+3. Toque em **Preparar recursos vanilla para conversão**. O app valida as entradas e extrai as árvores vanilla para `.local/horizon-input/26.3/vanilla`; o plano registra bibliotecas verificadas, assets ausentes e arquivos extraídos.
+4. Para testar o renderer, toque em **Testar renderer Vulkan**. Um resultado PASS significa que a superfície gráfica foi inicializada e apresentou um frame; não significa que o jogo carregou.
+5. Para importar uma saída já preparada, selecione a pasta final que contém `horizon-resources.json` na raiz, ou um ZIP dessa pasta. O conteúdo será validado e instalado em `.local/horizon-client/26.3`.
 
-A saída ativa fica no armazenamento privado do app, em files/prepared-resources. A UI informa se foi encontrado um horizon-resources.json na raiz. Se não houver manifesto, a importação genérica ainda pode ser concluída, mas não é marcada como compatível com um backend específico.
+Os downloads são arquivos oficiais e o aplicativo não autentica uma conta nem concede licença. Prossiga apenas se tiver uma licença válida do Minecraft Java Edition.
 
-## O que ainda não faz
+## O que ainda falta para jogar
 
-- Ainda **não prepara localmente** toda a árvore Horizon que hoje é criada pelo horizon-prepare fora do app.
-- Não inclui a biblioteca libhorizon_android.so nem inicia o motor gráfico nesta versão. O adaptador Horizon deve permanecer desativado até que a ABI, o SHA-256 e o carregamento real no aparelho sejam verificados.
-- Uma importação concluída comprova apenas que os arquivos foram copiados e passaram pelas verificações básicas; não prova que Minecraft inicia, carrega um mundo ou funciona com Vulkan.
-- **Validação de build:** o workflow do GitHub Actions passou no commit `88fbf722` em 18 de outubro de 2026 e publicou um APK de depuração. Isso confirma compilação e testes unitários do núcleo no CI, mas não substitui um teste de instalação/importação num Android real.
+- **Portar o exportador Horizon para dentro do Android.** O `horizon-prepare` original gera muitas tabelas derivadas por meio de oráculos Java compilados/executados com JDK 25 (`javac`/`java`). A extração vanilla já está no app, mas ainda não substitui esses oráculos nem produz os arquivos de gameplay/worldgen requeridos.
+- **Testar o renderer num dispositivo ARM64 real.** O CI confirma que a biblioteca tem a arquitetura esperada e que está empacotada; somente um teste em aparelho confirma carregamento, superfície gráfica, drivers e comportamento.
+- **Integrar login Microsoft/Minecraft e verificar o entitlement de Java Edition.** O cliente Horizon permanece bloqueado na interface até que essa autenticação oficial exista. Não há caminho de gameplay offline habilitado.
+- **Validar uma execução real com recursos completos**, depois da conversão e autenticação, antes de chamar o launcher de jogável.
 
-## Fonte 0.9.9 anterior
+## Organização do repositório
 
-O pacote recebido foi analisado e documentado em Auditoria da fonte 0.9.9 (docs/source-audit-0.9.9.md). O projeto anterior combina UI, download da versão 26.3, validação e caminhos específicos do Horizon. O objetivo desta base é reutilizar as ideias seguras de importação sem manter o acoplamento total ao Horizon ou exigir Termux.
-
-## Organização
-
-- app/: UI Android e importação SAF/ZIP.
-- core/: modelos e verificações de compatibilidade, sem dependência direta de classes Android.
-- docs/architecture.md: fluxo e limites entre UI, importador e backends.
-- docs/roadmap.md: próximos marcos de desenvolvimento.
-- docs/source-audit-0.9.9.md: achados da fonte e da biblioteca nativa recebida.
+- `app/`: UI nativa, downloader de arquivos oficiais, importação, extração vanilla e verificações do renderer.
+- `core/`: modelos e regras da camada de compatibilidade em Kotlin.
+- `docs/architecture.md`: fluxo do downloader à runtime.
+- `docs/roadmap.md`: estado de cada marco.
+- `docs/source-audit-0.9.9.md`: auditoria da fonte antiga e do binário ARM64.
