@@ -3,7 +3,6 @@ package dev.mobilehorizon.compat
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CompatibilityCheckerTest {
@@ -108,7 +107,7 @@ class CompatibilityCheckerTest {
     fun progressFractionIsBounded() {
         assertEquals(0.5f, PreparationProgress("copy", 5, 10, "copiando").fraction)
         assertEquals(1.0f, PreparationProgress("copy", 20, 10, "copiando").fraction)
-        assertNotNull(PreparationProgress("copy", 0, 0, "copiando").fraction.let { it ?: 1.0f })
+        assertEquals(null, PreparationProgress("copy", 0, 0, "copiando").fraction)
         assertEquals(null, PreparationProgress("scan", 1, null, "analisando").fraction)
     }
 }
