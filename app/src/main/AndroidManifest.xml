@@ -7,7 +7,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="MobileHorizon Native Download"
+        android:label="MobileHorizon Native"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
         android:theme="@style/AppTheme">
@@ -35,6 +35,10 @@
 
         <service
             android:name=".OfficialDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".ResourcePreparationService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
     </application>
