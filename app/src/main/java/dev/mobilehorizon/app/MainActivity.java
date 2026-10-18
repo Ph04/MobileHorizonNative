@@ -406,16 +406,23 @@ public final class MainActivity extends Activity {
     }
 
     private void confirmFullAssetDownload() {
-        if (downloadBusy || busy || conversionBusy) return;
-        new AlertDialog.Builder(this)
-                .setTitle("Baixar todos os assets?")
-                .setMessage("O índice oficial lista milhares de objetos únicos. A transferência pode ocupar centenas de MB e requer espaço livre no telefone. Os arquivos são baixados da Mojang e verificados por SHA-1.")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Baixar assets", (dialog, which) -> startOfficialDownload(true))
-                .show();
+        startOfficialDownload(true);
     }
 
     private void startOfficialDownload(boolean allAssets) {
+        if (downloadBusy || busy || conversionBusy) return;
+        String extra = allAssets
+                ? "\\n\\nEsta opção baixa milhares de objetos e pode usar centenas de MB."
+                : "";
+        new AlertDialog.Builder(this)
+                .setTitle("Baixar arquivos oficiais do Minecraft?")
+                .setMessage("Este fluxo baixa arquivos oficiais da Mojang, verifica tamanho e SHA-1, mas não autentica uma conta nem concede uma licença. Prossiga apenas se você tiver uma licença válida de Minecraft Java Edition." + extra)
+                .setNegativeButton("Voltar", null)
+                .setPositiveButton("Continuar", (dialog, which) -> startOfficialDownloadNow(allAssets))
+                .show();
+    }
+
+    private void startOfficialDownloadNow(boolean allAssets) {
         if (downloadBusy || busy || conversionBusy) return;
         downloadBusy = true;
         updateActionEnablement();
@@ -559,6 +566,13 @@ public final class MainActivity extends Activity {
     }
 
     private void openNativeClient() {
+        showRuntimeError("Autenticação oficial pendente",
+                "A integração de autenticação Microsoft/Minecraft e a verificação de licença ainda não foram implementadas neste marco. Por isso, o cliente não será iniciado em modo offline. O teste Vulkan abaixo continua disponível para validar apenas a superfície gráfica.");
+        return;
+        /*
+         * Do not remove this gate until an official Microsoft/Minecraft session provider
+         * has verified both the signed-in profile and Java Edition entitlement.
+         */
         if (!isHorizonNativeLibraryAvailable()) {
             showRuntimeError("Biblioteca Horizon ARM64 ausente",
                     "Este APK não contém lib/arm64-v8a/libhorizon_android.so. A compilação precisa passar pela etapa de verificação do runtime nativo.");
