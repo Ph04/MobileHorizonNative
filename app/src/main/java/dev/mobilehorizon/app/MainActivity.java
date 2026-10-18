@@ -313,7 +313,7 @@ public final class MainActivity extends Activity {
         } catch (SecurityException ignored) {
             // Some document providers offer only a temporary read grant; the import runs immediately.
         }
-        File active = new File(getFilesDir(), "prepared-resources");
+        File active = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
         if (active.exists()) {
             new AlertDialog.Builder(this)
                     .setTitle("Substituir importação atual?")
@@ -384,7 +384,7 @@ public final class MainActivity extends Activity {
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setProgress(1000);
             progressDetails.setText(summary.files + " arquivos · " + formatBytes(summary.bytes));
-            setStatus("Importação concluída", "Destino: armazenamento privado do app\n" + summary.validationNote
+            setStatus("Recursos Horizon importados", "Destino: .local/horizon-client/" + OfficialMinecraftInstaller.VERSION + "\n" + summary.validationNote
                     + "\n\nOs arquivos anteriores só foram substituídos depois da conclusão da importação.");
         } else {
             progressBar.setVisibility(View.GONE);
