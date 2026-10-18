@@ -366,7 +366,7 @@ public final class MainActivity extends Activity {
         compatTextParams.topMargin = dp(8);
         compatibilityCard.addView(compatibilityText, compatTextParams);
 
-        TextView footer = text("Estado honesto do motor: os JARs oficiais e as bibliotecas podem ser baixados e verificados aqui. A conversão completa dos JARs para os recursos Horizon ainda precisa do exportador nativo; para abrir o jogo, é necessária uma saída Horizon completa. O teste Vulkan verifica apenas a inicialização gráfica, não o gameplay.", 12, 0xff68728a, false);
+        TextView footer = text("Use “Converter recursos completos (Java 25)” para instalar o runtime Android e executar os oráculos Horizon no próprio aparelho. A conversão exige todos os assets e bastante espaço livre. Depois, teste o cliente com conta offline. O smoke test Vulkan é apenas um teste gráfico e não comprova gameplay.", 12, 0xff68728a, false);
         LinearLayout.LayoutParams footerParams = params(-1, -2);
         footerParams.topMargin = dp(20);
         page.addView(footer, footerParams);
