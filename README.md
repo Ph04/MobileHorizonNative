@@ -1,37 +1,56 @@
 # MobileHorizonNative
 
-Projeto Android-first para preparar e integrar recursos de renderização distante inspirados no ecossistema Horizon, com foco em compatibilidade, desempenho e testes reais em dispositivos Android.
+Aplicativo Android nativo para importar e validar saídas de preparação de recursos, com uma camada de compatibilidade desacoplada do backend Horizon.
 
-## Direção do projeto
+> Estado atual: primeiro marco do app nativo. A importação de pasta/ZIP e o relatório de compatibilidade estão implementados no código. O build Gradle/Android ainda precisa ser confirmado pela execução da CI; o preparador de recursos nativo e o motor Horizon não estão incluídos nesta versão inicial.
 
-O aplicativo não deve depender de Termux para preparar os arquivos. A preparação, validação e importação devem acontecer dentro do próprio Android, com interface simples e progresso visível.
+## O que já existe
 
-Em vez de acoplar toda a aplicação diretamente ao Horizon, vamos separar o núcleo Android de uma **camada de compatibilidade**. Essa camada detecta capacidades, valida formatos/versões, adapta diferenças entre backends e escolhe um caminho suportado sem presumir que todos os dispositivos conseguem executar os mesmos recursos.
+- **UI Android nativa em Java**, sem WebView, com uma tela principal e duas ações essenciais: importar uma pasta preparada ou importar um ZIP.
+- **Importação por Storage Access Framework (SAF)**, sem pedir permissão ampla para ler o armazenamento.
+- **Progresso visível** durante a análise/cópia, com contagem de arquivos e bytes, além de cancelamento cooperativo.
+- **Importação transacional**: os dados vão para uma pasta temporária do app e só substituem o conjunto ativo depois de terminar e passar pela validação básica. Em caso de erro, a importação anterior é preservada.
+- **Proteções para arquivos ZIP**: caminhos absolutos e .. são recusados; caminhos duplicados, profundidade excessiva, mais de 20.000 itens e mais de 2 GiB descompactados também são recusados.
+- **Camada de compatibilidade Kotlin** com SDK mínimo, ABI, capacidades exigidas e validação do formato do SHA-256 declarado pelo backend.
+- **Testes unitários do núcleo** para combinações compatíveis/incompatíveis e requisitos do backend.
+- **GitHub Actions** para executar os testes e tentar compilar um APK de depuração, publicado como artifact da execução.
 
-## Estado inicial
+## Compilar
 
-Este repositório novo está separado de `Ph04/MobileHorizon` para evitar misturar mudanças experimentais. O repositório foi criado vazio; esta documentação estabelece a base do trabalho, não afirma que o APK ou o backend nativo já estejam compilados.
+Requisitos: JDK 17, Android SDK 35 e Gradle 8.9.
 
-O artefato anterior `HorizonAndroidPrep 0.9.7` incluía fonte e uma biblioteca ARM64 pré-compilada (`libhorizon_android.so`). A biblioteca precisa ser verificada por hash e ABI antes de ser integrada; não a substitua por um arquivo fictício nem recompile Rust automaticamente.
+Na raiz:
 
-## Componentes planejados
+~~~bash
+gradle --no-daemon test :app:assembleDebug
+~~~
 
-- **Android UI**: fluxo limpo, seleção de pasta/arquivo e estados de progresso.
-- **Native Preparation Core**: preparação local de arquivos sem Termux.
-- **Compatibility Layer**: capabilities, validação de versão/ABI, adaptadores e fallback explícito.
-- **Backend Adapter**: integração isolada com os componentes Horizon disponíveis.
-- **Import & Verification**: importação com progresso, relatório de erros e verificação do resultado.
-- **CI**: validação de estrutura e empacotamento de APK quando o projeto Android estiver presente; preservar bibliotecas nativas pré-compiladas autorizadas.
+O APK de depuração fica em app/build/outputs/apk/debug/. No GitHub, abra a execução do workflow **Android build and compatibility tests** e baixe o artifact mobilehorizon-native-debug quando o job passar.
 
-## Princípios
+## Importar uma saída já preparada
 
-1. Android-first, sem exigir shell externo para o fluxo normal.
-2. Não anunciar suporte antes de detectar e testar a capacidade necessária.
-3. Falhas devem ser recuperáveis e explicadas na interface.
-4. Não sobrescrever arquivos do usuário sem confirmação.
-5. Separar APIs públicas Android, integração Horizon e código específico de dispositivo.
-6. Testar primeiro o caminho seguro de preparação/importação; ativar recursos nativos apenas após validação.
+1. Instale o APK de teste e toque em **Selecionar pasta preparada** ou **Selecionar arquivo ZIP**.
+2. Escolha a saída gerada anteriormente.
+3. Acompanhe a fase atual, os arquivos/bytes processados e a barra de progresso (quando o tamanho da origem for conhecido).
+4. Se já houver uma importação ativa, confirme a substituição. A nova cópia só passa a ser ativa depois do término da operação e da validação básica.
 
-## Próximos passos
+A saída ativa fica no armazenamento privado do app, em files/prepared-resources. A UI informa se foi encontrado um horizon-resources.json na raiz. Se não houver manifesto, a importação genérica ainda pode ser concluída, mas não é marcada como compatível com um backend específico.
 
-Consulte [`docs/architecture.md`](docs/architecture.md) e [`docs/roadmap.md`](docs/roadmap.md).
+## O que ainda não faz
+
+- Ainda **não prepara localmente** toda a árvore Horizon que hoje é criada pelo horizon-prepare fora do app.
+- Não inclui a biblioteca libhorizon_android.so nem inicia o motor gráfico nesta versão. O adaptador Horizon deve permanecer desativado até que a ABI, o SHA-256 e o carregamento real no aparelho sejam verificados.
+- Uma importação concluída comprova apenas que os arquivos foram copiados e passaram pelas verificações básicas; não prova que Minecraft inicia, carrega um mundo ou funciona com Vulkan.
+- O build APK não foi confirmado neste ambiente de edição. O workflow CI foi adicionado para executar essa validação.
+
+## Fonte 0.9.9 anterior
+
+O pacote recebido foi analisado e documentado em Auditoria da fonte 0.9.9 (docs/source-audit-0.9.9.md). O projeto anterior combina UI, download da versão 26.3, validação e caminhos específicos do Horizon. O objetivo desta base é reutilizar as ideias seguras de importação sem manter o acoplamento total ao Horizon ou exigir Termux.
+
+## Organização
+
+- app/: UI Android e importação SAF/ZIP.
+- core/: modelos e verificações de compatibilidade, sem dependência direta de classes Android.
+- docs/architecture.md: fluxo e limites entre UI, importador e backends.
+- docs/roadmap.md: próximos marcos de desenvolvimento.
+- docs/source-audit-0.9.9.md: achados da fonte e da biblioteca nativa recebida.
