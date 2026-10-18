@@ -313,7 +313,7 @@ final class OfficialMinecraftInstaller {
                                     OfficialMinecraftInstaller.notify(listener, "Baixando assets oficiais",
                                             "Asset " + asset.hash + " · " + formatBytes(bytes),
                                             completed.get(), assets.size(), bytes, expected,
-                                            totalDone + bytes, totalBytes);
+                                            totalDone + bytes, totalAssetBytes);
                                 });
                         totals.completedBytes.addAndGet(asset.size);
                         int done = completed.incrementAndGet();
