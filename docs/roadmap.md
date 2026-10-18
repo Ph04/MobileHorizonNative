@@ -12,7 +12,7 @@
 - [x] Implementar importação em background com progresso, cancelamento cooperativo e erros legíveis.
 - [x] Adicionar staging, substituição após validação básica e proteções contra caminhos ZIP inseguros.
 - [x] Adicionar testes unitários iniciais para a camada de compatibilidade.
-- [ ] Confirmar que a CI realmente compila o APK e corrigir possíveis falhas encontradas.
+- [x] Confirmar que a CI compila o APK e executa os testes unitários iniciais (commit `88fbf722`).
 
 ## Fase 2 — Preparação nativa
 - [ ] Portar a etapa de preparação para código executado dentro do app, sem Termux.
@@ -31,7 +31,8 @@
 
 ## Fase 4 — Empacotamento e testes
 - [x] Configurar GitHub Actions para testar o núcleo e tentar empacotar um APK de depuração.
-- [ ] Confirmar sucesso do workflow no GitHub e instalar o APK em Android real.
+- [x] Confirmar sucesso do workflow no GitHub e gerar o artifact APK de depuração.
+- [ ] Instalar o APK em Android real e testar importação/persistência.
 - [ ] Integrar a biblioteca pré-compilada ao fluxo opcional sem recompilar Rust a cada build, depois de verificar origem/licença e hash.
 - [ ] Testar importação de uma pasta real, arquivos ZIP grandes e relatório de erros no telefone.
 - [ ] Testar inicialização nativa, Vulkan e gameplay em ARM64.
