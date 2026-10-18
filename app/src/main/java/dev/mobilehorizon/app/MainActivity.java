@@ -574,6 +574,8 @@ public final class MainActivity extends Activity {
                     + "\nAssets íntegros: " + report.presentAssetObjects + " / " + report.uniqueAssets
                     + "\nArquivos extraídos do cliente: " + report.extractedClientFiles
                     + "\nArquivos extraídos do servidor: " + report.extractedServerFiles
+                    + "\nNomes de assets materializados: " + report.hydratedAssetNames
+                    + "\nBytes de assets materializados: " + formatBytes(report.hydratedAssetBytes)
                     + "\nRecursos vanilla extraídos: " + formatBytes(report.extractedSourceBytes));
             setStatus("Recursos vanilla preparados — exportador pendente", report.note
                     + "\n\nEsta etapa não produz .local/horizon-client/26.3 nem torna o jogo jogável. Ainda falta portar o exportador Horizon que gera as tabelas derivadas a partir dos JARs e de Java 25.");
