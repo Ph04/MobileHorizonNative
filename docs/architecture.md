@@ -1,46 +1,63 @@
 # Arquitetura Android-first
 
-## Fluxo implementado e fluxo final
+## Fluxo do launcher
 
-O marco atual implementa:
+O fluxo em implementação é:
 
-UI Android → Importador → Staging no armazenamento privado → Validação básica → Ativação
+`UI → OfficialDownloadService → verificação de integridade → área de trabalho vanilla → exportador Horizon → validação da saída → importador/runtime`
 
-O fluxo alvo é:
+O cliente gráfico é um componente separado:
 
-UI → Job Coordinator → Compatibility Layer → Preparation Backend → Validator → Importer
+`UI → verificação de runtime ARM64 → NativeActivity → horizon-android → horizon-client`
 
-O app não executa I/O pesado na thread principal. A importação reporta a fase atual, a contagem de arquivos e os bytes processados. A barra é indeterminada enquanto a origem ZIP não tem total extraído confiável; não é inventada uma porcentagem.
+O teste Vulkan tem uma rota própria e não precisa da árvore completa de recursos. O lançamento normal do cliente ainda exige a saída Horizon completa e autenticação Microsoft/Minecraft com entitlement de Java Edition verificado; a interface bloqueia esse lançamento até que ambas estejam implementadas.
 
-## 1. Camada de compatibilidade
+## 1. Downloader oficial
 
-Os modelos e o verificador vivem no módulo core, sem depender da UI Android:
+`OfficialMinecraftInstaller` consulta o manifesto Mojang via HTTPS e exige a versão fixada 26.3, Java major 25, hashes de manifesto aceitos e SHA-1 fixados para os JARs de cliente/servidor. Para artefatos de bibliotecas, usa tamanhos e SHA-1 do manifesto e filtra os artefatos descritos para as capacidades Android/Linux ARM64. Arquivos são baixados para `.part`; só são promovidos ao caminho ativo após tamanho e hash passarem.
 
-- DeviceCapabilities: SDK, ABIs, disponibilidade do SAF e memória disponível quando conhecida.
-- BackendDescriptor: id, versão, ABIs aceitas, SDK mínimo, capacidades e SHA-256 opcional.
-- CompatibilityReport: status, problemas codificados e indicação de bloqueio.
-- PreparationBackend: interface para implementação de preparação assíncrona com progresso.
-- PreparationProgress / PreparationResult: progresso e resultado estruturados.
+O download base inclui manifesto JSON, client JAR, server JAR, índice de assets e bibliotecas aplicáveis. O download completo de asset objects é separado; deduplica por hash, limita o total anunciado, baixa em três workers e mantém progresso agregado por bytes processados. Todos os URLs de download são limitados a HTTPS e a domínios Mojang/Minecraft reconhecidos.
 
-O verificador aplica os requisitos declarados pelo backend. O SAF só é bloqueador para backends que declaram IMPORT_OUTPUT; uma tarefa headless não deve ser rejeitada só porque não usa o seletor de documentos. Para integrações Horizon, o hash declarado é obrigatório e precisa ter formato SHA-256 válido. Isso valida o descritor, não verifica por si só os bytes do arquivo — essa comparação cabe ao adaptador ao carregar o artefato.
+`OfficialDownloadService` mantém a operação em primeiro plano com notificação. Progresso e conclusão são enviados à UI; a última conclusão não reconhecida é mantida brevemente em preferências para que a interface a recupere ao voltar, depois é reconhecida pelo launcher.
 
-## 2. Importação segura
+## 2. Entrada para conversão
 
-- A origem vem de ACTION_OPEN_DOCUMENT_TREE ou ACTION_OPEN_DOCUMENT.
-- Os arquivos são copiados para prepared-resources.importing, dentro do armazenamento privado do app.
-- ZIPs não podem escrever fora da área temporária, usar caminhos absolutos, repetir caminhos nem exceder os limites definidos no importador.
-- A pasta ativa só é substituída quando a extração termina e a validação básica passa. A versão anterior é guardada temporariamente para rollback.
-- Se existir horizon-resources.json na raiz, o JSON e os campos numéricos schema e data_version são verificados. Não é imposta uma versão global específica à importação genérica.
-- Sem manifesto, a UI deixa claro que os arquivos foram importados, mas não validados para um motor específico.
+`HorizonResourceConverter.prepareConversionInputs` valida o manifesto oficial, cliente/servidor, bibliotecas, índice e hashes dos asset objects presentes. Asset objects ausentes são reportados no plano, não tratados como se já tivessem sido baixados.
 
-## 3. Backends isolados
+Em seguida, o app extrai, em staging, apenas:
 
-O backend de importação é portátil e não exige a biblioteca Horizon. O futuro backend de preparação Android deve implementar PreparationBackend. O adaptador Horizon é opcional e só pode ficar disponível quando ABI, hash binário, dependências, permissões e inicialização no dispositivo forem verificados. Um backend incompatível deve ficar desativado com motivo legível, sem bloquear o restante da app.
+- `assets/minecraft/` do JAR do cliente para `.local/horizon-input/26.3/vanilla/client/assets/minecraft/`;
+- `data/minecraft/` do JAR do servidor para `.local/horizon-input/26.3/vanilla/server/data/minecraft/`.
 
-## 4. Limites de compatibilidade
+A extração usa limites de entradas/arquivos/tamanho, rejeita caminhos inseguros, valida arquivos vanilla essenciais e promove a árvore como uma unidade. `source-input-manifest.json` registra hashes dos JARs, contagens e o estado explícito `VANILLA_INPUTS_ONLY_NOT_HORIZON_RUNTIME_RESOURCES`. O plano `conversion-plan.json` aponta para os JARs, bibliotecas, assets e árvore extraída.
 
-SDK e ABI informam compatibilidade estrutural, não garantem desempenho. A memória disponível pode ser observada, mas precisa de um requisito explícito do backend antes de se tornar um bloqueio automático. Vulkan, drivers GPU, lifecycle nativo e carregamento do jogo exigem testes reais em ARM64; a verificação estática de uma biblioteca não substitui esses testes.
+**Isso ainda não é a conversão final.** O preparador upstream usa JDK 25 para compilar/executar numerosos oráculos Java que geram facts, registries, tabelas de gameplay e dados worldgen. O novo app ainda não executa esses oráculos; por isso não sintetiza um `horizon-resources.json` falso nem ativa uma saída incompleta.
 
-## 5. Testabilidade
+## 3. Validação e importação da runtime
 
-Os testes de core cobrem SDK/ABI/SAF, requisitos do adaptador Horizon, formatos de hash e progresso. A CI também tenta compilar o APK. Ainda faltam testes instrumentados de SAF/importação, cancelamento sob carga, recuperação após encerramento do processo e testes em aparelhos físicos.
+A saída aceita pelo importador é `.local/horizon-client/26.3`. O importador SAF aceita uma pasta ou ZIP, extrai/copia para staging e valida um manifesto com `schema=7`, `data_version=5023`, contador de arquivos e arquivos-chave derivados. A árvore incompleta não substitui a anterior.
+
+A biblioteca nativa usada por NativeActivity não está marcada no código como “compatível” só por existir. O CI baixa a fonte antiga a partir de um arquivo com SHA-256 fixado, valida o SHA-256 e os símbolos do `libhorizon_android.so`, verifica AArch64 e empacota a biblioteca no APK. Esse teste é estrutural e de empacotamento, não comprova inicialização no telefone.
+
+## 4. Renderer e diagnóstico
+
+O marcador `horizon-native-smoke.flag` faz a ponte NativeActivity executar o smoke test Winit/WGPU/Vulkan em vez do cliente. O resultado `horizon-native-smoke-result.txt` é lido quando a UI retorna, para distinguir PASS/FAIL. O smoke test apresenta uma cor sólida em um frame; não valida carregamento de Minecraft, mundo, textura, input ou FPS de gameplay.
+
+## 5. Camada de compatibilidade
+
+O módulo `core` contém:
+
+- `DeviceCapabilities`: SDK, ABIs, SAF e memória reportada;
+- `BackendDescriptor`: identidade, versão, ABIs, SDK mínimo, capacidades e SHA-256 declarado;
+- `CompatibilityReport`: status e problemas codificados;
+- `PreparationBackend`: interface para o futuro backend Android de preparação;
+- `PreparationProgress` e `PreparationResult`: mensagens estruturadas.
+
+O verificador só bloqueia SAF quando o backend declara `IMPORT_OUTPUT`, exige hash com formato SHA-256 no adaptador Horizon e não trata SDK/ABI como prova de desempenho.
+
+## 6. Limites ainda em aberto
+
+- Portar o exportador Horizon de forma executável no Android sem Termux.
+- Integrar autenticação Microsoft/Minecraft oficial e verificar a posse de Java Edition.
+- Testar o binário ARM64 em dispositivo real e validar logs/lifecycle.
+- Validar que o jogo abre, carrega recursos, gera mundo e aceita controles.
