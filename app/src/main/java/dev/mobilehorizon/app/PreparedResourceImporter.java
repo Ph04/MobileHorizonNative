@@ -28,7 +28,10 @@ import java.util.zip.ZipInputStream;
  * data is compatible with a particular renderer.
  */
 final class PreparedResourceImporter {
-    private static final int MAX_ENTRIES = 20000;
+    // Prepared Horizon resource trees can contain tens of thousands of files.
+    // Keep a finite ceiling for ZIP-bomb and pathological-provider protection, but
+    // make it high enough for real Minecraft asset/library trees.
+    private static final int MAX_ENTRIES = 250_000;
     private static final int MAX_DEPTH = 128;
     private static final long MAX_TOTAL_BYTES = 2L * 1024L * 1024L * 1024L;
     private static final int BUFFER_SIZE = 32 * 1024;
@@ -112,7 +115,7 @@ final class PreparedResourceImporter {
                 while ((entry = zip.getNextEntry()) != null) {
                     checkCancelled(cancelled);
                     if (++copied.entries > MAX_ENTRIES) {
-                        throw new IllegalArgumentException("O arquivo contém muitos itens; limite: " + MAX_ENTRIES + ".");
+                        throw new IllegalArgumentException("O ZIP contém itens demais; limite seguro: " + MAX_ENTRIES + ".");
                     }
                     String relative = safeRelativePath(entry.getName());
                     if (!seenPaths.add(relative)) {
@@ -439,7 +442,7 @@ final class PreparedResourceImporter {
 
     private static void enforceEntryLimit(long entries) {
         if (entries > MAX_ENTRIES) {
-            throw new IllegalArgumentException("A origem contém muitos itens; limite: " + MAX_ENTRIES + ".");
+            throw new IllegalArgumentException("A pasta selecionada contém itens demais; limite seguro: " + MAX_ENTRIES + ".");
         }
     }
 
