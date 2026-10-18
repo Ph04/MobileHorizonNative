@@ -202,6 +202,7 @@ final class HorizonResourceConverter {
         Set<String> unique = new HashSet<>();
         int present = 0;
         int missing = 0;
+        int inspected = 0;
         Iterator<String> names = objects.keys();
         while (names.hasNext()) {
             checkCancelled(cancelled);
@@ -215,8 +216,17 @@ final class HorizonResourceConverter {
             }
             if (!unique.add(hash)) continue;
             File objectFile = new File(minecraftRoot, "assets/objects/" + hash.substring(0, 2) + "/" + hash);
-            if (objectFile.isFile() && objectFile.length() == size) present++;
-            else missing++;
+            if (objectFile.isFile() && objectFile.length() == size
+                    && hash.equalsIgnoreCase(sha1(objectFile))) {
+                present++;
+            } else {
+                missing++;
+            }
+            inspected++;
+            if (inspected == 1 || inspected == unique.size() || inspected % 25 == 0) {
+                report(listener, "Verificando integridade dos assets", inspected,
+                        objects.length(), "Objeto " + hash);
+            }
         }
 
         report(listener, "Gravando plano de conversão", 4, 5, "conversion-plan.json");
@@ -243,6 +253,7 @@ final class HorizonResourceConverter {
         plan.put("unique_asset_objects", unique.size());
         plan.put("present_asset_objects", present);
         plan.put("missing_asset_objects", missing);
+        plan.put("asset_objects_integrity", missing == 0 ? "all-present-and-sha1-verified" : "incomplete-or-hash-mismatch");
         plan.put("asset_objects_root", "minecraft/assets/objects");
         plan.put("conversion_state", "AWAITING_NATIVE_EXPORTER");
         plan.put("conversion_blocker",
