@@ -528,7 +528,7 @@ final class HorizonResourceConverter {
         }
     }
 
-    private static boolean isSafeAssetPath(String path) {
+    static boolean isSafeAssetPath(String path) {
         return path != null && path.indexOf(':') < 0
                 && OfficialMinecraftInstaller.isSafeRelativePath(path);
     }
