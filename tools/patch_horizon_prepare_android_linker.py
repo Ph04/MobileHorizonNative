@@ -39,18 +39,19 @@ fn javac_major(javac: &Path) -> Result<u32, String> {
     })
 }
 '''
-new_javac_major = '''// On Android 10+ the OS blocks execve() on application-private writable files
-// for apps targeting API 29+. Invoke the system linker and let it load the downloaded
-// Java ELF by absolute path. javac is invoked through the JDK compiler module so it
-// also works when bin/javac is a script or symlink in the private data tree.
+new_javac_major = '''// Android 10+ blocks direct execve() of binaries in app-private writable storage
+// for apps targeting API 29+. Run Bionic's linker via the system shell so its
+// argv is constructed as "linker64 <absolute-ELF> [JVM arguments...]". The shell
+// script keeps all arguments quoted and does not interpolate caller-controlled text.
 fn java_command(java: &Path) -> Command {
     #[cfg(target_os = "android")]
     {
-        let mut command = Command::new("/system/bin/linker64");
-        // Bionic accepts --argv0 <argv0> <ELF> [arguments]. Use this explicit
-        // form so Java options such as -m are never parsed as the ELF path.
-        command.arg("--argv0");
-        command.arg(java);
+        let mut command = Command::new("/system/bin/sh");
+        command.args([
+            "-c",
+            "exec /system/bin/linker64 \\"$@\\"",
+            "linker64",
+        ]);
         command.arg(java);
         command
     }
