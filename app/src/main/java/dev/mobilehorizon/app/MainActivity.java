@@ -72,6 +72,7 @@ public final class MainActivity extends Activity {
     private boolean receiverRegistered;
     private boolean pendingNotificationPermission;
     private boolean pendingAllAssets;
+    private boolean pendingPreparationPermission;
 
     private final BroadcastReceiver downloadReceiver = new BroadcastReceiver() {
         @Override
@@ -81,6 +82,10 @@ public final class MainActivity extends Activity {
                 handleDownloadProgress(intent);
             } else if (OfficialDownloadService.ACTION_FINISHED.equals(intent.getAction())) {
                 handleDownloadFinished(intent);
+            } else if (ResourcePreparationService.ACTION_PROGRESS.equals(intent.getAction())) {
+                handlePreparationProgress(intent);
+            } else if (ResourcePreparationService.ACTION_FINISHED.equals(intent.getAction())) {
+                handlePreparationFinished(intent);
             }
         }
     };
@@ -109,6 +114,8 @@ public final class MainActivity extends Activity {
         IntentFilter filter = new IntentFilter();
         filter.addAction(OfficialDownloadService.ACTION_PROGRESS);
         filter.addAction(OfficialDownloadService.ACTION_FINISHED);
+        filter.addAction(ResourcePreparationService.ACTION_PROGRESS);
+        filter.addAction(ResourcePreparationService.ACTION_FINISHED);
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -120,6 +127,12 @@ public final class MainActivity extends Activity {
                     .setAction(OfficialDownloadService.ACTION_QUERY));
         } catch (Exception ignored) {
             // The query is only for restoring a progress display; it must not interrupt startup.
+        }
+        try {
+            startService(new Intent(this, ResourcePreparationService.class)
+                    .setAction(ResourcePreparationService.ACTION_QUERY));
+        } catch (Exception ignored) {
+            // Restoring a finished preparation result is best-effort.
         }
     }
 
@@ -412,6 +425,17 @@ public final class MainActivity extends Activity {
 
     private void cancelImport() {
         if (!busy && !conversionBusy) return;
+        if (conversionBusy && !busy) {
+            cancelButton.setEnabled(false);
+            progressDetails.setText("Cancelamento solicitado ao serviço. A operação vai parar em um ponto seguro…");
+            try {
+                startService(new Intent(this, ResourcePreparationService.class)
+                        .setAction(ResourcePreparationService.ACTION_CANCEL));
+            } catch (Exception error) {
+                setStatus("Falha ao solicitar cancelamento", safeMessage(error));
+            }
+            return;
+        }
         cancelRequested.set(true);
         cancelButton.setEnabled(false);
         progressDetails.setText("Cancelamento solicitado. A operação vai parar em um ponto seguro…");
@@ -449,6 +473,22 @@ public final class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 26033 && pendingPreparationPermission) {
+            pendingPreparationPermission = false;
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            if (granted) {
+                startBackgroundPreparationNow();
+            } else {
+                new AlertDialog.Builder(this)
+                        .setTitle("Notificações desativadas")
+                        .setMessage("A preparação pode continuar, mas o Android talvez não mostre a notificação na área de notificações. Você pode permitir isso nas configurações do app.")
+                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton("Continuar mesmo assim", (dialog, which) -> startBackgroundPreparationNow())
+                        .show();
+            }
+            return;
+        }
         if (requestCode != 26032 || !pendingNotificationPermission) return;
         pendingNotificationPermission = false;
         boolean allAssets = pendingAllAssets;
@@ -570,30 +610,91 @@ public final class MainActivity extends Activity {
 
     private void prepareConversionInputs() {
         if (busy || conversionBusy || downloadBusy) return;
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pendingPreparationPermission = true;
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 26033);
+            return;
+        }
+        startBackgroundPreparationNow();
+    }
+
+    private void startBackgroundPreparationNow() {
+        if (busy || conversionBusy || downloadBusy) return;
         conversionBusy = true;
         cancelRequested.set(false);
         currentJob = null;
         updateActionEnablement();
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
-        progressDetails.setText("Verificando manifesto, JARs, bibliotecas e índice de assets…");
-        setStatus("Preparando entradas para conversão", "Esta etapa organiza e valida as entradas oficiais. Ela ainda não gera os arquivos derivados do Horizon.");
-        currentJob = executor.submit(() -> {
-            try {
-                HorizonResourceConverter.InputReport report = HorizonResourceConverter.prepareConversionInputs(
-                        getFilesDir(), cancelRequested,
-                        (stage, complete, total, detail) -> runOnUiThread(() -> {
-                            if (!conversionBusy || isFinishing() || isDestroyed()) return;
-                            progressBar.setIndeterminate(total <= 0);
-                            if (total > 0) progressBar.setProgress((int) Math.min(1000, complete * 1000L / total));
-                            progressDetails.setText(stage + "\n" + detail
-                                    + (total > 0 ? "\nEtapa: " + complete + " / " + total : ""));
-                        }));
-                runOnUiThread(() -> finishConversion(report, null));
-            } catch (Exception error) {
-                runOnUiThread(() -> finishConversion(null, error));
-            }
-        });
+        progressDetails.setText("Iniciando serviço de preparação em segundo plano…");
+        setStatus("Preparação em andamento", "O processo continuará em segundo plano, com notificação de andamento e conclusão. Esta etapa ainda prepara as entradas vanilla, não os recursos derivados finais do Horizon.");
+        try {
+            Intent intent = new Intent(this, ResourcePreparationService.class)
+                    .setAction(ResourcePreparationService.ACTION_START);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
+            else startService(intent);
+        } catch (Exception error) {
+            conversionBusy = false;
+            updateActionEnablement();
+            progressBar.setVisibility(View.GONE);
+            setStatus("Não foi possível iniciar a preparação", safeMessage(error));
+        }
+    }
+
+    private void handlePreparationProgress(Intent intent) {
+        conversionBusy = true;
+        updateActionEnablement();
+        String stage = intent.getStringExtra("stage");
+        String detail = intent.getStringExtra("detail");
+        int completed = intent.getIntExtra("completed", 0);
+        int total = intent.getIntExtra("total", -1);
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setIndeterminate(total <= 0);
+        if (total > 0) progressBar.setProgress((int) Math.min(1000, completed * 1000L / total));
+        progressDetails.setText((stage == null ? "Preparação" : stage)
+                + (detail == null || detail.isEmpty() ? "" : "\n" + detail)
+                + (total > 0 ? "\nEtapa: " + completed + " / " + total : ""));
+        setStatus("Preparação em andamento", "Você pode sair da tela. O serviço continua no primeiro plano e envia uma notificação de progresso.");
+    }
+
+    private void handlePreparationFinished(Intent intent) {
+        boolean success = intent.getBooleanExtra("success", false);
+        boolean wasCancelled = intent.getBooleanExtra("cancelled", false);
+        String message = intent.getStringExtra("message");
+        if (success) {
+            String planPath = intent.getStringExtra("planPath");
+            File plan = planPath == null || planPath.isEmpty()
+                    ? new File(getFilesDir(), ".local/horizon-input/26.3/conversion-plan.json")
+                    : new File(planPath);
+            HorizonResourceConverter.InputReport report = new HorizonResourceConverter.InputReport(
+                    plan,
+                    intent.getIntExtra("libraries", 0),
+                    intent.getIntExtra("uniqueAssets", 0),
+                    intent.getIntExtra("presentAssets", 0),
+                    intent.getIntExtra("missingAssets", 0),
+                    "", "", "",
+                    intent.getIntExtra("clientFiles", 0),
+                    intent.getIntExtra("serverFiles", 0),
+                    intent.getLongExtra("sourceBytes", 0),
+                    intent.getIntExtra("hydratedNames", 0),
+                    intent.getLongExtra("hydratedBytes", 0),
+                    intent.getStringExtra("reportNote"));
+            finishConversion(report, null);
+        } else if (wasCancelled) {
+            finishConversion(null, new InterruptedException(
+                    message == null ? "Preparação cancelada." : message));
+        } else {
+            finishConversion(null, new IllegalStateException(
+                    message == null ? "Erro desconhecido na preparação." : message));
+        }
+        try {
+            startService(new Intent(this, ResourcePreparationService.class)
+                    .setAction(ResourcePreparationService.ACTION_ACK));
+        } catch (Exception ignored) {
+            // The service stores the result so it can be replayed if the UI was not available.
+        }
     }
 
     private void finishConversion(HorizonResourceConverter.InputReport report, Exception error) {
@@ -618,7 +719,11 @@ public final class MainActivity extends Activity {
         } else {
             progressBar.setVisibility(View.GONE);
             progressDetails.setText("");
-            setStatus("Preparação para conversão falhou", safeMessage(error));
+            if (error instanceof InterruptedException || cancelRequested.get()) {
+                setStatus("Preparação cancelada", safeMessage(error));
+            } else {
+                setStatus("Preparação para conversão falhou", safeMessage(error));
+            }
         }
     }
 
@@ -739,6 +844,7 @@ public final class MainActivity extends Activity {
         if (cancelButton != null) {
             cancelButton.setVisibility(busy || conversionBusy ? View.VISIBLE : View.GONE);
             cancelButton.setEnabled(busy || conversionBusy);
+            cancelButton.setText(conversionBusy && !busy ? "Cancelar preparação" : "Cancelar importação");
         }
         if (cancelDownloadButton != null) {
             cancelDownloadButton.setVisibility(downloadBusy ? View.VISIBLE : View.GONE);
