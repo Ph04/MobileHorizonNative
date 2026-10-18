@@ -204,19 +204,7 @@ final class MicrosoftAuthentication {
             throw new IllegalStateException("Não foi possível verificar os direitos de Minecraft Java Edition nos serviços oficiais.");
         }
         JSONArray items = entitlements.json.optJSONArray("items");
-        boolean ownsJava = false;
-        if (items != null) {
-            for (int i = 0; i < items.length(); i++) {
-                JSONObject item = items.optJSONObject(i);
-                if (item == null) continue;
-                String name = item.optString("name", "");
-                if ("game_minecraft".equals(name) || "product_minecraft".equals(name)) {
-                    ownsJava = true;
-                    break;
-                }
-            }
-        }
-        if (!ownsJava) {
+        if (!hasJavaEntitlement(items)) {
             throw new IllegalStateException("Esta conta não possui uma licença reconhecida de Minecraft Java Edition (ou acesso incluído ativo). O cliente não será iniciado.");
         }
 
@@ -376,8 +364,24 @@ final class MicrosoftAuthentication {
         }
     }
 
-    private static void requireClientId(String clientId) {
-        if (clientId == null || !clientId.trim().matches("[0-9a-fA-F-]{36}")) {
+    static boolean isValidClientId(String clientId) {
+        return clientId != null && clientId.trim().matches(
+                "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
+    static boolean hasJavaEntitlement(JSONArray items) {
+        if (items == null) return false;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null) continue;
+            String name = item.optString("name", "");
+            if ("game_minecraft".equals(name) || "product_minecraft".equals(name)) return true;
+        }
+        return false;
+    }
+
+    static void requireClientId(String clientId) {
+        if (!isValidClientId(clientId)) {
             throw new IllegalStateException("O login Microsoft não está configurado neste build. Defina HORIZON_MSA_CLIENT_ID com o App ID próprio do MobileHorizonNative.");
         }
     }
