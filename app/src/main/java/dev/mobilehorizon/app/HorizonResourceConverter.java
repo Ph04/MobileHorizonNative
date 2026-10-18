@@ -368,7 +368,10 @@ final class HorizonResourceConverter {
      * claim that oracle-generated gameplay/worldgen registries have been produced.
      */
     private static ExtractionSummary extractVanillaSources(File clientJar, File serverJar,
-                                                            File planDir, AtomicBoolean cancelled,
+                                                            File planDir, File minecraftRoot,
+                                                            List<IndexedAsset> indexedAssets,
+                                                            Map<String, File> verifiedAssetObjects,
+                                                            AtomicBoolean cancelled,
                                                             ProgressListener listener) throws Exception {
         File active = new File(planDir, "vanilla");
         File staging = new File(planDir, "vanilla.importing");
@@ -379,41 +382,155 @@ final class HorizonResourceConverter {
             throw new IllegalStateException("Não foi possível criar a pasta temporária dos recursos vanilla.");
         }
         try {
-            File clientDestination = new File(staging, "client/assets/minecraft");
-            File serverDestination = new File(staging, "server/data/minecraft");
-            ExtractionPart client = extractZipPrefix(clientJar, "assets/minecraft/",
-                    clientDestination, "Extraindo assets do cliente", cancelled, listener);
-            ExtractionPart server = extractZipPrefix(serverJar, "data/minecraft/",
-                    serverDestination, "Extraindo dados do servidor", cancelled, listener);
-            if (client.files <= 0 || server.files <= 0) {
-                throw new IllegalStateException("Os JARs oficiais não continham as árvores vanilla assets/minecraft e data/minecraft esperadas.");
+            File clientAssetsDestination = new File(staging, "client/assets");
+            File clientDataDestination = new File(staging, "client/data");
+            File serverDataDestination = new File(staging, "server/data/minecraft");
+            ExtractionPart clientAssets = extractZipPrefix(clientJar, "assets/",
+                    clientAssetsDestination, "Extraindo assets do JAR cliente", cancelled, listener);
+            ExtractionPart clientData = extractZipPrefix(clientJar, "data/",
+                    clientDataDestination, "Extraindo dados do JAR cliente", cancelled, listener);
+            ExtractionPart serverData = extractZipPrefix(serverJar, "data/minecraft/",
+                    serverDataDestination, "Extraindo dados do JAR servidor", cancelled, listener);
+            if (clientAssets.files <= 0 || clientData.files <= 0 || serverData.files <= 0) {
+                throw new IllegalStateException("Os JARs oficiais não contêm as árvores assets/ e data/ esperadas.");
             }
-            if (!new File(clientDestination, "lang/en_us.json").isFile()) {
+            if (!new File(clientAssetsDestination, "minecraft/lang/en_us.json").isFile()) {
                 throw new IllegalStateException("O JAR do cliente não contém assets/minecraft/lang/en_us.json.");
             }
-            if (!new File(serverDestination, "dimension_type/overworld.json").isFile()) {
+            if (!new File(serverDataDestination, "dimension_type/overworld.json").isFile()) {
                 throw new IllegalStateException("O JAR do servidor não contém data/minecraft/dimension_type/overworld.json.");
             }
+
+            AssetHydration hydration = materializeAssetObjects(clientAssetsDestination, indexedAssets,
+                    verifiedAssetObjects, cancelled, listener);
+            long jarBytes = clientAssets.bytes + clientData.bytes + serverData.bytes;
+            long allBytes = jarBytes + hydration.bytes;
+            if (allBytes > MAX_EXTRACTED_SOURCE_BYTES + MAX_MATERIALIZED_ASSET_BYTES) {
+                throw new IllegalArgumentException("O conjunto vanilla extraído/materializado excede o limite combinado de segurança.");
+            }
+
             JSONObject manifest = new JSONObject();
             manifest.put("format", "mobilehorizon-vanilla-source-tree");
-            manifest.put("format_version", 1);
+            manifest.put("format_version", 2);
             manifest.put("minecraft_version", VERSION);
             manifest.put("client_jar_sha1", sha1(clientJar));
             manifest.put("server_jar_sha1", sha1(serverJar));
-            manifest.put("client_prefix", "assets/minecraft/");
-            manifest.put("server_prefix", "data/minecraft/");
-            manifest.put("client_files", client.files);
-            manifest.put("server_files", server.files);
-            manifest.put("extracted_bytes", client.bytes + server.bytes);
+            manifest.put("client_assets_prefix", "assets/");
+            manifest.put("client_data_prefix", "data/");
+            manifest.put("server_data_prefix", "data/minecraft/");
+            manifest.put("client_assets_files", clientAssets.files);
+            manifest.put("client_data_files", clientData.files);
+            manifest.put("server_data_files", serverData.files);
+            manifest.put("client_files", clientAssets.files + clientData.files);
+            manifest.put("server_files", serverData.files);
+            manifest.put("asset_names_materialized", hydration.files);
+            manifest.put("asset_bytes_materialized", hydration.bytes);
+            manifest.put("jar_resource_bytes_extracted", jarBytes);
+            manifest.put("source_bytes_written", allBytes);
             manifest.put("state", "VANILLA_INPUTS_ONLY_NOT_HORIZON_RUNTIME_RESOURCES");
             writeAtomically(manifest.toString(2).getBytes(StandardCharsets.UTF_8),
                     new File(staging, "source-input-manifest.json"));
             promoteFolder(staging, active, backup);
-            return new ExtractionSummary(client.files, server.files, client.bytes + server.bytes);
+            return new ExtractionSummary(clientAssets.files + clientData.files, serverData.files,
+                    allBytes, hydration.files, hydration.bytes);
         } catch (Exception error) {
             deleteRecursively(staging);
             throw error;
         }
+    }
+
+    /**
+     * Rehydrates files from the launcher's content-addressed asset store into their official
+     * resource paths (e.g. minecraft/textures/...). Missing objects are reported by the plan,
+     * not fabricated; every copied object is hashed again while being written.
+     */
+    private static AssetHydration materializeAssetObjects(File clientAssetsRoot,
+                                                           List<IndexedAsset> indexedAssets,
+                                                           Map<String, File> verifiedAssetObjects,
+                                                           AtomicBoolean cancelled,
+                                                           ProgressListener listener) throws Exception {
+        File canonicalRoot = clientAssetsRoot.getCanonicalFile();
+        int copied = 0;
+        long copiedBytes = 0;
+        int scanned = 0;
+        for (IndexedAsset asset : indexedAssets) {
+            checkCancelled(cancelled);
+            scanned++;
+            File source = verifiedAssetObjects.get(asset.hash);
+            if (source == null) continue;
+            if (copiedBytes + asset.size > MAX_MATERIALIZED_ASSET_BYTES) {
+                throw new IllegalArgumentException("Os asset objects materializados excedem o limite de 2 GiB.");
+            }
+            if (!isSafeAssetPath(asset.name)) {
+                throw new IllegalArgumentException("Nome de asset inseguro: " + asset.name);
+            }
+            File target = new File(canonicalRoot, asset.name).getCanonicalFile();
+            if (!target.getPath().startsWith(canonicalRoot.getPath() + File.separator)) {
+                throw new IllegalArgumentException("Nome de asset fora da árvore de destino.");
+            }
+            copyAssetVerified(source, target, asset.hash, asset.size, cancelled);
+            copied++;
+            copiedBytes += asset.size;
+            if (copied == 1 || copied % 25 == 0 || scanned == indexedAssets.size()) {
+                report(listener, "Materializando asset objects", scanned, indexedAssets.size(),
+                        asset.name + " · materializados: " + copied + " · " + formatBytes(copiedBytes));
+            }
+        }
+        report(listener, "Asset objects materializados", Math.max(1, scanned), Math.max(1, indexedAssets.size()),
+                copied + " nomes · " + formatBytes(copiedBytes));
+        return new AssetHydration(copied, copiedBytes);
+    }
+
+    private static void copyAssetVerified(File source, File destination, String expectedHash,
+                                          long expectedSize, AtomicBoolean cancelled) throws Exception {
+        if (source.length() != expectedSize || !expectedHash.equalsIgnoreCase(sha1(source))) {
+            throw new IllegalStateException("Um asset object mudou depois da verificação: " + expectedHash);
+        }
+        File parent = destination.getParentFile();
+        ensureDirectory(parent);
+        File partial = new File(parent, destination.getName() + ".asset-part");
+        if (partial.exists() && !partial.delete()) {
+            throw new IllegalStateException("Não foi possível limpar a cópia parcial de " + destination.getName() + ".");
+        }
+        MessageDigest digest = MessageDigest.getInstance("SHA-1");
+        long bytes = 0;
+        try (InputStream input = new BufferedInputStream(new FileInputStream(source));
+             OutputStream output = new BufferedOutputStream(new FileOutputStream(partial))) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                checkCancelled(cancelled);
+                bytes += read;
+                if (bytes > expectedSize) {
+                    throw new IllegalStateException("O asset object excedeu o tamanho do índice.");
+                }
+                digest.update(buffer, 0, read);
+                output.write(buffer, 0, read);
+            }
+            output.flush();
+        } catch (Exception error) {
+            partial.delete();
+            throw error;
+        }
+        StringBuilder hash = new StringBuilder(40);
+        for (byte value : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        if (bytes != expectedSize || !expectedHash.equalsIgnoreCase(hash.toString())) {
+            partial.delete();
+            throw new IllegalStateException("Falha de integridade ao materializar o asset object " + expectedHash + ".");
+        }
+        if (destination.exists() && !destination.delete()) {
+            partial.delete();
+            throw new IllegalStateException("Não foi possível substituir o asset " + destination.getName() + ".");
+        }
+        if (!partial.renameTo(destination)) {
+            partial.delete();
+            throw new IllegalStateException("Não foi possível ativar o asset " + destination.getName() + ".");
+        }
+    }
+
+    private static boolean isSafeAssetPath(String path) {
+        return path != null && path.indexOf(':') < 0
+                && OfficialMinecraftInstaller.isSafeRelativePath(path);
     }
 
     private static ExtractionPart extractZipPrefix(File archiveFile, String requiredPrefix,
