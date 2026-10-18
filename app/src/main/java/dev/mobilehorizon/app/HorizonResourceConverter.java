@@ -220,6 +220,8 @@ final class HorizonResourceConverter {
         JSONObject objects = index.optJSONObject("objects");
         if (objects == null) throw new IllegalStateException("O índice oficial não contém a tabela objects.");
         Set<String> unique = new HashSet<>();
+        List<IndexedAsset> indexedAssets = new ArrayList<>();
+        Map<String, File> verifiedAssetObjects = new HashMap<>();
         int present = 0;
         int missing = 0;
         int inspected = 0;
@@ -231,19 +233,22 @@ final class HorizonResourceConverter {
             if (asset == null) continue;
             String hash = asset.optString("hash", "").toLowerCase(Locale.ROOT);
             long size = asset.optLong("size", -1);
-            if (!hash.matches("[0-9a-f]{40}") || size < 0) {
+            if (!isSafeAssetPath(name) || !hash.matches("[0-9a-f]{40}") || size < 0) {
                 throw new IllegalStateException("Entrada inválida no índice de assets: " + name);
             }
-            if (!unique.add(hash)) continue;
-            File objectFile = new File(minecraftRoot, "assets/objects/" + hash.substring(0, 2) + "/" + hash);
-            if (objectFile.isFile() && objectFile.length() == size
-                    && hash.equalsIgnoreCase(sha1(objectFile))) {
-                present++;
-            } else {
-                missing++;
+            indexedAssets.add(new IndexedAsset(name, hash, size));
+            if (unique.add(hash)) {
+                File objectFile = new File(minecraftRoot, "assets/objects/" + hash.substring(0, 2) + "/" + hash);
+                if (objectFile.isFile() && objectFile.length() == size
+                        && hash.equalsIgnoreCase(sha1(objectFile))) {
+                    present++;
+                    verifiedAssetObjects.put(hash, objectFile);
+                } else {
+                    missing++;
+                }
             }
             inspected++;
-            if (inspected == 1 || inspected == unique.size() || inspected % 25 == 0) {
+            if (inspected == 1 || inspected == objects.length() || inspected % 25 == 0) {
                 report(listener, "Verificando integridade dos assets", inspected,
                         objects.length(), "Objeto " + hash);
             }
@@ -257,7 +262,7 @@ final class HorizonResourceConverter {
         report(listener, "Extraindo recursos vanilla", 4, 6,
                 "assets/minecraft do cliente e data/minecraft do servidor");
         ExtractionSummary extraction = extractVanillaSources(clientJar, serverJar, planDir,
-                cancelled, listener);
+                minecraftRoot, indexedAssets, verifiedAssetObjects, cancelled, listener);
         report(listener, "Gravando plano de conversão", 5, 6, "conversion-plan.json");
         JSONObject plan = new JSONObject();
         plan.put("format", "mobilehorizon-conversion-input");
@@ -284,7 +289,10 @@ final class HorizonResourceConverter {
         plan.put("extracted_client_resource_files", extraction.clientFiles);
         plan.put("extracted_server_resource_files", extraction.serverFiles);
         plan.put("extracted_vanilla_source_bytes", extraction.bytes);
-        plan.put("conversion_state", "SOURCE_RESOURCES_STAGED_AWAITING_EXPORTER");
+        plan.put("indexed_asset_names", indexedAssets.size());
+        plan.put("asset_names_materialized", extraction.hydratedAssetNames);
+        plan.put("asset_bytes_materialized", extraction.hydratedAssetBytes);
+        plan.put("conversion_state", "VANILLA_ASSETS_AND_DATA_STAGED_AWAITING_EXPORTER");
         plan.put("conversion_blocker",
                 "The full Horizon exporter currently depends on Java 25 javac/java. This plan verifies and normalizes the inputs; it does not claim that generated Horizon gameplay/worldgen resources exist.");
         plan.put("required_output_directory", ".local/horizon-client/" + VERSION);
@@ -295,14 +303,17 @@ final class HorizonResourceConverter {
                         + " arquivos · assets baixados: " + present + "/" + unique.size());
 
         String note = "Entradas oficiais verificadas; " + extraction.clientFiles
-                + " arquivos de assets do cliente e " + extraction.serverFiles
-                + " arquivos de dados do servidor foram extraídos para a área de trabalho, sem alterar os JARs oficiais. "
-                + "Bibliotecas verificadas: " + verifiedLibraries + ". Assets por hash disponíveis: "
-                + present + "/" + unique.size() + ". O exportador Horizon Java 25 ainda não foi portado: "
-                + "esta etapa não produz a árvore final jogável.";
+                + " arquivos de assets/data do JAR do cliente e " + extraction.serverFiles
+                + " arquivos de data/minecraft do servidor foram extraídos. "
+                + extraction.hydratedAssetNames + " nomes de assets do índice foram materializados na árvore de entrada ("
+                + formatBytes(extraction.hydratedAssetBytes) + "), sem alterar os JARs oficiais. "
+                + "Bibliotecas verificadas: " + verifiedLibraries + ". Objetos de asset íntegros disponíveis: "
+                + present + "/" + unique.size() + "; ausentes ou corrompidos: " + missing + ". "
+                + "O exportador Horizon Java 25 ainda não foi portado, então a árvore final de gameplay/worldgen ainda não existe.";
         return new InputReport(new File(planDir, "conversion-plan.json"), verifiedLibraries,
                 unique.size(), present, missing, clientSha1, serverSha1, assetIndexId,
-                extraction.clientFiles, extraction.serverFiles, extraction.bytes, note);
+                extraction.clientFiles, extraction.serverFiles, extraction.bytes,
+                extraction.hydratedAssetNames, extraction.hydratedAssetBytes, note);
     }
 
     private static final class IndexedAsset {
