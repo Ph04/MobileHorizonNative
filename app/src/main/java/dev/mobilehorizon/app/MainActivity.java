@@ -172,6 +172,7 @@ public final class MainActivity extends Activity {
             sessionEnvSet = false;
         }
         showNativeSmokeResultIfAvailable();
+        showNativeClientResultIfAvailable();
     }
 
     @Override
@@ -813,7 +814,7 @@ public final class MainActivity extends Activity {
         File resources = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
         try {
             String resourceSummary = HorizonResourceConverter.validatePreparedResources(resources);
-            if (!isValidMicrosoftClientId(BuildConfig.HORIZON_MSA_CLIENT_ID)) {
+            if (!MicrosoftAuthentication.isValidClientId(BuildConfig.HORIZON_MSA_CLIENT_ID)) {
                 showRuntimeError("Autenticação ainda não configurada",
                         resourceSummary + "\n\nPara login real, o responsável pelo projeto precisa registrar um App ID próprio da Microsoft, habilitar public client/device-code flow e solicitar aprovação do App ID aos serviços do Minecraft. Builds sem HORIZON_MSA_CLIENT_ID não podem autenticar. Não use o ID de outro launcher.");
                 return;
@@ -832,10 +833,6 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private static boolean isValidMicrosoftClientId(String clientId) {
-        return clientId != null && clientId.trim().matches(
-                "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-    }
 
     private void refreshAccountUi() {
         if (accountStatusText == null) return;
@@ -853,7 +850,7 @@ public final class MainActivity extends Activity {
 
     private void startMicrosoftSignIn() {
         if (authBusy || launchBusy || busy || conversionBusy || downloadBusy) return;
-        if (!isValidMicrosoftClientId(BuildConfig.HORIZON_MSA_CLIENT_ID)) {
+        if (!MicrosoftAuthentication.isValidClientId(BuildConfig.HORIZON_MSA_CLIENT_ID)) {
             showRuntimeError("App ID Microsoft não configurado",
                     "Este APK foi compilado sem HORIZON_MSA_CLIENT_ID. O mantenedor precisa criar um registro Microsoft próprio com contas pessoais e fluxo de código de dispositivo, depois solicitar aprovação de acesso às APIs do Minecraft. O ID de outro launcher não pode ser reutilizado.");
             return;
@@ -1002,6 +999,7 @@ public final class MainActivity extends Activity {
                     updateActionEnablement();
                     refreshAccountUi();
                     try {
+                        new File(getFilesDir(), "horizon-client-result.txt").delete();
                         File sessionFile = writeOneShotSession(account);
                         Os.setenv("HORIZON_SESSION_FILE", sessionFile.getAbsolutePath(), true);
                         sessionEnvSet = true;
@@ -1058,6 +1056,33 @@ public final class MainActivity extends Activity {
             throw new IllegalStateException("Não foi possível validar a idade da sessão para o cliente nativo.");
         }
         return target;
+    }
+
+    private void showNativeClientResultIfAvailable() {
+        File resultFile = new File(getFilesDir(), "horizon-client-result.txt");
+        if (!resultFile.isFile()) return;
+        try (FileInputStream input = new FileInputStream(resultFile);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (output.size() + read > 96 * 1024) {
+                    throw new IllegalStateException("O relatório do cliente nativo excedeu 96 KiB.");
+                }
+                output.write(buffer, 0, read);
+            }
+            String result = new String(output.toByteArray(), StandardCharsets.UTF_8).trim();
+            boolean failed = result.startsWith("FAIL:");
+            progressBar.setVisibility(View.VISIBLE);
+            progressBar.setIndeterminate(false);
+            progressBar.setProgress(failed ? 0 : 1000);
+            progressDetails.setText(result);
+            setStatus(failed ? "O cliente Horizon não iniciou" : "Cliente Horizon encerrado",
+                    result + "\n\nEsse relatório é gerado pelo motor nativo. Um encerramento sem erro ainda não prova que um mundo foi carregado.");
+            resultFile.delete();
+        } catch (Exception error) {
+            setStatus("Não foi possível ler o resultado do cliente", safeMessage(error));
+        }
     }
 
     private void showNativeSmokeResultIfAvailable() {
