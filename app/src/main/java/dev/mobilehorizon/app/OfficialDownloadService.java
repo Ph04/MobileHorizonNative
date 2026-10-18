@@ -24,7 +24,7 @@ public final class OfficialDownloadService extends Service {
     static final String ACTION_PROGRESS = "dev.mobilehorizon.app.DOWNLOAD_PROGRESS";
     static final String ACTION_FINISHED = "dev.mobilehorizon.app.DOWNLOAD_FINISHED";
     static final String EXTRA_ALL_ASSETS = "all_assets";
-    private static final String CHANNEL_ID = "minecraft-downloads";
+    private static final String CHANNEL_ID = "minecraft-downloads-v2";
     private static final int NOTIFICATION_ID = 26031;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -164,11 +164,18 @@ public final class OfficialDownloadService extends Service {
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
-        builder.setSmallIcon(android.R.drawable.stat_sys_download)
-                .setContentTitle("MobileHorizon · Minecraft " + OfficialMinecraftInstaller.VERSION)
+        String stage = progress == null || progress.stage == null ? "" : progress.stage.toLowerCase(java.util.Locale.ROOT);
+        boolean completed = !ongoing && stage.contains("concluído");
+        boolean cancelledResult = !ongoing && stage.contains("cancelado");
+        String title = ongoing ? "Baixando Minecraft " + OfficialMinecraftInstaller.VERSION
+                : completed ? "Download concluído"
+                : cancelledResult ? "Download cancelado" : "Download não concluído";
+        builder.setSmallIcon(ongoing ? android.R.drawable.stat_sys_download
+                        : completed ? android.R.drawable.stat_sys_download_done : android.R.drawable.ic_dialog_alert)
+                .setContentTitle(title)
                 .setContentText(progress == null ? "Download oficial" : compact(progress.stage, progress.item))
                 .setContentIntent(openIntent)
-                .setOnlyAlertOnce(true)
+                .setOnlyAlertOnce(ongoing)
                 .setOngoing(ongoing)
                 .setAutoCancel(!ongoing);
         if (ongoing) {
@@ -219,8 +226,8 @@ public final class OfficialDownloadService extends Service {
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager == null) return;
         NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
-                "Downloads do Minecraft", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("Progresso e conclusão dos downloads oficiais de Minecraft.");
+                "Downloads do Minecraft", NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setDescription("Progresso, cancelamento e conclusão dos downloads oficiais de Minecraft.");
         manager.createNotificationChannel(channel);
     }
 
