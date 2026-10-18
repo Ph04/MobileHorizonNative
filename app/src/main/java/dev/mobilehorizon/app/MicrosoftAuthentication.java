@@ -349,19 +349,19 @@ final class MicrosoftAuthentication {
     }
 
     private static String xstsError(long code) {
-        switch ((int) code) {
-            case 2148916233:
-                return "Esta conta Microsoft ainda não tem um perfil Xbox. Configure o perfil nos serviços oficiais e tente novamente.";
-            case 2148916235:
-                return "O Xbox Live não está disponível para esta região.";
-            case 2148916236:
-            case 2148916237:
-                return "A conta precisa concluir a verificação de idade exigida pelo Xbox.";
-            case 2148916238:
-                return "Esta conta infantil precisa das permissões da família Microsoft para usar o Xbox Live.";
-            default:
-                return "O Xbox Live recusou a autenticação (código " + code + ").";
+        if (code == 2148916233L) {
+            return "Esta conta Microsoft ainda não tem um perfil Xbox. Configure o perfil nos serviços oficiais e tente novamente.";
         }
+        if (code == 2148916235L) {
+            return "O Xbox Live não está disponível para esta região.";
+        }
+        if (code == 2148916236L || code == 2148916237L) {
+            return "A conta precisa concluir a verificação de idade exigida pelo Xbox.";
+        }
+        if (code == 2148916238L) {
+            return "Esta conta infantil precisa das permissões da família Microsoft para usar o Xbox Live.";
+        }
+        return "O Xbox Live recusou a autenticação (código " + code + ").";
     }
 
     static boolean isValidClientId(String clientId) {
