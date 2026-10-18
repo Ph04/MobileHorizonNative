@@ -425,7 +425,7 @@ final class JdkRuntimeInstaller {
         List<String> command = new ArrayList<>();
         command.add("/system/bin/sh");
         command.add("-c");
-        command.add("exec /system/bin/linker64 \\"$@\\"");
+        command.add("exec /system/bin/linker64 \"$@\"");
         command.add("linker64"); // $0 for sh -c; excluded from "$@"
         command.add(runtime.java.getAbsolutePath());
         if ("javac".equals(label)) {
