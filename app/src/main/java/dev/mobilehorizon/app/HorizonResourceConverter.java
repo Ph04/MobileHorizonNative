@@ -43,6 +43,7 @@ final class HorizonResourceConverter {
     private static final int MAX_EXTRACTED_SOURCE_FILES = 150_000;
     private static final long MAX_EXTRACTED_SOURCE_BYTES = 1536L * 1024L * 1024L;
     private static final long MAX_MATERIALIZED_ASSET_BYTES = 2L * 1024L * 1024L * 1024L;
+    private static final long MAX_BUNDLED_SERVER_JAR_BYTES = 256L * 1024L * 1024L;
 
     private static final String[] REQUIRED_ROOT_FILES = {
             "facts.json", "block-tags.json", "block-behaviours.json", "gameplay-facts.json",
@@ -353,16 +354,6 @@ final class HorizonResourceConverter {
         }
     }
 
-    private static final class ExtractionPart {
-        final int files;
-        final long bytes;
-
-        ExtractionPart(int files, long bytes) {
-            this.files = files;
-            this.bytes = bytes;
-        }
-    }
-
     /**
      * Stages only the vanilla resource trees consumed by the Horizon exporter. This does not
      * claim that oracle-generated gameplay/worldgen registries have been produced.
@@ -388,21 +379,34 @@ final class HorizonResourceConverter {
             ExtractionPart clientAssets = extractZipPrefix(clientJar, "assets/",
                     clientAssetsDestination, "Extraindo assets do JAR cliente", cancelled, listener);
             ExtractionPart clientData = extractZipPrefix(clientJar, "data/",
-                    clientDataDestination, "Extraindo dados do JAR cliente", cancelled, listener);
-            ExtractionPart serverData = extractZipPrefix(serverJar, "data/minecraft/",
-                    serverDataDestination, "Extraindo dados do JAR servidor", cancelled, listener);
-            if (clientAssets.files <= 0 || clientData.files <= 0 || serverData.files <= 0) {
-                throw new IllegalStateException("Os JARs oficiais não contêm as árvores assets/ e data/ esperadas.");
-            }
-            if (!new File(clientAssetsDestination, "minecraft/lang/en_us.json").isFile()) {
-                throw new IllegalStateException("O JAR do cliente não contém assets/minecraft/lang/en_us.json.");
-            }
-            if (!new File(serverDataDestination, "dimension_type/overworld.json").isFile()) {
-                throw new IllegalStateException("O JAR do servidor não contém data/minecraft/dimension_type/overworld.json.");
+                    clientDataDestination, "Extraindo dados opcionais do JAR cliente", cancelled, listener);
+            ServerDataExtraction serverDataSource = extractServerDataArchive(serverJar, staging,
+                    serverDataDestination, cancelled, listener);
+            ExtractionPart serverData = serverDataSource.extraction;
+
+            if (serverData.files <= 0 || !containsRequiredServerData(serverDataDestination)) {
+                throw new IllegalStateException("Os recursos data/minecraft não foram encontrados no server.jar, nem na raiz nem no JAR interno do servidor. Verifique se o download oficial está íntegro.");
             }
 
             AssetHydration hydration = materializeAssetObjects(clientAssetsDestination, indexedAssets,
                     verifiedAssetObjects, cancelled, listener);
+            File languageFile = new File(clientAssetsDestination, "minecraft/lang/en_us.json");
+            if (!languageFile.isFile() || languageFile.length() == 0) {
+                JSONObject langEntry = null;
+                for (IndexedAsset asset : indexedAssets) {
+                    if ("minecraft/lang/en_us.json".equals(asset.name)) {
+                        langEntry = new JSONObject()
+                                .put("hash", asset.hash)
+                                .put("size", asset.size);
+                        break;
+                    }
+                }
+                if (langEntry == null) {
+                    throw new IllegalStateException("O índice oficial não lista minecraft/lang/en_us.json; não é possível completar a entrada de recursos do cliente.");
+                }
+                throw new IllegalStateException("Falta o asset obrigatório minecraft/lang/en_us.json. Baixe também “Base + todos os assets” e execute a preparação novamente. O download base não garante todos os objetos de assets.");
+            }
+
             long jarBytes = clientAssets.bytes + clientData.bytes + serverData.bytes;
             long allBytes = jarBytes + hydration.bytes;
             if (allBytes > MAX_EXTRACTED_SOURCE_BYTES + MAX_MATERIALIZED_ASSET_BYTES) {
@@ -411,13 +415,16 @@ final class HorizonResourceConverter {
 
             JSONObject manifest = new JSONObject();
             manifest.put("format", "mobilehorizon-vanilla-source-tree");
-            manifest.put("format_version", 2);
+            manifest.put("format_version", 3);
             manifest.put("minecraft_version", VERSION);
             manifest.put("client_jar_sha1", sha1(clientJar));
             manifest.put("server_jar_sha1", sha1(serverJar));
             manifest.put("client_assets_prefix", "assets/");
             manifest.put("client_data_prefix", "data/");
+            manifest.put("client_assets_source", clientAssets.files > 0 ? "client.jar" : "asset-index");
+            manifest.put("client_data_optional", clientData.files == 0);
             manifest.put("server_data_prefix", "data/minecraft/");
+            manifest.put("server_data_source_entry", serverDataSource.sourceEntry);
             manifest.put("client_assets_files", clientAssets.files);
             manifest.put("client_data_files", clientData.files);
             manifest.put("server_data_files", serverData.files);
@@ -437,6 +444,142 @@ final class HorizonResourceConverter {
             deleteRecursively(staging);
             throw error;
         }
+    }
+
+    static final class ServerDataExtraction {
+        final ExtractionPart extraction;
+        final String sourceEntry;
+
+        ServerDataExtraction(ExtractionPart extraction, String sourceEntry) {
+            this.extraction = extraction;
+            this.sourceEntry = sourceEntry;
+        }
+    }
+
+    static final class ExtractionPart {
+        final int files;
+        final long bytes;
+
+        ExtractionPart(int files, long bytes) {
+            this.files = files;
+            this.bytes = bytes;
+        }
+    }
+
+    /**
+     * Mojang server.jar files may be bundler archives. Support both a flat archive with
+     * data/minecraft at its root and the inner server JAR under META-INF/versions/<version>/.
+     * Exposed at package scope so the archive layouts can be exercised with synthetic JAR tests.
+     */
+    static ServerDataExtraction extractServerDataArchive(File serverJar, File staging,
+                                                         File destination,
+                                                         AtomicBoolean cancelled,
+                                                         ProgressListener listener) throws Exception {
+        deleteRecursively(destination);
+        ensureDirectory(destination);
+        ExtractionPart direct = extractZipPrefix(serverJar, "data/minecraft/",
+                destination, "Procurando dados na raiz do server.jar", cancelled, listener);
+        if (direct.files > 0 && containsRequiredServerData(destination)) {
+            return new ServerDataExtraction(direct, "server.jar!/data/minecraft");
+        }
+
+        deleteRecursively(destination);
+        ensureDirectory(destination);
+        BundledServerJar nested = extractBundledServerJar(serverJar, staging, cancelled, listener);
+        if (nested == null) {
+            throw new IllegalStateException(
+                    "O server.jar não contém data/minecraft na raiz e não foi encontrado um JAR interno em META-INF/versions/<versão>/server-<versão>.jar. O download foi verificado, mas o formato do arquivo é diferente do esperado.");
+        }
+        try {
+            ExtractionPart inner = extractZipPrefix(nested.file, "data/minecraft/",
+                    destination, "Extraindo data/minecraft do JAR interno " + nested.entryName,
+                    cancelled, listener);
+            if (inner.files <= 0 || !containsRequiredServerData(destination)) {
+                deleteRecursively(destination);
+                throw new IllegalStateException(
+                        "O JAR interno " + nested.entryName + " foi encontrado, mas não contém data/minecraft/dimension_type/overworld.json. Não será gerada uma conversão parcial.");
+            }
+            return new ServerDataExtraction(inner, "server.jar!/" + nested.entryName + "!/data/minecraft");
+        } finally {
+            deleteRecursively(nested.file);
+        }
+    }
+
+    private static boolean containsRequiredServerData(File destination) {
+        File required = new File(destination, "dimension_type/overworld.json");
+        return required.isFile() && required.length() > 0;
+    }
+
+    private static final class BundledServerJar {
+        final File file;
+        final String entryName;
+
+        BundledServerJar(File file, String entryName) {
+            this.file = file;
+            this.entryName = entryName;
+        }
+    }
+
+    private static BundledServerJar extractBundledServerJar(File outerServerJar, File staging,
+                                                            AtomicBoolean cancelled,
+                                                            ProgressListener listener) throws Exception {
+        File nestedFile = new File(staging, "server-inner.tmp.jar");
+        if (nestedFile.exists() && !nestedFile.delete()) {
+            throw new IllegalStateException("Não foi possível limpar o JAR interno temporário anterior.");
+        }
+        byte[] buffer = new byte[64 * 1024];
+        try (ZipInputStream zip = new ZipInputStream(
+                new BufferedInputStream(new FileInputStream(outerServerJar)))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                checkCancelled(cancelled);
+                String name = entry.getName();
+                if (!isBundledServerJarEntry(name) || entry.isDirectory()) {
+                    zip.closeEntry();
+                    continue;
+                }
+                if (entry.getSize() > MAX_BUNDLED_SERVER_JAR_BYTES) {
+                    throw new IllegalArgumentException("O JAR interno do servidor excede o limite de 256 MiB.");
+                }
+                long copied = 0;
+                try (OutputStream output = new BufferedOutputStream(new FileOutputStream(nestedFile))) {
+                    int read;
+                    while ((read = zip.read(buffer)) != -1) {
+                        checkCancelled(cancelled);
+                        copied += read;
+                        if (copied > MAX_BUNDLED_SERVER_JAR_BYTES) {
+                            throw new IllegalArgumentException("O JAR interno do servidor excede o limite de 256 MiB.");
+                        }
+                        output.write(buffer, 0, read);
+                    }
+                    output.flush();
+                } catch (Exception error) {
+                    nestedFile.delete();
+                    throw error;
+                }
+                zip.closeEntry();
+                if (copied == 0) {
+                    nestedFile.delete();
+                    continue;
+                }
+                report(listener, "JAR interno do servidor encontrado", 1, 1,
+                        name + " · " + formatBytes(copied));
+                return new BundledServerJar(nestedFile, name);
+            }
+        } catch (Exception error) {
+            nestedFile.delete();
+            throw error;
+        }
+        nestedFile.delete();
+        return null;
+    }
+
+    private static boolean isBundledServerJarEntry(String name) {
+        if (name == null || !name.startsWith("META-INF/versions/") || !name.endsWith(".jar")) {
+            return false;
+        }
+        String fileName = name.substring(name.lastIndexOf('/') + 1).toLowerCase(Locale.ROOT);
+        return fileName.equals("server.jar") || fileName.startsWith("server-");
     }
 
     /**
