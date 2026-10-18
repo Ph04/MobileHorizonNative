@@ -44,7 +44,7 @@ jobs:
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: "platforms;android-35 build-tools;35.0.0"
+          packages: "platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018"
 
       # Reuse the previous repo's committed source bundle only as a source for the
       # native runtime. Both the archive and shared-library hashes are pinned below.
@@ -81,6 +81,152 @@ jobs:
           mkdir -p app/src/main/jniLibs/arm64-v8a
           cp "$LIB" app/src/main/jniLibs/arm64-v8a/libhorizon_android.so
           echo "Verified and staged libhorizon_android.so for arm64-v8a."
+
+      - name: Set up Rust toolchain for Android ARM64
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Build and bundle full Horizon resource preparer
+        shell: bash
+        run: |
+          set -euo pipefail
+          UPSTREAM_COMMIT="24bcef42beaf1382e48964b7efa7aef3f5f86792"
+          SOURCE="$RUNNER_TEMP/horizon-upstream"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
+          git -C "$SOURCE" fetch --depth 1 origin "$UPSTREAM_COMMIT"
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
+
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          cargo build --locked --release --manifest-path "$SOURCE/crates/horizon-prepare/Cargo.toml" --target aarch64-linux-android
+
+          ASSETS="app/src/main/assets/horizon-prepare"
+          mkdir -p "$ASSETS/support/mods/horizon/src/test/java/dev/horizonlab/parity"
+          cp "$SOURCE/research-lock.json" "$ASSETS/support/research-lock.json"
+          cp -a "$SOURCE/mods/horizon/src/test/java/dev/horizonlab/parity/." "$ASSETS/support/mods/horizon/src/test/java/dev/horizonlab/parity/"
+          if test -f "$SOURCE/LICENSE"; then cp "$SOURCE/LICENSE" "$ASSETS/support/UPSTREAM-LICENSE.txt"; fi
+          cp "$SOURCE/target/aarch64-linux-android/release/horizon-prepare" "$ASSETS/horizon-prepare-arm64"
+          readelf -h "$ASSETS/horizon-prepare-arm64" | grep -q "AArch64"
+          echo "Bundled the pinned ARM64 horizon-prepare executable and vanilla oracle sources."
+
+          # Pin the Java 25 Android runtime package closure into the APK as metadata.
+          # The runtime itself is downloaded on demand to app-private storage and hash checked.
+          python3 - <<'PY'
+          import gzip, json, lzma, re, urllib.request
+          from pathlib import Path
+
+          base = "https://packages.termux.dev/apt/termux-main/"
+          index = None
+          errors = []
+          for suffix, decoder in [
+              ("dists/stable/main/binary-aarch64/Packages", lambda b: b),
+              ("dists/stable/main/binary-aarch64/Packages.gz", gzip.decompress),
+              ("dists/stable/main/binary-aarch64/Packages.xz", lzma.decompress),
+          ]:
+              try:
+                  with urllib.request.urlopen(base + suffix, timeout=60) as response:
+                      payload = response.read(100 * 1024 * 1024 + 1)
+                  if len(payload) > 100 * 1024 * 1024:
+                      raise RuntimeError("APT package index is unexpectedly large")
+                  index = decoder(payload).decode("utf-8")
+                  break
+              except Exception as error:
+                  errors.append(f"{suffix}: {error}")
+          if index is None:
+              raise SystemExit("Cannot fetch the Termux ARM64 package index: " + "; ".join(errors))
+
+          stanzas = []
+          current = {}
+          field = None
+          for line in index.splitlines() + [""]:
+              if not line:
+                  if current.get("Package"):
+                      stanzas.append(current)
+                  current, field = {}, None
+              elif line[:1].isspace() and field:
+                  current[field] = current.get(field, "") + " " + line.strip()
+              elif ":" in line:
+                  field, value = line.split(":", 1)
+                  current[field] = value.strip()
+
+          candidates = {}
+          for package in stanzas:
+              name = package.get("Package", "")
+              arch = package.get("Architecture", "")
+              if not name or arch not in ("aarch64", "all"):
+                  continue
+              old = candidates.get(name)
+              if old is None or (old.get("Architecture") == "all" and arch == "aarch64"):
+                  candidates[name] = package
+
+          selected, visiting = {}, set()
+          system_provided = {"libc", "libm", "libdl", "liblog", "libandroid", "libjnigraphics"}
+          def dependency_names(value):
+              result = []
+              for group in (value or "").split(","):
+                  alternatives = group.split("|")
+                  names = [re.match(r"\s*([A-Za-z0-9+.-]+)", item).group(1)
+                           for item in alternatives
+                           if re.match(r"\s*([A-Za-z0-9+.-]+)", item)]
+                  chosen = next((n for n in names if n in candidates), None)
+                  if chosen:
+                      result.append(chosen)
+                  elif names and not all(n in system_provided for n in names):
+                      raise RuntimeError("Unresolved Termux package dependency: " + group.strip())
+              return result
+
+          def collect(name):
+              if name in selected or name in system_provided:
+                  return
+              if name in visiting:
+                  return
+              if name not in candidates:
+                  raise RuntimeError("Missing package in ARM64 index: " + name)
+              visiting.add(name)
+              package = candidates[name]
+              for dep in dependency_names(package.get("Pre-Depends", "")):
+                  collect(dep)
+              for dep in dependency_names(package.get("Depends", "")):
+                  collect(dep)
+              visiting.remove(name)
+              filename = package.get("Filename", "")
+              digest = package.get("SHA256", "")
+              size = int(package.get("Size", "0"))
+              if not filename.startswith("pool/") or ".." in Path(filename).parts:
+                  raise RuntimeError("Unsafe package filename: " + filename)
+              if not re.fullmatch(r"[0-9a-fA-F]{64}", digest) or size <= 0:
+                  raise RuntimeError("Package hash/size metadata missing for " + name)
+              selected[name] = {
+                  "name": name, "version": package.get("Version", ""),
+                  "architecture": package.get("Architecture", ""),
+                  "filename": filename, "sha256": digest.lower(), "size": size
+              }
+
+          collect("openjdk-25")
+          java = selected.get("openjdk-25")
+          if not java or not java["version"].startswith("25."):
+              raise RuntimeError("Termux repository did not resolve a Java 25 package")
+          packages = sorted(selected.values(), key=lambda p: p["name"])
+          if sum(p["size"] for p in packages) > 600 * 1024 * 1024:
+              raise RuntimeError("Java 25 runtime dependency set exceeds the 600 MiB safety limit")
+          manifest = {
+              "format": "mobilehorizon-termux-openjdk-runtime",
+              "format_version": 1, "java_major": 25, "architecture": "aarch64",
+              "repository": base, "packages": packages,
+              "total_download_bytes": sum(p["size"] for p in packages)
+          }
+          out = Path("app/src/main/assets/horizon-prepare/jdk-manifest.json")
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(manifest, indent=2) + "\n")
+          print(f"Pinned {len(packages)} Termux packages ({manifest['total_download_bytes']} bytes) for Java {java['version']}")
+          PY
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
