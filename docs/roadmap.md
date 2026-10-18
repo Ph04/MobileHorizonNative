@@ -15,6 +15,8 @@
 - [x] Testes unitários do núcleo de compatibilidade.
 - [x] Compilar APK de depuração no CI e validar que o binário ARM64 está empacotado.
 - [ ] Instalar o APK da branch mais recente e testar o fluxo inteiro em Android real.
+- [x] Adicionar perfil local/offline com nick validado (3–16 caracteres) e caminho de inicialização sem autenticação Microsoft.
+- [ ] Confirmar no aparelho que a biblioteca ARM64 fixada respeita HORIZON_PLAYER_NAME; o CI agora registra essa capacidade.
 
 ## Fase 2 — Download e preparação vanilla
 - [x] Recuperar o downloader oficial da versão 26.3.
