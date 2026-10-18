@@ -3,13 +3,17 @@ package dev.mobilehorizon.app;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.content.pm.ApplicationInfo;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -25,6 +29,10 @@ import dev.mobilehorizon.compat.CompatibilityReport;
 import dev.mobilehorizon.compat.DeviceCapabilities;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -48,7 +56,28 @@ public final class MainActivity extends Activity {
     private Button importFolderButton;
     private Button importZipButton;
     private Button cancelButton;
+    private Button downloadBaseButton;
+    private Button downloadAssetsButton;
+    private Button cancelDownloadButton;
+    private Button prepareInputsButton;
+    private Button openEngineButton;
+    private Button smokeTestButton;
     private boolean busy;
+    private boolean conversionBusy;
+    private boolean downloadBusy;
+    private boolean receiverRegistered;
+
+    private final BroadcastReceiver downloadReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null) return;
+            if (OfficialDownloadService.ACTION_PROGRESS.equals(intent.getAction())) {
+                handleDownloadProgress(intent);
+            } else if (OfficialDownloadService.ACTION_FINISHED.equals(intent.getAction())) {
+                handleDownloadFinished(intent);
+            }
+        }
+    };
     private Uri pendingUri;
     private boolean pendingZip;
     private Future<?> currentJob;
@@ -64,8 +93,37 @@ public final class MainActivity extends Activity {
         }
         buildUi();
         updateCompatibility();
-        setStatus("Pronto para importar",
-                "Selecione uma pasta preparada ou um ZIP. Os arquivos serão copiados para o armazenamento privado do app.");
+        setStatus("Pronto",
+                "Baixe os arquivos oficiais do Minecraft 26.3, prepare as entradas para conversão ou importe uma saída Horizon já preparada.");
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(OfficialDownloadService.ACTION_PROGRESS);
+        filter.addAction(OfficialDownloadService.ACTION_FINISHED);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(downloadReceiver, filter);
+        }
+        receiverRegistered = true;
+        try {
+            startService(new Intent(this, OfficialDownloadService.class)
+                    .setAction(OfficialDownloadService.ACTION_QUERY));
+        } catch (Exception ignored) {
+            // The query is only for restoring a progress display; it must not interrupt startup.
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        if (receiverRegistered) {
+            try { unregisterReceiver(downloadReceiver); } catch (IllegalArgumentException ignored) {}
+            receiverRegistered = false;
+        }
+        super.onStop();
     }
 
     private void buildUi() {
@@ -114,12 +172,53 @@ public final class MainActivity extends Activity {
         progressTextParams.topMargin = dp(8);
         statusCard.addView(progressDetails, progressTextParams);
 
-        TextView actionsHeading = text("Importar arquivos", 18, 0xff18213a, true);
+        TextView downloadHeading = text("Minecraft Java 26.3", 18, 0xff18213a, true);
+        LinearLayout.LayoutParams downloadHeadingParams = params(-1, -2);
+        downloadHeadingParams.topMargin = dp(24);
+        page.addView(downloadHeading, downloadHeadingParams);
+
+        TextView downloadNote = text("Baixe os arquivos diretamente dos servidores oficiais. O app verifica os tamanhos e SHA-1 antes de ativar cada arquivo. Os assets completos são opcionais e podem ocupar centenas de MB.", 14, 0xff59647b, false);
+        LinearLayout.LayoutParams downloadNoteParams = params(-1, -2);
+        downloadNoteParams.topMargin = dp(6);
+        page.addView(downloadNote, downloadNoteParams);
+
+        downloadBaseButton = button("Baixar arquivos base oficiais", true, v -> startOfficialDownload(false));
+        LinearLayout.LayoutParams downloadBaseParams = params(-1, dp(52));
+        downloadBaseParams.topMargin = dp(14);
+        page.addView(downloadBaseButton, downloadBaseParams);
+
+        downloadAssetsButton = button("Baixar base + todos os assets", false, v -> confirmFullAssetDownload());
+        LinearLayout.LayoutParams downloadAssetsParams = params(-1, dp(52));
+        downloadAssetsParams.topMargin = dp(8);
+        page.addView(downloadAssetsButton, downloadAssetsParams);
+
+        cancelDownloadButton = button("Cancelar download", false, v -> cancelOfficialDownload());
+        LinearLayout.LayoutParams cancelDownloadParams = params(-1, dp(48));
+        cancelDownloadParams.topMargin = dp(8);
+        cancelDownloadButton.setVisibility(View.GONE);
+        page.addView(cancelDownloadButton, cancelDownloadParams);
+
+        prepareInputsButton = button("Verificar entradas para conversão", false, v -> prepareConversionInputs());
+        LinearLayout.LayoutParams prepareInputsParams = params(-1, dp(50));
+        prepareInputsParams.topMargin = dp(8);
+        page.addView(prepareInputsButton, prepareInputsParams);
+
+        openEngineButton = button("Abrir cliente Horizon", false, v -> openNativeClient());
+        LinearLayout.LayoutParams openEngineParams = params(-1, dp(50));
+        openEngineParams.topMargin = dp(8);
+        page.addView(openEngineButton, openEngineParams);
+
+        smokeTestButton = button("Testar renderer Vulkan", false, v -> openNativeSmokeTest());
+        LinearLayout.LayoutParams smokeParams = params(-1, dp(50));
+        smokeParams.topMargin = dp(8);
+        page.addView(smokeTestButton, smokeParams);
+
+        TextView actionsHeading = text("Importar saída já preparada", 18, 0xff18213a, true);
         LinearLayout.LayoutParams actionsParams = params(-1, -2);
         actionsParams.topMargin = dp(24);
         page.addView(actionsHeading, actionsParams);
 
-        TextView actionsNote = text("A importação usa o seletor de arquivos do Android e não solicita acesso amplo ao armazenamento.", 14, 0xff59647b, false);
+        TextView actionsNote = text("Selecione a pasta final 26.3 que contém horizon-resources.json na raiz, ou um ZIP dessa mesma pasta. A importação verifica os arquivos exigidos pelo motor e instala a saída em .local/horizon-client/26.3.", 14, 0xff59647b, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(6);
         page.addView(actionsNote, noteParams);
@@ -150,7 +249,7 @@ public final class MainActivity extends Activity {
         compatTextParams.topMargin = dp(8);
         compatibilityCard.addView(compatibilityText, compatTextParams);
 
-        TextView footer = text("Este marco importa e verifica a estrutura básica dos arquivos. O backend de preparação de recursos e o motor Horizon ainda são componentes separados; importar não significa que o jogo já esteja pronto para iniciar.", 12, 0xff68728a, false);
+        TextView footer = text("Estado honesto do motor: os JARs oficiais e as bibliotecas podem ser baixados e verificados aqui. A conversão completa dos JARs para os recursos Horizon ainda precisa do exportador nativo; para abrir o jogo, é necessária uma saída Horizon completa. O teste Vulkan verifica apenas a inicialização gráfica, não o gameplay.", 12, 0xff68728a, false);
         LinearLayout.LayoutParams footerParams = params(-1, -2);
         footerParams.topMargin = dp(20);
         page.addView(footer, footerParams);
@@ -300,10 +399,238 @@ public final class MainActivity extends Activity {
     }
 
     private void cancelImport() {
-        if (!busy) return;
+        if (!busy && !conversionBusy) return;
         cancelRequested.set(true);
         cancelButton.setEnabled(false);
         progressDetails.setText("Cancelamento solicitado. A operação vai parar em um ponto seguro…");
+    }
+
+    private void confirmFullAssetDownload() {
+        if (downloadBusy || busy || conversionBusy) return;
+        new AlertDialog.Builder(this)
+                .setTitle("Baixar todos os assets?")
+                .setMessage("O índice oficial lista milhares de objetos únicos. A transferência pode ocupar centenas de MB e requer espaço livre no telefone. Os arquivos são baixados da Mojang e verificados por SHA-1.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Baixar assets", (dialog, which) -> startOfficialDownload(true))
+                .show();
+    }
+
+    private void startOfficialDownload(boolean allAssets) {
+        if (downloadBusy || busy || conversionBusy) return;
+        downloadBusy = true;
+        updateActionEnablement();
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setIndeterminate(true);
+        progressDetails.setText("Iniciando serviço de download em segundo plano…");
+        setStatus(allAssets ? "Baixando Minecraft e assets completos" : "Baixando arquivos base oficiais",
+                "Destino privado: files/minecraft. Arquivos só são ativados depois da verificação SHA-1 e tamanho.");
+        try {
+            Intent intent = new Intent(this, OfficialDownloadService.class)
+                    .setAction(OfficialDownloadService.ACTION_START)
+                    .putExtra(OfficialDownloadService.EXTRA_ALL_ASSETS, allAssets);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
+            else startService(intent);
+        } catch (Exception error) {
+            downloadBusy = false;
+            updateActionEnablement();
+            progressBar.setVisibility(View.GONE);
+            setStatus("Não foi possível iniciar o download", safeMessage(error));
+        }
+    }
+
+    private void cancelOfficialDownload() {
+        if (!downloadBusy) return;
+        cancelDownloadButton.setEnabled(false);
+        progressDetails.setText("Cancelamento solicitado. Arquivos parciais não verificados serão descartados.");
+        try {
+            startService(new Intent(this, OfficialDownloadService.class)
+                    .setAction(OfficialDownloadService.ACTION_CANCEL));
+        } catch (Exception error) {
+            setStatus("Falha ao solicitar cancelamento", safeMessage(error));
+        }
+    }
+
+    private void handleDownloadProgress(Intent intent) {
+        downloadBusy = true;
+        updateActionEnablement();
+        String stage = intent.getStringExtra("stage");
+        String item = intent.getStringExtra("item");
+        int completed = intent.getIntExtra("completed", 0);
+        int total = intent.getIntExtra("total", -1);
+        long itemBytes = intent.getLongExtra("itemBytes", 0);
+        long itemTotalBytes = intent.getLongExtra("itemTotalBytes", -1);
+        long completedBytes = intent.getLongExtra("completedBytes", 0);
+        long totalBytes = intent.getLongExtra("totalBytes", -1);
+        float fraction = -1f;
+        if (total > 0) {
+            fraction = Math.max(0f, Math.min(1f, (float) completed / total));
+            if (itemTotalBytes > 0) {
+                fraction = Math.max(fraction, Math.min(1f,
+                        ((float) completed + Math.min(1f, (float) itemBytes / itemTotalBytes)) / total));
+            }
+        } else if (itemTotalBytes > 0) {
+            fraction = Math.max(0f, Math.min(1f, (float) itemBytes / itemTotalBytes));
+        }
+        progressBar.setIndeterminate(fraction < 0f);
+        if (fraction >= 0f) progressBar.setProgress(Math.round(fraction * 1000f));
+        String fileCount = total > 0 ? completed + " / " + total : "não definido";
+        String bytes = formatBytes(itemBytes);
+        if (itemTotalBytes > 0) bytes += " / " + formatBytes(itemTotalBytes);
+        String aggregate = formatBytes(completedBytes);
+        if (totalBytes > 0) aggregate += " / " + formatBytes(totalBytes);
+        progressDetails.setText((stage == null ? "Download" : stage)
+                + (item == null || item.isEmpty() ? "" : "\nItem: " + item)
+                + "\nContagem: " + fileCount
+                + "\nArquivo atual: " + bytes
+                + "\nTotal conhecido: " + aggregate);
+        setStatus("Download oficial em andamento", "O serviço pode continuar mesmo se você sair desta tela. O sistema também mostra uma notificação de progresso.");
+    }
+
+    private void handleDownloadFinished(Intent intent) {
+        boolean success = intent.getBooleanExtra("success", false);
+        String message = intent.getStringExtra("message");
+        int libraries = intent.getIntExtra("libraries", 0);
+        int assets = intent.getIntExtra("assets", 0);
+        String manifestSha1 = intent.getStringExtra("versionSha1");
+        downloadBusy = false;
+        cancelDownloadButton.setEnabled(true);
+        updateActionEnablement();
+        progressBar.setIndeterminate(false);
+        if (success) {
+            progressBar.setVisibility(View.VISIBLE);
+            progressBar.setProgress(1000);
+            progressDetails.setText("Destino: files/minecraft\nBibliotecas: " + libraries
+                    + (assets > 0 ? "\nAssets baixados: " + assets : "\nAssets completos: ainda não baixados")
+                    + (manifestSha1 == null || manifestSha1.isEmpty() ? "" : "\nSHA-1 do JSON: " + manifestSha1));
+            setStatus("Download oficial concluído", message == null ? "Arquivos verificados." : message);
+        } else {
+            progressBar.setVisibility(View.GONE);
+            progressDetails.setText("");
+            setStatus("Download não concluído", message == null ? "Verifique a conexão e tente novamente." : message);
+        }
+    }
+
+    private void prepareConversionInputs() {
+        if (busy || conversionBusy || downloadBusy) return;
+        conversionBusy = true;
+        cancelRequested.set(false);
+        currentJob = null;
+        updateActionEnablement();
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setIndeterminate(true);
+        progressDetails.setText("Verificando manifesto, JARs, bibliotecas e índice de assets…");
+        setStatus("Preparando entradas para conversão", "Esta etapa organiza e valida as entradas oficiais. Ela ainda não gera os arquivos derivados do Horizon.");
+        currentJob = executor.submit(() -> {
+            try {
+                HorizonResourceConverter.InputReport report = HorizonResourceConverter.prepareConversionInputs(
+                        getFilesDir(), cancelRequested,
+                        (stage, complete, total, detail) -> runOnUiThread(() -> {
+                            if (!conversionBusy || isFinishing() || isDestroyed()) return;
+                            progressBar.setIndeterminate(total <= 0);
+                            if (total > 0) progressBar.setProgress((int) Math.min(1000, complete * 1000L / total));
+                            progressDetails.setText(stage + "\n" + detail
+                                    + (total > 0 ? "\nEtapa: " + complete + " / " + total : ""));
+                        }));
+                runOnUiThread(() -> finishConversion(report, null));
+            } catch (Exception error) {
+                runOnUiThread(() -> finishConversion(null, error));
+            }
+        });
+    }
+
+    private void finishConversion(HorizonResourceConverter.InputReport report, Exception error) {
+        if (isFinishing() || isDestroyed()) return;
+        conversionBusy = false;
+        currentJob = null;
+        updateActionEnablement();
+        progressBar.setIndeterminate(false);
+        if (error == null && report != null) {
+            progressBar.setProgress(1000);
+            progressDetails.setText("Plano criado: .local/horizon-input/26.3/conversion-plan.json"
+                    + "\nBibliotecas verificadas: " + report.verifiedLibraries
+                    + "\nAssets encontrados: " + report.presentAssetObjects + " / " + report.uniqueAssets);
+            setStatus("Entradas validadas — exportador pendente", report.note
+                    + "\n\nEste passo não produz .local/horizon-client/26.3 nem torna o jogo jogável. O próximo marco é portar o exportador Horizon para código executável no Android.");
+        } else {
+            progressBar.setVisibility(View.GONE);
+            progressDetails.setText("");
+            setStatus("Preparação para conversão falhou", safeMessage(error));
+        }
+    }
+
+    private void openNativeClient() {
+        if (!isHorizonNativeLibraryAvailable()) {
+            showRuntimeError("Biblioteca Horizon ARM64 ausente",
+                    "Este APK não contém lib/arm64-v8a/libhorizon_android.so. A compilação precisa passar pela etapa de verificação do runtime nativo.");
+            return;
+        }
+        if (!Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a")) {
+            showRuntimeError("Arquitetura não suportada",
+                    "Este motor pré-compilado exige Android ARM64 (arm64-v8a).");
+            return;
+        }
+        File resources = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+        try {
+            String summary = HorizonResourceConverter.validatePreparedResources(resources);
+            setStatus("Abrindo cliente Horizon", summary);
+            startActivity(new Intent(this, android.app.NativeActivity.class));
+        } catch (Exception error) {
+            showRuntimeError("Recursos Horizon ausentes ou incompletos",
+                    safeMessage(error) + "\n\nO download de JARs/asset objects não gera estes recursos. Importe uma saída preparada compatível enquanto o exportador nativo não é portado.");
+        }
+    }
+
+    private void openNativeSmokeTest() {
+        if (!isHorizonNativeLibraryAvailable()) {
+            showRuntimeError("Biblioteca nativa ausente",
+                    "O teste Vulkan exige libhorizon_android.so empacotada para arm64-v8a.");
+            return;
+        }
+        if (!Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a")) {
+            showRuntimeError("Arquitetura não suportada", "O teste de renderer requer ARM64.");
+            return;
+        }
+        File marker = new File(getFilesDir(), "horizon-native-smoke.flag");
+        try (FileOutputStream output = new FileOutputStream(marker, false)) {
+            output.write("vulkan-smoke-v1".getBytes(StandardCharsets.UTF_8));
+            output.getFD().sync();
+        } catch (Exception error) {
+            marker.delete();
+            showRuntimeError("Não foi possível preparar o teste Vulkan", safeMessage(error));
+            return;
+        }
+        try {
+            startActivity(new Intent(this, android.app.NativeActivity.class));
+            setStatus("Teste Vulkan iniciado", "Este teste só confirma a criação da superfície e apresentação de um frame, não o carregamento de Minecraft.");
+        } catch (Exception error) {
+            marker.delete();
+            showRuntimeError("Não foi possível abrir NativeActivity", safeMessage(error));
+        }
+    }
+
+    private boolean isHorizonNativeLibraryAvailable() {
+        if (!Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a")) return false;
+        ApplicationInfo info = getApplicationInfo();
+        File extracted = info.nativeLibraryDir == null ? null
+                : new File(info.nativeLibraryDir, "libhorizon_android.so");
+        if (extracted != null && extracted.isFile() && extracted.length() > 0) return true;
+        List<String> apkPaths = new java.util.ArrayList<>();
+        if (info.sourceDir != null) apkPaths.add(info.sourceDir);
+        if (info.splitSourceDirs != null) {
+            for (String path : info.splitSourceDirs) if (path != null) apkPaths.add(path);
+        }
+        for (String path : apkPaths) {
+            try (ZipFile apk = new ZipFile(path)) {
+                ZipEntry entry = apk.getEntry("lib/arm64-v8a/libhorizon_android.so");
+                if (entry != null && entry.getSize() > 0) return true;
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
+    private void showRuntimeError(String title, String message) {
+        new AlertDialog.Builder(this).setTitle(title).setMessage(message)
+                .setPositiveButton("Entendi", null).show();
     }
 
     private void clearPendingImport() {
@@ -311,12 +638,34 @@ public final class MainActivity extends Activity {
     }
 
     private void setBusyUi(boolean importing) {
-        importFolderButton.setEnabled(!importing);
-        importZipButton.setEnabled(!importing);
-        cancelButton.setVisibility(importing ? View.VISIBLE : View.GONE);
-        cancelButton.setEnabled(importing);
-        importFolderButton.setAlpha(importing ? 0.55f : 1f);
-        importZipButton.setAlpha(importing ? 0.55f : 1f);
+        updateActionEnablement();
+    }
+
+    private void updateActionEnablement() {
+        boolean blocked = busy || conversionBusy || downloadBusy;
+        if (importFolderButton != null) importFolderButton.setEnabled(!blocked);
+        if (importZipButton != null) importZipButton.setEnabled(!blocked);
+        if (downloadBaseButton != null) downloadBaseButton.setEnabled(!blocked);
+        if (downloadAssetsButton != null) downloadAssetsButton.setEnabled(!blocked);
+        if (prepareInputsButton != null) prepareInputsButton.setEnabled(!blocked);
+        if (openEngineButton != null) openEngineButton.setEnabled(!blocked);
+        if (smokeTestButton != null) smokeTestButton.setEnabled(!blocked);
+        if (cancelButton != null) {
+            cancelButton.setVisibility(busy || conversionBusy ? View.VISIBLE : View.GONE);
+            cancelButton.setEnabled(busy || conversionBusy);
+        }
+        if (cancelDownloadButton != null) {
+            cancelDownloadButton.setVisibility(downloadBusy ? View.VISIBLE : View.GONE);
+            cancelDownloadButton.setEnabled(downloadBusy);
+        }
+        float alpha = blocked ? 0.55f : 1f;
+        if (importFolderButton != null) importFolderButton.setAlpha(alpha);
+        if (importZipButton != null) importZipButton.setAlpha(alpha);
+        if (downloadBaseButton != null) downloadBaseButton.setAlpha(alpha);
+        if (downloadAssetsButton != null) downloadAssetsButton.setAlpha(alpha);
+        if (prepareInputsButton != null) prepareInputsButton.setAlpha(alpha);
+        if (openEngineButton != null) openEngineButton.setAlpha(alpha);
+        if (smokeTestButton != null) smokeTestButton.setAlpha(alpha);
     }
 
     private void setStatus(String title, String details) {
