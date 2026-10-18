@@ -52,6 +52,15 @@ public final class OfficialDownloadService extends Service {
                 broadcastProgress(lastProgress);
                 return START_STICKY;
             }
+            android.content.SharedPreferences state = getSharedPreferences("official_download_state", MODE_PRIVATE);
+            if (state.getBoolean("hasResult", false)) {
+                broadcastFinished(
+                        state.getBoolean("success", false),
+                        state.getString("message", "Download finalizado."),
+                        state.getInt("libraries", 0),
+                        state.getInt("assets", 0),
+                        state.getString("versionSha1", ""));
+            }
             stopSelf(startId);
             return START_NOT_STICKY;
         }
@@ -64,6 +73,10 @@ public final class OfficialDownloadService extends Service {
         }
 
         boolean allAssets = intent.getBooleanExtra(EXTRA_ALL_ASSETS, false);
+        getSharedPreferences("official_download_state", MODE_PRIVATE).edit()
+                .putBoolean("hasResult", false)
+                .putBoolean("allAssetsRequested", allAssets)
+                .apply();
         cancelled.set(false);
         running = true;
         OfficialMinecraftInstaller.Progress initial = new OfficialMinecraftInstaller.Progress(
@@ -103,6 +116,15 @@ public final class OfficialDownloadService extends Service {
             outcome = message(error);
         } finally {
             running = false;
+            getSharedPreferences("official_download_state", MODE_PRIVATE).edit()
+                    .putBoolean("hasResult", true)
+                    .putBoolean("success", success)
+                    .putString("message", outcome)
+                    .putInt("libraries", libraries)
+                    .putInt("assets", assets)
+                    .putString("versionSha1", versionSha1)
+                    .putLong("finishedAt", System.currentTimeMillis())
+                    .commit();
             broadcastFinished(success, outcome, libraries, assets, versionSha1);
             OfficialMinecraftInstaller.Progress finished = new OfficialMinecraftInstaller.Progress(
                     success ? "Download concluído" : (cancelled.get() ? "Download cancelado" : "Download falhou"),
