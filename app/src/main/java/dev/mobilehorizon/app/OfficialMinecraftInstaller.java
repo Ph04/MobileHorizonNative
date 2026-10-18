@@ -228,7 +228,7 @@ final class OfficialMinecraftInstaller {
         int totalItems = artifacts.size();
         notify(listener, "Baixando bibliotecas", "0/" + totalItems, 0, Math.max(1, totalItems),
                 0, -1, 0, -1);
-        int complete = 0;
+        final AtomicInteger completeCounter = new AtomicInteger(0);
         for (JSONObject artifact : artifacts) {
             checkCancelled(cancelled);
             String relative = artifact.optString("path", "");
@@ -236,9 +236,8 @@ final class OfficialMinecraftInstaller {
             downloadArtifact(artifact, destination, artifact.optString("sha1", ""),
                     "biblioteca " + relative, cancelled,
                     (bytes, expected) -> notify(listener, "Baixando biblioteca", relative,
-                            completeCountForCapture[0], Math.max(1, totalItems), bytes, expected, bytes, expected));
-            complete++;
-            completeCountForCapture[0] = complete;
+                            completeCounter.get(), Math.max(1, totalItems), bytes, expected, bytes, expected));
+            int complete = completeCounter.incrementAndGet();
             notify(listener, "Bibliotecas verificadas", complete + "/" + totalItems, complete,
                     Math.max(1, totalItems), 0, -1, 0, -1);
         }
@@ -246,9 +245,6 @@ final class OfficialMinecraftInstaller {
         notify(listener, "Arquivos base validados", "Minecraft " + VERSION, 5, 5, 0, -1, 0, -1);
         return new Result(artifacts.size(), assetIndexId, versionSha1, 0, 0);
     }
-
-    // A one-element array keeps the callback Java-8-compatible while allowing updates per file.
-    private static final int[] completeCountForCapture = new int[]{0};
 
     /** Downloads every unique asset object from the official index; this can require hundreds of MB. */
     static int downloadAllAssets(File minecraftRoot, AtomicBoolean cancelled, Listener listener) throws Exception {
