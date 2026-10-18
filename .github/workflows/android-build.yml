@@ -73,6 +73,11 @@ jobs:
           readelf -h "$LIB" | grep -q "AArch64"
           readelf -Ws "$LIB" | grep -q "ANativeActivity_onCreate"
           readelf -Ws "$LIB" | grep -q "android_main"
+          if strings "$LIB" | grep -q "HORIZON_PLAYER_NAME"; then
+            echo "Native runtime contains HORIZON_PLAYER_NAME; offline nickname handoff is available."
+          else
+            echo "::warning::Pinned native runtime does not advertise HORIZON_PLAYER_NAME; offline launch will use its built-in/default name until the runtime is rebuilt."
+          fi
           mkdir -p app/src/main/jniLibs/arm64-v8a
           cp "$LIB" app/src/main/jniLibs/arm64-v8a/libhorizon_android.so
           echo "Verified and staged libhorizon_android.so for arm64-v8a."
@@ -99,7 +104,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: mobilehorizon-native-download1-debug
+          name: mobilehorizon-native-offline1-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
