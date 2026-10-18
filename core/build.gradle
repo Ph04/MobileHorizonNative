@@ -7,5 +7,6 @@ kotlin {
 }
 
 dependencies {
-    testImplementation 'org.jetbrains.kotlin:kotlin-test'
+    testImplementation 'org.jetbrains.kotlin:kotlin-test:2.0.21'
+    testImplementation 'junit:junit:4.13.2'
 }
