@@ -784,6 +784,7 @@ public final class MainActivity extends Activity {
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setProgress(1000);
             progressDetails.setText("Plano: .local/horizon-input/26.3/conversion-plan.json"
+                    + "\nExportações diretas: .local/horizon-input/26.3/direct-export"
                     + "\nBibliotecas SHA-1 verificadas: " + report.verifiedLibraries
                     + "\nAssets íntegros: " + report.presentAssetObjects + " / " + report.uniqueAssets
                     + "\nArquivos extraídos do cliente: " + report.extractedClientFiles
@@ -791,8 +792,8 @@ public final class MainActivity extends Activity {
                     + "\nNomes de assets materializados: " + report.hydratedAssetNames
                     + "\nBytes de assets materializados: " + formatBytes(report.hydratedAssetBytes)
                     + "\nRecursos vanilla extraídos: " + formatBytes(report.extractedSourceBytes));
-            setStatus("Recursos vanilla preparados — exportador pendente", report.note
-                    + "\n\nEsta etapa não produz .local/horizon-client/26.3 nem torna o jogo jogável. Ainda falta portar o exportador Horizon que gera as tabelas derivadas a partir dos JARs e de Java 25.");
+            setStatus("Recursos vanilla e exportações diretas preparados — oráculos pendentes", report.note
+                    + "\n\nForam gerados apenas 3 mapas JSON diretos em .local/horizon-input/26.3/direct-export. Isso ainda não produz .local/horizon-client/26.3 nem torna o jogo jogável. Faltam os oráculos Java 25 e a geração de registries, gameplay, render, colisão e worldgen.");
         } else {
             progressBar.setVisibility(View.GONE);
             progressDetails.setText("");
