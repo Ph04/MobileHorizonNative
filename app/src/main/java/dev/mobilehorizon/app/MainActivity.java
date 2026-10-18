@@ -561,12 +561,16 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
         progressBar.setIndeterminate(false);
         if (error == null && report != null) {
+            progressBar.setVisibility(View.VISIBLE);
             progressBar.setProgress(1000);
-            progressDetails.setText("Plano criado: .local/horizon-input/26.3/conversion-plan.json"
-                    + "\nBibliotecas verificadas: " + report.verifiedLibraries
-                    + "\nAssets encontrados: " + report.presentAssetObjects + " / " + report.uniqueAssets);
-            setStatus("Entradas validadas — exportador pendente", report.note
-                    + "\n\nEste passo não produz .local/horizon-client/26.3 nem torna o jogo jogável. O próximo marco é portar o exportador Horizon para código executável no Android.");
+            progressDetails.setText("Plano: .local/horizon-input/26.3/conversion-plan.json"
+                    + "\nBibliotecas SHA-1 verificadas: " + report.verifiedLibraries
+                    + "\nAssets íntegros: " + report.presentAssetObjects + " / " + report.uniqueAssets
+                    + "\nArquivos extraídos do cliente: " + report.extractedClientFiles
+                    + "\nArquivos extraídos do servidor: " + report.extractedServerFiles
+                    + "\nRecursos vanilla extraídos: " + formatBytes(report.extractedSourceBytes));
+            setStatus("Recursos vanilla preparados — exportador pendente", report.note
+                    + "\n\nEsta etapa não produz .local/horizon-client/26.3 nem torna o jogo jogável. Ainda falta portar o exportador Horizon que gera as tabelas derivadas a partir dos JARs e de Java 25.");
         } else {
             progressBar.setVisibility(View.GONE);
             progressDetails.setText("");
