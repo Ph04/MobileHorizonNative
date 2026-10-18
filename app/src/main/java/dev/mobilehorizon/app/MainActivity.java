@@ -421,7 +421,7 @@ public final class MainActivity extends Activity {
     private void startOfficialDownload(boolean allAssets) {
         if (downloadBusy || busy || conversionBusy) return;
         String extra = allAssets
-                ? "\\n\\nEsta opção baixa milhares de objetos e pode usar centenas de MB."
+                ? "\n\nEsta opção baixa milhares de objetos e pode usar centenas de MB."
                 : "";
         new AlertDialog.Builder(this)
                 .setTitle("Baixar arquivos oficiais do Minecraft?")
@@ -588,10 +588,10 @@ public final class MainActivity extends Activity {
         try {
             String resourceSummary = HorizonResourceConverter.validatePreparedResources(resources);
             showRuntimeError("Recursos válidos; autenticação pendente",
-                    resourceSummary + "\\n\\nA integração oficial de autenticação Microsoft/Minecraft e a validação da licença Java ainda não estão implementadas. O cliente não será iniciado em modo offline. O teste Vulkan continua disponível separadamente.");
+                    resourceSummary + "\n\nA integração oficial de autenticação Microsoft/Minecraft e a validação da licença Java ainda não estão implementadas. O cliente não será iniciado em modo offline. O teste Vulkan continua disponível separadamente.");
         } catch (Exception error) {
             showRuntimeError("Recursos Horizon ausentes ou incompletos",
-                    safeMessage(error) + "\\n\\nBaixar JARs e extrair assets vanilla ainda não cria a tabela final de gameplay/worldgen. Importe uma saída Horizon completa enquanto o exportador nativo é portado.");
+                    safeMessage(error) + "\n\nBaixar JARs e extrair assets vanilla ainda não cria a tabela final de gameplay/worldgen. Importe uma saída Horizon completa enquanto o exportador nativo é portado.");
         }
     }
 
@@ -615,7 +615,7 @@ public final class MainActivity extends Activity {
             progressBar.setProgress(passed ? 1000 : 0);
             progressDetails.setText(result);
             setStatus(passed ? "Renderer Vulkan validado" : "Teste do renderer falhou",
-                    result + "\\n\\nEsse resultado verifica o NativeActivity e a apresentação gráfica; não comprova carregamento de recursos ou gameplay.");
+                    result + "\n\nEsse resultado verifica o NativeActivity e a apresentação gráfica; não comprova carregamento de recursos ou gameplay.");
             resultFile.delete();
         } catch (Exception error) {
             setStatus("Não foi possível ler o relatório Vulkan", safeMessage(error));
