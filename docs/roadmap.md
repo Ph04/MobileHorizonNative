@@ -25,6 +25,8 @@
 - [x] Extrair assets/ e data/ opcionais do cliente; localizar data/minecraft tanto na raiz do servidor quanto no JAR interno do bundler.
 - [x] Materializar asset objects por seus nomes oficiais somente após validar tamanho e SHA-1; contabilizar assets ausentes em vez de inventá-los.
 - [x] Produzir conversion-plan.json com hashes, contagens, ausências de assets, objetos materializados e estado do pipeline.
+- [x] Portar o primeiro estágio do exportador Android para block tags, damage types e damage tags, validando a igualdade cliente/servidor e mantendo os mapas fora da runtime final.
+- [x] Testar saída, manifesto da etapa e recusa segura quando cliente/servidor divergem.
 - [x] Testar os formatos de arquivo de servidor plano/bundler e erro claro quando o JAR interno não contém dados.
 - [ ] Portar/empacotar os oráculos de JDK 25 e o exportador real, sem Termux.
 - [x] Executar a etapa de entrada vanilla em serviço foreground com progresso/cancelamento/notificação de conclusão.
