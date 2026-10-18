@@ -361,8 +361,12 @@ final class JdkRuntimeInstaller {
         ensureOptionalExecutableInsideRuntime(runtime,
                 new File(runtime.javaHome, "lib/jexec"), "jexec");
 
-        runVersionCommand(runtime, runtime.javac, "javac", cancelled, listener);
-        runVersionCommand(runtime, runtime.java, "java", cancelled, listener);
+        // Android 10+ blocks direct execve() of binaries extracted into app-private
+        // writable storage (targetSdk 29+ W^X policy). Execute the packaged system linker,
+        // which loads the private ELF by absolute path. Invoke javac via its Java module so
+        // this does not depend on the bin/javac symlink/script being directly executable.
+        runVersionCommand(runtime, "javac", cancelled, listener);
+        runVersionCommand(runtime, "java", cancelled, listener);
     }
 
     private static void ensureOptionalExecutableInsideRuntime(RuntimePaths runtime, File file,
@@ -405,15 +409,38 @@ final class JdkRuntimeInstaller {
         }
     }
 
-    private static void runVersionCommand(RuntimePaths runtime, File executable, String label,
+    private static void runVersionCommand(RuntimePaths runtime, String label,
                                           AtomicBoolean cancelled, ProgressListener listener) throws Exception {
         checkCancelled(cancelled);
+        File linker = new File("/system/bin/linker64");
+        if (!linker.isFile() || !linker.canExecute()) {
+            throw new IOException("Este aparelho não disponibiliza /system/bin/linker64 para ARM64; "
+                    + "não é possível iniciar o Java 25 de forma compatível com as restrições W^X do Android.");
+        }
         File log = new File(runtime.root, label + "-version.log");
-        ProcessBuilder builder = new ProcessBuilder(executable.getAbsolutePath(), "-version");
+        List<String> command = new ArrayList<>();
+        command.add(linker.getAbsolutePath());
+        command.add(runtime.java.getAbsolutePath());
+        if ("javac".equals(label)) {
+            command.add("-m");
+            command.add("jdk.compiler/com.sun.tools.javac.Main");
+        }
+        command.add("-version");
+        ProcessBuilder builder = new ProcessBuilder(command);
         builder.redirectErrorStream(true);
         builder.redirectOutput(log);
         builder.environment().putAll(runtime.processEnvironment(new File(runtime.root, "tmp")));
-        Process process = builder.start();
+        Process process;
+        try {
+            process = builder.start();
+        } catch (IOException error) {
+            throw new IOException("Não foi possível iniciar Java 25 via linker64 para validar "
+                    + label + ". Java: " + runtime.java.getAbsolutePath()
+                    + "; javac presente: " + runtime.javac.isFile()
+                    + "; java presente: " + runtime.java.isFile()
+                    + ". O linker contorna a restrição de execve em filesDir sem reduzir targetSdk. "
+                    + "Causa do sistema: " + error.getMessage(), error);
+        }
         long start = System.currentTimeMillis();
         while (true) {
             checkCancelled(cancelled);
@@ -429,10 +456,12 @@ final class JdkRuntimeInstaller {
                 throw new IOException("A verificação de " + label + " excedeu 30 segundos.");
             }
         }
+        String versionOutput = readSmallText(log).trim();
         if (process.exitValue() != 0) {
-            throw new IOException("O runtime Android Java 25 falhou ao iniciar " + label + ": " + readSmallText(log));
+            throw new IOException("O runtime Android Java 25 falhou ao iniciar " + label
+                    + " via /system/bin/linker64 (código " + process.exitValue() + "): " + versionOutput);
         }
-        report(listener, "Validando Java 25", readSmallText(log).trim(), 1, 1);
+        report(listener, "Validando Java 25", versionOutput, 1, 1);
     }
 
     private static void extractDataArchive(File deb, File destinationRoot, AtomicBoolean cancelled,
