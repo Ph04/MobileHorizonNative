@@ -100,7 +100,7 @@ final class HorizonPrepareRunner {
         ProcessBuilder builder = new ProcessBuilder(
                 "/system/bin/sh",
                 "-c",
-                "exec /system/bin/linker64 \\"$@\\"",
+                "exec /system/bin/linker64 \"$@\"",
                 "linker64",
                 tool.getAbsolutePath(),
                 "--prepare",
