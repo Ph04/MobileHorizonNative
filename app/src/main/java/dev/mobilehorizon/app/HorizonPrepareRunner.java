@@ -1,0 +1,314 @@
+package dev.mobilehorizon.app;
+
+import android.content.Context;
+import android.content.res.AssetManager;
+import android.system.Os;
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/** Runs Horizon's pinned ARM64 preparer with an app-private OpenJDK 25 runtime. */
+final class HorizonPrepareRunner {
+    private static final String UPSTREAM_COMMIT = "24bcef42beaf1382e48964b7efa7aef3f5f86792";
+    private static final String ASSET_ROOT = "horizon-prepare";
+    private static final int MAX_LOG_BYTES = 8 * 1024 * 1024;
+
+    private HorizonPrepareRunner() {}
+
+    static String prepare(Context context, AtomicBoolean cancelled,
+                          ProgressListener listener) throws Exception {
+        checkCancelled(cancelled);
+        report(listener, "Verificando arquivos vanilla", "Validando JARs, bibliotecas e assets oficiais", 0, 6);
+
+        HorizonResourceConverter.InputReport inputs = HorizonResourceConverter.prepareConversionInputs(
+                context.getFilesDir(), cancelled,
+                (stage, completed, total, detail) -> report(listener, stage, detail, completed, total));
+        if (inputs.missingAssetObjects > 0) {
+            throw new IllegalStateException("A conversão completa precisa de todos os assets oficiais: faltam "
+                    + inputs.missingAssetObjects + " de " + inputs.uniqueAssets
+                    + ". Use “Baixar base + todos os assets” e tente novamente.");
+        }
+
+        File workspace = new File(context.getFilesDir(), ".local/horizon-prepare-workspace");
+        ensureDirectory(workspace);
+        report(listener, "Instalando fontes do preparador", "Versão upstream " + UPSTREAM_COMMIT, 1, 6);
+        installSupportAssets(context.getAssets(), workspace, cancelled, listener);
+
+        File lock = new File(workspace, "research-lock.json");
+        File parityDir = new File(workspace,
+                "mods/horizon/src/test/java/dev/horizonlab/parity");
+        if (!lock.isFile() || !new File(parityDir, "VanillaHeightmapOracle.java").isFile()) {
+            throw new IOException("O APK não contém todas as fontes/oráculos necessárias para a conversão. Recompile pela Action mais recente.");
+        }
+
+        report(listener, "Instalando Java 25 ARM64",
+                "A primeira instalação baixa o runtime para o armazenamento privado do aplicativo", 2, 6);
+        JdkRuntimeInstaller.RuntimePaths runtime = JdkRuntimeInstaller.ensureInstalled(
+                context, cancelled, (stage, detail, completed, total) ->
+                        report(listener, stage, detail, completed, total));
+
+        File tool = new File(context.getFilesDir(), ".local/horizon-prepare-arm64");
+        File packagedTool = new File(context.getFilesDir(),
+                "unused-horizon-prepare-placeholder");
+        try (InputStream input = context.getAssets().open(ASSET_ROOT + "/horizon-prepare-arm64");
+             OutputStream output = new FileOutputStream(packagedTool)) {
+            copy(input, output, cancelled);
+        } catch (IOException error) {
+            deleteQuietly(packagedTool);
+            throw new IllegalStateException("Este APK não contém o preparador Horizon ARM64. Instale o APK produzido pela Action mais recente.", error);
+        }
+        ensureDirectory(tool.getParentFile());
+        if (tool.exists() && !tool.delete()) {
+            deleteQuietly(packagedTool);
+            throw new IOException("Não foi possível atualizar o executável do preparador.");
+        }
+        if (!packagedTool.renameTo(tool)) {
+            copyFile(packagedTool, tool);
+            deleteQuietly(packagedTool);
+        }
+        Os.chmod(tool.getAbsolutePath(), 0700);
+        checkCancelled(cancelled);
+
+        File stagingResources = new File(workspace, ".local/horizon-client/26.3");
+        deleteRecursively(stagingResources);
+        ensureDirectory(stagingResources.getParentFile());
+        File logFile = new File(workspace, ".local/horizon-prepare.log");
+        ensureDirectory(logFile.getParentFile());
+        if (logFile.exists() && !logFile.delete()) throw new IOException("Não foi possível zerar o log anterior.");
+
+        report(listener, "Convertendo recursos Horizon",
+                "Os oráculos do Minecraft podem consumir bastante RAM e CPU; mantenha espaço livre", 3, 6);
+        ProcessBuilder builder = new ProcessBuilder(
+                tool.getAbsolutePath(),
+                "--prepare",
+                "--server-jar", new File(context.getFilesDir(), "minecraft/server.jar").getAbsolutePath(),
+                "--minecraft-dir", new File(context.getFilesDir(), "minecraft").getAbsolutePath(),
+                "--root", workspace.getAbsolutePath());
+        builder.directory(workspace);
+        builder.redirectErrorStream(true);
+        Map<String, String> environment = builder.environment();
+        environment.putAll(runtime.processEnvironment(new File(workspace, "tmp")));
+        environment.put("HORIZON_MINECRAFT_DIR", new File(context.getFilesDir(), "minecraft").getAbsolutePath());
+        environment.put("HORIZON_SERVER_JAR", new File(context.getFilesDir(), "minecraft/server.jar").getAbsolutePath());
+
+        int exitCode = runProcess(builder, logFile, cancelled, listener);
+        if (exitCode != 0) {
+            throw new IOException("O preparador Horizon terminou com código " + exitCode
+                    + ". Últimas linhas do log:\n" + tail(logFile, 8000));
+        }
+        checkCancelled(cancelled);
+        report(listener, "Validando saída completa", "Checando schema, data version e arquivos obrigatórios", 5, 6);
+        String summary = HorizonResourceConverter.validatePreparedResources(stagingResources);
+
+        File active = new File(context.getFilesDir(), ".local/horizon-client/26.3");
+        File backup = new File(context.getFilesDir(), ".local/horizon-client/26.3.previous");
+        ensureDirectory(active.getParentFile());
+        deleteRecursively(backup);
+        if (active.exists() && !active.renameTo(backup)) {
+            throw new IOException("A conversão foi validada, mas não foi possível substituir a saída ativa; a pasta anterior foi preservada.");
+        }
+        if (!stagingResources.renameTo(active)) {
+            if (backup.exists() && !backup.renameTo(active)) {
+                throw new IOException("Não foi possível ativar os recursos completos nem restaurar a pasta anterior. Backup: " + backup.getAbsolutePath());
+            }
+            throw new IOException("Não foi possível ativar a saída Horizon validada.");
+        }
+        try {
+            summary = HorizonResourceConverter.validatePreparedResources(active);
+        } catch (Exception error) {
+            deleteRecursively(active);
+            if (backup.exists()) backup.renameTo(active);
+            throw new IOException("A validação após ativação falhou; a saída anterior foi restaurada.", error);
+        }
+        deleteRecursively(backup);
+        report(listener, "Conversão completa concluída",
+                "Saída instalada em .local/horizon-client/26.3", 6, 6);
+        return summary + "\nConversão completa executada pelo preparador upstream " + UPSTREAM_COMMIT
+                + " com Java 25 ARM64 no próprio Android.\nLog: " + logFile.getAbsolutePath();
+    }
+
+    interface ProgressListener {
+        void onProgress(String stage, String detail, int completed, int total);
+    }
+
+    private static int runProcess(ProcessBuilder builder, File logFile, AtomicBoolean cancelled,
+                                 ProgressListener listener) throws Exception {
+        Process process;
+        try {
+            process = builder.start();
+        } catch (IOException error) {
+            throw new IOException("Não foi possível executar o preparador ARM64. O Android pode ter bloqueado a execução do arquivo privado: "
+                    + error.getMessage(), error);
+        }
+        final Process running = process;
+        Thread logReader = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(running.getInputStream(), StandardCharsets.UTF_8));
+                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
+                         new FileOutputStream(logFile, true), StandardCharsets.UTF_8))) {
+                String line;
+                long written = logFile.length();
+                while ((line = reader.readLine()) != null) {
+                    String record = line + "\n";
+                    if (written < MAX_LOG_BYTES) {
+                        writer.write(record);
+                        writer.flush();
+                        written += record.getBytes(StandardCharsets.UTF_8).length;
+                    }
+                    report(listener, "Exportador Horizon", line, -1, -1);
+                }
+            } catch (IOException ignored) {
+                // The process exit code and last log lines are reported by the caller.
+            }
+        }, "horizon-prepare-log-reader");
+        logReader.setDaemon(true);
+        logReader.start();
+        long started = System.nanoTime();
+        try {
+            while (!process.waitFor(250, TimeUnit.MILLISECONDS)) {
+                checkCancelled(cancelled);
+                if (TimeUnit.NANOSECONDS.toHours(System.nanoTime() - started) >= 2) {
+                    process.destroyForcibly();
+                    throw new IOException("A conversão completa excedeu o limite de duas horas.");
+                }
+            }
+        } catch (InterruptedException error) {
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+            throw error;
+        } catch (Exception error) {
+            process.destroyForcibly();
+            if (error instanceof InterruptedException) throw error;
+            throw error;
+        } finally {
+            if (process.isAlive()) process.destroyForcibly();
+            try { logReader.join(3000); } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        return process.exitValue();
+    }
+
+    private static void installSupportAssets(AssetManager assets, File workspace,
+                                             AtomicBoolean cancelled,
+                                             ProgressListener listener) throws Exception {
+        copyAssetTree(assets, ASSET_ROOT + "/support", workspace, "", cancelled,
+                new long[]{0}, listener);
+    }
+
+    private static void copyAssetTree(AssetManager assets, String assetPath, File targetRoot,
+                                      String relative, AtomicBoolean cancelled, long[] files,
+                                      ProgressListener listener) throws Exception {
+        checkCancelled(cancelled);
+        String[] children = assets.list(assetPath);
+        if (children != null && children.length > 0) {
+            for (String child : children) {
+                String childRelative = relative.isEmpty() ? child : relative + "/" + child;
+                copyAssetTree(assets, assetPath + "/" + child, targetRoot, childRelative,
+                        cancelled, files, listener);
+            }
+            return;
+        }
+        if (relative.isEmpty()) return;
+        File target = safeChild(targetRoot, relative);
+        ensureDirectory(target.getParentFile());
+        try (InputStream input = assets.open(assetPath);
+             OutputStream output = new FileOutputStream(target)) {
+            copy(input, output, cancelled);
+        }
+        files[0]++;
+        if (files[0] % 25 == 0) {
+            report(listener, "Instalando fontes do preparador",
+                    files[0] + " arquivos instalados", 1, 6);
+        }
+    }
+
+    private static File safeChild(File root, String relative) throws IOException {
+        if (relative == null || relative.isEmpty() || relative.startsWith("/")
+                || relative.indexOf('\\') >= 0) throw new IOException("Caminho inseguro em fonte do preparador.");
+        File base = root.getCanonicalFile();
+        File target = new File(base, relative).getCanonicalFile();
+        if (!target.toPath().startsWith(base.toPath())) throw new IOException("Caminho de fonte saiu da pasta de trabalho.");
+        return target;
+    }
+
+    private static void copy(InputStream input, OutputStream output,
+                             AtomicBoolean cancelled) throws IOException, InterruptedException {
+        byte[] buffer = new byte[64 * 1024];
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            checkCancelled(cancelled);
+            output.write(buffer, 0, read);
+        }
+        output.flush();
+    }
+
+    private static void copyFile(File from, File to) throws IOException {
+        ensureDirectory(to.getParentFile());
+        try (InputStream in = new FileInputStream(from);
+             OutputStream out = new FileOutputStream(to)) {
+            byte[] buffer = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        }
+    }
+
+    private static void ensureDirectory(File directory) throws IOException {
+        if (directory == null) throw new IOException("Pasta de destino inválida.");
+        if (!directory.isDirectory() && !directory.mkdirs() && !directory.isDirectory()) {
+            throw new IOException("Não foi possível criar " + directory.getAbsolutePath());
+        }
+    }
+
+    private static void deleteQuietly(File file) {
+        try { deleteRecursively(file); } catch (Exception ignored) {}
+    }
+
+    private static void deleteRecursively(File file) throws IOException {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) deleteRecursively(child);
+            }
+        }
+        if (!file.delete()) throw new IOException("Não foi possível remover " + file.getAbsolutePath());
+    }
+
+    private static String tail(File file, int limit) {
+        try (RandomAccessFile input = new RandomAccessFile(file, "r")) {
+            long position = Math.max(0, input.length() - limit);
+            input.seek(position);
+            byte[] bytes = new byte[(int) (input.length() - position)];
+            input.readFully(bytes);
+            return new String(bytes, StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+            return "Log não disponível.";
+        }
+    }
+
+    private static void checkCancelled(AtomicBoolean cancelled) throws InterruptedException {
+        if (cancelled != null && cancelled.get()) {
+            throw new InterruptedException("A conversão completa foi cancelada.");
+        }
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException("Conversão interrompida.");
+    }
+
+    private static void report(ProgressListener listener, String stage, String detail,
+                               int completed, int total) {
+        if (listener != null) listener.onProgress(stage, detail, completed, total);
+    }
+}
