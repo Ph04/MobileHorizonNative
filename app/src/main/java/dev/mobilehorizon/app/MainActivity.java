@@ -28,7 +28,9 @@ import dev.mobilehorizon.compat.CompatibilityChecker;
 import dev.mobilehorizon.compat.CompatibilityReport;
 import dev.mobilehorizon.compat.DeviceCapabilities;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.ZipEntry;
@@ -119,6 +121,12 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        showNativeSmokeResultIfAvailable();
+    }
+
+    @Override
     protected void onStop() {
         if (receiverRegistered) {
             try { unregisterReceiver(downloadReceiver); } catch (IllegalArgumentException ignored) {}
@@ -199,12 +207,12 @@ public final class MainActivity extends Activity {
         cancelDownloadButton.setVisibility(View.GONE);
         page.addView(cancelDownloadButton, cancelDownloadParams);
 
-        prepareInputsButton = button("Verificar entradas para conversão", false, v -> prepareConversionInputs());
+        prepareInputsButton = button("Preparar recursos vanilla para conversão", false, v -> prepareConversionInputs());
         LinearLayout.LayoutParams prepareInputsParams = params(-1, dp(50));
         prepareInputsParams.topMargin = dp(8);
         page.addView(prepareInputsButton, prepareInputsParams);
 
-        openEngineButton = button("Abrir cliente Horizon", false, v -> openNativeClient());
+        openEngineButton = button("Verificar requisitos do cliente Horizon", false, v -> openNativeClient());
         LinearLayout.LayoutParams openEngineParams = params(-1, dp(50));
         openEngineParams.topMargin = dp(8);
         page.addView(openEngineButton, openEngineParams);
@@ -567,8 +575,47 @@ public final class MainActivity extends Activity {
     }
 
     private void openNativeClient() {
-        showRuntimeError("Autenticação oficial pendente",
-                "A integração de autenticação Microsoft/Minecraft e a verificação de licença ainda não foram implementadas neste marco. Por isso, o cliente não será iniciado em modo offline. O teste Vulkan continua disponível para validar apenas a superfície gráfica.");
+        if (!isHorizonNativeLibraryAvailable()) {
+            showRuntimeError("Biblioteca Horizon ausente",
+                    "O APK precisa conter libhorizon_android.so para ARM64 antes que o cliente possa ser usado.");
+            return;
+        }
+        File resources = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+        try {
+            String resourceSummary = HorizonResourceConverter.validatePreparedResources(resources);
+            showRuntimeError("Recursos válidos; autenticação pendente",
+                    resourceSummary + "\\n\\nA integração oficial de autenticação Microsoft/Minecraft e a validação da licença Java ainda não estão implementadas. O cliente não será iniciado em modo offline. O teste Vulkan continua disponível separadamente.");
+        } catch (Exception error) {
+            showRuntimeError("Recursos Horizon ausentes ou incompletos",
+                    safeMessage(error) + "\\n\\nBaixar JARs e extrair assets vanilla ainda não cria a tabela final de gameplay/worldgen. Importe uma saída Horizon completa enquanto o exportador nativo é portado.");
+        }
+    }
+
+    private void showNativeSmokeResultIfAvailable() {
+        File resultFile = new File(getFilesDir(), "horizon-native-smoke-result.txt");
+        if (!resultFile.isFile()) return;
+        try (FileInputStream input = new FileInputStream(resultFile);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (output.size() + read > 32 * 1024) {
+                    throw new IllegalStateException("O relatório do teste Vulkan excedeu 32 KiB.");
+                }
+                output.write(buffer, 0, read);
+            }
+            String result = new String(output.toByteArray(), StandardCharsets.UTF_8).trim();
+            boolean passed = result.startsWith("PASS:");
+            progressBar.setVisibility(View.VISIBLE);
+            progressBar.setIndeterminate(false);
+            progressBar.setProgress(passed ? 1000 : 0);
+            progressDetails.setText(result);
+            setStatus(passed ? "Renderer Vulkan validado" : "Teste do renderer falhou",
+                    result + "\\n\\nEsse resultado verifica o NativeActivity e a apresentação gráfica; não comprova carregamento de recursos ou gameplay.");
+            resultFile.delete();
+        } catch (Exception error) {
+            setStatus("Não foi possível ler o relatório Vulkan", safeMessage(error));
+        }
     }
 
     private void openNativeSmokeTest() {
