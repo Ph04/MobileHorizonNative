@@ -40,6 +40,12 @@ Isso prova uma primeira parte do exportador por lógica Java Android, mas não c
 
 **Isso ainda não é a conversão final.** O preparador upstream usa JDK 25 para compilar/executar numerosos oráculos Java que geram facts, registries, tabelas de gameplay e dados worldgen. O novo app ainda não executa esses oráculos; por isso não sintetiza um `horizon-resources.json` falso nem ativa uma saída incompleta.
 
+### Exportador completo no Android
+
+O workflow fixa um commit upstream de `horizon-prepare`, cross-compila o utilitário Rust para `aarch64-linux-android` e empacota seus oráculos Java e `research-lock.json` como assets do aplicativo. O botão “Converter recursos completos (Java 25)” instala sob `.local/horizon-java25` um OpenJDK 25 para Android ARM64 usando pacotes do repositório Termux; a lista de pacotes e os SHA-256 são gerados pelo CI a partir do índice APT. Cada pacote baixado é verificado antes de extrair seu `data.tar.xz`, e a conversão executa o utilitário nativo em um processo local, em vez de chamar Termux.
+
+A conversão exige os arquivos base, todas as bibliotecas e todos os assets oficiais. O preparador cria a saída em uma área de trabalho separada, valida o manifesto e os arquivos exigidos, e só então promove a pasta para `.local/horizon-client/26.3`, preservando a saída anterior em caso de falha de promoção. A primeira execução precisa baixar o Java 25 e pode consumir bastante armazenamento, RAM e CPU. A compilação de CI não substitui o teste do processo ARM64, do JDK, dos oráculos e dos drivers num dispositivo Android real.
+
 ## 3. Validação e importação da runtime
 
 A saída aceita pelo importador é `.local/horizon-client/26.3`. O importador SAF aceita uma pasta ou ZIP, extrai/copia para staging e valida um manifesto com `schema=7`, `data_version=5023`, contador de arquivos e arquivos-chave derivados. A árvore incompleta não substitui a anterior.
