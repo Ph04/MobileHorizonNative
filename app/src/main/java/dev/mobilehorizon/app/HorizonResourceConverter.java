@@ -15,8 +15,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -40,6 +42,7 @@ final class HorizonResourceConverter {
     private static final int MAX_SOURCE_JAR_ENTRIES = 500_000;
     private static final int MAX_EXTRACTED_SOURCE_FILES = 150_000;
     private static final long MAX_EXTRACTED_SOURCE_BYTES = 1536L * 1024L * 1024L;
+    private static final long MAX_MATERIALIZED_ASSET_BYTES = 2L * 1024L * 1024L * 1024L;
 
     private static final String[] REQUIRED_ROOT_FILES = {
             "facts.json", "block-tags.json", "block-behaviours.json", "gameplay-facts.json",
@@ -87,12 +90,15 @@ final class HorizonResourceConverter {
         final int extractedClientFiles;
         final int extractedServerFiles;
         final long extractedSourceBytes;
+        final int hydratedAssetNames;
+        final long hydratedAssetBytes;
         final String note;
 
         InputReport(File planFile, int libraries, int uniqueAssets, int presentAssetObjects,
                     int missingAssetObjects, String clientSha1, String serverSha1,
                     String assetIndexId, int extractedClientFiles, int extractedServerFiles,
-                    long extractedSourceBytes, String note) {
+                    long extractedSourceBytes, int hydratedAssetNames, long hydratedAssetBytes,
+                    String note) {
             this.planFile = planFile;
             this.verifiedLibraries = libraries;
             this.uniqueAssets = uniqueAssets;
@@ -104,6 +110,8 @@ final class HorizonResourceConverter {
             this.extractedClientFiles = extractedClientFiles;
             this.extractedServerFiles = extractedServerFiles;
             this.extractedSourceBytes = extractedSourceBytes;
+            this.hydratedAssetNames = hydratedAssetNames;
+            this.hydratedAssetBytes = hydratedAssetBytes;
             this.note = note;
         }
     }
@@ -297,15 +305,40 @@ final class HorizonResourceConverter {
                 extraction.clientFiles, extraction.serverFiles, extraction.bytes, note);
     }
 
+    private static final class IndexedAsset {
+        final String name;
+        final String hash;
+        final long size;
+        IndexedAsset(String name, String hash, long size) {
+            this.name = name;
+            this.hash = hash;
+            this.size = size;
+        }
+    }
+
+    private static final class AssetHydration {
+        final int files;
+        final long bytes;
+        AssetHydration(int files, long bytes) {
+            this.files = files;
+            this.bytes = bytes;
+        }
+    }
+
     private static final class ExtractionSummary {
         final int clientFiles;
         final int serverFiles;
         final long bytes;
+        final int hydratedAssetNames;
+        final long hydratedAssetBytes;
 
-        ExtractionSummary(int clientFiles, int serverFiles, long bytes) {
+        ExtractionSummary(int clientFiles, int serverFiles, long bytes,
+                          int hydratedAssetNames, long hydratedAssetBytes) {
             this.clientFiles = clientFiles;
             this.serverFiles = serverFiles;
             this.bytes = bytes;
+            this.hydratedAssetNames = hydratedAssetNames;
+            this.hydratedAssetBytes = hydratedAssetBytes;
         }
     }
 
