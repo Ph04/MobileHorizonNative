@@ -71,6 +71,7 @@ public final class MainActivity extends Activity {
     private Button downloadAssetsButton;
     private Button cancelDownloadButton;
     private Button prepareInputsButton;
+    private Button fullConvertButton;
     private Button openEngineButton;
     private Button smokeTestButton;
     private Button microsoftLoginButton;
@@ -86,6 +87,8 @@ public final class MainActivity extends Activity {
     private boolean pendingNotificationPermission;
     private boolean pendingAllAssets;
     private boolean pendingPreparationPermission;
+    private boolean pendingFullPreparationPermission;
+    private boolean fullConversionBusy;
     private boolean pendingAuthPermission;
     private boolean authBusy;
     private boolean launchBusy;
@@ -272,6 +275,11 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams prepareInputsParams = params(-1, dp(50));
         prepareInputsParams.topMargin = dp(8);
         page.addView(prepareInputsButton, prepareInputsParams);
+
+        fullConvertButton = button("Converter recursos completos (Java 25)", true, v -> prepareFullConversion());
+        LinearLayout.LayoutParams fullConvertParams = params(-1, dp(52));
+        fullConvertParams.topMargin = dp(8);
+        page.addView(fullConvertButton, fullConvertParams);
 
         TextView offlineHeading = text("Conta offline", 18, 0xff18213a, true);
         LinearLayout.LayoutParams offlineHeadingParams = params(-1, -2);
@@ -583,6 +591,22 @@ public final class MainActivity extends Activity {
             }
             return;
         }
+        if (requestCode == 26035 && pendingFullPreparationPermission) {
+            pendingFullPreparationPermission = false;
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            if (granted) {
+                startFullConversionNow();
+            } else {
+                new AlertDialog.Builder(this)
+                        .setTitle("Notificações desativadas")
+                        .setMessage("A conversão pode continuar, mas o progresso e a conclusão talvez não apareçam na área de notificações.")
+                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton("Continuar sem notificações", (dialog, which) -> startFullConversionNow())
+                        .show();
+            }
+            return;
+        }
         if (requestCode == 26034 && pendingAuthPermission) {
             pendingAuthPermission = false;
             boolean granted = grantResults.length > 0
@@ -718,6 +742,44 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void prepareFullConversion() {
+        if (busy || conversionBusy || downloadBusy || authBusy || launchBusy) return;
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pendingFullPreparationPermission = true;
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 26035);
+            return;
+        }
+        startFullConversionNow();
+    }
+
+    private void startFullConversionNow() {
+        if (busy || conversionBusy || downloadBusy || authBusy || launchBusy) return;
+        conversionBusy = true;
+        fullConversionBusy = true;
+        cancelRequested.set(false);
+        currentJob = null;
+        updateActionEnablement();
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setIndeterminate(true);
+        progressDetails.setText("Preparando Java 25 ARM64 e iniciando o exportador completo…");
+        setStatus("Conversão completa em andamento",
+                "Na primeira execução serão baixados os pacotes do runtime Java 25. Use “Baixar base + todos os assets” antes de começar. A conversão pode levar bastante tempo e precisa de espaço livre.");
+        try {
+            Intent intent = new Intent(this, ResourcePreparationService.class)
+                    .setAction(ResourcePreparationService.ACTION_START_FULL);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
+            else startService(intent);
+        } catch (Exception error) {
+            conversionBusy = false;
+            fullConversionBusy = false;
+            updateActionEnablement();
+            progressBar.setVisibility(View.GONE);
+            setStatus("Não foi possível iniciar a conversão completa", safeMessage(error));
+        }
+    }
+
     private void prepareConversionInputs() {
         if (busy || conversionBusy || downloadBusy) return;
         if (Build.VERSION.SDK_INT >= 33
@@ -755,6 +817,7 @@ public final class MainActivity extends Activity {
 
     private void handlePreparationProgress(Intent intent) {
         conversionBusy = true;
+        fullConversionBusy = intent.getBooleanExtra("fullMode", fullConversionBusy);
         updateActionEnablement();
         String stage = intent.getStringExtra("stage");
         String detail = intent.getStringExtra("detail");
@@ -772,8 +835,36 @@ public final class MainActivity extends Activity {
     private void handlePreparationFinished(Intent intent) {
         boolean success = intent.getBooleanExtra("success", false);
         boolean wasCancelled = intent.getBooleanExtra("cancelled", false);
+        boolean fullMode = intent.getBooleanExtra("fullMode", false);
         String message = intent.getStringExtra("message");
-        if (success) {
+        if (fullMode) {
+            conversionBusy = false;
+            fullConversionBusy = false;
+            currentJob = null;
+            updateActionEnablement();
+            progressBar.setIndeterminate(false);
+            if (success) {
+                try {
+                    File output = new File(getFilesDir(), ".local/horizon-client/26.3");
+                    String validation = HorizonResourceConverter.validatePreparedResources(output);
+                    progressBar.setVisibility(View.VISIBLE);
+                    progressBar.setProgress(1000);
+                    progressDetails.setText("Saída validada: .local/horizon-client/26.3");
+                    setStatus("Conversão Horizon completa validada", validation + "\n\n"
+                            + (message == null ? "Exportador concluído." : message)
+                            + "\n\nAgora teste “Iniciar com conta offline”. A primeira abertura ainda pode falhar por limitações da biblioteca gráfica atual.");
+                } catch (Exception validationError) {
+                    progressBar.setVisibility(View.GONE);
+                    setStatus("A conversão terminou, mas a saída não passou na validação",
+                            safeMessage(validationError) + "\n\nLog do exportador: .local/horizon-prepare-workspace/.local/horizon-prepare.log");
+                }
+            } else {
+                progressBar.setVisibility(View.GONE);
+                progressDetails.setText("");
+                setStatus(wasCancelled ? "Conversão completa cancelada" : "Conversão completa falhou",
+                        message == null ? "Nenhum detalhe do preparador foi retornado." : message);
+            }
+        } else if (success) {
             String planPath = intent.getStringExtra("planPath");
             File plan = planPath == null || planPath.isEmpty()
                     ? new File(getFilesDir(), ".local/horizon-input/26.3/conversion-plan.json")
@@ -1273,6 +1364,7 @@ public final class MainActivity extends Activity {
         if (downloadBaseButton != null) downloadBaseButton.setEnabled(!blocked);
         if (downloadAssetsButton != null) downloadAssetsButton.setEnabled(!blocked);
         if (prepareInputsButton != null) prepareInputsButton.setEnabled(!blocked);
+        if (fullConvertButton != null) fullConvertButton.setEnabled(!blocked);
         if (openEngineButton != null) openEngineButton.setEnabled(!blocked);
         if (smokeTestButton != null) smokeTestButton.setEnabled(!blocked);
         if (microsoftLoginButton != null) microsoftLoginButton.setEnabled(!blocked);
@@ -1285,6 +1377,7 @@ public final class MainActivity extends Activity {
             cancelButton.setVisibility(cancellable ? View.VISIBLE : View.GONE);
             cancelButton.setEnabled(cancellable);
             cancelButton.setText(authBusy ? "Cancelar login"
+                    : fullConversionBusy ? "Cancelar conversão completa"
                     : conversionBusy && !busy ? "Cancelar preparação" : "Cancelar importação");
         }
         if (cancelDownloadButton != null) {
@@ -1297,6 +1390,7 @@ public final class MainActivity extends Activity {
         if (downloadBaseButton != null) downloadBaseButton.setAlpha(alpha);
         if (downloadAssetsButton != null) downloadAssetsButton.setAlpha(alpha);
         if (prepareInputsButton != null) prepareInputsButton.setAlpha(alpha);
+        if (fullConvertButton != null) fullConvertButton.setAlpha(alpha);
         if (openEngineButton != null) openEngineButton.setAlpha(alpha);
         if (smokeTestButton != null) smokeTestButton.setAlpha(alpha);
         if (microsoftLoginButton != null) microsoftLoginButton.setAlpha(alpha);
