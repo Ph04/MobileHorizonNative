@@ -165,9 +165,13 @@ final class PreparedResourceImporter {
     private static ImportSummary withStaging(File filesDir, AtomicBoolean cancelled,
                                               ProgressListener listener, StageOperation operation)
             throws Exception {
-        File active = new File(filesDir, "prepared-resources");
-        File staging = new File(filesDir, "prepared-resources.importing");
-        File backup = new File(filesDir, "prepared-resources.previous");
+        File active = new File(filesDir, ".local/horizon-client/26.3");
+        File parent = active.getParentFile();
+        File staging = new File(parent, "26.3.importing");
+        File backup = new File(parent, "26.3.previous");
+        if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) {
+            throw new IllegalStateException("Não foi possível criar a pasta privada do motor Horizon.");
+        }
         recoverInterruptedPromotion(active, backup);
         deleteRecursively(staging);
         if (!staging.mkdirs() && !staging.isDirectory()) {
@@ -306,40 +310,7 @@ final class PreparedResourceImporter {
     }
 
     private static String validateManifestIfPresent(File root) throws Exception {
-        File manifest = new File(root, "horizon-resources.json");
-        if (!manifest.isFile()) {
-            return "Nenhum manifesto Horizon na raiz foi encontrado. Os arquivos foram importados, mas a compatibilidade com um backend ainda não foi verificada.";
-        }
-        if (manifest.length() <= 0 || manifest.length() > MANIFEST_LIMIT) {
-            throw new IllegalArgumentException("O manifesto Horizon está vazio ou excede 1 MiB.");
-        }
-        byte[] bytes;
-        try (InputStream input = new FileInputStream(manifest);
-             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                if (output.size() + read > MANIFEST_LIMIT) {
-                    throw new IllegalArgumentException("O manifesto Horizon excede 1 MiB.");
-                }
-                output.write(buffer, 0, read);
-            }
-            bytes = output.toByteArray();
-        }
-        JSONObject json;
-        try {
-            json = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
-        } catch (Exception error) {
-            throw new IllegalArgumentException("O manifesto Horizon não contém JSON válido.");
-        }
-        Object schema = json.opt("schema");
-        Object dataVersion = json.opt("data_version");
-        if (!(schema instanceof Number) || !(dataVersion instanceof Number)) {
-            throw new IllegalArgumentException("O manifesto Horizon não informa schema e data_version numéricos.");
-        }
-        return "Manifesto Horizon detectado: schema=" + ((Number) schema).intValue()
-                + ", data_version=" + ((Number) dataVersion).intValue()
-                + ". A compatibilidade com o motor será verificada quando um backend estiver instalado.";
+        return HorizonResourceConverter.validatePreparedResources(root);
     }
 
     private static String safeRelativePath(String raw) {
