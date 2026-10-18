@@ -88,7 +88,7 @@ final class MicrosoftAuthentication {
                 "client_id", clientId,
                 "scope", SCOPES);
         JSONObject json = response.json;
-        if (response.status != 200) throw oauthError(json, response.status);
+        if (response.status != 200) throw new IllegalStateException(oauthError(json, response.status));
         String deviceCode = nonEmpty(json, "device_code");
         String userCode = nonEmpty(json, "user_code");
         String verificationUri = json.optString("verification_uri",
@@ -127,7 +127,7 @@ final class MicrosoftAuthentication {
                 interval += 5;
                 continue;
             }
-            if (response.status != 200) throw oauthError(json, response.status);
+            if (response.status != 200) throw new IllegalStateException(oauthError(json, response.status));
             String accessToken = nonEmpty(json, "access_token");
             String refreshToken = nonEmpty(json, "refresh_token");
             progress(listener, "Verificando conta Minecraft", "Autenticação Microsoft concluída.");
@@ -150,7 +150,7 @@ final class MicrosoftAuthentication {
             if ("invalid_grant".equals(error)) {
                 throw new IllegalStateException("A sessão Microsoft expirou. Entre novamente.");
             }
-            throw oauthError(response.json, response.status);
+            throw new IllegalStateException(oauthError(response.json, response.status));
         }
         return exchangeAndVerify(nonEmpty(response.json, "access_token"),
                 response.json.optString("refresh_token", refreshToken));
