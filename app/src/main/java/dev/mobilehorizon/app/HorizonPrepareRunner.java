@@ -95,11 +95,14 @@ final class HorizonPrepareRunner {
         }
         // targetSdk 35 cannot directly exec() ELF files downloaded/extracted into filesDir.
         // The Android system linker loads the verified ARM64 preparer from its absolute path.
+        // Route through the system shell to give linker64 an unambiguous
+        // argv vector: $0 is linker64 and $1 is the verified preparer ELF.
         ProcessBuilder builder = new ProcessBuilder(
-                systemLinker.getAbsolutePath(),
-                "--argv0",
-                tool.getAbsolutePath(), // argv[0] observed by the preparer
-                tool.getAbsolutePath(), // ELF to load
+                "/system/bin/sh",
+                "-c",
+                "exec /system/bin/linker64 \\"$@\\"",
+                "linker64",
+                tool.getAbsolutePath(),
                 "--prepare",
                 "--server-jar", new File(context.getFilesDir(), "minecraft/server.jar").getAbsolutePath(),
                 "--minecraft-dir", new File(context.getFilesDir(), "minecraft").getAbsolutePath(),
