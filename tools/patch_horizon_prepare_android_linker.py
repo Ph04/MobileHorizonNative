@@ -47,6 +47,10 @@ fn java_command(java: &Path) -> Command {
     #[cfg(target_os = "android")]
     {
         let mut command = Command::new("/system/bin/linker64");
+        // Bionic accepts --argv0 <argv0> <ELF> [arguments]. Use this explicit
+        // form so Java options such as -m are never parsed as the ELF path.
+        command.arg("--argv0");
+        command.arg(java);
         command.arg(java);
         command
     }
