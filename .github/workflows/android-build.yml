@@ -83,7 +83,9 @@ jobs:
           gradle-version: "8.9"
 
       - name: Run compatibility tests and build debug APK
-        run: gradle --no-daemon test :app:assembleDebug
+        env:
+          HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
+        run: gradle --no-daemon "-PHORIZON_MSA_CLIENT_ID=$HORIZON_MSA_CLIENT_ID" test :app:assembleDebug
 
       - name: Verify native runtime is packaged in APK
         shell: bash
@@ -97,7 +99,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: mobilehorizon-native-download0-debug
+          name: mobilehorizon-native-download1-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
