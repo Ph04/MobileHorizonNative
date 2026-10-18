@@ -11,6 +11,9 @@ android {
     }
 
     defaultConfig {
+        def msaClientId = providers.gradleProperty('HORIZON_MSA_CLIENT_ID').getOrElse('')
+        buildConfigField 'String', 'HORIZON_MSA_CLIENT_ID',
+                '"' + msaClientId.replace('\\', '\\\\').replace('"', '\\"') + '"'
         applicationId 'dev.mobilehorizon.app'
         minSdk 26
         targetSdk 35
