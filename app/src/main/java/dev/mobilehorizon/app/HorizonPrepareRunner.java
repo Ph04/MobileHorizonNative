@@ -97,7 +97,9 @@ final class HorizonPrepareRunner {
         // The Android system linker loads the verified ARM64 preparer from its absolute path.
         ProcessBuilder builder = new ProcessBuilder(
                 systemLinker.getAbsolutePath(),
-                tool.getAbsolutePath(),
+                "--argv0",
+                tool.getAbsolutePath(), // argv[0] observed by the preparer
+                tool.getAbsolutePath(), // ELF to load
                 "--prepare",
                 "--server-jar", new File(context.getFilesDir(), "minecraft/server.jar").getAbsolutePath(),
                 "--minecraft-dir", new File(context.getFilesDir(), "minecraft").getAbsolutePath(),
