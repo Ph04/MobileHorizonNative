@@ -24,12 +24,13 @@ O download base inclui manifesto JSON, client JAR, server JAR, índice de assets
 
 `HorizonResourceConverter.prepareConversionInputs` valida o manifesto oficial, cliente/servidor, bibliotecas, índice e hashes dos asset objects presentes. Asset objects ausentes são reportados no plano, não tratados como se já tivessem sido baixados.
 
-Em seguida, o app extrai, em staging, apenas:
+Em seguida, o app extrai recursos para staging:
 
-- `assets/minecraft/` do JAR do cliente para `.local/horizon-input/26.3/vanilla/client/assets/minecraft/`;
-- `data/minecraft/` do JAR do servidor para `.local/horizon-input/26.3/vanilla/server/data/minecraft/`.
+- Os arquivos `assets/` e `data/` presentes no JAR do cliente, preservando seus caminhos relativos.
+- `data/minecraft/` do `server.jar` se estiver na raiz; caso contrário, procura o JAR interno em `META-INF/versions/<versão>/server-<versão>.jar` e extrai dali. Essa distinção é necessária para o formato bundler do servidor.
+- Os asset objects oficiais são materializados sob seus caminhos de recurso quando estão presentes e seu SHA-1 foi verificado. Como `assets/` pode ser fornecido pelo índice externo em vez do JAR, a existência de `minecraft/lang/en_us.json` é validada depois dessa etapa. A árvore `data/` do client JAR é opcional.
 
-A extração usa limites de entradas/arquivos/tamanho, rejeita caminhos inseguros, valida arquivos vanilla essenciais e promove a árvore como uma unidade. `source-input-manifest.json` registra hashes dos JARs, contagens e o estado explícito `VANILLA_INPUTS_ONLY_NOT_HORIZON_RUNTIME_RESOURCES`. O plano `conversion-plan.json` aponta para os JARs, bibliotecas, assets e árvore extraída.
+A extração usa limites de entradas/arquivos/tamanho, rejeita caminhos inseguros, valida arquivos vanilla essenciais, registra a origem dos dados do servidor no manifesto e promove a árvore como uma unidade. Há testes unitários para layouts flat e bundler com JAR interno. `source-input-manifest.json` registra hashes dos JARs, contagens e o estado explícito `VANILLA_INPUTS_ONLY_NOT_HORIZON_RUNTIME_RESOURCES`. O plano `conversion-plan.json` aponta para os JARs, bibliotecas, assets e árvore extraída.
 
 **Isso ainda não é a conversão final.** O preparador upstream usa JDK 25 para compilar/executar numerosos oráculos Java que geram facts, registries, tabelas de gameplay e dados worldgen. O novo app ainda não executa esses oráculos; por isso não sintetiza um `horizon-resources.json` falso nem ativa uma saída incompleta.
 
