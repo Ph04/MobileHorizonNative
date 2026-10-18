@@ -103,6 +103,12 @@ jobs:
           # cannot exec downloaded binaries from filesDir; java.rs must invoke the
           # system linker for both Java and javac rather than trying execve directly.
           python3 "$GITHUB_WORKSPACE/tools/patch_horizon_prepare_android_linker.py" "$SOURCE"
+          grep -Fq 'command.arg("--argv0");' "$SOURCE/crates/horizon-prepare/src/java.rs"
+          grep -Fq 'command.arg(java);' "$SOURCE/crates/horizon-prepare/src/java.rs"
+          grep -Fq 'command.arg("--argv0")' "$GITHUB_WORKSPACE/app/src/main/java/dev/mobilehorizon/app/JdkRuntimeInstaller.java"
+          grep -Fq 'command.add("--argv0")' "$GITHUB_WORKSPACE/app/src/main/java/dev/mobilehorizon/app/JdkRuntimeInstaller.java"
+          grep -Fq '"--argv0"' "$GITHUB_WORKSPACE/app/src/main/java/dev/mobilehorizon/app/HorizonPrepareRunner.java"
+          echo "Verified explicit Bionic linker argv0 handling in both Java/javac and the ARM64 preparer."
 
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
