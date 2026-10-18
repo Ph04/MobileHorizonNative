@@ -21,6 +21,9 @@ import android.content.pm.ApplicationInfo;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
+import android.text.InputFilter;
+import android.text.InputType;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -73,6 +76,9 @@ public final class MainActivity extends Activity {
     private Button microsoftLoginButton;
     private Button microsoftSignOutButton;
     private TextView accountStatusText;
+    private TextView offlineStatusText;
+    private Button offlineNameButton;
+    private Button offlinePlayButton;
     private boolean busy;
     private boolean conversionBusy;
     private boolean downloadBusy;
@@ -84,6 +90,7 @@ public final class MainActivity extends Activity {
     private boolean authBusy;
     private boolean launchBusy;
     private boolean sessionEnvSet;
+    private boolean offlineNameEnvSet;
     private String lastPresentedDeviceCode;
 
     private final BroadcastReceiver downloadReceiver = new BroadcastReceiver() {
@@ -125,6 +132,7 @@ public final class MainActivity extends Activity {
         setStatus("Pronto",
                 "Baixe os arquivos oficiais do Minecraft 26.3, prepare as entradas para conversão ou importe uma saída Horizon já preparada.");
         refreshAccountUi();
+        refreshOfflineUi();
     }
 
     @Override
@@ -170,6 +178,10 @@ public final class MainActivity extends Activity {
         if (sessionEnvSet) {
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
+        }
+        if (offlineNameEnvSet) {
+            try { Os.unsetenv("HORIZON_PLAYER_NAME"); } catch (Exception ignored) {}
+            offlineNameEnvSet = false;
         }
         showNativeSmokeResultIfAvailable();
         showNativeClientResultIfAvailable();
@@ -260,6 +272,27 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams prepareInputsParams = params(-1, dp(50));
         prepareInputsParams.topMargin = dp(8);
         page.addView(prepareInputsButton, prepareInputsParams);
+
+        TextView offlineHeading = text("Conta offline", 18, 0xff18213a, true);
+        LinearLayout.LayoutParams offlineHeadingParams = params(-1, -2);
+        offlineHeadingParams.topMargin = dp(24);
+        page.addView(offlineHeading, offlineHeadingParams);
+        offlineStatusText = text("Nick offline: " + OfflineProfile.loadName(this), 14, 0xff59647b, false);
+        LinearLayout.LayoutParams offlineStatusParams = params(-1, -2);
+        offlineStatusParams.topMargin = dp(6);
+        page.addView(offlineStatusText, offlineStatusParams);
+        TextView offlineNote = text("Não precisa de login Microsoft. Serve para testar o cliente e mundos locais; servidores online podem exigir autenticação oficial.", 13, 0xff59647b, false);
+        LinearLayout.LayoutParams offlineNoteParams = params(-1, -2);
+        offlineNoteParams.topMargin = dp(4);
+        page.addView(offlineNote, offlineNoteParams);
+        offlineNameButton = button("Definir nick offline", false, v -> showOfflineNameDialog());
+        LinearLayout.LayoutParams offlineNameParams = params(-1, dp(48));
+        offlineNameParams.topMargin = dp(10);
+        page.addView(offlineNameButton, offlineNameParams);
+        offlinePlayButton = button("Iniciar com conta offline", true, v -> openOfflineClient());
+        LinearLayout.LayoutParams offlinePlayParams = params(-1, dp(50));
+        offlinePlayParams.topMargin = dp(8);
+        page.addView(offlinePlayButton, offlinePlayParams);
 
         TextView accountHeading = text("Conta Microsoft", 18, 0xff18213a, true);
         LinearLayout.LayoutParams accountHeadingParams = params(-1, -2);
@@ -805,6 +838,63 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void refreshOfflineUi() {
+        if (offlineStatusText != null) {
+            offlineStatusText.setText("Nick offline: " + OfflineProfile.loadName(this));
+        }
+    }
+
+    private void showOfflineNameDialog() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(16)});
+        input.setText(OfflineProfile.loadName(this));
+        input.setSelection(input.length());
+        new AlertDialog.Builder(this)
+                .setTitle("Nick offline")
+                .setMessage("Use de 3 a 16 letras, números ou sublinhados.")
+                .setView(input)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    try {
+                        String name = OfflineProfile.saveName(this, input.getText().toString());
+                        refreshOfflineUi();
+                        setStatus("Nick offline salvo", "O cliente tentará iniciar com o nome " + name + ".");
+                    } catch (Exception error) {
+                        showRuntimeError("Nick inválido", safeMessage(error));
+                    }
+                }).show();
+    }
+
+    private void openOfflineClient() {
+        if (busy || conversionBusy || downloadBusy || authBusy || launchBusy) return;
+        if (!isHorizonNativeLibraryAvailable()) {
+            showRuntimeError("Biblioteca Horizon ausente",
+                    "O APK precisa conter libhorizon_android.so para ARM64 antes que o cliente possa ser usado.");
+            return;
+        }
+        File resources = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+        try {
+            String resourceSummary = HorizonResourceConverter.validatePreparedResources(resources);
+            String playerName = OfflineProfile.loadName(this);
+            new File(getFilesDir(), "horizon-client-result.txt").delete();
+            try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
+            sessionEnvSet = false;
+            Os.setenv("HORIZON_PLAYER_NAME", playerName, true);
+            offlineNameEnvSet = true;
+            startActivity(new Intent(this, android.app.NativeActivity.class));
+            setStatus("Iniciando cliente em modo offline",
+                    "Perfil local: " + playerName + "\n" + resourceSummary
+                            + "\n\nO perfil não autentica uma conta Microsoft nem concede licença online.");
+        } catch (Exception error) {
+            try { Os.unsetenv("HORIZON_PLAYER_NAME"); } catch (Exception ignored) {}
+            offlineNameEnvSet = false;
+            showRuntimeError("Não foi possível iniciar offline",
+                    safeMessage(error) + "\n\nÉ necessária uma saída Horizon completa em .local/horizon-client/26.3. A extração vanilla sozinha não basta.");
+        }
+    }
+
     private void openNativeClient() {
         if (busy || conversionBusy || downloadBusy || authBusy || launchBusy) return;
         if (!isHorizonNativeLibraryAvailable()) {
@@ -1188,6 +1278,8 @@ public final class MainActivity extends Activity {
         if (microsoftLoginButton != null) microsoftLoginButton.setEnabled(!blocked);
         if (microsoftSignOutButton != null) microsoftSignOutButton.setEnabled(!blocked
                 && getSharedPreferences("microsoft_account_state", MODE_PRIVATE).getBoolean("hasAccount", false));
+        if (offlineNameButton != null) offlineNameButton.setEnabled(!blocked);
+        if (offlinePlayButton != null) offlinePlayButton.setEnabled(!blocked);
         if (cancelButton != null) {
             boolean cancellable = busy || conversionBusy || authBusy;
             cancelButton.setVisibility(cancellable ? View.VISIBLE : View.GONE);
