@@ -68,6 +68,10 @@ O verificador só bloqueia SAF quando o backend declara `IMPORT_OUTPUT`, exige h
 
 `EncryptedRefreshTokenStore` guarda o token de renovação com AES-GCM e uma chave não exportável do Android Keystore. Antes de abrir NativeActivity, o launcher renova e verifica a sessão novamente e grava um JSON de uso único sob `files/sessions/`, com permissões 0600. `HORIZON_SESSION_FILE` aponta para esse arquivo; a runtime o lê uma vez e o apaga. O retorno do cliente é exibido a partir de `horizon-client-result.txt`. Isso conecta a autenticação ao motor, mas não fabrica os recursos derivados que a runtime espera.
 
+### Perfil local/offline
+
+A tela de conta offline permite definir um nick de 3–16 caracteres ([A–Z, a–z, 0–9, _]), que é salvo em preferências locais separadas da conta Microsoft. O botão de iniciar offline valida a mesma árvore de recursos completa que o modo autenticado exige, mas não verifica nem fabrica token, UUID de conta autenticada ou entitlement. Antes de abrir NativeActivity, o app remove `HORIZON_SESSION_FILE` e define `HORIZON_PLAYER_NAME` para o nick local. O CI examina a biblioteca ARM64 fixada para registrar se ela contém essa variável; o teste definitivo do nome escolhido e do carregamento offline ainda precisa ser feito em Android real.
+
 ## 7. Limites ainda em aberto
 
 - Completar o exportador Horizon no Android sem Termux. O serviço em segundo plano já executa a etapa vanilla e três mapas diretos de tags/dano; ainda não executa os oráculos Java 25 necessários às tabelas finais.
