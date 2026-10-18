@@ -264,6 +264,11 @@ final class HorizonResourceConverter {
                 "assets/minecraft do cliente e data/minecraft do servidor");
         ExtractionSummary extraction = extractVanillaSources(clientJar, serverJar, planDir,
                 minecraftRoot, indexedAssets, verifiedAssetObjects, cancelled, listener);
+        report(listener, "Exportando dados vanilla disponíveis", 5, 6,
+                "tags de blocos, tipos de dano e tags de dano");
+        VanillaDirectResourceExporter.Summary directExports = VanillaDirectResourceExporter.export(
+                planDir, cancelled,
+                (stage, completed, total, detail) -> report(listener, stage, completed, total, detail));
         report(listener, "Gravando plano de conversão", 5, 6, "conversion-plan.json");
         JSONObject plan = new JSONObject();
         plan.put("format", "mobilehorizon-conversion-input");
@@ -293,9 +298,14 @@ final class HorizonResourceConverter {
         plan.put("indexed_asset_names", indexedAssets.size());
         plan.put("asset_names_materialized", extraction.hydratedAssetNames);
         plan.put("asset_bytes_materialized", extraction.hydratedAssetBytes);
-        plan.put("conversion_state", "VANILLA_ASSETS_AND_DATA_STAGED_AWAITING_EXPORTER");
+        plan.put("direct_export_directory", ".local/horizon-input/" + VERSION + "/direct-export");
+        plan.put("direct_export_state", directExports.state);
+        plan.put("direct_export_files", directExports.outputFiles);
+        plan.put("direct_export_source_json_files", directExports.sourceJsonFiles);
+        plan.put("direct_export_source_bytes", directExports.sourceBytes);
+        plan.put("conversion_state", "VANILLA_DIRECT_EXPORTS_READY_AWAITING_RUNTIME_ORACLES");
         plan.put("conversion_blocker",
-                "The full Horizon exporter currently depends on Java 25 javac/java. This plan verifies and normalizes the inputs; it does not claim that generated Horizon gameplay/worldgen resources exist.");
+                "The direct JSON exporter now produces block-tags.json, damage-types.json and damage-tags.json in .local/horizon-input. The full Horizon exporter still needs Java 25 oracles/data generator for gameplay, render, collision, registries and worldgen. No runtime resources are implied.");
         plan.put("required_output_directory", ".local/horizon-client/" + VERSION);
         writeAtomically(plan.toString(2).getBytes(StandardCharsets.UTF_8),
                 new File(planDir, "conversion-plan.json"));
@@ -310,7 +320,9 @@ final class HorizonResourceConverter {
                 + formatBytes(extraction.hydratedAssetBytes) + "), sem alterar os JARs oficiais. "
                 + "Bibliotecas verificadas: " + verifiedLibraries + ". Objetos de asset íntegros disponíveis: "
                 + present + "/" + unique.size() + "; ausentes ou corrompidos: " + missing + ". "
-                + "O exportador Horizon Java 25 ainda não foi portado, então a árvore final de gameplay/worldgen ainda não existe.";
+                + "O exportador Android direto gerou 3 mapas JSON (" + directExports.sourceJsonFiles
+                + " recursos-fonte comparados entre cliente/servidor) em .local/horizon-input/26.3/direct-export. "
+                + "O exportador Horizon Java 25 ainda não foi portado por completo; recursos de gameplay/worldgen, render, colisão e registries ainda faltam.";
         return new InputReport(new File(planDir, "conversion-plan.json"), verifiedLibraries,
                 unique.size(), present, missing, clientSha1, serverSha1, assetIndexId,
                 extraction.clientFiles, extraction.serverFiles, extraction.bytes,
