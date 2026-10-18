@@ -601,6 +601,13 @@ final class HorizonResourceConverter {
         if (!partial.renameTo(destination)) throw new IllegalStateException("Não foi possível ativar o plano de conversão.");
     }
 
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024L) return bytes + " B";
+        if (bytes < 1024L * 1024L) return String.format(Locale.ROOT, "%.1f KiB", bytes / 1024.0);
+        if (bytes < 1024L * 1024L * 1024L) return String.format(Locale.ROOT, "%.1f MiB", bytes / (1024.0 * 1024.0));
+        return String.format(Locale.ROOT, "%.2f GiB", bytes / (1024.0 * 1024.0 * 1024.0));
+    }
+
     private static void checkCancelled(AtomicBoolean cancelled) throws InterruptedException {
         if ((cancelled != null && cancelled.get()) || Thread.currentThread().isInterrupted()) {
             throw new InterruptedException("Preparação para conversão cancelada.");
