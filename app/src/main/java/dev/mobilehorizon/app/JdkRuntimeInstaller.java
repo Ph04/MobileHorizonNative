@@ -340,8 +340,69 @@ final class JdkRuntimeInstaller {
                                        ProgressListener listener) throws Exception {
         ensureDirectory(new File(runtime.root, "home"));
         ensureDirectory(new File(runtime.root, "tmp"));
+
+        // The tar extractor restores Debian file modes, but some Android filesystems or
+        // package symlink layouts can leave the final command target without +x. Repair
+        // permissions after every extraction and also when reusing an older installation.
+        // Do this for all JDK command entrypoints before invoking any of them.
+        File bin = new File(runtime.javaHome, "bin");
+        File[] commands = bin.listFiles();
+        if (commands == null || commands.length == 0) {
+            throw new IOException("O diretório bin do Java 25 está vazio: " + bin.getAbsolutePath());
+        }
+        for (File command : commands) {
+            checkCancelled(cancelled);
+            if (command.isFile()) ensureExecutableInsideRuntime(runtime, command, command.getName());
+        }
+        ensureExecutableInsideRuntime(runtime, runtime.javac, "javac");
+        ensureExecutableInsideRuntime(runtime, runtime.java, "java");
+        ensureOptionalExecutableInsideRuntime(runtime,
+                new File(runtime.javaHome, "lib/jspawnhelper"), "jspawnhelper");
+        ensureOptionalExecutableInsideRuntime(runtime,
+                new File(runtime.javaHome, "lib/jexec"), "jexec");
+
         runVersionCommand(runtime, runtime.javac, "javac", cancelled, listener);
         runVersionCommand(runtime, runtime.java, "java", cancelled, listener);
+    }
+
+    private static void ensureOptionalExecutableInsideRuntime(RuntimePaths runtime, File file,
+                                                               String label) throws IOException {
+        if (file.isFile()) ensureExecutableInsideRuntime(runtime, file, label);
+    }
+
+    private static void ensureExecutableInsideRuntime(RuntimePaths runtime, File file,
+                                                       String label) throws IOException {
+        if (file == null || !file.isFile()) {
+            throw new IOException("O executável " + label + " não existe no runtime Java 25: "
+                    + (file == null ? "(caminho nulo)" : file.getAbsolutePath()));
+        }
+
+        final File runtimeRoot;
+        final File executableTarget;
+        try {
+            runtimeRoot = runtime.root.getCanonicalFile();
+            executableTarget = file.getCanonicalFile();
+        } catch (IOException error) {
+            throw new IOException("Não foi possível resolver o caminho do executável " + label + ".", error);
+        }
+        if (!executableTarget.toPath().startsWith(runtimeRoot.toPath())) {
+            throw new IOException("O executável " + label
+                    + " aponta para fora do runtime privado; recusando alterar permissões: "
+                    + executableTarget.getAbsolutePath());
+        }
+
+        try {
+            // chmod the resolved target rather than the symlink itself.
+            Os.chmod(executableTarget.getAbsolutePath(), 0755);
+        } catch (Exception error) {
+            throw new IOException("O Android não permitiu aplicar permissão de execução ao " + label
+                    + ": " + executableTarget.getAbsolutePath() + " (" + error.getMessage() + ")", error);
+        }
+        if (!executableTarget.canExecute()) {
+            throw new IOException("O " + label + " continua sem permissão de execução mesmo após chmod 0755: "
+                    + executableTarget.getAbsolutePath()
+                    + ". Apague a instalação Java 25 no armazenamento privado e tente novamente.");
+        }
     }
 
     private static void runVersionCommand(RuntimePaths runtime, File executable, String label,
