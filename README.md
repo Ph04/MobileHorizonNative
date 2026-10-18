@@ -10,7 +10,7 @@ Aplicativo Android nativo para importar e validar saídas de preparação de rec
 - **Importação por Storage Access Framework (SAF)**, sem pedir permissão ampla para ler o armazenamento.
 - **Progresso visível** durante a análise/cópia, com contagem de arquivos e bytes, além de cancelamento cooperativo.
 - **Importação transacional**: os dados vão para uma pasta temporária do app e só substituem o conjunto ativo depois de terminar e passar pela validação básica. Em caso de erro, a importação anterior é preservada.
-- **Proteções para arquivos ZIP**: caminhos absolutos e .. são recusados; caminhos duplicados, profundidade excessiva, mais de 20.000 itens e mais de 2 GiB descompactados também são recusados.
+- **Proteções para arquivos ZIP e pastas preparadas**: caminhos absolutos e .. são recusados; caminhos duplicados e profundidade excessiva são bloqueados. O limite agora é de 250.000 itens e 2 GiB descompactados, para aceitar árvores grandes de recursos sem remover as proteções contra arquivos abusivos.
 - **Camada de compatibilidade Kotlin** com SDK mínimo, ABI, capacidades exigidas e validação do formato do SHA-256 declarado pelo backend.
 - **Testes unitários do núcleo** para combinações compatíveis/incompatíveis e requisitos do backend.
 - **GitHub Actions** para executar os testes e tentar compilar um APK de depuração, publicado como artifact da execução.
