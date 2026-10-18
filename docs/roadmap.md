@@ -27,6 +27,7 @@
 - [x] Produzir conversion-plan.json com hashes, contagens, ausências de assets, objetos materializados e estado do pipeline.
 - [x] Testar os formatos de arquivo de servidor plano/bundler e erro claro quando o JAR interno não contém dados.
 - [ ] Portar/empacotar os oráculos de JDK 25 e o exportador real, sem Termux.
+- [x] Executar a etapa de entrada vanilla em serviço foreground com progresso/cancelamento/notificação de conclusão.
 - [ ] Gerar todos os arquivos derivados exigidos pela runtime Horizon em .local/horizon-client/26.3.
 - [ ] Validar manifest, hashes e completude dessa saída antes de ativar a runtime.
 
@@ -36,8 +37,10 @@
 - [x] Expor teste Vulkan isolado e mostrar seu resultado à UI.
 - [x] Bloquear o lançamento do cliente enquanto recursos e autenticação oficial não estiverem prontos.
 - [ ] Testar NativeActivity, Vulkan, lifecycle e drivers em aparelho ARM64 real.
-- [ ] Integrar login oficial Microsoft/Minecraft e verificar entitlement de Java Edition.
-- [ ] Testar cliente com recursos completos, autenticação e controles de gameplay.
+- [x] Implementar fluxo de código de dispositivo Microsoft/Xbox/XSTS/Minecraft, consulta de perfil e verificação do entitlement de Java Edition.
+- [x] Criptografar o token de renovação com Android Keystore e entregar ao jogo apenas sessão temporária.
+- [ ] Configurar App ID próprio e obter aprovação dos serviços Minecraft; testar login real no APK publicado pelo CI.
+- [ ] Testar o cliente com árvore de recursos derivada completa, autenticação aprovada e controles de gameplay.
 
 ## Critérios para declarar jogável
 - Build reproduzível e APK com runtime verificada.
