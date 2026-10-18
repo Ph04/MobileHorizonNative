@@ -99,6 +99,11 @@ jobs:
           git -C "$SOURCE" checkout --detach FETCH_HEAD
           test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
 
+          # Apply the Android W^X workaround on the pinned source. targetSdk 35
+          # cannot exec downloaded binaries from filesDir; java.rs must invoke the
+          # system linker for both Java and javac rather than trying execve directly.
+          python3 "$GITHUB_WORKSPACE/tools/patch_horizon_prepare_android_linker.py" "$SOURCE"
+
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
           test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
@@ -238,13 +243,20 @@ jobs:
           HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
         run: gradle --no-daemon "-PHORIZON_MSA_CLIENT_ID=$HORIZON_MSA_CLIENT_ID" test :app:assembleDebug
 
-      - name: Verify native runtime is packaged in APK
+      - name: Verify the built APK and required runtime payloads
         shell: bash
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -tq "$APK"
           unzip -l "$APK" | grep -q 'lib/arm64-v8a/libhorizon_android.so'
-          echo "libhorizon_android.so is present in the APK."
+          unzip -l "$APK" | grep -q 'assets/horizon-prepare/horizon-prepare-arm64'
+          unzip -l "$APK" | grep -q 'assets/horizon-prepare/jdk-manifest.json'
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
+          grep -F "name='dev.mobilehorizon.app.offline1' versionCode='4' versionName='0.3.1-offline1'" "$RUNNER_TEMP/apk-badging.txt"
+          sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
+          echo "APK is valid, package/version match, and both Horizon ARM64 executables and Java 25 manifest payload are included."
 
       - name: Upload debug APK
         if: success()
