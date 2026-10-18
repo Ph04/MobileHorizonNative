@@ -213,6 +213,7 @@ public final class ResourcePreparationService extends Service {
         event.putExtra("detail", progress.detail);
         event.putExtra("completed", progress.completed);
         event.putExtra("total", progress.total);
+        event.putExtra("fullMode", fullMode);
         sendBroadcast(event);
     }
 
