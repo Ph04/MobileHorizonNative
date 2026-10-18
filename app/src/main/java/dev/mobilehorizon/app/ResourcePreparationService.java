@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class ResourcePreparationService extends Service {
     static final String ACTION_START = "dev.mobilehorizon.app.PREPARE_START";
+    static final String ACTION_START_FULL = "dev.mobilehorizon.app.PREPARE_START_FULL";
     static final String ACTION_CANCEL = "dev.mobilehorizon.app.PREPARE_CANCEL";
     static final String ACTION_QUERY = "dev.mobilehorizon.app.PREPARE_QUERY";
     static final String ACTION_ACK = "dev.mobilehorizon.app.PREPARE_ACK";
@@ -35,6 +36,7 @@ public final class ResourcePreparationService extends Service {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
     private volatile boolean running;
+    private volatile boolean fullMode;
     private volatile ProgressState lastProgress = new ProgressState(
             "Aguardando preparação", "Minecraft 26.3", 0, -1);
     private volatile long lastNotificationAt;
@@ -72,7 +74,7 @@ public final class ResourcePreparationService extends Service {
             stopSelf(startId);
             return START_NOT_STICKY;
         }
-        if (!ACTION_START.equals(action)) return running ? START_STICKY : START_NOT_STICKY;
+        if (!ACTION_START.equals(action) && !ACTION_START_FULL.equals(action)) return running ? START_STICKY : START_NOT_STICKY;
         if (running) {
             broadcastProgress(lastProgress);
             return START_STICKY;
@@ -80,9 +82,11 @@ public final class ResourcePreparationService extends Service {
 
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("hasResult", false).apply();
         cancelled.set(false);
+        fullMode = ACTION_START_FULL.equals(action);
         running = true;
         ProgressState initial = new ProgressState(
-                "Iniciando preparação", "Verificando os arquivos oficiais de Minecraft 26.3", 0, -1);
+                fullMode ? "Iniciando conversão completa" : "Iniciando preparação",
+                fullMode ? "Preparador Horizon + Java 25 ARM64" : "Verificando os arquivos oficiais de Minecraft 26.3", 0, -1);
         lastProgress = initial;
         startForeground(NOTIFICATION_ID, buildNotification(initial, true, false, false));
         executor.submit(this::runPreparation);
@@ -93,13 +97,20 @@ public final class ResourcePreparationService extends Service {
         boolean success = false;
         String message = "";
         HorizonResourceConverter.InputReport report = null;
+        boolean runningFullMode = fullMode;
         try {
-            report = HorizonResourceConverter.prepareConversionInputs(
-                    getFilesDir(), cancelled,
-                    (stage, completed, total, detail) ->
-                            updateProgress(new ProgressState(stage, detail, completed, total)));
+            if (runningFullMode) {
+                message = HorizonPrepareRunner.prepare(getApplicationContext(), cancelled,
+                        (stage, detail, completed, total) ->
+                                updateProgress(new ProgressState(stage, detail, completed, total)));
+            } else {
+                report = HorizonResourceConverter.prepareConversionInputs(
+                        getFilesDir(), cancelled,
+                        (stage, completed, total, detail) ->
+                                updateProgress(new ProgressState(stage, detail, completed, total)));
+                message = report.note == null ? "Entradas vanilla preparadas; exportador Horizon pendente." : report.note;
+            }
             success = true;
-            message = report.note == null ? "Entradas vanilla preparadas; exportador Horizon pendente." : report.note;
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             message = "Preparação cancelada. A extração parcial foi descartada.";
@@ -114,6 +125,7 @@ public final class ResourcePreparationService extends Service {
                             .putBoolean("hasResult", true)
                             .putBoolean("success", success)
                             .putBoolean("cancelled", cancelled.get())
+                            .putBoolean("fullMode", runningFullMode)
                             .putString("message", message)
                             .putLong("finishedAt", System.currentTimeMillis());
             if (report != null) {
@@ -209,6 +221,7 @@ public final class ResourcePreparationService extends Service {
         Intent event = new Intent(ACTION_FINISHED).setPackage(getPackageName());
         event.putExtra("success", state.getBoolean("success", false));
         event.putExtra("cancelled", state.getBoolean("cancelled", false));
+        event.putExtra("fullMode", state.getBoolean("fullMode", false));
         event.putExtra("message", state.getString("message", "Preparação finalizada."));
         event.putExtra("libraries", state.getInt("libraries", 0));
         event.putExtra("uniqueAssets", state.getInt("uniqueAssets", 0));
