@@ -30,7 +30,11 @@
 - [x] Portar o primeiro estágio do exportador Android para block tags, damage types e damage tags, validando a igualdade cliente/servidor e mantendo os mapas fora da runtime final.
 - [x] Testar saída, manifesto da etapa e recusa segura quando cliente/servidor divergem.
 - [x] Testar os formatos de arquivo de servidor plano/bundler e erro claro quando o JAR interno não contém dados.
-- [ ] Portar/empacotar os oráculos de JDK 25 e o exportador real, sem Termux.
+- [x] Cross-compilar o preparador Horizon ARM64 e empacotar fontes de oráculos no APK por CI.
+- [x] Adicionar instalador privado do OpenJDK 25 Android a partir de pacotes SHA-256 fixados.
+- [x] Adicionar fluxo em primeiro plano para executar o preparador completo no dispositivo sem abrir Termux.
+- [ ] Confirmar no CI que os pacotes Java 25 e o binário ARM64 são gerados corretamente.
+- [ ] Executar a conversão completa no aparelho e corrigir falhas do JDK/oráculos em ambiente Android.
 - [x] Executar a etapa de entrada vanilla em serviço foreground com progresso/cancelamento/notificação de conclusão.
 - [ ] Gerar todos os arquivos derivados exigidos pela runtime Horizon em .local/horizon-client/26.3.
 - [ ] Validar manifest, hashes e completude dessa saída antes de ativar a runtime.
