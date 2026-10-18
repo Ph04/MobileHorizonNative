@@ -309,7 +309,7 @@ final class OfficialMinecraftInstaller {
                         downloadVerified(url, dest, asset.hash, asset.size, "asset " + asset.hash,
                                 cancelled, (bytes, expected) -> {
                                     long totalDone = totals.completedBytes.get();
-                                    notify(listener, "Baixando assets oficiais",
+                                    OfficialMinecraftInstaller.notify(listener, "Baixando assets oficiais",
                                             "Asset " + asset.hash + " · " + formatBytes(bytes),
                                             completed.get(), assets.size(), bytes, expected,
                                             totalDone + bytes, totalBytes);
@@ -317,7 +317,7 @@ final class OfficialMinecraftInstaller {
                         totals.completedBytes.addAndGet(asset.size);
                         int done = completed.incrementAndGet();
                         if (done == 1 || done == assets.size() || done % 10 == 0) {
-                            notify(listener, "Assets oficiais verificados",
+                            OfficialMinecraftInstaller.notify(listener, "Assets oficiais verificados",
                                     done + "/" + assets.size(), done, assets.size(),
                                     0, -1, totals.completedBytes.get(), totalBytes);
                         }
