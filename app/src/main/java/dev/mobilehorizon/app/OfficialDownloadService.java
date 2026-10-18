@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class OfficialDownloadService extends Service {
     static final String ACTION_START = "dev.mobilehorizon.app.DOWNLOAD_START";
     static final String ACTION_CANCEL = "dev.mobilehorizon.app.DOWNLOAD_CANCEL";
+    static final String ACTION_QUERY = "dev.mobilehorizon.app.DOWNLOAD_QUERY";
     static final String ACTION_PROGRESS = "dev.mobilehorizon.app.DOWNLOAD_PROGRESS";
     static final String ACTION_FINISHED = "dev.mobilehorizon.app.DOWNLOAD_FINISHED";
     static final String EXTRA_ALL_ASSETS = "all_assets";
@@ -44,6 +45,14 @@ public final class OfficialDownloadService extends Service {
             cancelled.set(true);
             broadcastProgress(new OfficialMinecraftInstaller.Progress(
                     "Cancelamento solicitado", "Aguardando o ponto seguro", 0, -1, 0, -1, 0, -1));
+            return START_NOT_STICKY;
+        }
+        if (ACTION_QUERY.equals(action)) {
+            if (running) {
+                broadcastProgress(lastProgress);
+                return START_STICKY;
+            }
+            stopSelf(startId);
             return START_NOT_STICKY;
         }
         if (!ACTION_START.equals(action)) {
