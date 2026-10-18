@@ -41,7 +41,7 @@ A saída ativa fica no armazenamento privado do app, em files/prepared-resources
 - Ainda **não prepara localmente** toda a árvore Horizon que hoje é criada pelo horizon-prepare fora do app.
 - Não inclui a biblioteca libhorizon_android.so nem inicia o motor gráfico nesta versão. O adaptador Horizon deve permanecer desativado até que a ABI, o SHA-256 e o carregamento real no aparelho sejam verificados.
 - Uma importação concluída comprova apenas que os arquivos foram copiados e passaram pelas verificações básicas; não prova que Minecraft inicia, carrega um mundo ou funciona com Vulkan.
-- O build APK não foi confirmado neste ambiente de edição. O workflow CI foi adicionado para executar essa validação.
+- **Validação de build:** o workflow do GitHub Actions passou no commit `88fbf722` em 18 de outubro de 2026 e publicou um APK de depuração. Isso confirma compilação e testes unitários do núcleo no CI, mas não substitui um teste de instalação/importação num Android real.
 
 ## Fonte 0.9.9 anterior
 
