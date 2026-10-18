@@ -998,9 +998,10 @@ public final class MainActivity extends Activity {
                     launchBusy = false;
                     updateActionEnablement();
                     refreshAccountUi();
+                    File sessionFile = null;
                     try {
                         new File(getFilesDir(), "horizon-client-result.txt").delete();
-                        File sessionFile = writeOneShotSession(account);
+                        sessionFile = writeOneShotSession(account);
                         Os.setenv("HORIZON_SESSION_FILE", sessionFile.getAbsolutePath(), true);
                         sessionEnvSet = true;
                         startActivity(new Intent(this, android.app.NativeActivity.class));
@@ -1008,6 +1009,7 @@ public final class MainActivity extends Activity {
                                 "A sessão oficial foi verificada. A inicialização ainda depende de recursos derivados completos e validação real de gameplay.");
                     } catch (Exception error) {
                         try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
+                        if (sessionFile != null && sessionFile.exists()) sessionFile.delete();
                         sessionEnvSet = false;
                         setStatus("Não foi possível iniciar o cliente", safeMessage(error));
                     }
