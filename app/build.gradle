@@ -6,6 +6,10 @@ android {
     namespace 'dev.mobilehorizon.app'
     compileSdk 35
 
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId 'dev.mobilehorizon.app'
         minSdk 26
