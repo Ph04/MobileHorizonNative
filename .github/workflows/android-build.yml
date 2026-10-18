@@ -1,5 +1,9 @@
 name: Android build, official downloader and Horizon runtime
 
+concurrency:
+  group: mobilehorizon-android-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: ["**"]
