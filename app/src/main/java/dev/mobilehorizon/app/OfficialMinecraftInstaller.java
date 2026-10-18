@@ -109,6 +109,10 @@ final class OfficialMinecraftInstaller {
         }
     }
 
+    static boolean isAcceptedVersionJsonSha1(String value) {
+        return value != null && ACCEPTED_VERSION_JSON_SHA1.contains(value.toLowerCase(Locale.ROOT));
+    }
+
     private static final class Asset {
         final String hash;
         final long size;
@@ -444,7 +448,7 @@ final class OfficialMinecraftInstaller {
         }
     }
 
-    private static boolean libraryAllowedForAndroid(JSONObject library) {
+    static boolean libraryAllowedForAndroid(JSONObject library) {
         JSONArray rules = library.optJSONArray("rules");
         if (rules == null || rules.length() == 0) return true;
         boolean allowed = false;
@@ -467,7 +471,7 @@ final class OfficialMinecraftInstaller {
         return allowed;
     }
 
-    private static boolean nativeLibraryMatchesForAndroid(String name, List<String> allNames) {
+    static boolean nativeLibraryMatchesForAndroid(String name, List<String> allNames) {
         String[] parts = name.split(":", -1);
         String classifier = parts.length > 3 ? parts[3] : "";
         if (classifierEndsWith(classifier, "arm64") || classifierEndsWith(classifier, "aarch64")
@@ -489,7 +493,7 @@ final class OfficialMinecraftInstaller {
         catch (RuntimeException error) { return false; }
     }
 
-    private static boolean isSafeRelativePath(String path) {
+    static boolean isSafeRelativePath(String path) {
         if (path == null || path.isEmpty() || path.startsWith("/")
                 || path.indexOf('\\') >= 0 || path.indexOf('\0') >= 0) return false;
         for (String segment : path.split("/", -1)) {
@@ -503,7 +507,7 @@ final class OfficialMinecraftInstaller {
                 && !".".equals(value) && !"..".equals(value);
     }
 
-    private static boolean isSha1(String value) {
+    static boolean isSha1(String value) {
         return value != null && value.matches("[0-9a-f]{40}");
     }
 
