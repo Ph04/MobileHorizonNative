@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
  * Horizon-specific resource checks and the first step of the conversion pipeline.
@@ -35,6 +37,9 @@ final class HorizonResourceConverter {
     private static final int MAX_MANIFEST_BYTES = 1024 * 1024;
     private static final int MAX_RESOURCE_FILES = 250_000;
     private static final int MAX_RESOURCE_DEPTH = 64;
+    private static final int MAX_SOURCE_JAR_ENTRIES = 500_000;
+    private static final int MAX_EXTRACTED_SOURCE_FILES = 150_000;
+    private static final long MAX_EXTRACTED_SOURCE_BYTES = 1536L * 1024L * 1024L;
 
     private static final String[] REQUIRED_ROOT_FILES = {
             "facts.json", "block-tags.json", "block-behaviours.json", "gameplay-facts.json",
@@ -79,11 +84,15 @@ final class HorizonResourceConverter {
         final String clientSha1;
         final String serverSha1;
         final String assetIndexId;
+        final int extractedClientFiles;
+        final int extractedServerFiles;
+        final long extractedSourceBytes;
         final String note;
 
         InputReport(File planFile, int libraries, int uniqueAssets, int presentAssetObjects,
                     int missingAssetObjects, String clientSha1, String serverSha1,
-                    String assetIndexId, String note) {
+                    String assetIndexId, int extractedClientFiles, int extractedServerFiles,
+                    long extractedSourceBytes, String note) {
             this.planFile = planFile;
             this.verifiedLibraries = libraries;
             this.uniqueAssets = uniqueAssets;
@@ -92,6 +101,9 @@ final class HorizonResourceConverter {
             this.clientSha1 = clientSha1;
             this.serverSha1 = serverSha1;
             this.assetIndexId = assetIndexId;
+            this.extractedClientFiles = extractedClientFiles;
+            this.extractedServerFiles = extractedServerFiles;
+            this.extractedSourceBytes = extractedSourceBytes;
             this.note = note;
         }
     }
@@ -229,11 +241,16 @@ final class HorizonResourceConverter {
             }
         }
 
-        report(listener, "Gravando plano de conversão", 4, 5, "conversion-plan.json");
         File planDir = new File(appFilesDir, ".local/horizon-input/" + VERSION);
         if (!planDir.isDirectory() && !planDir.mkdirs()) {
             throw new IllegalStateException("Não foi possível criar o diretório privado de entrada do conversor.");
         }
+
+        report(listener, "Extraindo recursos vanilla", 4, 6,
+                "assets/minecraft do cliente e data/minecraft do servidor");
+        ExtractionSummary extraction = extractVanillaSources(clientJar, serverJar, planDir,
+                cancelled, listener);
+        report(listener, "Gravando plano de conversão", 5, 6, "conversion-plan.json");
         JSONObject plan = new JSONObject();
         plan.put("format", "mobilehorizon-conversion-input");
         plan.put("format_version", 1);
@@ -255,20 +272,228 @@ final class HorizonResourceConverter {
         plan.put("missing_asset_objects", missing);
         plan.put("asset_objects_integrity", missing == 0 ? "all-present-and-sha1-verified" : "incomplete-or-hash-mismatch");
         plan.put("asset_objects_root", "minecraft/assets/objects");
-        plan.put("conversion_state", "AWAITING_NATIVE_EXPORTER");
+        plan.put("vanilla_sources_directory", ".local/horizon-input/" + VERSION + "/vanilla");
+        plan.put("extracted_client_resource_files", extraction.clientFiles);
+        plan.put("extracted_server_resource_files", extraction.serverFiles);
+        plan.put("extracted_vanilla_source_bytes", extraction.bytes);
+        plan.put("conversion_state", "SOURCE_RESOURCES_STAGED_AWAITING_EXPORTER");
         plan.put("conversion_blocker",
                 "The full Horizon exporter currently depends on Java 25 javac/java. This plan verifies and normalizes the inputs; it does not claim that generated Horizon gameplay/worldgen resources exist.");
         plan.put("required_output_directory", ".local/horizon-client/" + VERSION);
         writeAtomically(plan.toString(2).getBytes(StandardCharsets.UTF_8),
                 new File(planDir, "conversion-plan.json"));
-        report(listener, "Entradas prontas para o conversor", 5, 5,
-                "Bibliotecas: " + verifiedLibraries + " · Assets presentes: " + present + "/" + unique.size());
+        report(listener, "Entradas e recursos vanilla preparados", 6, 6,
+                "Cliente: " + extraction.clientFiles + " arquivos · servidor: " + extraction.serverFiles
+                        + " arquivos · assets baixados: " + present + "/" + unique.size());
 
-        String note = "Entradas oficiais verificadas e plano criado. "
-                + "Bibliotecas: " + verifiedLibraries + ". Assets presentes: " + present + "/" + unique.size()
-                + ". Estado: aguardando o exportador nativo Horizon; ainda não é uma instalação jogável.";
+        String note = "Entradas oficiais verificadas; " + extraction.clientFiles
+                + " arquivos de assets do cliente e " + extraction.serverFiles
+                + " arquivos de dados do servidor foram extraídos para a área de trabalho, sem alterar os JARs oficiais. "
+                + "Bibliotecas verificadas: " + verifiedLibraries + ". Assets por hash disponíveis: "
+                + present + "/" + unique.size() + ". O exportador Horizon Java 25 ainda não foi portado: "
+                + "esta etapa não produz a árvore final jogável.";
         return new InputReport(new File(planDir, "conversion-plan.json"), verifiedLibraries,
-                unique.size(), present, missing, clientSha1, serverSha1, assetIndexId, note);
+                unique.size(), present, missing, clientSha1, serverSha1, assetIndexId,
+                extraction.clientFiles, extraction.serverFiles, extraction.bytes, note);
+    }
+
+    private static final class ExtractionSummary {
+        final int clientFiles;
+        final int serverFiles;
+        final long bytes;
+
+        ExtractionSummary(int clientFiles, int serverFiles, long bytes) {
+            this.clientFiles = clientFiles;
+            this.serverFiles = serverFiles;
+            this.bytes = bytes;
+        }
+    }
+
+    private static final class ExtractionPart {
+        final int files;
+        final long bytes;
+
+        ExtractionPart(int files, long bytes) {
+            this.files = files;
+            this.bytes = bytes;
+        }
+    }
+
+    /**
+     * Stages only the vanilla resource trees consumed by the Horizon exporter. This does not
+     * claim that oracle-generated gameplay/worldgen registries have been produced.
+     */
+    private static ExtractionSummary extractVanillaSources(File clientJar, File serverJar,
+                                                            File planDir, AtomicBoolean cancelled,
+                                                            ProgressListener listener) throws Exception {
+        File active = new File(planDir, "vanilla");
+        File staging = new File(planDir, "vanilla.importing");
+        File backup = new File(planDir, "vanilla.previous");
+        recoverFolderPromotion(active, backup);
+        deleteRecursively(staging);
+        if (!staging.mkdirs() && !staging.isDirectory()) {
+            throw new IllegalStateException("Não foi possível criar a pasta temporária dos recursos vanilla.");
+        }
+        try {
+            File clientDestination = new File(staging, "client/assets/minecraft");
+            File serverDestination = new File(staging, "server/data/minecraft");
+            ExtractionPart client = extractZipPrefix(clientJar, "assets/minecraft/",
+                    clientDestination, "Extraindo assets do cliente", cancelled, listener);
+            ExtractionPart server = extractZipPrefix(serverJar, "data/minecraft/",
+                    serverDestination, "Extraindo dados do servidor", cancelled, listener);
+            if (client.files <= 0 || server.files <= 0) {
+                throw new IllegalStateException("Os JARs oficiais não continham as árvores vanilla assets/minecraft e data/minecraft esperadas.");
+            }
+            if (!new File(clientDestination, "lang/en_us.json").isFile()) {
+                throw new IllegalStateException("O JAR do cliente não contém assets/minecraft/lang/en_us.json.");
+            }
+            if (!new File(serverDestination, "dimension_type/overworld.json").isFile()) {
+                throw new IllegalStateException("O JAR do servidor não contém data/minecraft/dimension_type/overworld.json.");
+            }
+            JSONObject manifest = new JSONObject();
+            manifest.put("format", "mobilehorizon-vanilla-source-tree");
+            manifest.put("format_version", 1);
+            manifest.put("minecraft_version", VERSION);
+            manifest.put("client_jar_sha1", sha1(clientJar));
+            manifest.put("server_jar_sha1", sha1(serverJar));
+            manifest.put("client_prefix", "assets/minecraft/");
+            manifest.put("server_prefix", "data/minecraft/");
+            manifest.put("client_files", client.files);
+            manifest.put("server_files", server.files);
+            manifest.put("extracted_bytes", client.bytes + server.bytes);
+            manifest.put("state", "VANILLA_INPUTS_ONLY_NOT_HORIZON_RUNTIME_RESOURCES");
+            writeAtomically(manifest.toString(2).getBytes(StandardCharsets.UTF_8),
+                    new File(staging, "source-input-manifest.json"));
+            promoteFolder(staging, active, backup);
+            return new ExtractionSummary(client.files, server.files, client.bytes + server.bytes);
+        } catch (Exception error) {
+            deleteRecursively(staging);
+            throw error;
+        }
+    }
+
+    private static ExtractionPart extractZipPrefix(File archiveFile, String requiredPrefix,
+                                                    File destination, String stage,
+                                                    AtomicBoolean cancelled,
+                                                    ProgressListener listener) throws Exception {
+        ensureDirectory(destination);
+        File root = destination.getCanonicalFile();
+        Set<String> seenFiles = new HashSet<>();
+        int scannedEntries = 0;
+        int extractedFiles = 0;
+        long extractedBytes = 0;
+        byte[] buffer = new byte[64 * 1024];
+        try (ZipInputStream zip = new ZipInputStream(
+                new BufferedInputStream(new FileInputStream(archiveFile)))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                checkCancelled(cancelled);
+                scannedEntries++;
+                if (scannedEntries > MAX_SOURCE_JAR_ENTRIES) {
+                    throw new IllegalArgumentException(archiveFile.getName() + " contém mais de "
+                            + MAX_SOURCE_JAR_ENTRIES + " entradas ZIP.");
+                }
+                String name = entry.getName();
+                if (name == null || !name.startsWith(requiredPrefix)) {
+                    zip.closeEntry();
+                    continue;
+                }
+                String relative = name.substring(requiredPrefix.length());
+                if (relative.isEmpty()) {
+                    zip.closeEntry();
+                    continue;
+                }
+                if (entry.isDirectory() && relative.endsWith("/")) {
+                    relative = relative.substring(0, relative.length() - 1);
+                }
+                if (!OfficialMinecraftInstaller.isSafeRelativePath(relative)) {
+                    throw new IllegalArgumentException("O JAR contém caminho inseguro em " + requiredPrefix + ".");
+                }
+                File target = new File(root, relative).getCanonicalFile();
+                if (!target.getPath().startsWith(root.getPath() + File.separator)) {
+                    throw new IllegalArgumentException("Uma entrada do JAR escapou da área temporária.");
+                }
+                if (entry.isDirectory()) {
+                    ensureDirectory(target);
+                } else {
+                    if (!seenFiles.add(relative)) {
+                        throw new IllegalArgumentException("O JAR contém arquivo duplicado: " + relative);
+                    }
+                    extractedFiles++;
+                    if (extractedFiles > MAX_EXTRACTED_SOURCE_FILES) {
+                        throw new IllegalArgumentException("A extração excedeu " + MAX_EXTRACTED_SOURCE_FILES + " arquivos.");
+                    }
+                    File parent = target.getParentFile();
+                    ensureDirectory(parent);
+                    try (OutputStream output = new BufferedOutputStream(new FileOutputStream(target))) {
+                        int read;
+                        while ((read = zip.read(buffer)) != -1) {
+                            checkCancelled(cancelled);
+                            extractedBytes += read;
+                            if (extractedBytes > MAX_EXTRACTED_SOURCE_BYTES) {
+                                throw new IllegalArgumentException("Os recursos vanilla descompactados ultrapassam o limite de 1,5 GiB.");
+                            }
+                            output.write(buffer, 0, read);
+                        }
+                    }
+                    if (extractedFiles == 1 || extractedFiles % 25 == 0) {
+                        report(listener, stage, extractedFiles, -1,
+                                relative + " · " + formatBytes(extractedBytes));
+                    }
+                }
+                zip.closeEntry();
+            }
+        }
+        report(listener, stage, extractedFiles, extractedFiles,
+                extractedFiles + " arquivos · " + formatBytes(extractedBytes));
+        return new ExtractionPart(extractedFiles, extractedBytes);
+    }
+
+    private static void recoverFolderPromotion(File active, File backup) throws Exception {
+        if (!active.exists() && backup.exists()) {
+            if (!backup.renameTo(active)) {
+                throw new IllegalStateException("Não foi possível restaurar a extração vanilla anterior.");
+            }
+        } else if (active.exists() && backup.exists()) {
+            deleteRecursively(backup);
+        }
+    }
+
+    private static void promoteFolder(File staging, File active, File backup) throws Exception {
+        deleteRecursively(backup);
+        boolean hadActive = active.exists();
+        if (hadActive && !active.renameTo(backup)) {
+            throw new IllegalStateException("Não foi possível preservar a extração vanilla anterior.");
+        }
+        if (!staging.renameTo(active)) {
+            if (hadActive && !backup.renameTo(active)) {
+                throw new IllegalStateException("Não foi possível ativar a extração vanilla nem restaurar a anterior.");
+            }
+            throw new IllegalStateException("Não foi possível ativar a nova extração vanilla; a anterior foi preservada.");
+        }
+        try {
+            deleteRecursively(backup);
+        } catch (Exception ignored) {
+            // The current extraction is already active; clean stale backup on the next run.
+        }
+    }
+
+    private static void ensureDirectory(File directory) throws Exception {
+        if (directory == null) throw new IllegalArgumentException("Diretório de extração inválido.");
+        if (!directory.isDirectory() && !directory.mkdirs()) {
+            throw new IllegalStateException("Não foi possível criar a pasta " + directory.getName() + ".");
+        }
+    }
+
+    private static void deleteRecursively(File file) throws Exception {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) for (File child : children) deleteRecursively(child);
+        }
+        if (!file.delete() && file.exists()) {
+            throw new IllegalStateException("Não foi possível limpar " + file.getName() + ".");
+        }
     }
 
     /** Strictly checks output the actual Horizon engine can consume, not a generic copied folder. */
