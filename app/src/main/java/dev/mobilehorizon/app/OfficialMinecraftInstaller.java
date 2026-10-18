@@ -120,7 +120,7 @@ final class OfficialMinecraftInstaller {
     }
 
     private static final class Totals {
-        final AtomicLong completedBytes = new AtomicLong();
+        final AtomicLong bytesProcessed = new AtomicLong();
     }
 
     private OfficialMinecraftInstaller() {}
@@ -307,20 +307,21 @@ final class OfficialMinecraftInstaller {
                         checkCancelled(cancelled);
                         File dest = safeFile(objectsRoot, asset.hash.substring(0, 2) + "/" + asset.hash);
                         String url = "https://resources.download.minecraft.net/" + asset.hash.substring(0, 2) + "/" + asset.hash;
+                        AtomicLong itemProcessedBytes = new AtomicLong(0);
                         downloadVerified(url, dest, asset.hash, asset.size, "asset " + asset.hash,
                                 cancelled, (bytes, expected) -> {
-                                    long totalDone = totals.completedBytes.get();
+                                    long previous = itemProcessedBytes.getAndSet(bytes);
+                                    long aggregate = totals.bytesProcessed.addAndGet(bytes - previous);
                                     OfficialMinecraftInstaller.notify(listener, "Baixando assets oficiais",
                                             "Asset " + asset.hash + " · " + formatBytes(bytes),
                                             completed.get(), assets.size(), bytes, expected,
-                                            totalDone + bytes, totalAssetBytes);
+                                            aggregate, totalAssetBytes);
                                 });
-                        totals.completedBytes.addAndGet(asset.size);
                         int done = completed.incrementAndGet();
                         if (done == 1 || done == assets.size() || done % 10 == 0) {
                             OfficialMinecraftInstaller.notify(listener, "Assets oficiais verificados",
                                     done + "/" + assets.size(), done, assets.size(),
-                                    0, -1, totals.completedBytes.get(), totalAssetBytes);
+                                    0, -1, totals.bytesProcessed.get(), totalAssetBytes);
                         }
                         return null;
                     }
