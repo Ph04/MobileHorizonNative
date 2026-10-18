@@ -20,6 +20,7 @@ public final class OfficialDownloadService extends Service {
     static final String ACTION_START = "dev.mobilehorizon.app.DOWNLOAD_START";
     static final String ACTION_CANCEL = "dev.mobilehorizon.app.DOWNLOAD_CANCEL";
     static final String ACTION_QUERY = "dev.mobilehorizon.app.DOWNLOAD_QUERY";
+    static final String ACTION_ACK = "dev.mobilehorizon.app.DOWNLOAD_ACK";
     static final String ACTION_PROGRESS = "dev.mobilehorizon.app.DOWNLOAD_PROGRESS";
     static final String ACTION_FINISHED = "dev.mobilehorizon.app.DOWNLOAD_FINISHED";
     static final String EXTRA_ALL_ASSETS = "all_assets";
@@ -41,6 +42,13 @@ public final class OfficialDownloadService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? null : intent.getAction();
+        if (ACTION_ACK.equals(action)) {
+            getSharedPreferences("official_download_state", MODE_PRIVATE).edit()
+                    .putBoolean("hasResult", false)
+                    .commit();
+            if (!running) stopSelf(startId);
+            return START_NOT_STICKY;
+        }
         if (ACTION_CANCEL.equals(action)) {
             cancelled.set(true);
             broadcastProgress(new OfficialMinecraftInstaller.Progress(
