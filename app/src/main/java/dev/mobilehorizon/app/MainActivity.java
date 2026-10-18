@@ -1,5 +1,6 @@
 package dev.mobilehorizon.app;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.AlertDialog;
@@ -69,6 +70,8 @@ public final class MainActivity extends Activity {
     private boolean conversionBusy;
     private boolean downloadBusy;
     private boolean receiverRegistered;
+    private boolean pendingNotificationPermission;
+    private boolean pendingAllAssets;
 
     private final BroadcastReceiver downloadReceiver = new BroadcastReceiver() {
         @Override
@@ -420,14 +423,47 @@ public final class MainActivity extends Activity {
 
     private void startOfficialDownload(boolean allAssets) {
         if (downloadBusy || busy || conversionBusy) return;
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pendingNotificationPermission = true;
+            pendingAllAssets = allAssets;
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 26032);
+            return;
+        }
+        confirmOfficialDownload(allAssets);
+    }
+
+    private void confirmOfficialDownload(boolean allAssets) {
         String extra = allAssets
-                ? "\n\nEsta opção baixa milhares de objetos e pode usar centenas de MB."
+                ? "\\n\\nEsta opção baixa milhares de objetos e pode usar centenas de MB."
                 : "";
         new AlertDialog.Builder(this)
                 .setTitle("Baixar arquivos oficiais do Minecraft?")
                 .setMessage("Este fluxo baixa arquivos oficiais da Mojang, verifica tamanho e SHA-1, mas não autentica uma conta nem concede uma licença. Prossiga apenas se você tiver uma licença válida de Minecraft Java Edition." + extra)
                 .setNegativeButton("Voltar", null)
                 .setPositiveButton("Continuar", (dialog, which) -> startOfficialDownloadNow(allAssets))
+                .show();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != 26032 || !pendingNotificationPermission) return;
+        pendingNotificationPermission = false;
+        boolean allAssets = pendingAllAssets;
+        pendingAllAssets = false;
+        boolean granted = grantResults.length > 0
+                && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        if (granted) {
+            confirmOfficialDownload(allAssets);
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Notificações desativadas")
+                .setMessage("O download pode continuar em segundo plano, mas o progresso talvez não apareça na área de notificações. Você pode permitir notificações nas configurações do Android.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Continuar sem notificações", (dialog, which) -> confirmOfficialDownload(allAssets))
                 .show();
     }
 
