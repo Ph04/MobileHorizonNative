@@ -384,7 +384,7 @@ final class JdkRuntimeInstaller {
                 String name = ascii(header, 0, 16).trim();
                 while (name.endsWith("/")) name = name.substring(0, name.length() - 1);
                 String sizeText = ascii(header, 48, 10).trim();
-                if (!"\u0060\n".equals(ascii(header, 58, 2))) throw new IOException("Cabeçalho AR inválido.");
+                if (header[58] != 0x60 || header[59] != 0x0a) throw new IOException("Cabeçalho AR inválido.");
                 long size;
                 try { size = Long.parseLong(sizeText); }
                 catch (NumberFormatException error) { throw new IOException("Tamanho AR inválido."); }
