@@ -291,6 +291,7 @@ final class OfficialMinecraftInstaller {
             }
         }
         if (assets.isEmpty()) throw new IllegalStateException("O índice oficial não lista assets.");
+        final long totalAssetBytes = totalBytes;
         File objectsRoot = safeFile(minecraftRoot, "assets/objects");
         ensureDirectory(objectsRoot);
         Totals totals = new Totals();
@@ -319,7 +320,7 @@ final class OfficialMinecraftInstaller {
                         if (done == 1 || done == assets.size() || done % 10 == 0) {
                             OfficialMinecraftInstaller.notify(listener, "Assets oficiais verificados",
                                     done + "/" + assets.size(), done, assets.size(),
-                                    0, -1, totals.completedBytes.get(), totalBytes);
+                                    0, -1, totals.completedBytes.get(), totalAssetBytes);
                         }
                         return null;
                     }
