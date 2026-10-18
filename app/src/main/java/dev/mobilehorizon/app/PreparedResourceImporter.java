@@ -311,8 +311,17 @@ final class PreparedResourceImporter {
             throw new IllegalArgumentException("O manifesto Horizon está vazio ou excede 1 MiB.");
         }
         byte[] bytes;
-        try (InputStream input = new FileInputStream(manifest)) {
-            bytes = input.readAllBytes();
+        try (InputStream input = new FileInputStream(manifest);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (output.size() + read > MANIFEST_LIMIT) {
+                    throw new IllegalArgumentException("O manifesto Horizon excede 1 MiB.");
+                }
+                output.write(buffer, 0, read);
+            }
+            bytes = output.toByteArray();
         }
         JSONObject json;
         try {
