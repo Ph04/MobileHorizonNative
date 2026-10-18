@@ -255,7 +255,7 @@ public final class MainActivity extends Activity {
     }
 
     private void updateProgress(PreparedResourceImporter.Progress progress, boolean isZip) {
-        if (!busy) return;
+        if (!busy || isFinishing() || isDestroyed()) return;
         if (isZip) {
             progressBar.setIndeterminate(true);
         } else if (progress.totalBytes > 0) {
@@ -276,6 +276,7 @@ public final class MainActivity extends Activity {
     }
 
     private void finishImport(PreparedResourceImporter.ImportSummary summary, Exception error) {
+        if (isFinishing() || isDestroyed()) return;
         busy = false;
         currentJob = null;
         setBusyUi(false);
@@ -385,7 +386,11 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        if (isFinishing()) executor.shutdown();
+        if (isFinishing()) {
+            cancelRequested.set(true);
+            if (currentJob != null) currentJob.cancel(true);
+            executor.shutdownNow();
+        }
         super.onDestroy();
     }
 }
