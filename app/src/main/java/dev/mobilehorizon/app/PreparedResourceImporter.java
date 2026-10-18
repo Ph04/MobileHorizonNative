@@ -389,10 +389,20 @@ final class PreparedResourceImporter {
             throw new IllegalStateException("Não foi possível guardar a importação anterior com segurança.");
         }
         if (!staging.renameTo(active)) {
-            if (hadActive) backup.renameTo(active);
-            throw new IllegalStateException("Não foi possível ativar a nova importação.");
+            if (hadActive && !backup.renameTo(active)) {
+                throw new IllegalStateException(
+                        "Não foi possível ativar a nova importação nem restaurar o conjunto anterior. "
+                                + "A cópia anterior continua guardada em " + backup.getName() + ".");
+            }
+            throw new IllegalStateException("Não foi possível ativar a nova importação; o conjunto anterior foi preservado.");
         }
-        deleteRecursively(backup);
+        // Activation has succeeded. Failure to remove the old backup must not be reported
+        // as an import failure because the new data is already active.
+        try {
+            deleteRecursively(backup);
+        } catch (Exception ignored) {
+            // A later import will clean up the stale backup after recovery checks.
+        }
     }
 
     private static void recoverInterruptedPromotion(File active, File backup) throws Exception {
