@@ -32,6 +32,12 @@ Em seguida, o app extrai recursos para staging:
 
 A extração usa limites de entradas/arquivos/tamanho, rejeita caminhos inseguros, valida arquivos vanilla essenciais, registra a origem dos dados do servidor no manifesto e promove a árvore como uma unidade. Há testes unitários para layouts flat e bundler com JAR interno. `source-input-manifest.json` registra hashes dos JARs, contagens e o estado explícito `VANILLA_INPUTS_ONLY_NOT_HORIZON_RUNTIME_RESOURCES`. O plano `conversion-plan.json` aponta para os JARs, bibliotecas, assets e árvore extraída.
 
+### Primeiro exportador Android sem Java 25
+
+`VanillaDirectResourceExporter` já aplica a mesma transformação direta do preparador Rust para três conjuntos que não precisam chamar a API de jogo: tags de blocos, tipos de dano e tags de dano. Lê os JSONs das árvores cliente/servidor, valida os objetos JSON, exige paridade exata de IDs e texto entre as duas cópias e grava os mapas no formato do preparador upstream (`namespace:id` → texto JSON original). A saída, com manifesto de etapa, fica em `.local/horizon-input/26.3/direct-export`; não é promovida a `.local/horizon-client/26.3`.
+
+Isso prova uma primeira parte do exportador por lógica Java Android, mas não cobre a maioria dos exports. Ainda faltam as tabelas calculadas por Minecraft runtime/oráculos (facts por estado, colisão, render, comportamentos, gameplay, entidades, relatórios, worldgen e outros).
+
 **Isso ainda não é a conversão final.** O preparador upstream usa JDK 25 para compilar/executar numerosos oráculos Java que geram facts, registries, tabelas de gameplay e dados worldgen. O novo app ainda não executa esses oráculos; por isso não sintetiza um `horizon-resources.json` falso nem ativa uma saída incompleta.
 
 ## 3. Validação e importação da runtime
@@ -64,7 +70,7 @@ O verificador só bloqueia SAF quando o backend declara `IMPORT_OUTPUT`, exige h
 
 ## 7. Limites ainda em aberto
 
-- Portar o exportador Horizon de forma executável no Android sem Termux. O serviço em segundo plano já executa a etapa vanilla; ainda não executa os oráculos Java 25 necessários às tabelas finais.
+- Completar o exportador Horizon no Android sem Termux. O serviço em segundo plano já executa a etapa vanilla e três mapas diretos de tags/dano; ainda não executa os oráculos Java 25 necessários às tabelas finais.
 - Registrar/aprovar o App ID público próprio do projeto nos serviços Microsoft/Minecraft e testar o login real.
 - Testar o binário ARM64 em dispositivo real e validar logs/lifecycle.
 - Validar que o jogo abre, carrega recursos, gera mundo e aceita controles.
