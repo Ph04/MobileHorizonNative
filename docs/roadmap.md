@@ -22,8 +22,9 @@
 - [x] Baixar/verificar cliente JAR, servidor JAR, asset index e bibliotecas Android/ARM64.
 - [x] Oferecer download separado de todos os asset objects com progresso, cancelamento e notificação.
 - [x] Verificar integridade SHA-1 dos assets presentes antes de criar o plano.
-- [x] Extrair assets/minecraft do cliente e data/minecraft do servidor para uma árvore de entrada versionada e transacional.
-- [x] Produzir conversion-plan.json com hashes, contagens, ausências de assets e estado do pipeline.
+- [x] Extrair assets/ e data/ do cliente e data/minecraft do servidor para uma árvore de entrada versionada e transacional.
+- [x] Materializar asset objects por seus nomes oficiais somente após validar tamanho e SHA-1; contabilizar assets ausentes em vez de inventá-los.
+- [x] Produzir conversion-plan.json com hashes, contagens, ausências de assets, objetos materializados e estado do pipeline.
 - [ ] Portar/empacotar os oráculos de JDK 25 e o exportador real, sem Termux.
 - [ ] Gerar todos os arquivos derivados exigidos pela runtime Horizon em .local/horizon-client/26.3.
 - [ ] Validar manifest, hashes e completude dessa saída antes de ativar a runtime.
