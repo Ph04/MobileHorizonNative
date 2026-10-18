@@ -18,7 +18,7 @@ O teste Vulkan tem uma rota própria e não precisa da árvore completa de recur
 
 O download base inclui manifesto JSON, client JAR, server JAR, índice de assets e bibliotecas aplicáveis. O download completo de asset objects é separado; deduplica por hash, limita o total anunciado, baixa em três workers e mantém progresso agregado por bytes processados. Todos os URLs de download são limitados a HTTPS e a domínios Mojang/Minecraft reconhecidos.
 
-`OfficialDownloadService` mantém a operação em primeiro plano com notificação. Progresso e conclusão são enviados à UI; a última conclusão não reconhecida é mantida brevemente em preferências para que a interface a recupere ao voltar, depois é reconhecida pelo launcher.
+`OfficialDownloadService` mantém a operação em primeiro plano com notificação. A notificação final recebe título explícito de conclusão/cancelamento/falha; o canal foi versionado para que aparelhos com canal de baixa importância da versão anterior não ocultem o alerta final. `ResourcePreparationService` aplica o mesmo padrão à extração vanilla, com cancelar, progresso e resultado persistido até a UI reconhecer a conclusão.
 
 ## 2. Entrada para conversão
 
@@ -56,9 +56,15 @@ O módulo `core` contém:
 
 O verificador só bloqueia SAF quando o backend declara `IMPORT_OUTPUT`, exige hash com formato SHA-256 no adaptador Horizon e não trata SDK/ABI como prova de desempenho.
 
-## 6. Limites ainda em aberto
+## 6. Autenticação e inicialização nativa
 
-- Portar o exportador Horizon de forma executável no Android sem Termux.
-- Integrar autenticação Microsoft/Minecraft oficial e verificar a posse de Java Edition.
+`MicrosoftAuthentication` executa o fluxo de código de dispositivo, troca tokens Microsoft/Xbox/XSTS/Minecraft, verifica `entitlements/mcstore` e consulta o perfil. Não aceita tokens arbitrários, não registra segredo em log e não continua sem um direito Java reconhecido. O App ID deve ser próprio: o build lê `HORIZON_MSA_CLIENT_ID` (variável de repositório opcional no CI / propriedade Gradle em build local). A aprovação de uso pelas APIs de Minecraft é externa ao código e permanece responsabilidade do mantenedor.
+
+`EncryptedRefreshTokenStore` guarda o token de renovação com AES-GCM e uma chave não exportável do Android Keystore. Antes de abrir NativeActivity, o launcher renova e verifica a sessão novamente e grava um JSON de uso único sob `files/sessions/`, com permissões 0600. `HORIZON_SESSION_FILE` aponta para esse arquivo; a runtime o lê uma vez e o apaga. O retorno do cliente é exibido a partir de `horizon-client-result.txt`. Isso conecta a autenticação ao motor, mas não fabrica os recursos derivados que a runtime espera.
+
+## 7. Limites ainda em aberto
+
+- Portar o exportador Horizon de forma executável no Android sem Termux. O serviço em segundo plano já executa a etapa vanilla; ainda não executa os oráculos Java 25 necessários às tabelas finais.
+- Registrar/aprovar o App ID público próprio do projeto nos serviços Microsoft/Minecraft e testar o login real.
 - Testar o binário ARM64 em dispositivo real e validar logs/lifecycle.
 - Validar que o jogo abre, carrega recursos, gera mundo e aceita controles.
