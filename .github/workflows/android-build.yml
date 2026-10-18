@@ -1,4 +1,4 @@
-name: Android build and compatibility tests
+name: Android build, official downloader and Horizon runtime
 
 on:
   push:
@@ -26,7 +26,7 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,6 +42,37 @@ jobs:
         with:
           packages: "platforms;android-35 build-tools;35.0.0"
 
+      # Reuse the previous repo's committed source bundle only as a source for the
+      # native runtime. Both the archive and shared-library hashes are pinned below.
+      # The runtime is not compiled on the player's phone and is not pulled from an
+      # unverified release URL.
+      - name: Fetch and verify pinned ARM64 Horizon runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEMP_DIR="$RUNNER_TEMP/mobilehorizon-legacy"
+          mkdir -p "$TEMP_DIR"
+          BASE="https://raw.githubusercontent.com/Ph04/MobileHorizon/main"
+          for part in 00 01 02; do
+            curl --fail --location --retry 3 --retry-all-errors \
+              "$BASE/HorizonAndroidPrep_0.9.7_with_native.zip.part-$part" \
+              --output "$TEMP_DIR/source.zip.part-$part"
+          done
+          cat "$TEMP_DIR"/source.zip.part-* > "$TEMP_DIR/source.zip"
+          echo "c3e8de14e3beacbff203f2134afabe3fb801bea8eda7de42491aacfe00a2b302  $TEMP_DIR/source.zip" | sha256sum --check -
+          unzip -tq "$TEMP_DIR/source.zip"
+          mkdir -p "$TEMP_DIR/unpacked"
+          unzip -q "$TEMP_DIR/source.zip" -d "$TEMP_DIR/unpacked"
+          LIB="$TEMP_DIR/unpacked/HorizonAndroidPrep/prebuilt/android/arm64-v8a/libhorizon_android.so"
+          test -s "$LIB"
+          echo "9d564adb67e7aa9b36c5ae66f4e6cf1a74549746216220bc5a1cba235421ab82  $LIB" | sha256sum --check -
+          readelf -h "$LIB" | grep -q "AArch64"
+          readelf -Ws "$LIB" | grep -q "ANativeActivity_onCreate"
+          readelf -Ws "$LIB" | grep -q "android_main"
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          cp "$LIB" app/src/main/jniLibs/arm64-v8a/libhorizon_android.so
+          echo "Verified and staged libhorizon_android.so for arm64-v8a."
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -50,11 +81,19 @@ jobs:
       - name: Run compatibility tests and build debug APK
         run: gradle --no-daemon test :app:assembleDebug
 
+      - name: Verify native runtime is packaged in APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libhorizon_android.so'
+          echo "libhorizon_android.so is present in the APK."
+
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: mobilehorizon-native-debug
+          name: mobilehorizon-native-download0-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
