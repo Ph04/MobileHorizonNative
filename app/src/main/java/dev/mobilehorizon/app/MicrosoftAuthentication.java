@@ -375,9 +375,13 @@ final class MicrosoftAuthentication {
             JSONObject item = items.optJSONObject(i);
             if (item == null) continue;
             String name = item.optString("name", "");
-            if ("game_minecraft".equals(name) || "product_minecraft".equals(name)) return true;
+            if (isJavaEntitlementName(name)) return true;
         }
         return false;
+    }
+
+    static boolean isJavaEntitlementName(String name) {
+        return "game_minecraft".equals(name) || "product_minecraft".equals(name);
     }
 
     static void requireClientId(String clientId) {
