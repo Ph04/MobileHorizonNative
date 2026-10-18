@@ -5,6 +5,8 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -14,6 +16,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.system.Os;
 import android.content.pm.ApplicationInfo;
 import android.view.Gravity;
 import android.view.View;
@@ -40,6 +43,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -66,6 +70,9 @@ public final class MainActivity extends Activity {
     private Button prepareInputsButton;
     private Button openEngineButton;
     private Button smokeTestButton;
+    private Button microsoftLoginButton;
+    private Button microsoftSignOutButton;
+    private TextView accountStatusText;
     private boolean busy;
     private boolean conversionBusy;
     private boolean downloadBusy;
@@ -73,6 +80,11 @@ public final class MainActivity extends Activity {
     private boolean pendingNotificationPermission;
     private boolean pendingAllAssets;
     private boolean pendingPreparationPermission;
+    private boolean pendingAuthPermission;
+    private boolean authBusy;
+    private boolean launchBusy;
+    private boolean sessionEnvSet;
+    private String lastPresentedDeviceCode;
 
     private final BroadcastReceiver downloadReceiver = new BroadcastReceiver() {
         @Override
@@ -86,6 +98,12 @@ public final class MainActivity extends Activity {
                 handlePreparationProgress(intent);
             } else if (ResourcePreparationService.ACTION_FINISHED.equals(intent.getAction())) {
                 handlePreparationFinished(intent);
+            } else if (MicrosoftAuthService.ACTION_PROGRESS.equals(intent.getAction())) {
+                handleMicrosoftAuthProgress(intent);
+            } else if (MicrosoftAuthService.ACTION_DEVICE_CODE.equals(intent.getAction())) {
+                showMicrosoftDeviceCode(intent);
+            } else if (MicrosoftAuthService.ACTION_FINISHED.equals(intent.getAction())) {
+                handleMicrosoftAuthFinished(intent);
             }
         }
     };
@@ -106,6 +124,7 @@ public final class MainActivity extends Activity {
         updateCompatibility();
         setStatus("Pronto",
                 "Baixe os arquivos oficiais do Minecraft 26.3, prepare as entradas para conversão ou importe uma saída Horizon já preparada.");
+        refreshAccountUi();
     }
 
     @Override
@@ -116,6 +135,9 @@ public final class MainActivity extends Activity {
         filter.addAction(OfficialDownloadService.ACTION_FINISHED);
         filter.addAction(ResourcePreparationService.ACTION_PROGRESS);
         filter.addAction(ResourcePreparationService.ACTION_FINISHED);
+        filter.addAction(MicrosoftAuthService.ACTION_PROGRESS);
+        filter.addAction(MicrosoftAuthService.ACTION_DEVICE_CODE);
+        filter.addAction(MicrosoftAuthService.ACTION_FINISHED);
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -134,11 +156,21 @@ public final class MainActivity extends Activity {
         } catch (Exception ignored) {
             // Restoring a finished preparation result is best-effort.
         }
+        try {
+            startService(new Intent(this, MicrosoftAuthService.class)
+                    .setAction(MicrosoftAuthService.ACTION_QUERY));
+        } catch (Exception ignored) {
+            // Restoring a sign-in session is best-effort.
+        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        if (sessionEnvSet) {
+            try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
+            sessionEnvSet = false;
+        }
         showNativeSmokeResultIfAvailable();
     }
 
@@ -227,6 +259,24 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams prepareInputsParams = params(-1, dp(50));
         prepareInputsParams.topMargin = dp(8);
         page.addView(prepareInputsButton, prepareInputsParams);
+
+        TextView accountHeading = text("Conta Microsoft", 18, 0xff18213a, true);
+        LinearLayout.LayoutParams accountHeadingParams = params(-1, -2);
+        accountHeadingParams.topMargin = dp(24);
+        page.addView(accountHeading, accountHeadingParams);
+        accountStatusText = text("Nenhuma conta verificada neste dispositivo.", 14, 0xff59647b, false);
+        LinearLayout.LayoutParams accountStatusParams = params(-1, -2);
+        accountStatusParams.topMargin = dp(6);
+        page.addView(accountStatusText, accountStatusParams);
+        microsoftLoginButton = button("Entrar com Microsoft", true, v -> startMicrosoftSignIn());
+        LinearLayout.LayoutParams loginParams = params(-1, dp(50));
+        loginParams.topMargin = dp(10);
+        page.addView(microsoftLoginButton, loginParams);
+        microsoftSignOutButton = button("Remover conta salva", false, v -> signOutMicrosoft());
+        LinearLayout.LayoutParams signOutParams = params(-1, dp(46));
+        signOutParams.topMargin = dp(8);
+        microsoftSignOutButton.setVisibility(View.GONE);
+        page.addView(microsoftSignOutButton, signOutParams);
 
         openEngineButton = button("Verificar requisitos do cliente Horizon", false, v -> openNativeClient());
         LinearLayout.LayoutParams openEngineParams = params(-1, dp(50));
@@ -424,6 +474,16 @@ public final class MainActivity extends Activity {
     }
 
     private void cancelImport() {
+        if (authBusy) {
+            try {
+                startService(new Intent(this, MicrosoftAuthService.class)
+                        .setAction(MicrosoftAuthService.ACTION_CANCEL));
+                progressDetails.setText("Cancelamento solicitado ao login Microsoft…");
+            } catch (Exception error) {
+                setStatus("Falha ao solicitar cancelamento", safeMessage(error));
+            }
+            return;
+        }
         if (!busy && !conversionBusy) return;
         if (conversionBusy && !busy) {
             cancelButton.setEnabled(false);
@@ -485,6 +545,22 @@ public final class MainActivity extends Activity {
                         .setMessage("A preparação pode continuar, mas o Android talvez não mostre a notificação na área de notificações. Você pode permitir isso nas configurações do app.")
                         .setNegativeButton("Cancelar", null)
                         .setPositiveButton("Continuar mesmo assim", (dialog, which) -> startBackgroundPreparationNow())
+                        .show();
+            }
+            return;
+        }
+        if (requestCode == 26034 && pendingAuthPermission) {
+            pendingAuthPermission = false;
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            if (granted) {
+                startMicrosoftSignInNow();
+            } else {
+                new AlertDialog.Builder(this)
+                        .setTitle("Notificações desativadas")
+                        .setMessage("O login pode continuar, mas o Android talvez não mostre a notificação na área de notificações.")
+                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton("Continuar sem notificações", (dialog, which) -> startMicrosoftSignInNow())
                         .show();
             }
             return;
@@ -728,6 +804,7 @@ public final class MainActivity extends Activity {
     }
 
     private void openNativeClient() {
+        if (busy || conversionBusy || downloadBusy || authBusy || launchBusy) return;
         if (!isHorizonNativeLibraryAvailable()) {
             showRuntimeError("Biblioteca Horizon ausente",
                     "O APK precisa conter libhorizon_android.so para ARM64 antes que o cliente possa ser usado.");
@@ -736,12 +813,251 @@ public final class MainActivity extends Activity {
         File resources = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
         try {
             String resourceSummary = HorizonResourceConverter.validatePreparedResources(resources);
-            showRuntimeError("Recursos válidos; autenticação pendente",
-                    resourceSummary + "\n\nA integração oficial de autenticação Microsoft/Minecraft e a validação da licença Java ainda não estão implementadas. O cliente não será iniciado em modo offline. O teste Vulkan continua disponível separadamente.");
+            if (!isValidMicrosoftClientId(BuildConfig.HORIZON_MSA_CLIENT_ID)) {
+                showRuntimeError("Autenticação ainda não configurada",
+                        resourceSummary + "\n\nPara login real, o responsável pelo projeto precisa registrar um App ID próprio da Microsoft, habilitar public client/device-code flow e solicitar aprovação do App ID aos serviços do Minecraft. Builds sem HORIZON_MSA_CLIENT_ID não podem autenticar. Não use o ID de outro launcher.");
+                return;
+            }
+            String refreshToken = EncryptedRefreshTokenStore.load(this);
+            if (refreshToken == null) {
+                showRuntimeError("Entre com sua conta Microsoft",
+                        resourceSummary + "\n\nUse o botão Entrar com Microsoft. O jogo só inicia após a confirmação da conta, do perfil e dos direitos de Minecraft Java Edition pelos serviços oficiais.");
+                startMicrosoftSignIn();
+                return;
+            }
+            launchAuthenticatedClient(resourceSummary, refreshToken);
         } catch (Exception error) {
-            showRuntimeError("Recursos Horizon ausentes ou incompletos",
-                    safeMessage(error) + "\n\nBaixar JARs e extrair assets vanilla ainda não cria a tabela final de gameplay/worldgen. Importe uma saída Horizon completa enquanto o exportador nativo é portado.");
+            showRuntimeError("Recursos ou sessão não disponíveis",
+                    safeMessage(error) + "\n\nA inicialização normal exige recursos Horizon completos e uma sessão oficial válida. Recursos vanilla extraídos não substituem a conversão de gameplay/worldgen.");
         }
+    }
+
+    private static boolean isValidMicrosoftClientId(String clientId) {
+        return clientId != null && clientId.trim().matches(
+                "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
+    private void refreshAccountUi() {
+        if (accountStatusText == null) return;
+        android.content.SharedPreferences prefs = getSharedPreferences("microsoft_account_state", MODE_PRIVATE);
+        boolean signedIn = prefs.getBoolean("hasAccount", false);
+        String name = prefs.getString("accountName", "");
+        accountStatusText.setText(signedIn && !name.isEmpty()
+                ? "Conta verificada: " + name + "\nA licença foi verificada durante o último login."
+                : "Nenhuma conta verificada neste dispositivo.");
+        if (microsoftLoginButton != null) microsoftLoginButton.setText(signedIn
+                ? "Atualizar sessão Microsoft" : "Entrar com Microsoft");
+        if (microsoftSignOutButton != null) microsoftSignOutButton.setVisibility(signedIn ? View.VISIBLE : View.GONE);
+        updateActionEnablement();
+    }
+
+    private void startMicrosoftSignIn() {
+        if (authBusy || launchBusy || busy || conversionBusy || downloadBusy) return;
+        if (!isValidMicrosoftClientId(BuildConfig.HORIZON_MSA_CLIENT_ID)) {
+            showRuntimeError("App ID Microsoft não configurado",
+                    "Este APK foi compilado sem HORIZON_MSA_CLIENT_ID. O mantenedor precisa criar um registro Microsoft próprio com contas pessoais e fluxo de código de dispositivo, depois solicitar aprovação de acesso às APIs do Minecraft. O ID de outro launcher não pode ser reutilizado.");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pendingAuthPermission = true;
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 26034);
+            return;
+        }
+        startMicrosoftSignInNow();
+    }
+
+    private void startMicrosoftSignInNow() {
+        if (authBusy || launchBusy || busy || conversionBusy || downloadBusy) return;
+        authBusy = true;
+        lastPresentedDeviceCode = null;
+        updateActionEnablement();
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setIndeterminate(true);
+        progressDetails.setText("Iniciando autenticação Microsoft…");
+        setStatus("Login Microsoft em andamento",
+                "O login continuará em segundo plano. O aplicativo salva somente o token de renovação criptografado no Android Keystore.");
+        try {
+            Intent intent = new Intent(this, MicrosoftAuthService.class).setAction(MicrosoftAuthService.ACTION_START);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
+            else startService(intent);
+        } catch (Exception error) {
+            authBusy = false;
+            updateActionEnablement();
+            progressBar.setVisibility(View.GONE);
+            setStatus("Não foi possível iniciar o login", safeMessage(error));
+        }
+    }
+
+    private void handleMicrosoftAuthProgress(Intent intent) {
+        authBusy = true;
+        updateActionEnablement();
+        String stage = intent.getStringExtra("stage");
+        String detail = intent.getStringExtra("detail");
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setIndeterminate(true);
+        progressDetails.setText((stage == null ? "Login Microsoft" : stage)
+                + (detail == null || detail.isEmpty() ? "" : "\n" + detail));
+        setStatus("Login Microsoft em andamento",
+                "A autenticação e a checagem de licença estão sendo feitas pelos serviços oficiais.");
+    }
+
+    private void showMicrosoftDeviceCode(Intent intent) {
+        String code = intent.getStringExtra("userCode");
+        String verificationUri = intent.getStringExtra("verificationUri");
+        String serviceMessage = intent.getStringExtra("message");
+        if (code == null || code.isEmpty() || verificationUri == null || verificationUri.isEmpty()) return;
+        if (code.equals(lastPresentedDeviceCode) || isFinishing() || isDestroyed()) return;
+        lastPresentedDeviceCode = code;
+        TextView instructions = text(
+                "Código: " + code + "\n\n" + verificationUri
+                        + "\n\nAbra a página oficial, informe o código e conclua o login. Volte aqui depois."
+                        + (serviceMessage == null || serviceMessage.isEmpty() ? "" : "\n\n" + serviceMessage),
+                16, 0xff24304c, false);
+        instructions.setTextIsSelectable(true);
+        new AlertDialog.Builder(this)
+                .setTitle("Entre com a Microsoft")
+                .setView(instructions)
+                .setPositiveButton("Abrir página", (dialog, which) -> {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(verificationUri)));
+                    } catch (Exception error) {
+                        showRuntimeError("Não foi possível abrir o navegador", safeMessage(error));
+                    }
+                })
+                .setNeutralButton("Copiar código", (dialog, which) -> {
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Código de login Microsoft", code));
+                        setStatus("Código copiado", "Conclua o login na página oficial da Microsoft.");
+                    }
+                })
+                .setNegativeButton("Fechar", null)
+                .show();
+    }
+
+    private void handleMicrosoftAuthFinished(Intent intent) {
+        authBusy = false;
+        boolean success = intent.getBooleanExtra("success", false);
+        boolean cancelledLogin = intent.getBooleanExtra("cancelled", false);
+        String message = intent.getStringExtra("message");
+        lastPresentedDeviceCode = null;
+        progressBar.setIndeterminate(false);
+        if (success) {
+            progressBar.setVisibility(View.VISIBLE);
+            progressBar.setProgress(1000);
+            refreshAccountUi();
+            setStatus("Conta Microsoft verificada",
+                    message == null ? "A conta e os direitos de Java Edition foram verificados." : message);
+        } else {
+            progressBar.setVisibility(View.GONE);
+            setStatus(cancelledLogin ? "Login cancelado" : "Login não concluído",
+                    message == null ? "A autenticação não foi concluída." : message);
+            refreshAccountUi();
+        }
+        updateActionEnablement();
+        try {
+            startService(new Intent(this, MicrosoftAuthService.class).setAction(MicrosoftAuthService.ACTION_ACK));
+        } catch (Exception ignored) {}
+    }
+
+    private void signOutMicrosoft() {
+        if (authBusy || launchBusy) return;
+        new AlertDialog.Builder(this)
+                .setTitle("Remover conta salva?")
+                .setMessage("O token de renovação criptografado e os dados públicos da conta serão removidos deste dispositivo.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Remover", (dialog, which) -> {
+                    try {
+                        EncryptedRefreshTokenStore.clear(this);
+                        getSharedPreferences("microsoft_account_state", MODE_PRIVATE).edit().clear().commit();
+                        refreshAccountUi();
+                        setStatus("Conta removida", "Entre novamente pela Microsoft para iniciar o cliente online.");
+                    } catch (Exception error) {
+                        showRuntimeError("Falha ao remover conta", safeMessage(error));
+                    }
+                }).show();
+    }
+
+    private void launchAuthenticatedClient(String resourceSummary, String refreshToken) {
+        launchBusy = true;
+        updateActionEnablement();
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setIndeterminate(true);
+        progressDetails.setText("Renovando sessão Microsoft e verificando a licença…");
+        setStatus("Verificando sessão antes de iniciar",
+                resourceSummary + "\n\nA sessão será renovada e a licença será checada novamente.");
+        executor.submit(() -> {
+            try {
+                MicrosoftAuthentication.MinecraftAccount account = MicrosoftAuthentication.refreshAndVerify(
+                        BuildConfig.HORIZON_MSA_CLIENT_ID, refreshToken,
+                        (stage, detail) -> runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            progressDetails.setText(stage + "\n" + detail);
+                        }));
+                EncryptedRefreshTokenStore.save(this, account.refreshToken);
+                runOnUiThread(() -> {
+                    launchBusy = false;
+                    updateActionEnablement();
+                    refreshAccountUi();
+                    try {
+                        File sessionFile = writeOneShotSession(account);
+                        Os.setenv("HORIZON_SESSION_FILE", sessionFile.getAbsolutePath(), true);
+                        sessionEnvSet = true;
+                        startActivity(new Intent(this, android.app.NativeActivity.class));
+                        setStatus("Iniciando cliente Horizon",
+                                "A sessão oficial foi verificada. A inicialização ainda depende de recursos derivados completos e validação real de gameplay.");
+                    } catch (Exception error) {
+                        try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
+                        sessionEnvSet = false;
+                        setStatus("Não foi possível iniciar o cliente", safeMessage(error));
+                    }
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    launchBusy = false;
+                    updateActionEnablement();
+                    progressBar.setVisibility(View.GONE);
+                    String message = safeMessage(error);
+                    setStatus("Sessão não válida", message);
+                    if (message.contains("Entre novamente")) {
+                        try { EncryptedRefreshTokenStore.clear(this); } catch (Exception ignored) {}
+                        getSharedPreferences("microsoft_account_state", MODE_PRIVATE).edit().clear().commit();
+                        refreshAccountUi();
+                    }
+                });
+            }
+        });
+    }
+
+    private File writeOneShotSession(MicrosoftAuthentication.MinecraftAccount account) throws Exception {
+        File directory = new File(getFilesDir(), "sessions");
+        if (!directory.isDirectory() && !directory.mkdirs()) {
+            throw new IllegalStateException("Não foi possível criar a pasta privada de sessões.");
+        }
+        Os.chmod(directory.getAbsolutePath(), 0700);
+        File target = new File(directory, "session-" + UUID.randomUUID() + ".json");
+        org.json.JSONObject session = new org.json.JSONObject()
+                .put("name", account.name)
+                .put("uuid", account.uuid)
+                .put("access_token", account.minecraftAccessToken)
+                .put("user_type", "msa")
+                .put("xuid", account.xuid == null ? "" : account.xuid);
+        try (FileOutputStream output = new FileOutputStream(target, false)) {
+            output.write(session.toString().getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            output.getFD().sync();
+        } catch (Exception error) {
+            target.delete();
+            throw error;
+        }
+        Os.chmod(target.getAbsolutePath(), 0600);
+        if (!target.setLastModified(System.currentTimeMillis())) {
+            target.delete();
+            throw new IllegalStateException("Não foi possível validar a idade da sessão para o cliente nativo.");
+        }
+        return target;
     }
 
     private void showNativeSmokeResultIfAvailable() {
@@ -833,7 +1149,7 @@ public final class MainActivity extends Activity {
     }
 
     private void updateActionEnablement() {
-        boolean blocked = busy || conversionBusy || downloadBusy;
+        boolean blocked = busy || conversionBusy || downloadBusy || authBusy || launchBusy;
         if (importFolderButton != null) importFolderButton.setEnabled(!blocked);
         if (importZipButton != null) importZipButton.setEnabled(!blocked);
         if (downloadBaseButton != null) downloadBaseButton.setEnabled(!blocked);
@@ -841,10 +1157,15 @@ public final class MainActivity extends Activity {
         if (prepareInputsButton != null) prepareInputsButton.setEnabled(!blocked);
         if (openEngineButton != null) openEngineButton.setEnabled(!blocked);
         if (smokeTestButton != null) smokeTestButton.setEnabled(!blocked);
+        if (microsoftLoginButton != null) microsoftLoginButton.setEnabled(!blocked);
+        if (microsoftSignOutButton != null) microsoftSignOutButton.setEnabled(!blocked
+                && getSharedPreferences("microsoft_account_state", MODE_PRIVATE).getBoolean("hasAccount", false));
         if (cancelButton != null) {
-            cancelButton.setVisibility(busy || conversionBusy ? View.VISIBLE : View.GONE);
-            cancelButton.setEnabled(busy || conversionBusy);
-            cancelButton.setText(conversionBusy && !busy ? "Cancelar preparação" : "Cancelar importação");
+            boolean cancellable = busy || conversionBusy || authBusy;
+            cancelButton.setVisibility(cancellable ? View.VISIBLE : View.GONE);
+            cancelButton.setEnabled(cancellable);
+            cancelButton.setText(authBusy ? "Cancelar login"
+                    : conversionBusy && !busy ? "Cancelar preparação" : "Cancelar importação");
         }
         if (cancelDownloadButton != null) {
             cancelDownloadButton.setVisibility(downloadBusy ? View.VISIBLE : View.GONE);
@@ -858,6 +1179,8 @@ public final class MainActivity extends Activity {
         if (prepareInputsButton != null) prepareInputsButton.setAlpha(alpha);
         if (openEngineButton != null) openEngineButton.setAlpha(alpha);
         if (smokeTestButton != null) smokeTestButton.setAlpha(alpha);
+        if (microsoftLoginButton != null) microsoftLoginButton.setAlpha(alpha);
+        if (microsoftSignOutButton != null) microsoftSignOutButton.setAlpha(alpha);
     }
 
     private void setStatus(String title, String details) {
