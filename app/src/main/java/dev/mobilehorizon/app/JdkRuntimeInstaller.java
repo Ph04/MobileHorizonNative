@@ -420,7 +420,12 @@ final class JdkRuntimeInstaller {
         File log = new File(runtime.root, label + "-version.log");
         List<String> command = new ArrayList<>();
         command.add(linker.getAbsolutePath());
-        command.add(runtime.java.getAbsolutePath());
+        // Use linker's explicit --argv0 form so the executable path and argv[0]
+        // are unambiguous on modern Bionic. This prevents linker64 from mistaking
+        // the first JVM option (for example -m) for the executable to load.
+        command.add("--argv0");
+        command.add(runtime.java.getAbsolutePath()); // argv[0] observed by Java
+        command.add(runtime.java.getAbsolutePath()); // ELF to load
         if ("javac".equals(label)) {
             command.add("-m");
             command.add("jdk.compiler/com.sun.tools.javac.Main");
