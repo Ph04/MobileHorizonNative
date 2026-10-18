@@ -418,14 +418,16 @@ final class JdkRuntimeInstaller {
                     + "não é possível iniciar o Java 25 de forma compatível com as restrições W^X do Android.");
         }
         File log = new File(runtime.root, label + "-version.log");
+        // Invoke linker64 through the system shell so its argv is constructed as
+        // a normal exec call: argv[0] is linker64, argv[1] is the Java ELF, and
+        // subsequent arguments remain Java options. Direct ProcessBuilder calls
+        // were interpreted with a shifted argv on the affected Android build.
         List<String> command = new ArrayList<>();
-        command.add(linker.getAbsolutePath());
-        // Use linker's explicit --argv0 form so the executable path and argv[0]
-        // are unambiguous on modern Bionic. This prevents linker64 from mistaking
-        // the first JVM option (for example -m) for the executable to load.
-        command.add("--argv0");
-        command.add(runtime.java.getAbsolutePath()); // argv[0] observed by Java
-        command.add(runtime.java.getAbsolutePath()); // ELF to load
+        command.add("/system/bin/sh");
+        command.add("-c");
+        command.add("exec /system/bin/linker64 \\"$@\\"");
+        command.add("linker64"); // $0 for sh -c; excluded from "$@"
+        command.add(runtime.java.getAbsolutePath());
         if ("javac".equals(label)) {
             command.add("-m");
             command.add("jdk.compiler/com.sun.tools.javac.Main");
