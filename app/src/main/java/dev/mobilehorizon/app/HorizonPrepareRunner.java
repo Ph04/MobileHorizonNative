@@ -38,6 +38,8 @@ final class HorizonPrepareRunner {
 
         File workspace = new File(context.getFilesDir(), ".local/horizon-prepare-workspace");
         ensureDirectory(workspace);
+        ensureDirectory(new File(workspace, "tmp"));
+        ensureDirectory(new File(workspace, "home"));
         report(listener, "Instalando fontes do preparador", "Versão upstream " + UPSTREAM_COMMIT, 1, 6);
         installSupportAssets(context.getAssets(), workspace, cancelled, listener);
 
