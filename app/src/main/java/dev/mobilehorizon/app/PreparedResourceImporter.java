@@ -187,6 +187,7 @@ final class PreparedResourceImporter {
             }
             String note = validateManifestIfPresent(staging);
             promote(staging, active, backup);
+            HorizonResourceConverter.promoteValidationReceipt(staging, active);
             report(listener, new Progress("Concluído", result[0], result[0], result[1], result[1]));
             return new ImportSummary(active, result[0], result[1], note);
         } catch (Exception error) {

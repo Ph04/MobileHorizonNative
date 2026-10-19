@@ -21,6 +21,8 @@ import android.content.pm.ApplicationInfo;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.SeekBar;
 import android.widget.EditText;
 import android.text.InputFilter;
 import android.text.InputType;
@@ -80,6 +82,7 @@ public final class MainActivity extends Activity {
     private TextView offlineStatusText;
     private Button offlineNameButton;
     private Button offlinePlayButton;
+    private Button touchControlsButton;
     private boolean busy;
     private boolean conversionBusy;
     private boolean downloadBusy;
@@ -301,6 +304,11 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams offlinePlayParams = params(-1, dp(50));
         offlinePlayParams.topMargin = dp(8);
         page.addView(offlinePlayButton, offlinePlayParams);
+
+        touchControlsButton = button("Configurar controles Touch", false, v -> showTouchControlsDialog());
+        LinearLayout.LayoutParams touchControlsParams = params(-1, dp(46));
+        touchControlsParams.topMargin = dp(8);
+        page.addView(touchControlsButton, touchControlsParams);
 
         TextView accountHeading = text("Conta Microsoft", 18, 0xff18213a, true);
         LinearLayout.LayoutParams accountHeadingParams = params(-1, -2);
@@ -844,20 +852,13 @@ public final class MainActivity extends Activity {
             updateActionEnablement();
             progressBar.setIndeterminate(false);
             if (success) {
-                try {
-                    File output = new File(getFilesDir(), ".local/horizon-client/26.3");
-                    String validation = HorizonResourceConverter.validatePreparedResources(output);
-                    progressBar.setVisibility(View.VISIBLE);
-                    progressBar.setProgress(1000);
-                    progressDetails.setText("Saída validada: .local/horizon-client/26.3");
-                    setStatus("Conversão Horizon completa validada", validation + "\n\n"
-                            + (message == null ? "Exportador concluído." : message)
-                            + "\n\nAgora teste “Iniciar com conta offline”. A primeira abertura ainda pode falhar por limitações da biblioteca gráfica atual.");
-                } catch (Exception validationError) {
-                    progressBar.setVisibility(View.GONE);
-                    setStatus("A conversão terminou, mas a saída não passou na validação",
-                            safeMessage(validationError) + "\n\nLog do exportador: .local/horizon-prepare-workspace/.local/horizon-prepare.log");
-                }
+                progressBar.setVisibility(View.VISIBLE);
+                progressBar.setIndeterminate(false);
+                progressBar.setProgress(1000);
+                progressDetails.setText("Saída validada: .local/horizon-client/26.3");
+                setStatus("Conversão Horizon completa validada",
+                        (message == null ? "O serviço concluiu e validou a árvore de recursos." : message)
+                                + "\n\nA validação foi feita em segundo plano. Agora teste “Iniciar com conta offline”.");
             } else {
                 progressBar.setVisibility(View.GONE);
                 progressDetails.setText("");
@@ -958,6 +959,50 @@ public final class MainActivity extends Activity {
                 }).show();
     }
 
+    private interface ResourceValidationCallback {
+        void onValidated(String resourceSummary);
+    }
+
+    /** Recursively checking tens of thousands of files on the UI thread can trigger an ANR. */
+    private void validateResourcesBeforeLaunch(ResourceValidationCallback callback) {
+        if (launchBusy || isFinishing() || isDestroyed()) return;
+        launchBusy = true;
+        updateActionEnablement();
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setIndeterminate(true);
+        progressDetails.setText("Verificando a saída Horizon em segundo plano…");
+        setStatus("Verificando recursos do jogo",
+                "A validação continua em segundo plano para manter a interface responsiva.");
+        File resources = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+        executor.submit(() -> {
+            String summary = null;
+            String failure = null;
+            try {
+                summary = HorizonResourceConverter.validatePreparedResources(resources);
+            } catch (Exception error) {
+                failure = safeMessage(error);
+            }
+            final String validatedSummary = summary;
+            final String validationFailure = failure;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                launchBusy = false;
+                updateActionEnablement();
+                progressBar.setIndeterminate(false);
+                if (validationFailure != null) {
+                    progressBar.setVisibility(View.GONE);
+                    progressDetails.setText("");
+                    showRuntimeError("Recursos Horizon inválidos",
+                            validationFailure + "\n\nNenhum jogo foi iniciado.");
+                    return;
+                }
+                progressBar.setVisibility(View.GONE);
+                progressDetails.setText("Recursos Horizon validados.");
+                callback.onValidated(validatedSummary);
+            });
+        });
+    }
+
     private void openOfflineClient() {
         if (busy || conversionBusy || downloadBusy || authBusy || launchBusy) return;
         if (!isHorizonNativeLibraryAvailable()) {
@@ -965,24 +1010,28 @@ public final class MainActivity extends Activity {
                     "O APK precisa conter libhorizon_android.so para ARM64 antes que o cliente possa ser usado.");
             return;
         }
-        File resources = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+        validateResourcesBeforeLaunch(this::launchOfflineClientAfterValidation);
+    }
+
+    private void launchOfflineClientAfterValidation(String resourceSummary) {
         try {
-            String resourceSummary = HorizonResourceConverter.validatePreparedResources(resources);
             String playerName = OfflineProfile.loadName(this);
             new File(getFilesDir(), "horizon-client-result.txt").delete();
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
             Os.setenv("HORIZON_PLAYER_NAME", playerName, true);
             offlineNameEnvSet = true;
-            startActivity(new Intent(this, android.app.NativeActivity.class));
+            Intent intent = new Intent(this, NativeGameActivity.class);
+            intent.putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true);
+            startActivity(intent);
             setStatus("Iniciando cliente em modo offline",
                     "Perfil local: " + playerName + "\n" + resourceSummary
-                            + "\n\nO perfil não autentica uma conta Microsoft nem concede licença online.");
+                            + "\n\nA primeira abertura pode ter pequenas pausas enquanto o renderer inicializa e cria caches. O perfil não autentica uma conta Microsoft nem concede licença online.");
         } catch (Exception error) {
             try { Os.unsetenv("HORIZON_PLAYER_NAME"); } catch (Exception ignored) {}
             offlineNameEnvSet = false;
             showRuntimeError("Não foi possível iniciar offline",
-                    safeMessage(error) + "\n\nÉ necessária uma saída Horizon completa em .local/horizon-client/26.3. A extração vanilla sozinha não basta.");
+                    safeMessage(error) + "\n\nÉ necessária uma saída Horizon completa em .local/horizon-client/26.3.");
         }
     }
 
@@ -993,28 +1042,111 @@ public final class MainActivity extends Activity {
                     "O APK precisa conter libhorizon_android.so para ARM64 antes que o cliente possa ser usado.");
             return;
         }
-        File resources = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
-        try {
-            String resourceSummary = HorizonResourceConverter.validatePreparedResources(resources);
-            if (!MicrosoftAuthentication.isValidClientId(BuildConfig.HORIZON_MSA_CLIENT_ID)) {
-                showRuntimeError("Autenticação ainda não configurada",
-                        resourceSummary + "\n\nPara login real, o responsável pelo projeto precisa registrar um App ID próprio da Microsoft, habilitar public client/device-code flow e solicitar aprovação do App ID aos serviços do Minecraft. Builds sem HORIZON_MSA_CLIENT_ID não podem autenticar. Não use o ID de outro launcher.");
-                return;
-            }
-            String refreshToken = EncryptedRefreshTokenStore.load(this);
-            if (refreshToken == null) {
-                showRuntimeError("Entre com sua conta Microsoft",
-                        resourceSummary + "\n\nUse o botão Entrar com Microsoft. O jogo só inicia após a confirmação da conta, do perfil e dos direitos de Minecraft Java Edition pelos serviços oficiais.");
-                startMicrosoftSignIn();
-                return;
-            }
-            launchAuthenticatedClient(resourceSummary, refreshToken);
-        } catch (Exception error) {
-            showRuntimeError("Recursos ou sessão não disponíveis",
-                    safeMessage(error) + "\n\nA inicialização normal exige recursos Horizon completos e uma sessão oficial válida. Recursos vanilla extraídos não substituem a conversão de gameplay/worldgen.");
-        }
+        validateResourcesBeforeLaunch(this::continueNativeClientAfterValidation);
     }
 
+    private void continueNativeClientAfterValidation(String resourceSummary) {
+        if (!MicrosoftAuthentication.isValidClientId(BuildConfig.HORIZON_MSA_CLIENT_ID)) {
+            showRuntimeError("Autenticação ainda não configurada",
+                    resourceSummary + "\n\nPara login real, o responsável pelo projeto precisa registrar um App ID próprio da Microsoft e habilitar o fluxo de dispositivo. Builds sem HORIZON_MSA_CLIENT_ID não podem autenticar.");
+            return;
+        }
+        String refreshToken = EncryptedRefreshTokenStore.load(this);
+        if (refreshToken == null) {
+            showRuntimeError("Entre com sua conta Microsoft",
+                    resourceSummary + "\n\nUse o botão Entrar com Microsoft. O jogo só inicia após a confirmação oficial da conta e da licença.");
+            startMicrosoftSignIn();
+            return;
+        }
+        launchAuthenticatedClient(resourceSummary, refreshToken);
+    }
+
+    private void showTouchControlsDialog() {
+        android.content.SharedPreferences prefs =
+                getSharedPreferences(NativeTouchControlsView.PREFERENCES, MODE_PRIVATE);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(8), dp(6), dp(8), dp(4));
+
+        CheckBox enabled = new CheckBox(this);
+        enabled.setText("Ativar controles na tela do jogo");
+        enabled.setTextColor(0xff18213a);
+        enabled.setChecked(prefs.getBoolean(NativeTouchControlsView.KEY_ENABLED, true));
+        panel.addView(enabled, params(-1, -2));
+
+        TextView sizeLabel = text("", 14, 0xff59647b, false);
+        panel.addView(sizeLabel, params(-1, -2));
+        SeekBar size = new SeekBar(this);
+        size.setMax(60);
+        size.setProgress(Math.max(0, Math.min(60, Math.round(
+                (prefs.getFloat(NativeTouchControlsView.KEY_SCALE, 1f) - 0.70f) * 100f))));
+        panel.addView(size, params(-1, -2));
+        size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
+                sizeLabel.setText("Tamanho dos controles: " + (70 + progress) + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {}
+        });
+        sizeLabel.setText("Tamanho dos controles: " + (70 + size.getProgress()) + "%");
+
+        TextView opacityLabel = text("", 14, 0xff59647b, false);
+        LinearLayout.LayoutParams opacityParams = params(-1, -2);
+        opacityParams.topMargin = dp(8);
+        panel.addView(opacityLabel, opacityParams);
+        SeekBar opacity = new SeekBar(this);
+        opacity.setMax(65);
+        opacity.setProgress(Math.max(0, Math.min(65, Math.round(
+                prefs.getFloat(NativeTouchControlsView.KEY_OPACITY, 0.82f) * 100f - 35f))));
+        panel.addView(opacity, params(-1, -2));
+        opacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
+                opacityLabel.setText("Opacidade: " + (35 + progress) + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {}
+        });
+        opacityLabel.setText("Opacidade: " + (35 + opacity.getProgress()) + "%");
+
+        TextView sensitivityLabel = text("", 14, 0xff59647b, false);
+        LinearLayout.LayoutParams sensitivityParams = params(-1, -2);
+        sensitivityParams.topMargin = dp(8);
+        panel.addView(sensitivityLabel, sensitivityParams);
+        SeekBar sensitivity = new SeekBar(this);
+        sensitivity.setMax(150);
+        sensitivity.setProgress(Math.max(0, Math.min(150, Math.round(
+                (prefs.getFloat(NativeTouchControlsView.KEY_SENSITIVITY, 1f) - 0.50f) * 100f))));
+        panel.addView(sensitivity, params(-1, -2));
+        sensitivity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
+                sensitivityLabel.setText("Sensibilidade da câmera: " + (50 + progress) + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {}
+        });
+        sensitivityLabel.setText("Sensibilidade da câmera: " + (50 + sensitivity.getProgress()) + "%");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Controles Touch")
+                .setMessage("Joystick esquerdo, câmera por arrasto e botões de ação. Durante o jogo, toque no ícone superior para ocultar ou mostrar os controles.")
+                .setView(panel)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    float selectedScale = (70 + size.getProgress()) / 100f;
+                    float selectedOpacity = (35 + opacity.getProgress()) / 100f;
+                    float selectedSensitivity = (50 + sensitivity.getProgress()) / 100f;
+                    prefs.edit()
+                            .putBoolean(NativeTouchControlsView.KEY_ENABLED, enabled.isChecked())
+                            .putFloat(NativeTouchControlsView.KEY_SCALE, selectedScale)
+                            .putFloat(NativeTouchControlsView.KEY_OPACITY, selectedOpacity)
+                            .putFloat(NativeTouchControlsView.KEY_SENSITIVITY, selectedSensitivity)
+                            .apply();
+                    setStatus("Controles Touch salvos", "Tamanho: " + Math.round(selectedScale * 100)
+                            + "% · opacidade: " + Math.round(selectedOpacity * 100)
+                            + "% · sensibilidade: " + Math.round(selectedSensitivity * 100)
+                            + "%. Os ajustes serão aplicados na próxima abertura do jogo.");
+                }).show();
+    }
 
     private void refreshAccountUi() {
         if (accountStatusText == null) return;
@@ -1186,7 +1318,8 @@ public final class MainActivity extends Activity {
                         sessionFile = writeOneShotSession(account);
                         Os.setenv("HORIZON_SESSION_FILE", sessionFile.getAbsolutePath(), true);
                         sessionEnvSet = true;
-                        startActivity(new Intent(this, android.app.NativeActivity.class));
+                        startActivity(new Intent(this, NativeGameActivity.class)
+                                .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true));
                         setStatus("Iniciando cliente Horizon",
                                 "A sessão oficial foi verificada. A inicialização ainda depende de recursos derivados completos e validação real de gameplay.");
                     } catch (Exception error) {
@@ -1316,7 +1449,8 @@ public final class MainActivity extends Activity {
             return;
         }
         try {
-            startActivity(new Intent(this, android.app.NativeActivity.class));
+            startActivity(new Intent(this, NativeGameActivity.class)
+                    .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, false));
             setStatus("Teste Vulkan iniciado", "Este teste só confirma a criação da superfície e apresentação de um frame, não o carregamento de Minecraft.");
         } catch (Exception error) {
             marker.delete();

@@ -839,14 +839,97 @@ final class HorizonResourceConverter {
                     + " entradas obrigatórias. Primeiras ausências: " + joinFirst(missing, 8));
         }
 
+        // This receipt is stored beside the app-private tree, never inside imported content.
+        // Its root path and manifest digest are rechecked; a promoted tree gets a new receipt.
+        long cachedCount = readValidationReceipt(root, manifestFile, schema, dataVersion, expectedFiles);
+        if (cachedCount >= expectedFiles) {
+            return "Recursos Horizon validados: schema=" + schema + ", data_version=" + dataVersion
+                    + ", assets/data=" + cachedCount + "/" + expectedFiles + " (cache de validação).";
+        }
+
         long actual = countFiles(new File(root, "assets"), 0, new long[]{0})
                 + countFiles(new File(root, "data"), 0, new long[]{0});
         if (actual < expectedFiles) {
             throw new IllegalArgumentException("Assets/data incompletos: o manifesto exige pelo menos "
                     + expectedFiles + " arquivos, mas foram encontrados " + actual + ".");
         }
+        writeValidationReceipt(root, manifestFile, schema, dataVersion, expectedFiles, actual);
         return "Recursos Horizon validados: schema=" + schema + ", data_version=" + dataVersion
                 + ", assets/data=" + actual + "/" + expectedFiles + ".";
+    }
+
+    private static File validationReceiptFile(File root) {
+        File parent = root == null ? null : root.getParentFile();
+        return parent == null ? null
+                : new File(parent, "." + root.getName() + ".mobilehorizon-validation.json");
+    }
+
+    private static long readValidationReceipt(File root, File manifestFile, int schema,
+                                              int dataVersion, int expectedFiles) {
+        try {
+            File receiptFile = validationReceiptFile(root);
+            if (receiptFile == null || !receiptFile.isFile()
+                    || receiptFile.length() <= 0 || receiptFile.length() > 16 * 1024) return -1;
+            JSONObject receipt = new JSONObject(readText(receiptFile, 16 * 1024));
+            if (receipt.optInt("receipt_version", -1) != 1
+                    || !root.getCanonicalPath().equals(receipt.optString("root_path", ""))
+                    || receipt.optInt("schema", -1) != schema
+                    || receipt.optInt("data_version", -1) != dataVersion
+                    || receipt.optInt("expected_files", -1) != expectedFiles
+                    || receipt.optLong("manifest_length", -1) != manifestFile.length()
+                    || receipt.optLong("manifest_modified", -1) != manifestFile.lastModified()
+                    || !sha256(manifestFile).equalsIgnoreCase(receipt.optString("manifest_sha256", ""))) {
+                return -1;
+            }
+            long actual = receipt.optLong("actual_files", -1);
+            return actual >= expectedFiles && actual <= MAX_RESOURCE_FILES ? actual : -1;
+        } catch (Exception ignored) {
+            return -1;
+        }
+    }
+
+    private static void writeValidationReceipt(File root, File manifestFile, int schema,
+                                               int dataVersion, int expectedFiles,
+                                               long actualFiles) {
+        try {
+            JSONObject receipt = new JSONObject();
+            receipt.put("receipt_version", 1);
+            receipt.put("root_path", root.getCanonicalPath());
+            receipt.put("schema", schema);
+            receipt.put("data_version", dataVersion);
+            receipt.put("expected_files", expectedFiles);
+            receipt.put("actual_files", actualFiles);
+            receipt.put("manifest_length", manifestFile.length());
+            receipt.put("manifest_modified", manifestFile.lastModified());
+            receipt.put("manifest_sha256", sha256(manifestFile));
+            File destination = validationReceiptFile(root);
+            if (destination != null) writeAtomically(receipt.toString().getBytes(StandardCharsets.UTF_8), destination);
+        } catch (Exception ignored) {
+            // Validation remains valid if this optional performance receipt cannot be stored.
+        }
+    }
+
+    /** Carries a receipt across an atomic promotion without counting every resource a second time. */
+    static void promoteValidationReceipt(File sourceRoot, File destinationRoot) {
+        File sourceReceipt = validationReceiptFile(sourceRoot);
+        File destinationReceipt = validationReceiptFile(destinationRoot);
+        if (destinationReceipt == null) return;
+        try {
+            if (sourceReceipt == null || !sourceReceipt.isFile()) {
+                if (destinationReceipt.exists()) destinationReceipt.delete();
+                return;
+            }
+            JSONObject receipt = new JSONObject(readText(sourceReceipt, 16 * 1024));
+            if (!sourceRoot.getCanonicalPath().equals(receipt.optString("root_path", ""))) {
+                if (destinationReceipt.exists()) destinationReceipt.delete();
+                return;
+            }
+            receipt.put("root_path", destinationRoot.getCanonicalPath());
+            writeAtomically(receipt.toString().getBytes(StandardCharsets.UTF_8), destinationReceipt);
+            sourceReceipt.delete();
+        } catch (Exception ignored) {
+            try { if (destinationReceipt.exists()) destinationReceipt.delete(); } catch (Exception ignoredAgain) {}
+        }
     }
 
     private static void requireFile(File root, String path, List<String> missing) {
@@ -889,6 +972,18 @@ final class HorizonResourceConverter {
             }
             return output.toString("UTF-8");
         }
+    }
+
+    private static String sha256(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+            byte[] buffer = new byte[32 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
+        }
+        StringBuilder text = new StringBuilder(64);
+        for (byte b : digest.digest()) text.append(String.format(Locale.ROOT, "%02x", b & 0xff));
+        return text.toString();
     }
 
     private static String sha1(File file) throws Exception {

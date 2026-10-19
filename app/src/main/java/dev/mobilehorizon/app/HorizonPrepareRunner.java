@@ -136,13 +136,14 @@ final class HorizonPrepareRunner {
             }
             throw new IOException("Não foi possível ativar a saída Horizon validada.");
         }
-        try {
-            summary = HorizonResourceConverter.validatePreparedResources(active);
-        } catch (Exception error) {
+        // Staging was fully validated immediately before this same-filesystem rename.
+        // Rename does not change the tree contents; do not enumerate all assets/data again.
+        if (!new File(active, "horizon-resources.json").isFile()) {
             deleteRecursively(active);
             if (backup.exists()) backup.renameTo(active);
-            throw new IOException("A validação após ativação falhou; a saída anterior foi restaurada.", error);
+            throw new IOException("A saída validada foi ativada, mas horizon-resources.json não está presente.");
         }
+        HorizonResourceConverter.promoteValidationReceipt(stagingResources, active);
         deleteRecursively(backup);
         report(listener, "Conversão completa concluída",
                 "Saída instalada em .local/horizon-client/26.3", 6, 6);
