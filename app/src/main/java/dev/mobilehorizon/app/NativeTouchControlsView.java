@@ -27,7 +27,8 @@ final class NativeTouchControlsView extends View {
 
     private static final int NONE = 0, JOYSTICK = 1, TOGGLE = 2, JUMP = 3, SNEAK = 4,
             SPRINT = 5, INVENTORY = 6, ATTACK = 7, USE = 8, ESCAPE = 9,
-            DROP = 10, SWAP = 11, IGNORED = 12;
+            DROP = 10, SWAP = 11, PICK = 12, PERSPECTIVE = 13, CHAT = 14,
+            HOTBAR_PREV = 15, HOTBAR_NEXT = 16, IGNORED = 17;
     private final NativeGameActivity activity;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<Integer, PointerTrack> pointers = new HashMap<>();
@@ -141,6 +142,11 @@ final class NativeTouchControlsView extends View {
                 new ButtonSpec(SWAP, "F", mirrorControlX(w - dp(210) * s), h - dp(166) * s, dp(20) * s),
                 new ButtonSpec(ATTACK, "HIT", mirrorControlX(w - dp(137) * s), h - dp(196) * s, dp(34) * s),
                 new ButtonSpec(USE, "USE", mirrorControlX(w - dp(61) * s), h - dp(222) * s, dp(28) * s),
+                new ButtonSpec(PICK, "MID", mirrorControlX(w - dp(145) * s), h - dp(265) * s, dp(22) * s),
+                new ButtonSpec(PERSPECTIVE, "F5", mirrorControlX(w - dp(210) * s), h - dp(218) * s, dp(21) * s),
+                new ButtonSpec(CHAT, "T", mirrorControlX(w - dp(285) * s), h - dp(55) * s, dp(21) * s),
+                new ButtonSpec(HOTBAR_PREV, "‹", mirrorControlX(w - dp(285) * s), h - dp(112) * s, dp(20) * s),
+                new ButtonSpec(HOTBAR_NEXT, "›", mirrorControlX(w - dp(285) * s), h - dp(166) * s, dp(20) * s),
                 new ButtonSpec(ESCAPE, "ESC", mirrorControlX(w - dp(36)), dp(31), dp(21))
         };
     }
@@ -199,7 +205,8 @@ final class NativeTouchControlsView extends View {
             float dx = x - track.lastX, dy = y - track.lastY;
             if (Math.abs(x - track.startX) > dp(7) || Math.abs(y - track.startY) > dp(7)) track.moved = true;
             if (track.control == JOYSTICK) updateJoystick(x, y);
-            else if (track.control == NONE && track.moved) {
+            else if (track.control == NONE && track.moved
+                    && (Math.abs(dx) >= 0.75f || Math.abs(dy) >= 0.75f)) {
                 virtualMouseX = clamp(virtualMouseX + dx * sensitivity, 0, Math.max(1, getWidth()));
                 virtualMouseY = clamp(virtualMouseY + dy * sensitivity, 0, Math.max(1, getHeight()));
                 sendMouseMotion(virtualMouseX, virtualMouseY);
@@ -283,6 +290,11 @@ final class NativeTouchControlsView extends View {
             case ESCAPE: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, true); break;
             case DROP: setKeyHeld(KeyEvent.KEYCODE_Q, true); break;
             case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, true); break;
+            case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, true, x, y); break;
+            case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, true); break;
+            case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, true); break;
+            case HOTBAR_PREV: sendMouseScroll(1f); break;
+            case HOTBAR_NEXT: sendMouseScroll(-1f); break;
             default: break;
         }
         invalidate();
@@ -306,6 +318,12 @@ final class NativeTouchControlsView extends View {
             case ESCAPE: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, false); break;
             case DROP: setKeyHeld(KeyEvent.KEYCODE_Q, false); break;
             case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, false); break;
+            case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, false, x, y); break;
+            case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, false); break;
+            case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, false); break;
+            case HOTBAR_PREV:
+            case HOTBAR_NEXT:
+                break;
             default: break;
         }
         invalidate();
@@ -337,6 +355,25 @@ final class NativeTouchControlsView extends View {
     private void sendMouseMotion(float x, float y) {
         long now = SystemClock.uptimeMillis();
         MotionEvent event = obtainMouseEvent(now, MotionEvent.ACTION_HOVER_MOVE, x, y);
+        activity.dispatchGenericMotionEvent(event);
+        event.recycle();
+    }
+
+    private void sendMouseScroll(float amount) {
+        long now = SystemClock.uptimeMillis();
+        MotionEvent.PointerProperties properties = new MotionEvent.PointerProperties();
+        properties.id = 0;
+        properties.toolType = MotionEvent.TOOL_TYPE_MOUSE;
+        MotionEvent.PointerCoords coordinates = new MotionEvent.PointerCoords();
+        coordinates.x = virtualMouseX;
+        coordinates.y = virtualMouseY;
+        coordinates.pressure = 1f;
+        coordinates.size = 1f;
+        coordinates.setAxisValue(MotionEvent.AXIS_VSCROLL, amount);
+        MotionEvent event = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1,
+                new MotionEvent.PointerProperties[]{properties},
+                new MotionEvent.PointerCoords[]{coordinates},
+                0, mouseButtons, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0);
         activity.dispatchGenericMotionEvent(event);
         event.recycle();
     }
@@ -378,6 +415,8 @@ final class NativeTouchControlsView extends View {
             setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY);
         if ((mouseButtons & MotionEvent.BUTTON_SECONDARY) != 0)
             setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY);
+        if ((mouseButtons & MotionEvent.BUTTON_TERTIARY) != 0)
+            setMouseButton(MotionEvent.BUTTON_TERTIARY, false, virtualMouseX, virtualMouseY);
         joystickPointer = -1;
     }
 

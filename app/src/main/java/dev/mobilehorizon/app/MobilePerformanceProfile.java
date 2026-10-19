@@ -14,21 +14,26 @@ import java.util.Map;
 
 /** One-time conservative defaults for weaker Android devices; user overrides are preserved. */
 final class MobilePerformanceProfile {
-    private static final String MARKER = ".mobilehorizon-performance-v1";
+    private static final String MARKER = ".mobilehorizon-performance-v2";
 
     private static final class Setting {
         final String defaultValue;
         final String mobileValue;
+        final String previousMobileValue;
         Setting(String defaultValue, String mobileValue) {
+            this(defaultValue, mobileValue, null);
+        }
+        Setting(String defaultValue, String mobileValue, String previousMobileValue) {
             this.defaultValue = defaultValue;
             this.mobileValue = mobileValue;
+            this.previousMobileValue = previousMobileValue;
         }
     }
 
     private static final Map<String, Setting> MOBILE_SETTINGS = new LinkedHashMap<>();
     static {
-        MOBILE_SETTINGS.put("renderDistance", new Setting("12", "6"));
-        MOBILE_SETTINGS.put("simulationDistance", new Setting("12", "5"));
+        MOBILE_SETTINGS.put("renderDistance", new Setting("12", "4", "6"));
+        MOBILE_SETTINGS.put("simulationDistance", new Setting("12", "4", "5"));
         MOBILE_SETTINGS.put("maxFps", new Setting("120", "30"));
         MOBILE_SETTINGS.put("ao", new Setting("true", "false"));
         MOBILE_SETTINGS.put("renderClouds", new Setting("true", "\"false\""));
@@ -103,7 +108,11 @@ final class MobilePerformanceProfile {
             } else {
                 String line = lines.get(index);
                 String current = line.substring(line.indexOf(':') + 1).trim();
-                if (normalize(current).equals(normalize(setting.defaultValue))) {
+                String normalized = normalize(current);
+                boolean stockDefault = normalized.equals(normalize(setting.defaultValue));
+                boolean knownPreviousMobileValue = setting.previousMobileValue != null
+                        && normalized.equals(normalize(setting.previousMobileValue));
+                if (stockDefault || knownPreviousMobileValue) {
                     lines.set(index, key + ":" + setting.mobileValue);
                 }
             }

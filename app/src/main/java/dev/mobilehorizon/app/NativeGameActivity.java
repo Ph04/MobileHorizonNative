@@ -33,11 +33,8 @@ public final class NativeGameActivity extends NativeActivity {
         } catch (Exception error) {
             android.util.Log.e("MobileHorizon", "Não foi possível preparar o diretório do jogo", error);
         }
-        try {
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY);
-        } catch (RuntimeException ignored) {
-            // This scheduling hint is optional and must never block startup.
-        }
+        // Keep Android's Activity/UI thread at its normal scheduling priority. Raising it
+        // before native renderer startup can starve system input/UI work on slower devices.
         super.onCreate(savedInstanceState);
         Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

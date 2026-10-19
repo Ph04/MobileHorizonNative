@@ -156,13 +156,30 @@ final class HorizonPrepareRunner {
         deleteQuietly(new File(install.getParentFile(),
                 "." + install.getName() + ".mobilehorizon-validation.json"));
 
-        // Retain the workspace cache. Copy to a temporary sibling, validate, then swap atomically.
-        copyDirectory(stagingResources, install, cancelled, listener, new long[]{0});
-        HorizonResourceConverter.copyValidationReceipt(stagingResources, install);
-        summary = HorizonResourceConverter.validatePreparedResources(install);
+        // Prefer a directory rename on the same private filesystem. Copying 20k+ generated
+        // files just to activate them wastes I/O and can stall budget Android storage.
+        boolean movedStaging = stagingResources.renameTo(install);
+        if (movedStaging) {
+            HorizonResourceConverter.promoteValidationReceipt(stagingResources, install);
+            report(listener, "Ativando recursos gerados", "Promoção rápida por renomeação", 5, 6);
+        } else {
+            report(listener, "Ativando recursos gerados", "O sistema de arquivos não permite renomear; usando cópia segura", 5, 6);
+            copyDirectory(stagingResources, install, cancelled, listener, new long[]{0});
+            HorizonResourceConverter.copyValidationReceipt(stagingResources, install);
+        }
+        try {
+            summary = HorizonResourceConverter.validatePreparedResources(install);
+        } catch (Exception validationError) {
+            deleteRecursively(install);
+            deleteQuietly(new File(install.getParentFile(),
+                    "." + install.getName() + ".mobilehorizon-validation.json"));
+            throw validationError;
+        }
         deleteRecursively(backup);
         if (active.exists() && !active.renameTo(backup)) {
             deleteRecursively(install);
+            deleteQuietly(new File(install.getParentFile(),
+                    "." + install.getName() + ".mobilehorizon-validation.json"));
             throw new IOException("A conversão foi validada, mas não foi possível substituir a saída ativa; a pasta anterior foi preservada.");
         }
         if (!install.renameTo(active)) {
