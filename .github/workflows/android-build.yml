@@ -238,15 +238,49 @@ jobs:
           print(f"Pinned {len(packages)} Termux packages ({manifest['total_download_bytes']} bytes) for Java {java['version']}")
           PY
 
+      - name: Prepare stable APK signing key
+        id: signing
+        shell: bash
+        env:
+          MOBILEHORIZON_KEYSTORE_BASE64: ${{ secrets.MOBILEHORIZON_KEYSTORE_BASE64 }}
+          MOBILEHORIZON_KEYSTORE_PASSWORD: ${{ secrets.MOBILEHORIZON_KEYSTORE_PASSWORD }}
+          MOBILEHORIZON_KEY_ALIAS: ${{ secrets.MOBILEHORIZON_KEY_ALIAS }}
+          MOBILEHORIZON_KEY_PASSWORD: ${{ secrets.MOBILEHORIZON_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MOBILEHORIZON_KEYSTORE_BASE64:-}" || -z "${MOBILEHORIZON_KEYSTORE_PASSWORD:-}" || -z "${MOBILEHORIZON_KEY_ALIAS:-}" || -z "${MOBILEHORIZON_KEY_PASSWORD:-}" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Stable signing secrets are missing. The build will be checked, but no APK artifact will be published because a one-run debug key cannot guarantee safe upgrades."
+            exit 0
+          fi
+          printf '%s' "$MOBILEHORIZON_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mobilehorizon-signing.jks"
+          test -s "$RUNNER_TEMP/mobilehorizon-signing.jks"
+          keytool -list -keystore "$RUNNER_TEMP/mobilehorizon-signing.jks" -storepass "$MOBILEHORIZON_KEYSTORE_PASSWORD" -alias "$MOBILEHORIZON_KEY_ALIAS" >/dev/null
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
       - name: Run compatibility tests and build debug APK
+        shell: bash
         env:
           HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
-        run: gradle --no-daemon "-PHORIZON_MSA_CLIENT_ID=$HORIZON_MSA_CLIENT_ID" test :app:assembleDebug
+          MOBILEHORIZON_KEYSTORE_PASSWORD: ${{ secrets.MOBILEHORIZON_KEYSTORE_PASSWORD }}
+          MOBILEHORIZON_KEY_ALIAS: ${{ secrets.MOBILEHORIZON_KEY_ALIAS }}
+          MOBILEHORIZON_KEY_PASSWORD: ${{ secrets.MOBILEHORIZON_KEY_PASSWORD }}
+          STABLE_SIGNING: ${{ steps.signing.outputs.enabled }}
+        run: |
+          set -euo pipefail
+          args=("-PHORIZON_MSA_CLIENT_ID=$HORIZON_MSA_CLIENT_ID")
+          if [[ "$STABLE_SIGNING" == "true" ]]; then
+            args+=("-PMOBILEHORIZON_STORE_FILE=$RUNNER_TEMP/mobilehorizon-signing.jks")
+            args+=("-PMOBILEHORIZON_STORE_PASSWORD=$MOBILEHORIZON_KEYSTORE_PASSWORD")
+            args+=("-PMOBILEHORIZON_KEY_ALIAS=$MOBILEHORIZON_KEY_ALIAS")
+            args+=("-PMOBILEHORIZON_KEY_PASSWORD=$MOBILEHORIZON_KEY_PASSWORD")
+          fi
+          gradle --no-daemon "${args[@]}" test :app:assembleDebug
 
       - name: Verify the built APK and required runtime payloads
         shell: bash
@@ -259,12 +293,19 @@ jobs:
           unzip -l "$APK" | grep -q 'assets/horizon-prepare/horizon-prepare-arm64'
           unzip -l "$APK" | grep -q 'assets/horizon-prepare/jdk-manifest.json'
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
-          grep -F "name='dev.mobilehorizon.app.offline1' versionCode='6' versionName='0.3.3-offline1'" "$RUNNER_TEMP/apk-badging.txt"
+          grep -F "name='dev.mobilehorizon.app.offline1' versionCode='7' versionName='0.3.4-offline1'" "$RUNNER_TEMP/apk-badging.txt"
           sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
+          CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
+          echo "APK signer certificate SHA-256: $CERT_SHA256"
+          echo "APK signer certificate SHA-256: $CERT_SHA256" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.signing.outputs.enabled }}" != "true" ]]; then
+            echo "::warning::APK compiled successfully, but publication is skipped until stable signing secrets are configured."
+            echo "Update-safe APK not published: stable signing key is not configured." >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "APK is valid, package/version match, and both Horizon ARM64 executables and Java 25 manifest payload are included."
 
       - name: Upload debug APK
-        if: success()
+        if: success() && steps.signing.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: mobilehorizon-native-offline1-debug

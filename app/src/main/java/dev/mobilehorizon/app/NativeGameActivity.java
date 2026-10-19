@@ -2,6 +2,12 @@ package dev.mobilehorizon.app;
 
 import android.app.NativeActivity;
 import android.content.SharedPreferences;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.provider.Settings;
+import android.widget.Toast;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
@@ -19,6 +25,17 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
     private NativeTouchControlsView touchControls;
     private PopupWindow touchControlsPopup;
+    private boolean gestureResultReceiverRegistered;
+    private boolean touchInjectionPending;
+    private boolean warnedAccessibilityUnavailable;
+
+    private final BroadcastReceiver touchInjectionResultReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(android.content.Context context, Intent intent) {
+            if (intent == null || !CursorGestureAccessibilityService.ACTION_TAP_FINISHED.equals(intent.getAction())) return;
+            touchInjectionPending = false;
+            getWindow().getDecorView().postDelayed(NativeGameActivity.this::showTouchControlsPopupWhenAttached, 90);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,6 +81,14 @@ public final class NativeGameActivity extends NativeActivity {
         window.setNavigationBarColor(Color.TRANSPARENT);
         applyImmersiveMode();
 
+        IntentFilter injectedTapFilter = new IntentFilter(CursorGestureAccessibilityService.ACTION_TAP_FINISHED);
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(touchInjectionResultReceiver, injectedTapFilter, RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(touchInjectionResultReceiver, injectedTapFilter);
+        }
+        gestureResultReceiverRegistered = true;
+
         boolean requested = getIntent() == null
                 || getIntent().getBooleanExtra(EXTRA_TOUCH_CONTROLS, true);
         SharedPreferences prefs = getSharedPreferences(NativeTouchControlsView.PREFERENCES, MODE_PRIVATE);
@@ -99,12 +124,52 @@ public final class NativeGameActivity extends NativeActivity {
         PopupWindow popup = touchControlsPopup;
         View decor = getWindow().getDecorView();
         if (popup == null || popup.isShowing() || isFinishing() || isDestroyed()
-                || decor.getWindowToken() == null) return;
+                || touchInjectionPending || decor.getWindowToken() == null) return;
         try {
             popup.showAtLocation(decor, Gravity.TOP | Gravity.START, 0, 0);
         } catch (WindowManager.BadTokenException error) {
             android.util.Log.w("MobileHorizon", "Não foi possível exibir os controles touchscreen", error);
         }
+    }
+
+    /** Requests a real Android touchscreen tap at the virtual cursor's screen coordinate. */
+    void requestTouchAtCursor(float x, float y) {
+        if (touchControls == null || touchControlsPopup == null || isFinishing() || isDestroyed()) return;
+        if (!isCursorGestureServiceEnabled()) {
+            if (!warnedAccessibilityUnavailable) {
+                warnedAccessibilityUnavailable = true;
+                Toast.makeText(this,
+                        "Ative “Ponte de toque do MobileHorizon” nas Configurações de acessibilidade para clicar no menu.",
+                        Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
+        if (touchInjectionPending) return;
+
+        int[] location = new int[2];
+        touchControls.getLocationOnScreen(location);
+        final float screenX = location[0] + x;
+        final float screenY = location[1] + y;
+        touchInjectionPending = true;
+        if (touchControlsPopup.isShowing()) touchControlsPopup.dismiss();
+
+        // Let WindowManager remove the overlay before the service injects the tap.
+        getWindow().getDecorView().postDelayed(() -> {
+            Intent request = new Intent(CursorGestureAccessibilityService.ACTION_INJECT_TAP);
+            request.setPackage(getPackageName());
+            request.putExtra(CursorGestureAccessibilityService.EXTRA_X, screenX);
+            request.putExtra(CursorGestureAccessibilityService.EXTRA_Y, screenY);
+            sendBroadcast(request);
+        }, 90);
+    }
+
+    private boolean isCursorGestureServiceEnabled() {
+        String enabled = Settings.Secure.getString(getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (enabled == null || enabled.isEmpty()) return false;
+        String component = new ComponentName(this, CursorGestureAccessibilityService.class).flattenToString();
+        return enabled.toLowerCase(java.util.Locale.ROOT)
+                .contains(component.toLowerCase(java.util.Locale.ROOT));
     }
 
     @Override
@@ -115,6 +180,10 @@ public final class NativeGameActivity extends NativeActivity {
 
     @Override
     protected void onDestroy() {
+        if (gestureResultReceiverRegistered) {
+            try { unregisterReceiver(touchInjectionResultReceiver); } catch (IllegalArgumentException ignored) {}
+            gestureResultReceiverRegistered = false;
+        }
         if (touchControls != null) touchControls.releaseAllInputs();
         if (touchControlsPopup != null) {
             try { touchControlsPopup.dismiss(); } catch (IllegalArgumentException ignored) {}

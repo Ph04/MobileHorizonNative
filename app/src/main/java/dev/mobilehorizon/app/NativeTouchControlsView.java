@@ -344,10 +344,7 @@ final class NativeTouchControlsView extends View {
                 sendMouseMotion(virtualMouseX, virtualMouseY);
                 setMouseButton(MotionEvent.BUTTON_PRIMARY, true, virtualMouseX, virtualMouseY);
                 break;
-            case MOUSE_RIGHT:
-                sendMouseMotion(virtualMouseX, virtualMouseY);
-                setMouseButton(MotionEvent.BUTTON_SECONDARY, true, virtualMouseX, virtualMouseY);
-                break;
+            case MOUSE_RIGHT: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, true); break;
             case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, true); break;
             case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, true); break;
             case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, true); break;
@@ -379,7 +376,7 @@ final class NativeTouchControlsView extends View {
             case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, false); break;
             case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, false, virtualMouseX, virtualMouseY); break;
             case MOUSE_LEFT: setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY); break;
-            case MOUSE_RIGHT: setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY); break;
+            case MOUSE_RIGHT: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, false); break;
             case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, false); break;
             case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, false); break;
             case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, false); break;
@@ -408,31 +405,20 @@ final class NativeTouchControlsView extends View {
         int previous = mouseButtons;
         if (held) mouseButtons |= button; else mouseButtons &= ~button;
         if (previous == mouseButtons) return;
-        long now = SystemClock.uptimeMillis();
-        // A primary click is represented as a mouse DOWN/UP pair. This avoids relying on
-        // the hidden MotionEvent.setActionButton() API and gives native menu widgets an ordinary click.
-        int action;
-        if (button == MotionEvent.BUTTON_PRIMARY) {
-            action = held ? MotionEvent.ACTION_DOWN : MotionEvent.ACTION_UP;
-        } else {
-            action = held ? MotionEvent.ACTION_BUTTON_PRESS : MotionEvent.ACTION_BUTTON_RELEASE;
+
+        // NativeActivity receives pointer input through Android's native InputQueue.
+        // A MotionEvent manufactured here is not inserted into that queue. Use the
+        // opt-in accessibility bridge to dispatch a real touchscreen tap instead.
+        if (!held && (button == MotionEvent.BUTTON_PRIMARY
+                || button == MotionEvent.BUTTON_SECONDARY
+                || button == MotionEvent.BUTTON_TERTIARY)) {
+            activity.requestTouchAtCursor(x, y);
         }
-        MotionEvent event = obtainMouseEvent(now, action, x, y);
-        // Primary mouse down/up must traverse the Activity touch dispatcher so the
-        // NativeActivity's native input queue can receive the synthetic click.
-        if (button == MotionEvent.BUTTON_PRIMARY) {
-            activity.dispatchTouchEvent(event);
-        } else {
-            activity.dispatchGenericMotionEvent(event);
-        }
-        event.recycle();
     }
 
     private void sendMouseMotion(float x, float y) {
-        long now = SystemClock.uptimeMillis();
-        MotionEvent event = obtainMouseEvent(now, MotionEvent.ACTION_HOVER_MOVE, x, y);
-        activity.dispatchGenericMotionEvent(event);
-        event.recycle();
+        // The virtual cursor is drawn by this View. A synthetic hover event dispatched
+        // from Java does not enter NativeActivity's native InputQueue.
     }
 
     private void sendMouseScroll(float amount) {
@@ -488,12 +474,8 @@ final class NativeTouchControlsView extends View {
         joystickKeys.clear();
         pressedControls.clear();
         controlPointerCounts.clear();
-        if ((mouseButtons & MotionEvent.BUTTON_PRIMARY) != 0)
-            setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY);
-        if ((mouseButtons & MotionEvent.BUTTON_SECONDARY) != 0)
-            setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY);
-        if ((mouseButtons & MotionEvent.BUTTON_TERTIARY) != 0)
-            setMouseButton(MotionEvent.BUTTON_TERTIARY, false, virtualMouseX, virtualMouseY);
+        // Avoid generating accidental taps while the activity pauses or is destroyed.
+        mouseButtons = 0;
         joystickPointer = -1;
     }
 

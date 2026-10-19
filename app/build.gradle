@@ -2,6 +2,13 @@ plugins {
     id 'com.android.application'
 }
 
+def stableStoreFile = providers.gradleProperty('MOBILEHORIZON_STORE_FILE').getOrElse('')
+def stableStorePassword = providers.gradleProperty('MOBILEHORIZON_STORE_PASSWORD').getOrElse('')
+def stableKeyAlias = providers.gradleProperty('MOBILEHORIZON_KEY_ALIAS').getOrElse('')
+def stableKeyPassword = providers.gradleProperty('MOBILEHORIZON_KEY_PASSWORD').getOrElse('')
+def hasStableSigning = !stableStoreFile.isEmpty() && !stableStorePassword.isEmpty()
+        && !stableKeyAlias.isEmpty() && !stableKeyPassword.isEmpty()
+
 android {
     namespace 'dev.mobilehorizon.app'
     compileSdk 35
@@ -17,8 +24,8 @@ android {
         applicationId 'dev.mobilehorizon.app'
         minSdk 26
         targetSdk 35
-        versionCode 6
-        versionName '0.3.3'
+        versionCode 7
+        versionName '0.3.4'
     }
 
     compileOptions {
@@ -32,10 +39,22 @@ android {
         }
     }
 
+    signingConfigs {
+        stable {
+            if (hasStableSigning) {
+                storeFile file(stableStoreFile)
+                storePassword stableStorePassword
+                keyAlias stableKeyAlias
+                keyPassword stableKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix '.offline1'
             versionNameSuffix '-offline1'
+            if (hasStableSigning) signingConfig signingConfigs.stable
         }
         release {
             minifyEnabled false
