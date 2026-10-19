@@ -80,7 +80,8 @@ final class JdkRuntimeInstaller {
             env.put("TERMUX_PREFIX", new File(root, "usr").getAbsolutePath());
             // Termux patches OpenJDK's perf-data path to its own absolute prefix.
             // Disable that optional feature; java.io.tmpdir still points to writable app storage.
-            env.put("JAVA_TOOL_OPTIONS", "-XX:-UsePerfData -Djava.io.tmpdir="
+            env.put("JAVA_TOOL_OPTIONS", "-XX:-UsePerfData -XX:ActiveProcessorCount=4 "
+                    + "-XX:ParallelGCThreads=2 -XX:ConcGCThreads=1 -Djava.io.tmpdir="
                     + temporaryDirectory.getAbsolutePath());
             env.put("LANG", "C.UTF-8");
             return env;
