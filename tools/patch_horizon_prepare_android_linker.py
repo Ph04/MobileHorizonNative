@@ -52,6 +52,9 @@ fn java_command(java: &Path) -> Command {
             "exec /system/bin/linker64 \\"$@\\"",
             "linker64",
         ]);
+        // linker64 consumes the ELF path, then the loaded program's argv[0].
+        // Duplicate java so -m/-version remain Java arguments.
+        command.arg(java);
         command.arg(java);
         command
     }
