@@ -259,7 +259,7 @@ jobs:
           unzip -l "$APK" | grep -q 'assets/horizon-prepare/horizon-prepare-arm64'
           unzip -l "$APK" | grep -q 'assets/horizon-prepare/jdk-manifest.json'
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
-          grep -F "name='dev.mobilehorizon.app.offline1' versionCode='5' versionName='0.3.2-offline1'" "$RUNNER_TEMP/apk-badging.txt"
+          grep -F "name='dev.mobilehorizon.app.offline1' versionCode='6' versionName='0.3.3-offline1'" "$RUNNER_TEMP/apk-badging.txt"
           sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
           echo "APK is valid, package/version match, and both Horizon ARM64 executables and Java 25 manifest payload are included."
 
