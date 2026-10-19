@@ -81,15 +81,30 @@ public final class NativeGameActivity extends NativeActivity {
             touchControlsPopup.setOutsideTouchable(false);
             touchControlsPopup.setClippingEnabled(false);
             touchControlsPopup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
-            touchControlsPopup.showAtLocation(window.getDecorView(),
-                    Gravity.TOP | Gravity.START, 0, 0);
+            // Defer until the Activity's window token is attached; onCreate can be too early.
+            window.getDecorView().post(this::showTouchControlsPopupWhenAttached);
         }
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) applyImmersiveMode();
+        if (hasFocus) {
+            applyImmersiveMode();
+            showTouchControlsPopupWhenAttached();
+        }
+    }
+
+    private void showTouchControlsPopupWhenAttached() {
+        PopupWindow popup = touchControlsPopup;
+        View decor = getWindow().getDecorView();
+        if (popup == null || popup.isShowing() || isFinishing() || isDestroyed()
+                || decor.getWindowToken() == null) return;
+        try {
+            popup.showAtLocation(decor, Gravity.TOP | Gravity.START, 0, 0);
+        } catch (WindowManager.BadTokenException error) {
+            android.util.Log.w("MobileHorizon", "Não foi possível exibir os controles touchscreen", error);
+        }
     }
 
     @Override
