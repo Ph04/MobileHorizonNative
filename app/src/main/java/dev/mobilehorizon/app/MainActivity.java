@@ -1051,7 +1051,13 @@ public final class MainActivity extends Activity {
                     resourceSummary + "\n\nPara login real, o responsável pelo projeto precisa registrar um App ID próprio da Microsoft e habilitar o fluxo de dispositivo. Builds sem HORIZON_MSA_CLIENT_ID não podem autenticar.");
             return;
         }
-        String refreshToken = EncryptedRefreshTokenStore.load(this);
+        String refreshToken;
+        try {
+            refreshToken = EncryptedRefreshTokenStore.load(this);
+        } catch (Exception error) {
+            showRuntimeError("Não foi possível ler a sessão salva", safeMessage(error));
+            return;
+        }
         if (refreshToken == null) {
             showRuntimeError("Entre com sua conta Microsoft",
                     resourceSummary + "\n\nUse o botão Entrar com Microsoft. O jogo só inicia após a confirmação oficial da conta e da licença.");
