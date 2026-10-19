@@ -300,21 +300,33 @@ final class NativeTouchControlsView extends View {
         if (held) mouseButtons |= button; else mouseButtons &= ~button;
         if (previous == mouseButtons) return;
         long now = SystemClock.uptimeMillis();
-        MotionEvent event = MotionEvent.obtain(now, now,
-                held ? MotionEvent.ACTION_BUTTON_PRESS : MotionEvent.ACTION_BUTTON_RELEASE, x, y, 0);
-        event.setSource(InputDevice.SOURCE_MOUSE);
-        event.setButtonState(mouseButtons);
+        MotionEvent event = obtainMouseEvent(now,
+                held ? MotionEvent.ACTION_BUTTON_PRESS : MotionEvent.ACTION_BUTTON_RELEASE, x, y);
         activity.dispatchGenericMotionEvent(event);
         event.recycle();
     }
 
     private void sendMouseMotion(float x, float y) {
         long now = SystemClock.uptimeMillis();
-        MotionEvent event = MotionEvent.obtain(now, now, MotionEvent.ACTION_HOVER_MOVE, x, y, 0);
-        event.setSource(InputDevice.SOURCE_MOUSE);
-        event.setButtonState(mouseButtons);
+        MotionEvent event = obtainMouseEvent(now, MotionEvent.ACTION_HOVER_MOVE, x, y);
         activity.dispatchGenericMotionEvent(event);
         event.recycle();
+    }
+
+    /** Creates a mouse event with its button state set at construction time (MotionEvent has no public setter). */
+    private MotionEvent obtainMouseEvent(long time, int action, float x, float y) {
+        MotionEvent.PointerProperties properties = new MotionEvent.PointerProperties();
+        properties.id = 0;
+        properties.toolType = MotionEvent.TOOL_TYPE_MOUSE;
+        MotionEvent.PointerCoords coordinates = new MotionEvent.PointerCoords();
+        coordinates.x = x;
+        coordinates.y = y;
+        coordinates.pressure = 1f;
+        coordinates.size = 1f;
+        return MotionEvent.obtain(time, time, action, 1,
+                new MotionEvent.PointerProperties[]{properties},
+                new MotionEvent.PointerCoords[]{coordinates},
+                0, mouseButtons, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0);
     }
 
     private void sendMouseClick(float x, float y, int button) {
