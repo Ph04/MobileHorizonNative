@@ -346,8 +346,15 @@ final class NativeTouchControlsView extends View {
         if (held) mouseButtons |= button; else mouseButtons &= ~button;
         if (previous == mouseButtons) return;
         long now = SystemClock.uptimeMillis();
-        MotionEvent event = obtainMouseEvent(now,
-                held ? MotionEvent.ACTION_BUTTON_PRESS : MotionEvent.ACTION_BUTTON_RELEASE, x, y);
+        // A primary click is represented as a mouse DOWN/UP pair. This avoids relying on
+        // the hidden MotionEvent.setActionButton() API and gives native menu widgets an ordinary click.
+        int action;
+        if (button == MotionEvent.BUTTON_PRIMARY) {
+            action = held ? MotionEvent.ACTION_DOWN : MotionEvent.ACTION_UP;
+        } else {
+            action = held ? MotionEvent.ACTION_BUTTON_PRESS : MotionEvent.ACTION_BUTTON_RELEASE;
+        }
+        MotionEvent event = obtainMouseEvent(now, action, x, y);
         activity.dispatchGenericMotionEvent(event);
         event.recycle();
     }
