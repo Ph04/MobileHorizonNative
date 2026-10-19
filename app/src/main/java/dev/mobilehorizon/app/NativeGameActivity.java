@@ -12,6 +12,8 @@ import android.view.WindowManager;
 /** Fullscreen NativeActivity wrapper with optional Android touch controls. */
 public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_TOUCH_CONTROLS = "dev.mobilehorizon.app.EXTRA_TOUCH_CONTROLS";
+    static final String EXTRA_PLAYER_NAME = "dev.mobilehorizon.app.EXTRA_PLAYER_NAME";
+    static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
     private NativeTouchControlsView touchControls;
 
     @Override
@@ -30,6 +32,23 @@ public final class NativeGameActivity extends NativeActivity {
             // NativeActivity already starts the runtime with the app's private working directory
             // on supported builds; Os.chdir is not exposed by Android's public SDK.
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
+            // NativeGameActivity runs in :game, so copy launch context explicitly:
+            // environment changes made in MainActivity are not inherited across processes.
+            android.content.Intent launchIntent = getIntent();
+            if (launchIntent != null) {
+                String playerName = launchIntent.getStringExtra(EXTRA_PLAYER_NAME);
+                if (playerName != null && playerName.matches("[A-Za-z0-9_]{1,16}")) {
+                    android.system.Os.setenv("HORIZON_PLAYER_NAME", playerName, true);
+                }
+                String sessionPath = launchIntent.getStringExtra(EXTRA_SESSION_FILE);
+                if (sessionPath != null && !sessionPath.isEmpty()) {
+                    java.io.File session = new java.io.File(sessionPath).getCanonicalFile();
+                    java.io.File sessions = new java.io.File(gameRoot, "sessions").getCanonicalFile();
+                    if (session.toPath().startsWith(sessions.toPath()) && session.isFile()) {
+                        android.system.Os.setenv("HORIZON_SESSION_FILE", session.getAbsolutePath(), true);
+                    }
+                }
+            }
         } catch (Exception error) {
             android.util.Log.e("MobileHorizon", "Não foi possível preparar o diretório do jogo", error);
         }
