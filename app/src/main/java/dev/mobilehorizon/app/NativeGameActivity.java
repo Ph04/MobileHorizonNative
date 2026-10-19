@@ -27,7 +27,8 @@ public final class NativeGameActivity extends NativeActivity {
             if (!home.isDirectory() && !home.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório de dados Horizon.");
             }
-            android.system.Os.chdir(gameRoot.getAbsolutePath());
+            // NativeActivity already starts the runtime with the app's private working directory
+            // on supported builds; Os.chdir is not exposed by Android's public SDK.
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
         } catch (Exception error) {
             android.util.Log.e("MobileHorizon", "Não foi possível preparar o diretório do jogo", error);
