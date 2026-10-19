@@ -1024,6 +1024,7 @@ public final class MainActivity extends Activity {
             offlineNameEnvSet = true;
             Intent intent = new Intent(this, NativeGameActivity.class);
             intent.putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true);
+            intent.putExtra(NativeGameActivity.EXTRA_PLAYER_NAME, playerName);
             startActivity(intent);
             setStatus("Iniciando cliente em modo offline",
                     "Perfil local: " + playerName + "\n" + resourceSummary
@@ -1334,7 +1335,8 @@ public final class MainActivity extends Activity {
                         Os.setenv("HORIZON_SESSION_FILE", sessionFile.getAbsolutePath(), true);
                         sessionEnvSet = true;
                         startActivity(new Intent(this, NativeGameActivity.class)
-                                .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true));
+                                .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true)
+                                .putExtra(NativeGameActivity.EXTRA_SESSION_FILE, sessionFile.getAbsolutePath()));
                         setStatus("Iniciando cliente Horizon",
                                 "A sessão oficial foi verificada. A inicialização ainda depende de recursos derivados completos e validação real de gameplay.");
                     } catch (Exception error) {
