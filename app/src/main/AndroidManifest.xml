@@ -23,6 +23,7 @@
 
         <activity
             android:name=".NativeGameActivity"
+            android:process=":game"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
             android:label="Horizon Java Client"
