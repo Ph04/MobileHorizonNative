@@ -28,7 +28,7 @@ final class NativeTouchControlsView extends View {
     private static final int NONE = 0, JOYSTICK = 1, TOGGLE = 2, JUMP = 3, SNEAK = 4,
             SPRINT = 5, INVENTORY = 6, ATTACK = 7, USE = 8, ESCAPE = 9,
             DROP = 10, SWAP = 11, PICK = 12, PERSPECTIVE = 13, CHAT = 14,
-            HOTBAR_PREV = 15, HOTBAR_NEXT = 16, IGNORED = 17;
+            HOTBAR_PREV = 15, HOTBAR_NEXT = 16, TAB = 17, ENTER = 18, IGNORED = 19;
     private final NativeGameActivity activity;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<Integer, PointerTrack> pointers = new HashMap<>();
@@ -147,6 +147,8 @@ final class NativeTouchControlsView extends View {
                 new ButtonSpec(CHAT, "T", mirrorControlX(w - dp(285) * s), h - dp(55) * s, dp(21) * s),
                 new ButtonSpec(HOTBAR_PREV, "‹", mirrorControlX(w - dp(285) * s), h - dp(112) * s, dp(20) * s),
                 new ButtonSpec(HOTBAR_NEXT, "›", mirrorControlX(w - dp(285) * s), h - dp(166) * s, dp(20) * s),
+                new ButtonSpec(TAB, "TAB", mirrorControlX(w - dp(285) * s), h - dp(218) * s, dp(22) * s),
+                new ButtonSpec(ENTER, "ENT", mirrorControlX(w - dp(285) * s), h - dp(265) * s, dp(22) * s),
                 new ButtonSpec(ESCAPE, "ESC", mirrorControlX(w - dp(36)), dp(31), dp(21))
         };
     }
@@ -293,6 +295,8 @@ final class NativeTouchControlsView extends View {
             case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, true, x, y); break;
             case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, true); break;
             case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, true); break;
+            case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, true); break;
+            case ENTER: setKeyHeld(KeyEvent.KEYCODE_ENTER, true); break;
             case HOTBAR_PREV: sendMouseScroll(1f); break;
             case HOTBAR_NEXT: sendMouseScroll(-1f); break;
             default: break;
@@ -321,6 +325,8 @@ final class NativeTouchControlsView extends View {
             case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, false, x, y); break;
             case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, false); break;
             case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, false); break;
+            case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, false); break;
+            case ENTER: setKeyHeld(KeyEvent.KEYCODE_ENTER, false); break;
             case HOTBAR_PREV:
             case HOTBAR_NEXT:
                 break;
