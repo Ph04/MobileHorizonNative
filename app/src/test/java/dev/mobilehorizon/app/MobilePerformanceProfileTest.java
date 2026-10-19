@@ -13,8 +13,8 @@ public final class MobilePerformanceProfileTest {
                 + "mipmapLevels:4\nweatherRadius:10\nvignette:true\ncutoutLeaves:true\n"
                 + "menuBackgroundBlurriness:5\nlang:en_us\n";
         String tuned = MobilePerformanceProfile.tuneOptionsText(input);
-        assertTrue(tuned.contains("renderDistance:4\n"));
-        assertTrue(tuned.contains("simulationDistance:4\n"));
+        assertTrue(tuned.contains("renderDistance:3\n"));
+        assertTrue(tuned.contains("simulationDistance:3\n"));
         assertTrue(tuned.contains("maxFps:30\n"));
         assertTrue(tuned.contains("graphicsPreset:\"fast\"\n"));
         assertTrue(tuned.contains("renderClouds:\"false\"\n"));
@@ -27,8 +27,8 @@ public final class MobilePerformanceProfileTest {
         String input = "version:4000\nrenderDistance:6\nsimulationDistance:5\nmaxFps:30\n"
                 + "graphicsPreset:\"fast\"\nlang:pt_br\n";
         String tuned = MobilePerformanceProfile.tuneOptionsText(input);
-        assertTrue(tuned.contains("renderDistance:4\n"));
-        assertTrue(tuned.contains("simulationDistance:4\n"));
+        assertTrue(tuned.contains("renderDistance:3\n"));
+        assertTrue(tuned.contains("simulationDistance:3\n"));
         assertTrue(tuned.contains("maxFps:30\n"));
         assertTrue(tuned.contains("lang:pt_br\n"));
     }
