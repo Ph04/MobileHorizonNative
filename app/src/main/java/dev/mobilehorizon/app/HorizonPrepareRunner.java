@@ -79,9 +79,34 @@ final class HorizonPrepareRunner {
         Os.chmod(tool.getAbsolutePath(), 0700);
         checkCancelled(cancelled);
 
+        File activeResources = new File(context.getFilesDir(), ".local/horizon-client/26.3");
         File stagingResources = new File(workspace, ".local/horizon-client/26.3");
-        deleteRecursively(stagingResources);
         ensureDirectory(stagingResources.getParentFile());
+
+        // Preserve upstream's resource manifest/output: it skips unchanged Java-oracle steps.
+        // Seed the workspace cache from the installed tree when this is the first incremental run.
+        if (!stagingResources.exists() && activeResources.isDirectory()) {
+            report(listener, "Preparando cache incremental",
+                    "Reutilizando a saída Horizon instalada", 2, 6);
+            try {
+                copyDirectory(activeResources, stagingResources, cancelled, listener, new long[]{0});
+                HorizonResourceConverter.copyValidationReceipt(activeResources, stagingResources);
+            } catch (Exception cacheCopyError) {
+                deleteRecursively(stagingResources);
+                deleteQuietly(new File(stagingResources.getParentFile(),
+                        "." + stagingResources.getName() + ".mobilehorizon-validation.json"));
+            }
+        }
+        if (stagingResources.exists()) {
+            try {
+                String cacheSummary = HorizonResourceConverter.validatePreparedResources(stagingResources);
+                report(listener, "Cache incremental pronto", cacheSummary, 2, 6);
+            } catch (Exception invalidCache) {
+                deleteRecursively(stagingResources);
+                deleteQuietly(new File(stagingResources.getParentFile(),
+                        "." + stagingResources.getName() + ".mobilehorizon-validation.json"));
+            }
+        }
         File logFile = new File(workspace, ".local/horizon-prepare.log");
         ensureDirectory(logFile.getParentFile());
         if (logFile.exists() && !logFile.delete()) throw new IOException("Não foi possível zerar o log anterior.");
@@ -123,27 +148,37 @@ final class HorizonPrepareRunner {
         report(listener, "Validando saída completa", "Checando schema, data version e arquivos obrigatórios", 5, 6);
         String summary = HorizonResourceConverter.validatePreparedResources(stagingResources);
 
-        File active = new File(context.getFilesDir(), ".local/horizon-client/26.3");
+        File active = activeResources;
+        File install = new File(active.getParentFile(), "26.3.importing");
         File backup = new File(context.getFilesDir(), ".local/horizon-client/26.3.previous");
         ensureDirectory(active.getParentFile());
+        deleteRecursively(install);
+        deleteQuietly(new File(install.getParentFile(),
+                "." + install.getName() + ".mobilehorizon-validation.json"));
+
+        // Retain the workspace cache. Copy to a temporary sibling, validate, then swap atomically.
+        copyDirectory(stagingResources, install, cancelled, listener, new long[]{0});
+        HorizonResourceConverter.copyValidationReceipt(stagingResources, install);
+        summary = HorizonResourceConverter.validatePreparedResources(install);
         deleteRecursively(backup);
         if (active.exists() && !active.renameTo(backup)) {
+            deleteRecursively(install);
             throw new IOException("A conversão foi validada, mas não foi possível substituir a saída ativa; a pasta anterior foi preservada.");
         }
-        if (!stagingResources.renameTo(active)) {
+        if (!install.renameTo(active)) {
             if (backup.exists() && !backup.renameTo(active)) {
                 throw new IOException("Não foi possível ativar os recursos completos nem restaurar a pasta anterior. Backup: " + backup.getAbsolutePath());
             }
             throw new IOException("Não foi possível ativar a saída Horizon validada.");
         }
-        // Staging was fully validated immediately before this same-filesystem rename.
-        // Rename does not change the tree contents; do not enumerate all assets/data again.
-        if (!new File(active, "horizon-resources.json").isFile()) {
+        HorizonResourceConverter.promoteValidationReceipt(install, active);
+        try {
+            summary = HorizonResourceConverter.validatePreparedResources(active);
+        } catch (Exception error) {
             deleteRecursively(active);
             if (backup.exists()) backup.renameTo(active);
-            throw new IOException("A saída validada foi ativada, mas horizon-resources.json não está presente.");
+            throw new IOException("A validação após ativação falhou; a saída anterior foi restaurada.", error);
         }
-        HorizonResourceConverter.promoteValidationReceipt(stagingResources, active);
         deleteRecursively(backup);
         report(listener, "Conversão completa concluída",
                 "Saída instalada em .local/horizon-client/26.3", 6, 6);
@@ -437,6 +472,34 @@ final class HorizonPrepareRunner {
             byte[] buffer = new byte[64 * 1024];
             int n;
             while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        }
+    }
+
+    private static void copyDirectory(File source, File destination, AtomicBoolean cancelled,
+                                      ProgressListener listener, long[] copiedFiles) throws Exception {
+        checkCancelled(cancelled);
+        if (java.nio.file.Files.isSymbolicLink(source.toPath())) {
+            throw new IOException("A árvore de recursos contém um link simbólico, recusado por segurança.");
+        }
+        if (source.isDirectory()) {
+            if (!destination.isDirectory() && !destination.mkdirs() && !destination.isDirectory()) {
+                throw new IOException("Não foi possível criar " + destination.getAbsolutePath());
+            }
+            File[] children = source.listFiles();
+            if (children == null) throw new IOException("Não foi possível listar " + source.getAbsolutePath());
+            for (File child : children) {
+                copyDirectory(child, new File(destination, child.getName()), cancelled, listener, copiedFiles);
+            }
+            return;
+        }
+        if (!source.isFile()) throw new IOException("Arquivo de recurso ausente durante a cópia: " + source.getAbsolutePath());
+        ensureDirectory(destination.getParentFile());
+        java.nio.file.Files.copy(source.toPath(), destination.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                java.nio.file.StandardCopyOption.COPY_ATTRIBUTES);
+        copiedFiles[0]++;
+        if (copiedFiles[0] % 256 == 0) {
+            report(listener, "Copiando saída Horizon", copiedFiles[0] + " arquivos copiados", -1, -1);
         }
     }
 

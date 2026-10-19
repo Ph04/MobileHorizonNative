@@ -16,6 +16,27 @@ public final class NativeGameActivity extends NativeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Horizon resolves options, saves, logs and prepared resources from these paths.
+        // Set them before NativeActivity loads the native game library.
+        try {
+            java.io.File gameRoot = getApplicationContext().getFilesDir();
+            if (!gameRoot.isDirectory() && !gameRoot.mkdirs()) {
+                throw new java.io.IOException("Não foi possível criar o diretório privado do jogo.");
+            }
+            java.io.File home = new java.io.File(gameRoot, "horizon");
+            if (!home.isDirectory() && !home.mkdirs()) {
+                throw new java.io.IOException("Não foi possível criar o diretório de dados Horizon.");
+            }
+            android.system.Os.chdir(gameRoot.getAbsolutePath());
+            android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
+        } catch (Exception error) {
+            android.util.Log.e("MobileHorizon", "Não foi possível preparar o diretório do jogo", error);
+        }
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY);
+        } catch (RuntimeException ignored) {
+            // This scheduling hint is optional and must never block startup.
+        }
         super.onCreate(savedInstanceState);
         Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

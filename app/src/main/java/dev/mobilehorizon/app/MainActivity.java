@@ -1016,6 +1016,7 @@ public final class MainActivity extends Activity {
     private void launchOfflineClientAfterValidation(String resourceSummary) {
         try {
             String playerName = OfflineProfile.loadName(this);
+            MobilePerformanceProfile.applyInitialOptions(this);
             new File(getFilesDir(), "horizon-client-result.txt").delete();
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
@@ -1080,6 +1081,12 @@ public final class MainActivity extends Activity {
         enabled.setChecked(prefs.getBoolean(NativeTouchControlsView.KEY_ENABLED, true));
         panel.addView(enabled, params(-1, -2));
 
+        CheckBox leftHanded = new CheckBox(this);
+        leftHanded.setText("Layout canhoto (joystick à direita)");
+        leftHanded.setTextColor(0xff18213a);
+        leftHanded.setChecked(prefs.getBoolean(NativeTouchControlsView.KEY_LEFT_HANDED, false));
+        panel.addView(leftHanded, params(-1, -2));
+
         TextView sizeLabel = text("", 14, 0xff59647b, false);
         panel.addView(sizeLabel, params(-1, -2));
         SeekBar size = new SeekBar(this);
@@ -1134,7 +1141,7 @@ public final class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("Controles Touch")
-                .setMessage("Joystick esquerdo, câmera por arrasto e botões de ação. Durante o jogo, toque no ícone superior para ocultar ou mostrar os controles.")
+                .setMessage("Joystick, câmera por arrasto e botões de ação. Há layout canhoto, tamanho, opacidade e sensibilidade ajustáveis. Durante o jogo, toque no ícone superior para ocultar ou mostrar os controles.")
                 .setView(panel)
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Salvar", (dialog, which) -> {
@@ -1143,6 +1150,7 @@ public final class MainActivity extends Activity {
                     float selectedSensitivity = (50 + sensitivity.getProgress()) / 100f;
                     prefs.edit()
                             .putBoolean(NativeTouchControlsView.KEY_ENABLED, enabled.isChecked())
+                            .putBoolean(NativeTouchControlsView.KEY_LEFT_HANDED, leftHanded.isChecked())
                             .putFloat(NativeTouchControlsView.KEY_SCALE, selectedScale)
                             .putFloat(NativeTouchControlsView.KEY_OPACITY, selectedOpacity)
                             .putFloat(NativeTouchControlsView.KEY_SENSITIVITY, selectedSensitivity)
@@ -1320,6 +1328,7 @@ public final class MainActivity extends Activity {
                     refreshAccountUi();
                     File sessionFile = null;
                     try {
+                        MobilePerformanceProfile.applyInitialOptions(this);
                         new File(getFilesDir(), "horizon-client-result.txt").delete();
                         sessionFile = writeOneShotSession(account);
                         Os.setenv("HORIZON_SESSION_FILE", sessionFile.getAbsolutePath(), true);

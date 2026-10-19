@@ -909,6 +909,21 @@ final class HorizonResourceConverter {
         }
     }
 
+    /** Copies a receipt to another copy of the tree, leaving the source receipt intact. */
+    static void copyValidationReceipt(File sourceRoot, File destinationRoot) {
+        File sourceReceipt = validationReceiptFile(sourceRoot);
+        File destinationReceipt = validationReceiptFile(destinationRoot);
+        if (destinationReceipt == null || sourceReceipt == null || !sourceReceipt.isFile()) return;
+        try {
+            JSONObject receipt = new JSONObject(readText(sourceReceipt, 16 * 1024));
+            if (!sourceRoot.getCanonicalPath().equals(receipt.optString("root_path", ""))) return;
+            receipt.put("root_path", destinationRoot.getCanonicalPath());
+            writeAtomically(receipt.toString().getBytes(StandardCharsets.UTF_8), destinationReceipt);
+        } catch (Exception ignored) {
+            // Missing optional metadata only costs one full file-count validation.
+        }
+    }
+
     /** Carries a receipt across an atomic promotion without counting every resource a second time. */
     static void promoteValidationReceipt(File sourceRoot, File destinationRoot) {
         File sourceReceipt = validationReceiptFile(sourceRoot);

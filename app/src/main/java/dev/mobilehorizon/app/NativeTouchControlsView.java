@@ -23,20 +23,24 @@ final class NativeTouchControlsView extends View {
     static final String KEY_SCALE = "scale";
     static final String KEY_OPACITY = "opacity";
     static final String KEY_SENSITIVITY = "sensitivity";
+    static final String KEY_LEFT_HANDED = "left_handed";
 
     private static final int NONE = 0, JOYSTICK = 1, TOGGLE = 2, JUMP = 3, SNEAK = 4,
-            SPRINT = 5, INVENTORY = 6, ATTACK = 7, USE = 8, ESCAPE = 9;
+            SPRINT = 5, INVENTORY = 6, ATTACK = 7, USE = 8, ESCAPE = 9,
+            DROP = 10, SWAP = 11, IGNORED = 12;
     private final NativeGameActivity activity;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<Integer, PointerTrack> pointers = new HashMap<>();
     private final Set<Integer> heldKeys = new HashSet<>();
     private final Set<Integer> pressedControls = new HashSet<>();
     private final Set<Integer> joystickKeys = new HashSet<>();
+    private final Map<Integer, Integer> controlPointerCounts = new HashMap<>();
 
     private final float density;
     private final float scale;
     private final float opacity;
     private final float sensitivity;
+    private final boolean leftHanded;
     private boolean controlsVisible = true;
     private int joystickPointer = -1;
     private float joystickX, joystickY, virtualMouseX, virtualMouseY;
@@ -67,6 +71,7 @@ final class NativeTouchControlsView extends View {
         scale = clamp(prefs.getFloat(KEY_SCALE, 1f), 0.70f, 1.30f);
         opacity = clamp(prefs.getFloat(KEY_OPACITY, 0.82f), 0.35f, 1f);
         sensitivity = clamp(prefs.getFloat(KEY_SENSITIVITY, 1f), 0.50f, 2f);
+        leftHanded = prefs.getBoolean(KEY_LEFT_HANDED, false);
         setBackgroundColor(Color.TRANSPARENT);
         setFocusable(false);
         setFocusableInTouchMode(false);
@@ -85,8 +90,8 @@ final class NativeTouchControlsView extends View {
     }
 
     private void drawJoystick(Canvas canvas) {
-        float cx = joystickPointer == -1 ? dp(94) * scale : joystickX;
-        float cy = joystickPointer == -1 ? getHeight() - dp(99) * scale : joystickY;
+        float cx = joystickPointer == -1 ? joystickHomeX() : joystickX;
+        float cy = joystickPointer == -1 ? joystickHomeY() : joystickY;
         float radius = dp(67) * scale;
         circle(canvas, cx, cy, radius, false, 0.60f);
         float knobX = cx, knobY = cy;
@@ -116,7 +121,7 @@ final class NativeTouchControlsView extends View {
     }
 
     private void drawToggle(Canvas canvas) {
-        float x = getWidth() - dp(98), y = dp(31);
+        float x = mirrorControlX(getWidth() - dp(98)), y = dp(31);
         circle(canvas, x, y, dp(18), false, 0.86f);
         circle(canvas, x, y, dp(18), true, 0.95f);
         paint.setStyle(Paint.Style.FILL); paint.setColor(Color.WHITE);
@@ -128,13 +133,15 @@ final class NativeTouchControlsView extends View {
     private ButtonSpec[] buttonSpecs() {
         float s = scale, w = getWidth(), h = getHeight();
         return new ButtonSpec[] {
-                new ButtonSpec(JUMP, "↑", w - dp(72) * s, h - dp(109) * s, dp(32) * s),
-                new ButtonSpec(SNEAK, "SNEAK", w - dp(141) * s, h - dp(55) * s, dp(25) * s),
-                new ButtonSpec(SPRINT, "RUN", w - dp(72) * s, h - dp(55) * s, dp(25) * s),
-                new ButtonSpec(INVENTORY, "INV", w - dp(210) * s, h - dp(55) * s, dp(24) * s),
-                new ButtonSpec(ATTACK, "HIT", w - dp(137) * s, h - dp(196) * s, dp(34) * s),
-                new ButtonSpec(USE, "USE", w - dp(61) * s, h - dp(222) * s, dp(28) * s),
-                new ButtonSpec(ESCAPE, "ESC", w - dp(36), dp(31), dp(21))
+                new ButtonSpec(JUMP, "↑", mirrorControlX(w - dp(72) * s), h - dp(109) * s, dp(32) * s),
+                new ButtonSpec(SNEAK, "SNEAK", mirrorControlX(w - dp(141) * s), h - dp(55) * s, dp(25) * s),
+                new ButtonSpec(SPRINT, "RUN", mirrorControlX(w - dp(72) * s), h - dp(55) * s, dp(25) * s),
+                new ButtonSpec(INVENTORY, "INV", mirrorControlX(w - dp(210) * s), h - dp(55) * s, dp(24) * s),
+                new ButtonSpec(DROP, "Q", mirrorControlX(w - dp(210) * s), h - dp(113) * s, dp(20) * s),
+                new ButtonSpec(SWAP, "F", mirrorControlX(w - dp(210) * s), h - dp(166) * s, dp(20) * s),
+                new ButtonSpec(ATTACK, "HIT", mirrorControlX(w - dp(137) * s), h - dp(196) * s, dp(34) * s),
+                new ButtonSpec(USE, "USE", mirrorControlX(w - dp(61) * s), h - dp(222) * s, dp(28) * s),
+                new ButtonSpec(ESCAPE, "ESC", mirrorControlX(w - dp(36)), dp(31), dp(21))
         };
     }
 
@@ -174,11 +181,12 @@ final class NativeTouchControlsView extends View {
         } else if (control == JOYSTICK && joystickPointer == -1) {
             joystickPointer = id; joystickX = x; joystickY = y;
         } else if (control == JOYSTICK) {
-            control = NONE;
+            // Never let a second finger on the joystick trigger mouse input.
+            control = IGNORED;
         }
         pointers.put(id, new PointerTrack(x, y, control));
         if (control == JOYSTICK) updateJoystick(x, y);
-        else if (control != NONE && control != TOGGLE) activateControl(control, x, y);
+        else if (control != NONE && control != TOGGLE && control != IGNORED) activateControl(control, x, y);
         else if (control == NONE) { virtualMouseX = x; virtualMouseY = y; }
         invalidate();
     }
@@ -204,6 +212,10 @@ final class NativeTouchControlsView extends View {
         int id = event.getPointerId(index);
         PointerTrack track = pointers.remove(id);
         if (track == null) return;
+        if (track.control == IGNORED) {
+            invalidate();
+            return;
+        }
         if (track.control == JOYSTICK) {
             joystickPointer = -1;
             setJoystickDirections(false, false, false, false);
@@ -216,11 +228,11 @@ final class NativeTouchControlsView extends View {
     }
 
     private int hitControl(float x, float y) {
-        float toggleX = getWidth() - dp(98), toggleY = dp(31);
+        float toggleX = mirrorControlX(getWidth() - dp(98)), toggleY = dp(31);
         if (distanceSquared(x, y, toggleX, toggleY) <= dp(26) * dp(26)) return TOGGLE;
         if (!controlsVisible) return NONE;
-        float jx = dp(94) * scale, jy = getHeight() - dp(99) * scale, jr = dp(82) * scale;
-        if (joystickPointer == -1 && distanceSquared(x, y, jx, jy) <= jr * jr) return JOYSTICK;
+        float jx = joystickHomeX(), jy = joystickHomeY(), jr = dp(82) * scale;
+        if (distanceSquared(x, y, jx, jy) <= jr * jr) return JOYSTICK;
         ButtonSpec best = null; float bestDistance = Float.MAX_VALUE;
         for (ButtonSpec spec : buttonSpecs()) {
             float d = distanceSquared(x, y, spec.x, spec.y), hit = spec.radius + dp(13);
@@ -254,7 +266,13 @@ final class NativeTouchControlsView extends View {
     }
 
     private void activateControl(int control, float x, float y) {
+        int activePointers = controlPointerCounts.getOrDefault(control, 0);
+        controlPointerCounts.put(control, activePointers + 1);
         pressedControls.add(control);
+        if (activePointers > 0) {
+            invalidate();
+            return;
+        }
         switch (control) {
             case JUMP: setKeyHeld(KeyEvent.KEYCODE_SPACE, true); break;
             case SNEAK: setKeyHeld(KeyEvent.KEYCODE_SHIFT_LEFT, true); break;
@@ -263,12 +281,20 @@ final class NativeTouchControlsView extends View {
             case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, true, x, y); break;
             case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, true, x, y); break;
             case ESCAPE: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, true); break;
+            case DROP: setKeyHeld(KeyEvent.KEYCODE_Q, true); break;
+            case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, true); break;
             default: break;
         }
         invalidate();
     }
 
     private void deactivateControl(int control, float x, float y) {
+        int activePointers = controlPointerCounts.getOrDefault(control, 0);
+        if (activePointers > 1) {
+            controlPointerCounts.put(control, activePointers - 1);
+            return;
+        }
+        controlPointerCounts.remove(control);
         pressedControls.remove(control);
         switch (control) {
             case JUMP: setKeyHeld(KeyEvent.KEYCODE_SPACE, false); break;
@@ -278,6 +304,8 @@ final class NativeTouchControlsView extends View {
             case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, false, x, y); break;
             case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, false, x, y); break;
             case ESCAPE: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, false); break;
+            case DROP: setKeyHeld(KeyEvent.KEYCODE_Q, false); break;
+            case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, false); break;
             default: break;
         }
         invalidate();
@@ -345,11 +373,24 @@ final class NativeTouchControlsView extends View {
         for (Integer key : new HashSet<>(heldKeys)) setKeyHeld(key, false);
         joystickKeys.clear();
         pressedControls.clear();
+        controlPointerCounts.clear();
         if ((mouseButtons & MotionEvent.BUTTON_PRIMARY) != 0)
             setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY);
         if ((mouseButtons & MotionEvent.BUTTON_SECONDARY) != 0)
             setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY);
         joystickPointer = -1;
+    }
+
+    private float joystickHomeX() {
+        return leftHanded ? getWidth() - dp(94) * scale : dp(94) * scale;
+    }
+
+    private float joystickHomeY() {
+        return getHeight() - dp(99) * scale;
+    }
+
+    private float mirrorControlX(float x) {
+        return leftHanded ? getWidth() - x : x;
     }
 
     private float dp(float value) { return value * density; }
