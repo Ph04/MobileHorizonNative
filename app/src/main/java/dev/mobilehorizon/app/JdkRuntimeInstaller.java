@@ -427,6 +427,9 @@ final class JdkRuntimeInstaller {
         command.add("-c");
         command.add("exec /system/bin/linker64 \"$@\"");
         command.add("linker64"); // $0 for sh -c; excluded from "$@"
+        // linker64 consumes the ELF path, then the loaded program's argv[0].
+        // Duplicate java so -m/-version are forwarded as JVM options.
+        command.add(runtime.java.getAbsolutePath());
         command.add(runtime.java.getAbsolutePath());
         if ("javac".equals(label)) {
             command.add("-m");
