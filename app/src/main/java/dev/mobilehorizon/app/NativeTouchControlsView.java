@@ -1,5 +1,6 @@
 package dev.mobilehorizon.app;
 
+import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -62,7 +63,7 @@ final class NativeTouchControlsView extends View {
         super(activity);
         this.activity = activity;
         density = getResources().getDisplayMetrics().density;
-        android.content.SharedPreferences prefs = activity.getSharedPreferences(PREFERENCES, MODE_PRIVATE);
+        android.content.SharedPreferences prefs = activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
         scale = clamp(prefs.getFloat(KEY_SCALE, 1f), 0.70f, 1.30f);
         opacity = clamp(prefs.getFloat(KEY_OPACITY, 0.82f), 0.35f, 1f);
         sensitivity = clamp(prefs.getFloat(KEY_SENSITIVITY, 1f), 0.50f, 2f);
