@@ -133,7 +133,7 @@ public final class NativeGameActivity extends NativeActivity {
     }
 
     /** Requests a real Android touchscreen tap at the virtual cursor's screen coordinate. */
-    void requestTouchAtCursor(float x, float y) {
+    void requestTouchAtCursor(float x, float y, boolean rightClick) {
         if (touchControls == null || touchControlsPopup == null || isFinishing() || isDestroyed()) return;
         if (!isCursorGestureServiceEnabled()) {
             if (!warnedAccessibilityUnavailable) {
@@ -159,6 +159,7 @@ public final class NativeGameActivity extends NativeActivity {
             request.setPackage(getPackageName());
             request.putExtra(CursorGestureAccessibilityService.EXTRA_X, screenX);
             request.putExtra(CursorGestureAccessibilityService.EXTRA_Y, screenY);
+            request.putExtra(CursorGestureAccessibilityService.EXTRA_RIGHT, rightClick);
             sendBroadcast(request);
         }, 90);
     }

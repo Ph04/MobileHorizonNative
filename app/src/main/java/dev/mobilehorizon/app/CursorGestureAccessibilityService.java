@@ -18,6 +18,7 @@ public final class CursorGestureAccessibilityService extends AccessibilityServic
     static final String ACTION_TAP_FINISHED = "dev.mobilehorizon.app.action.CURSOR_TAP_FINISHED";
     static final String EXTRA_X = "screen_x";
     static final String EXTRA_Y = "screen_y";
+    static final String EXTRA_RIGHT = "right_click";
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean receiverRegistered;
@@ -31,12 +32,19 @@ public final class CursorGestureAccessibilityService extends AccessibilityServic
                 announceFinished(false);
                 return;
             }
+            GestureDescription.Builder builder = new GestureDescription.Builder();
             Path tap = new Path();
             tap.moveTo(x, y);
             tap.lineTo(x + 0.1f, y + 0.1f);
-            GestureDescription gesture = new GestureDescription.Builder()
-                    .addStroke(new GestureDescription.StrokeDescription(tap, 0, 70))
-                    .build();
+            builder.addStroke(new GestureDescription.StrokeDescription(tap, 0, 70));
+            if (intent.getBooleanExtra(EXTRA_RIGHT, false)) {
+                // Two simultaneous pointers encode a right-click for the native adapter.
+                Path secondTap = new Path();
+                secondTap.moveTo(x + 8f, y + 8f);
+                secondTap.lineTo(x + 8.1f, y + 8.1f);
+                builder.addStroke(new GestureDescription.StrokeDescription(secondTap, 0, 70));
+            }
+            GestureDescription gesture = builder.build();
             boolean accepted = dispatchGesture(gesture, new GestureResultCallback() {
                 @Override public void onCompleted(GestureDescription description) {
                     announceFinished(true);

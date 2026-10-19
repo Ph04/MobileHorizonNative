@@ -344,7 +344,7 @@ final class NativeTouchControlsView extends View {
                 sendMouseMotion(virtualMouseX, virtualMouseY);
                 setMouseButton(MotionEvent.BUTTON_PRIMARY, true, virtualMouseX, virtualMouseY);
                 break;
-            case MOUSE_RIGHT: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, true); break;
+            case MOUSE_RIGHT: setMouseButton(MotionEvent.BUTTON_SECONDARY, true, virtualMouseX, virtualMouseY); break;
             case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, true); break;
             case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, true); break;
             case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, true); break;
@@ -376,7 +376,7 @@ final class NativeTouchControlsView extends View {
             case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, false); break;
             case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, false, virtualMouseX, virtualMouseY); break;
             case MOUSE_LEFT: setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY); break;
-            case MOUSE_RIGHT: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, false); break;
+            case MOUSE_RIGHT: setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY); break;
             case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, false); break;
             case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, false); break;
             case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, false); break;
@@ -412,7 +412,7 @@ final class NativeTouchControlsView extends View {
         if (!held && (button == MotionEvent.BUTTON_PRIMARY
                 || button == MotionEvent.BUTTON_SECONDARY
                 || button == MotionEvent.BUTTON_TERTIARY)) {
-            activity.requestTouchAtCursor(x, y);
+            activity.requestTouchAtCursor(x, y, button != MotionEvent.BUTTON_PRIMARY);
         }
     }
 
