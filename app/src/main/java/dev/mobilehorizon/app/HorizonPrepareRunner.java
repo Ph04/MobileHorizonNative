@@ -3,6 +3,7 @@ package dev.mobilehorizon.app;
 import android.content.Context;
 import android.content.res.AssetManager;
 import android.system.Os;
+import android.os.SystemClock;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -387,6 +388,7 @@ final class HorizonPrepareRunner {
                          new FileOutputStream(logFile, true), StandardCharsets.UTF_8))) {
                 String line;
                 long written = logFile.length();
+                long lastProgressReport = 0L;
                 while ((line = reader.readLine()) != null) {
                     String record = line + "\n";
                     if (written < MAX_LOG_BYTES) {
@@ -394,7 +396,14 @@ final class HorizonPrepareRunner {
                         writer.flush();
                         written += record.getBytes(StandardCharsets.UTF_8).length;
                     }
-                    report(listener, "Exportador Horizon", line, -1, -1);
+                    // Keep every line in the diagnostic log, but throttle UI/notification
+                    // broadcasts. Upstream can emit thousands of lines during data generation.
+                    long now = SystemClock.elapsedRealtime();
+                    if (now - lastProgressReport >= 300L
+                            || line.startsWith("ERROR") || line.startsWith("WARN")) {
+                        lastProgressReport = now;
+                        report(listener, "Exportador Horizon", line, -1, -1);
+                    }
                 }
             } catch (IOException ignored) {
                 // The process exit code and last log lines are reported by the caller.
