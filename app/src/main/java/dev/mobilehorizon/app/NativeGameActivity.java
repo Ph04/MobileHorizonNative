@@ -3,11 +3,14 @@ package dev.mobilehorizon.app;
 import android.app.NativeActivity;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Gravity;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.PopupWindow;
 
 /** Fullscreen NativeActivity wrapper with optional Android touch controls. */
 public final class NativeGameActivity extends NativeActivity {
@@ -15,6 +18,7 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_PLAYER_NAME = "dev.mobilehorizon.app.EXTRA_PLAYER_NAME";
     static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
     private NativeTouchControlsView touchControls;
+    private PopupWindow touchControlsPopup;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,8 +69,20 @@ public final class NativeGameActivity extends NativeActivity {
         SharedPreferences prefs = getSharedPreferences(NativeTouchControlsView.PREFERENCES, MODE_PRIVATE);
         if (requested && prefs.getBoolean(NativeTouchControlsView.KEY_ENABLED, true)) {
             touchControls = new NativeTouchControlsView(this);
-            addContentView(touchControls, new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            // NativeActivity takes the window's native input queue, so a view attached to its
+            // normal content hierarchy may draw above the game but never receive Android touches.
+            // Use a touchable application-panel window to give the controls their own input target.
+            touchControlsPopup = new PopupWindow(touchControls,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT, false);
+            touchControlsPopup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            touchControlsPopup.setTouchable(true);
+            touchControlsPopup.setFocusable(false);
+            touchControlsPopup.setOutsideTouchable(false);
+            touchControlsPopup.setClippingEnabled(false);
+            touchControlsPopup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
+            touchControlsPopup.showAtLocation(window.getDecorView(),
+                    Gravity.TOP | Gravity.START, 0, 0);
         }
     }
 
@@ -85,6 +101,11 @@ public final class NativeGameActivity extends NativeActivity {
     @Override
     protected void onDestroy() {
         if (touchControls != null) touchControls.releaseAllInputs();
+        if (touchControlsPopup != null) {
+            try { touchControlsPopup.dismiss(); } catch (IllegalArgumentException ignored) {}
+            touchControlsPopup = null;
+            touchControls = null;
+        }
         super.onDestroy();
     }
 
