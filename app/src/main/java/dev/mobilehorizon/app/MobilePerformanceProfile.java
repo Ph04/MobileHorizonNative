@@ -19,21 +19,22 @@ final class MobilePerformanceProfile {
     private static final class Setting {
         final String defaultValue;
         final String mobileValue;
-        final String previousMobileValue;
+        final String[] previousMobileValues;
         Setting(String defaultValue, String mobileValue) {
-            this(defaultValue, mobileValue, null);
+            this(defaultValue, mobileValue, new String[0]);
         }
-        Setting(String defaultValue, String mobileValue, String previousMobileValue) {
+        Setting(String defaultValue, String mobileValue, String... previousMobileValues) {
             this.defaultValue = defaultValue;
             this.mobileValue = mobileValue;
-            this.previousMobileValue = previousMobileValue;
+            this.previousMobileValues = previousMobileValues == null
+                    ? new String[0] : previousMobileValues.clone();
         }
     }
 
     private static final Map<String, Setting> MOBILE_SETTINGS = new LinkedHashMap<>();
     static {
-        MOBILE_SETTINGS.put("renderDistance", new Setting("12", "3", "4"));
-        MOBILE_SETTINGS.put("simulationDistance", new Setting("12", "3", "4"));
+        MOBILE_SETTINGS.put("renderDistance", new Setting("12", "3", "4", "6"));
+        MOBILE_SETTINGS.put("simulationDistance", new Setting("12", "3", "4", "5"));
         MOBILE_SETTINGS.put("maxFps", new Setting("120", "30"));
         MOBILE_SETTINGS.put("ao", new Setting("true", "false"));
         MOBILE_SETTINGS.put("renderClouds", new Setting("true", "\"false\""));
@@ -110,8 +111,13 @@ final class MobilePerformanceProfile {
                 String current = line.substring(line.indexOf(':') + 1).trim();
                 String normalized = normalize(current);
                 boolean stockDefault = normalized.equals(normalize(setting.defaultValue));
-                boolean knownPreviousMobileValue = setting.previousMobileValue != null
-                        && normalized.equals(normalize(setting.previousMobileValue));
+                boolean knownPreviousMobileValue = false;
+                for (String previousValue : setting.previousMobileValues) {
+                    if (normalized.equals(normalize(previousValue))) {
+                        knownPreviousMobileValue = true;
+                        break;
+                    }
+                }
                 if (stockDefault || knownPreviousMobileValue) {
                     lines.set(index, key + ":" + setting.mobileValue);
                 }
