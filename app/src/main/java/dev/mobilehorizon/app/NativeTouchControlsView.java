@@ -28,7 +28,8 @@ final class NativeTouchControlsView extends View {
     private static final int NONE = 0, JOYSTICK = 1, TOGGLE = 2, JUMP = 3, SNEAK = 4,
             SPRINT = 5, INVENTORY = 6, ATTACK = 7, USE = 8, ESCAPE = 9,
             DROP = 10, SWAP = 11, PICK = 12, PERSPECTIVE = 13, CHAT = 14,
-            HOTBAR_PREV = 15, HOTBAR_NEXT = 16, TAB = 17, ENTER = 18, IGNORED = 19;
+            HOTBAR_PREV = 15, HOTBAR_NEXT = 16, TAB = 17, ENTER = 18, IGNORED = 19,
+            MOUSE_LEFT = 20, MOUSE_RIGHT = 21;
     private final NativeGameActivity activity;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<Integer, PointerTrack> pointers = new HashMap<>();
@@ -46,6 +47,7 @@ final class NativeTouchControlsView extends View {
     private int joystickPointer = -1;
     private float joystickX, joystickY, virtualMouseX, virtualMouseY;
     private int mouseButtons;
+    private boolean cursorInitialized;
 
     private static final class PointerTrack {
         final float startX, startY;
@@ -88,6 +90,45 @@ final class NativeTouchControlsView extends View {
             for (ButtonSpec spec : buttonSpecs()) drawButton(canvas, spec);
         }
         drawToggle(canvas);
+        drawMouseCursor(canvas);
+    }
+
+    @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        if (w > 0 && h > 0) {
+            if (!cursorInitialized) {
+                virtualMouseX = w / 2f;
+                virtualMouseY = h / 2f;
+                cursorInitialized = true;
+            } else {
+                virtualMouseX = clamp(virtualMouseX, 0, w - 1f);
+                virtualMouseY = clamp(virtualMouseY, 0, h - 1f);
+            }
+        }
+        invalidate();
+    }
+
+    /** Draw an on-screen pointer so menus can be targeted without a hardware mouse. */
+    private void drawMouseCursor(Canvas canvas) {
+        if (getWidth() <= 0 || getHeight() <= 0) return;
+        float x = clamp(virtualMouseX, 0, getWidth() - 1f);
+        float y = clamp(virtualMouseY, 0, getHeight() - 1f);
+        android.graphics.Path cursor = new android.graphics.Path();
+        cursor.moveTo(x, y);
+        cursor.lineTo(x + dp(1), y + dp(22));
+        cursor.lineTo(x + dp(7), y + dp(16));
+        cursor.lineTo(x + dp(13), y + dp(27));
+        cursor.lineTo(x + dp(18), y + dp(24));
+        cursor.lineTo(x + dp(12), y + dp(14));
+        cursor.lineTo(x + dp(21), y + dp(14));
+        cursor.close();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2.5f));
+        paint.setColor(Color.BLACK);
+        canvas.drawPath(cursor, paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.WHITE);
+        canvas.drawPath(cursor, paint);
     }
 
     private void drawJoystick(Canvas canvas) {
@@ -134,6 +175,8 @@ final class NativeTouchControlsView extends View {
     private ButtonSpec[] buttonSpecs() {
         float s = scale, w = getWidth(), h = getHeight();
         return new ButtonSpec[] {
+                new ButtonSpec(MOUSE_LEFT, "LMB", mirrorControlX(w - dp(164) * s), dp(31) * s, dp(20) * s),
+                new ButtonSpec(MOUSE_RIGHT, "RMB", mirrorControlX(w - dp(216) * s), dp(31) * s, dp(20) * s),
                 new ButtonSpec(JUMP, "↑", mirrorControlX(w - dp(72) * s), h - dp(109) * s, dp(32) * s),
                 new ButtonSpec(SNEAK, "SNEAK", mirrorControlX(w - dp(141) * s), h - dp(55) * s, dp(25) * s),
                 new ButtonSpec(SPRINT, "RUN", mirrorControlX(w - dp(72) * s), h - dp(55) * s, dp(25) * s),
@@ -195,7 +238,11 @@ final class NativeTouchControlsView extends View {
         pointers.put(id, new PointerTrack(x, y, control));
         if (control == JOYSTICK) updateJoystick(x, y);
         else if (control != NONE && control != TOGGLE && control != IGNORED) activateControl(control, x, y);
-        else if (control == NONE) { virtualMouseX = x; virtualMouseY = y; }
+        else if (control == NONE) {
+            virtualMouseX = x;
+            virtualMouseY = y;
+            sendMouseMotion(virtualMouseX, virtualMouseY);
+        }
         invalidate();
     }
 
@@ -229,7 +276,7 @@ final class NativeTouchControlsView extends View {
             joystickPointer = -1;
             setJoystickDirections(false, false, false, false);
         } else if (track.control == NONE) {
-            if (!track.moved) sendMouseClick(event.getX(index), event.getY(index), MotionEvent.BUTTON_PRIMARY);
+            if (!track.moved) sendMouseClick(virtualMouseX, virtualMouseY, MotionEvent.BUTTON_PRIMARY);
         } else if (track.control != TOGGLE) {
             deactivateControl(track.control, track.lastX, track.lastY);
         }
@@ -287,12 +334,20 @@ final class NativeTouchControlsView extends View {
             case SNEAK: setKeyHeld(KeyEvent.KEYCODE_SHIFT_LEFT, true); break;
             case SPRINT: setKeyHeld(KeyEvent.KEYCODE_CTRL_LEFT, true); break;
             case INVENTORY: setKeyHeld(KeyEvent.KEYCODE_E, true); break;
-            case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, true, x, y); break;
-            case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, true, x, y); break;
+            case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, true, virtualMouseX, virtualMouseY); break;
+            case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, true, virtualMouseX, virtualMouseY); break;
             case ESCAPE: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, true); break;
             case DROP: setKeyHeld(KeyEvent.KEYCODE_Q, true); break;
             case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, true); break;
-            case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, true, x, y); break;
+            case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, true, virtualMouseX, virtualMouseY); break;
+            case MOUSE_LEFT:
+                sendMouseMotion(virtualMouseX, virtualMouseY);
+                setMouseButton(MotionEvent.BUTTON_PRIMARY, true, virtualMouseX, virtualMouseY);
+                break;
+            case MOUSE_RIGHT:
+                sendMouseMotion(virtualMouseX, virtualMouseY);
+                setMouseButton(MotionEvent.BUTTON_SECONDARY, true, virtualMouseX, virtualMouseY);
+                break;
             case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, true); break;
             case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, true); break;
             case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, true); break;
@@ -317,12 +372,14 @@ final class NativeTouchControlsView extends View {
             case SNEAK: setKeyHeld(KeyEvent.KEYCODE_SHIFT_LEFT, false); break;
             case SPRINT: setKeyHeld(KeyEvent.KEYCODE_CTRL_LEFT, false); break;
             case INVENTORY: setKeyHeld(KeyEvent.KEYCODE_E, false); break;
-            case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, false, x, y); break;
-            case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, false, x, y); break;
+            case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY); break;
+            case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY); break;
             case ESCAPE: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, false); break;
             case DROP: setKeyHeld(KeyEvent.KEYCODE_Q, false); break;
             case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, false); break;
-            case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, false, x, y); break;
+            case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, false, virtualMouseX, virtualMouseY); break;
+            case MOUSE_LEFT: setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY); break;
+            case MOUSE_RIGHT: setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY); break;
             case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, false); break;
             case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, false); break;
             case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, false); break;
@@ -361,7 +418,13 @@ final class NativeTouchControlsView extends View {
             action = held ? MotionEvent.ACTION_BUTTON_PRESS : MotionEvent.ACTION_BUTTON_RELEASE;
         }
         MotionEvent event = obtainMouseEvent(now, action, x, y);
-        activity.dispatchGenericMotionEvent(event);
+        // Primary mouse down/up must traverse the Activity touch dispatcher so the
+        // NativeActivity's native input queue can receive the synthetic click.
+        if (button == MotionEvent.BUTTON_PRIMARY) {
+            activity.dispatchTouchEvent(event);
+        } else {
+            activity.dispatchGenericMotionEvent(event);
+        }
         event.recycle();
     }
 
@@ -408,6 +471,7 @@ final class NativeTouchControlsView extends View {
     }
 
     private void sendMouseClick(float x, float y, int button) {
+        sendMouseMotion(x, y);
         setMouseButton(button, true, x, y);
         setMouseButton(button, false, x, y);
     }
