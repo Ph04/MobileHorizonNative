@@ -14,7 +14,7 @@ import java.util.Map;
 
 /** One-time conservative defaults for weaker Android devices; user overrides are preserved. */
 final class MobilePerformanceProfile {
-    private static final String MARKER = ".mobilehorizon-performance-v2";
+    private static final String MARKER = ".mobilehorizon-performance-v3";
 
     private static final class Setting {
         final String defaultValue;
@@ -32,18 +32,18 @@ final class MobilePerformanceProfile {
 
     private static final Map<String, Setting> MOBILE_SETTINGS = new LinkedHashMap<>();
     static {
-        MOBILE_SETTINGS.put("renderDistance", new Setting("12", "4", "6"));
-        MOBILE_SETTINGS.put("simulationDistance", new Setting("12", "4", "5"));
+        MOBILE_SETTINGS.put("renderDistance", new Setting("12", "3", "4"));
+        MOBILE_SETTINGS.put("simulationDistance", new Setting("12", "3", "4"));
         MOBILE_SETTINGS.put("maxFps", new Setting("120", "30"));
         MOBILE_SETTINGS.put("ao", new Setting("true", "false"));
         MOBILE_SETTINGS.put("renderClouds", new Setting("true", "\"false\""));
         MOBILE_SETTINGS.put("particles", new Setting("0", "2"));
         MOBILE_SETTINGS.put("entityShadows", new Setting("true", "false"));
-        MOBILE_SETTINGS.put("entityDistanceScaling", new Setting("1.0", "0.75"));
+        MOBILE_SETTINGS.put("entityDistanceScaling", new Setting("1.0", "0.60", "0.75"));
         MOBILE_SETTINGS.put("biomeBlendRadius", new Setting("2", "0"));
         MOBILE_SETTINGS.put("graphicsPreset", new Setting("fancy", "\"fast\""));
         MOBILE_SETTINGS.put("mipmapLevels", new Setting("4", "0"));
-        MOBILE_SETTINGS.put("weatherRadius", new Setting("10", "5"));
+        MOBILE_SETTINGS.put("weatherRadius", new Setting("10", "3", "5"));
         MOBILE_SETTINGS.put("vignette", new Setting("true", "false"));
         MOBILE_SETTINGS.put("cutoutLeaves", new Setting("true", "false"));
         MOBILE_SETTINGS.put("menuBackgroundBlurriness", new Setting("5", "0"));
