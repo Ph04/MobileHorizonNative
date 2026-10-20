@@ -449,7 +449,7 @@ final class NativeTouchControlsView extends View {
                 | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(20), dp(8), dp(20), dp(4));
+        panel.setPadding((int) dp(20), (int) dp(8), (int) dp(20), (int) dp(4));
         panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle("Teclado do Minecraft")
@@ -531,7 +531,7 @@ final class NativeTouchControlsView extends View {
         });
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(20), dp(10), dp(20), dp(4));
+        panel.setPadding((int) dp(20), (int) dp(10), (int) dp(20), (int) dp(4));
         panel.addView(sizeText, new LinearLayout.LayoutParams(-1, -2));
         panel.addView(size, new LinearLayout.LayoutParams(-1, -2));
         EditText label = null, key = null;
