@@ -47,6 +47,18 @@ final class OfficialMinecraftInstaller {
     static final String SERVER_SHA1 = "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c";
     private static final String VERSION_MANIFEST_URL =
             "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+    static final String VERIFIED_VERSION_RECEIPT_MAGIC = "mobilehorizon-version-json-sha1-v1";
+    private static final Set<String> ACCEPTED_VERSION_JSON_SHA1 = new HashSet<>();
+
+    static {
+        ACCEPTED_VERSION_JSON_SHA1.add("11f1aefe473eefba0af62e3286c33b692807b2eb");
+        ACCEPTED_VERSION_JSON_SHA1.add("4fe1aa1ef8da1cb95c5bad1fb98890ca56dd8ca3");
+        ACCEPTED_VERSION_JSON_SHA1.add("702fe59163c6ee6578607daa85811d9bc9c7cc40");
+    }
+
+    static boolean isAcceptedVersionJsonSha1(String value) {
+        return value != null && ACCEPTED_VERSION_JSON_SHA1.contains(value.toLowerCase(Locale.ROOT));
+    }
     private static final int CONNECT_TIMEOUT_MS = 20_000;
     private static final int READ_TIMEOUT_MS = 60_000;
     private static final int MAX_JSON_BYTES = 64 * 1024 * 1024;
@@ -175,7 +187,11 @@ final class OfficialMinecraftInstaller {
 
         File versionDir = safeFile(minecraftRoot, "versions/" + VERSION);
         ensureDirectory(versionDir);
-        writeAtomically(versionBytes, new File(versionDir, VERSION + ".json"));
+        File versionJsonFile = new File(versionDir, VERSION + ".json");
+        writeAtomically(versionBytes, versionJsonFile);
+        String verifiedReceipt = VERIFIED_VERSION_RECEIPT_MAGIC + "\n" + VERSION + "\n" + versionSha1 + "\n";
+        writeAtomically(verifiedReceipt.getBytes(StandardCharsets.UTF_8),
+                new File(versionDir, VERSION + ".json.verified-sha1"));
 
         notify(listener, "Baixando/verificando cliente", VERSION + ".jar", 2, 5, 0,
                 client.optLong("size", -1), 0, -1);
@@ -508,6 +524,21 @@ final class OfficialMinecraftInstaller {
 
     static boolean isSha1(String value) {
         return value != null && value.matches("[0-9a-f]{40}");
+    }
+
+    static boolean hasVerifiedVersionJsonSha1(File versionJsonFile) {
+        if (versionJsonFile == null || !versionJsonFile.isFile()) return false;
+        try {
+            File receipt = new File(versionJsonFile.getParentFile(),
+                    versionJsonFile.getName() + ".verified-sha1");
+            if (!receipt.isFile()) return false;
+            String[] fields = readFileText(receipt, 256).trim().split("\\R");
+            if (fields.length != 3 || !VERIFIED_VERSION_RECEIPT_MAGIC.equals(fields[0])
+                    || !VERSION.equals(fields[1])) return false;
+            return matchesAdvertisedVersionSha1(fields[2], sha1(versionJsonFile));
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     static boolean matchesAdvertisedVersionSha1(String advertised, String actual) {
