@@ -144,7 +144,7 @@ touch_handler = '''        if self.window.as_ref().is_none_or(|w| w.id() != id) 
             return;
         }
 '''
-content = content.slice(0,gidx)+content.slice(gidx).replace(guard,touch_handler);
+content = content[:gidx] + content[gidx:].replace(guard, touch_handler, 1)
 game.write_text(content, encoding="utf-8");
 
 replace_once(game,
