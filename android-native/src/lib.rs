@@ -1,4 +1,4 @@
-use std::{any::Any, path::{Path, PathBuf}, sync::Arc, time::Duration};
+use std::{any::Any, path::Path, sync::Arc, time::Duration};
 
 use winit::{
     application::ApplicationHandler,
