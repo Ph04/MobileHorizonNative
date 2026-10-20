@@ -339,7 +339,7 @@ replace_once(game,
     #[cfg(target_os = "android")]
     {
         use winit::platform::android::EventLoopBuilderExtAndroid;
-        let mut builder = EventLoop::<T>::builder();
+        let mut builder = EventLoop::<T>::with_user_event();
         builder.with_android_app(crate::android_app()?);
         Ok(builder.build()?)
     }
