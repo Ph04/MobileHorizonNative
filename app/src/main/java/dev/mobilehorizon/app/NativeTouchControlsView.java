@@ -481,7 +481,7 @@ final class NativeTouchControlsView extends View {
         key.setText("G");
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(20), dp(8), dp(20), dp(4));
+        panel.setPadding((int) dp(20), (int) dp(8), (int) dp(20), (int) dp(4));
         panel.addView(label, new LinearLayout.LayoutParams(-1, -2));
         panel.addView(key, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog dialog = new AlertDialog.Builder(activity)
