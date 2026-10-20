@@ -62,6 +62,11 @@ public final class NativeGameActivity extends NativeActivity {
             // NativeActivity already starts the runtime with the app's private working directory
             // on supported builds; Os.chdir is not exposed by Android's public SDK.
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
+            // Keep game saves/logs under filesDir/horizon but point the newly built
+            // Horizon client at the separately prepared resource tree under filesDir/.local.
+            java.io.File resources = new java.io.File(
+                    gameRoot, ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+            android.system.Os.setenv("HORIZON_RESOURCES", resources.getAbsolutePath(), true);
             // NativeGameActivity runs in :game, so copy launch context explicitly:
             // environment changes made in MainActivity are not inherited across processes.
             if (launchIntent != null) {
