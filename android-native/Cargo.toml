@@ -10,7 +10,7 @@ name = "horizon_android"
 crate-type = ["cdylib"]
 
 [dependencies]
-horizon-client = { path = "../horizon-client" }
+horizon-client = { path = "../horizon-client", default-features = false }
 winit = { version = "0.30.13", features = ["android-native-activity"] }
 
 [lints]

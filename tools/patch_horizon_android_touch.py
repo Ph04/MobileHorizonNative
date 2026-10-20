@@ -63,7 +63,7 @@ replace_once(game,
 replace_once(game, '            agent_pointer: false,\n',
              '            agent_pointer: false,\n            touch_mouse: None,\n            touch_auxiliary: None,\n            touch_is_right: false,\n')
 
-impl_start = "impl ApplicationHandler for Game<'_> {"
+impl_start = 'impl ApplicationHandler for Game<\\'_> {'
 idx = game.read_text(encoding="utf-8").find(impl_start)
 if idx < 0:
     raise SystemExit("Could not find Game ApplicationHandler implementation")
@@ -144,7 +144,7 @@ touch_handler = '''        if self.window.as_ref().is_none_or(|w| w.id() != id) 
             return;
         }
 '''
-content = content[:gidx] + content[gidx:].replace(guard, touch_handler, 1)
+content = content.slice(0,gidx)+content.slice(gidx).replace(guard,touch_handler);
 game.write_text(content, encoding="utf-8");
 
 replace_once(game,

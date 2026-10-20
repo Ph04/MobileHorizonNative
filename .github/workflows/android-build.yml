@@ -266,7 +266,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE="$RUNNER_TEMP/horizon-upstream"
+          # The native client is built from a newer upstream revision with controller
+          # and audio backends behind optional features. The Android target disables
+          # those desktop-only hardware backends (including hidapi/libudev).
+          UPSTREAM_COMMIT="defaa7cd2ade6dc45bcac0b418bf10601f05a120"
+          SOURCE="$RUNNER_TEMP/horizon-native-upstream"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
+          git -C "$SOURCE" fetch --depth 1 origin "$UPSTREAM_COMMIT"
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
           python3 -m py_compile tools/patch_horizon_android_touch.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
@@ -276,7 +285,7 @@ jobs:
           export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
           export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
           export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
-          cargo build --release --manifest-path "$SOURCE/Cargo.toml" -p mobilehorizon-android --target aarch64-linux-android
+          cargo build --release --no-default-features --manifest-path "$SOURCE/Cargo.toml" -p mobilehorizon-android --target aarch64-linux-android
           LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_android.so"
           test -s "$LIB"
           "$TOOLCHAIN/llvm-readelf" -h "$LIB" | grep -q 'AArch64'
