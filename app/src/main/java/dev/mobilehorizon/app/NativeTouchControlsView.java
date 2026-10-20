@@ -625,15 +625,43 @@ final class NativeTouchControlsView extends View {
         int control = hitControl(x, y);
         if (control == TOGGLE) {
             controlsVisible = !controlsVisible;
-            if (!controlsVisible) releaseHeldControls();
+            if (!controlsVisible) {
+                editingControls = false;
+                releaseHeldControls();
+            }
+        } else if (control == KEYBOARD) {
+            showKeyboardDialog();
+            control = IGNORED;
+        } else if (control == EDITOR) {
+            editingControls = !editingControls;
+            Toast.makeText(activity, editingControls
+                    ? "Modo de edição: arraste um botão ou toque para alterar seu tamanho."
+                    : "Layout de controles salvo.", Toast.LENGTH_SHORT).show();
+            if (!editingControls) {
+                saveButtonLayouts();
+                saveCustomButtons();
+            }
+            control = IGNORED;
+        } else if (control == ADD_BUTTON && editingControls) {
+            showAddButtonDialog();
+            control = IGNORED;
+        } else if (control == DONE_EDITING && editingControls) {
+            editingControls = false;
+            saveButtonLayouts();
+            saveCustomButtons();
+            control = IGNORED;
         } else if (control == JOYSTICK && joystickPointer == -1) {
             joystickPointer = id; joystickX = x; joystickY = y;
         } else if (control == JOYSTICK) {
             // Never let a second finger on the joystick trigger mouse input.
             control = IGNORED;
         }
-        pointers.put(id, new PointerTrack(x, y, control));
-        if (control == JOYSTICK) updateJoystick(x, y);
+        PointerTrack track = new PointerTrack(x, y, control);
+        track.editorDrag = editingControls && isEditableButton(control);
+        pointers.put(id, track);
+        if (track.editorDrag) {
+            // Wait for a drag before changing the position. A simple tap opens the editor.
+        } else if (control == JOYSTICK) updateJoystick(x, y);
         else if (control != NONE && control != TOGGLE && control != IGNORED) activateControl(control, x, y);
         else if (control == NONE) {
             virtualMouseX = x;
@@ -650,7 +678,10 @@ final class NativeTouchControlsView extends View {
             float x = event.getX(i), y = event.getY(i);
             float dx = x - track.lastX, dy = y - track.lastY;
             if (Math.abs(x - track.startX) > dp(7) || Math.abs(y - track.startY) > dp(7)) track.moved = true;
-            if (track.control == JOYSTICK) updateJoystick(x, y);
+            if (track.editorDrag) {
+                if (Math.abs(x - track.startX) > dp(7) || Math.abs(y - track.startY) > dp(7)) track.moved = true;
+                if (track.moved) setButtonPosition(track.control, x, y);
+            } else if (track.control == JOYSTICK) updateJoystick(x, y);
             else if (track.control == NONE && track.moved
                     && (Math.abs(dx) >= 0.75f || Math.abs(dy) >= 0.75f)) {
                 virtualMouseX = clamp(virtualMouseX + dx * sensitivity, 0, Math.max(1, getWidth()));
@@ -670,7 +701,15 @@ final class NativeTouchControlsView extends View {
             invalidate();
             return;
         }
-        if (track.control == JOYSTICK) {
+        if (track.editorDrag) {
+            if (track.moved) {
+                CustomButton custom = findCustomButton(track.control);
+                if (custom != null) saveCustomButtons();
+                else saveButtonLayouts();
+            } else {
+                showButtonEditor(track.control);
+            }
+        } else if (track.control == JOYSTICK) {
             joystickPointer = -1;
             setJoystickDirections(false, false, false, false);
         } else if (track.control == NONE) {
@@ -682,9 +721,15 @@ final class NativeTouchControlsView extends View {
     }
 
     private int hitControl(float x, float y) {
-        float toggleX = mirrorControlX(getWidth() - dp(98)), toggleY = dp(31);
-        if (distanceSquared(x, y, toggleX, toggleY) <= dp(26) * dp(26)) return TOGGLE;
+        float toggleX = toolbarX(122), toggleY = toolbarY();
+        if (distanceSquared(x, y, toggleX, toggleY) <= dp(25) * dp(25)) return TOGGLE;
         if (!controlsVisible) return NONE;
+        if (distanceSquared(x, y, toolbarX(34), toolbarY()) <= dp(24) * dp(24)) return KEYBOARD;
+        if (distanceSquared(x, y, toolbarX(78), toolbarY()) <= dp(24) * dp(24)) return EDITOR;
+        if (editingControls) {
+            if (distanceSquared(x, y, toolbarX(166), toolbarY()) <= dp(24) * dp(24)) return ADD_BUTTON;
+            if (distanceSquared(x, y, toolbarX(210), toolbarY()) <= dp(24) * dp(24)) return DONE_EDITING;
+        }
         float jx = joystickHomeX(), jy = joystickHomeY(), jr = dp(82) * scale;
         if (distanceSquared(x, y, jx, jy) <= jr * jr) return JOYSTICK;
         ButtonSpec best = null; float bestDistance = Float.MAX_VALUE;
@@ -749,7 +794,10 @@ final class NativeTouchControlsView extends View {
             case ENTER: setKeyHeld(KeyEvent.KEYCODE_ENTER, true); break;
             case HOTBAR_PREV: sendMouseScroll(1f); break;
             case HOTBAR_NEXT: sendMouseScroll(-1f); break;
-            default: break;
+            default:
+                ButtonSpec custom = findButton(control);
+                if (custom != null && custom.custom) setKeyHeld(custom.keyCode, true);
+                break;
         }
         invalidate();
     }
@@ -782,7 +830,10 @@ final class NativeTouchControlsView extends View {
             case HOTBAR_PREV:
             case HOTBAR_NEXT:
                 break;
-            default: break;
+            default:
+                ButtonSpec custom = findButton(control);
+                if (custom != null && custom.custom) setKeyHeld(custom.keyCode, false);
+                break;
         }
         invalidate();
     }
