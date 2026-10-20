@@ -144,6 +144,8 @@ pub enum AndroidInjectedInput {
     MouseButton { button: u32, pressed: bool, x: f64, y: f64 },
     MouseScroll { amount: f32, x: f64, y: f64 },
     /// Android KeyEvent key code and edge state from the touchscreen control layer.
+    /// Relative movement from a finger drag; consumed as DeviceEvent::MouseMotion when captured.
+    MouseMotion { dx: f64, dy: f64 },
     KeyInput { key_code: i32, pressed: bool },
 }
 
@@ -266,6 +268,9 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                     delta: MouseScrollDelta::LineDelta(0.0, amount),
                     phase: TouchPhase::Moved,
                 });
+            }
+            horizon_client::AndroidInjectedInput::MouseMotion { dx, dy } => {
+                self.device_event(event_loop, device_id, DeviceEvent::MouseMotion { delta: (dx, dy) });
             }
             horizon_client::AndroidInjectedInput::KeyInput { key_code, pressed } => {
                 // Activity.dispatchKeyEvent is not delivered to the NativeActivity's

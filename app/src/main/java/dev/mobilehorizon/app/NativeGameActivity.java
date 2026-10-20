@@ -16,6 +16,7 @@ import android.widget.PopupWindow;
 /** Fullscreen NativeActivity wrapper with optional Android touch controls. Native clicks are injected through the game's JNI input bridge; this must not depend on an Android AccessibilityService. */
 public final class NativeGameActivity extends NativeActivity {
     private static native void nativeInjectCursorMove(float x, float y);
+    private static native void nativeInjectMouseMotion(float dx, float dy);
     private static native void nativeInjectMouseButton(int button, boolean pressed, float x, float y);
     private static native void nativeInjectMouseScroll(float amount, float x, float y);
     private static native void nativeInjectKeyCode(int keyCode, boolean pressed);
@@ -140,6 +141,10 @@ public final class NativeGameActivity extends NativeActivity {
 
     void injectCursorMove(float x, float y) {
         nativeInjectCursorMove(x, y);
+    }
+
+    void injectMouseMotion(float dx, float dy) {
+        nativeInjectMouseMotion(dx, dy);
     }
 
     void injectMouseButton(int button, boolean pressed, float x, float y) {

@@ -259,6 +259,7 @@ final class NativeTouchControlsView extends View {
                 virtualMouseX = clamp(virtualMouseX + dx * sensitivity, 0, Math.max(1, getWidth()));
                 virtualMouseY = clamp(virtualMouseY + dy * sensitivity, 0, Math.max(1, getHeight()));
                 sendMouseMotion(virtualMouseX, virtualMouseY);
+                activity.injectMouseMotion(dx * sensitivity, dy * sensitivity);
             }
             track.lastX = x; track.lastY = y;
         }

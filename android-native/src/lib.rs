@@ -264,6 +264,19 @@ pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjec
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectMouseMotion(
+    _env: *mut core::ffi::c_void,
+    _class: *mut core::ffi::c_void,
+    dx: f32,
+    dy: f32,
+) {
+    horizon_client::inject_android_input(horizon_client::AndroidInjectedInput::MouseMotion {
+        dx: dx as f64,
+        dy: dy as f64,
+    });
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectMouseButton(
     _env: *mut core::ffi::c_void,
     _class: *mut core::ffi::c_void,
