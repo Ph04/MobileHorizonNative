@@ -16,7 +16,6 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.system.Os;
 import android.content.pm.ApplicationInfo;
 import android.view.Gravity;
@@ -84,7 +83,6 @@ public final class MainActivity extends Activity {
     private Button offlineNameButton;
     private Button offlinePlayButton;
     private Button touchControlsButton;
-    private Button cursorGestureSettingsButton;
     private boolean busy;
     private boolean conversionBusy;
     private boolean downloadBusy;
@@ -312,12 +310,6 @@ public final class MainActivity extends Activity {
         touchControlsParams.topMargin = dp(8);
         page.addView(touchControlsButton, touchControlsParams);
 
-        cursorGestureSettingsButton = button("Ativar cliques reais no menu", false,
-                v -> showCursorGestureSettings());
-        LinearLayout.LayoutParams cursorGestureParams = params(-1, dp(46));
-        cursorGestureParams.topMargin = dp(8);
-        page.addView(cursorGestureSettingsButton, cursorGestureParams);
-
         TextView accountHeading = text("Conta Microsoft", 18, 0xff18213a, true);
         LinearLayout.LayoutParams accountHeadingParams = params(-1, -2);
         accountHeadingParams.topMargin = dp(24);
@@ -386,21 +378,6 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams footerParams = params(-1, -2);
         footerParams.topMargin = dp(20);
         page.addView(footer, footerParams);
-    }
-
-    private void showCursorGestureSettings() {
-        new AlertDialog.Builder(this)
-                .setTitle("Cliques no menu do Horizon")
-                .setMessage("O cursor visual sozinho não consegue enviar um clique ao NativeActivity. Para converter os cliques LMB em toques reais no jogo, o Android exige ativar “Ponte de toque do MobileHorizon” nas configurações de acessibilidade. O serviço só injeta o toque no ponto escolhido; não lê o conteúdo da tela nem registra o que você digita.")
-                .setNegativeButton("Agora não", null)
-                .setPositiveButton("Abrir configurações", (dialog, which) -> {
-                    try {
-                        startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-                    } catch (Exception error) {
-                        setStatus("Não foi possível abrir acessibilidade", safeMessage(error));
-                    }
-                })
-                .show();
     }
 
     private void updateCompatibility() {
