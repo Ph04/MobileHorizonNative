@@ -159,6 +159,18 @@ fn run_vulkan_smoke_test() -> std::result::Result<String, String> {
         .unwrap_or_else(|| Err("Winit saiu sem executar a fase de inicialização/resume.".into()))
 }
 
+// ndk-context is scoped to one NativeActivity lifetime. Release it on every exit path
+// so the :game process may safely run a later smoke test or game Activity.
+struct AndroidAudioContextGuard;
+
+impl Drop for AndroidAudioContextGuard {
+    fn drop(&mut self) {
+        unsafe {
+            ndk_context::release_android_context();
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 fn android_main(app: winit::platform::android::activity::AndroidApp) {
     // CPAL's Android AAudio backend needs the VM and Activity when launched through
@@ -166,6 +178,7 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
     unsafe {
         ndk_context::initialize_android_context(app.vm_as_ptr(), app.activity_as_ptr());
     }
+    let _audio_context_guard = AndroidAudioContextGuard;
     horizon_client::set_android_app(app);
     horizon_client::telemetry::mark_start();
 
