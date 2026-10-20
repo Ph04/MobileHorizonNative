@@ -138,6 +138,33 @@ replace_once(clipboard, clipboard_impl_old, clipboard_impl_new)
 replace_once(lib, 'pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;',
 '''pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+#[derive(Clone, Debug)]
+pub enum AndroidInjectedInput {
+    CursorMoved { x: f64, y: f64 },
+    MouseButton { button: u32, pressed: bool, x: f64, y: f64 },
+    MouseScroll { amount: f32, x: f64, y: f64 },
+}
+
+static HORIZON_ANDROID_EVENT_LOOP_PROXY:
+    std::sync::OnceLock<std::sync::Mutex<Option<winit::event_loop::EventLoopProxy<AndroidInjectedInput>>>> =
+    std::sync::OnceLock::new();
+
+pub fn set_android_event_loop_proxy(proxy: winit::event_loop::EventLoopProxy<AndroidInjectedInput>) {
+    let slot = HORIZON_ANDROID_EVENT_LOOP_PROXY.get_or_init(|| std::sync::Mutex::new(None));
+    if let Ok(mut guard) = slot.lock() {
+        *guard = Some(proxy);
+    }
+}
+
+pub fn inject_android_input(event: AndroidInjectedInput) {
+    let Some(slot) = HORIZON_ANDROID_EVENT_LOOP_PROXY.get() else { return; };
+    if let Ok(guard) = slot.lock() {
+        if let Some(proxy) = guard.as_ref() {
+            let _ = proxy.send_event(event);
+        }
+    }
+}
+
 #[cfg(target_os = "android")]
 extern crate self as horizon_client;
 
@@ -177,7 +204,57 @@ impl_start = "impl ApplicationHandler for Game<'_> {"
 idx = game.read_text(encoding="utf-8").find(impl_start)
 if idx < 0:
     raise SystemExit("Could not find Game ApplicationHandler implementation")
+injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput> for Game<'_> {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: horizon_client::AndroidInjectedInput) {
+        let Some(id) = self.window.as_ref().map(|window| window.id()) else { return; };
+        let device_id = DeviceId::dummy();
+        match event {
+            horizon_client::AndroidInjectedInput::CursorMoved { x, y } => {
+                self.window_event(event_loop, id, WindowEvent::CursorMoved {
+                    device_id,
+                    position: winit::dpi::PhysicalPosition::new(x, y),
+                });
+            }
+            horizon_client::AndroidInjectedInput::MouseButton { button, pressed, x, y } => {
+                self.window_event(event_loop, id, WindowEvent::CursorMoved {
+                    device_id,
+                    position: winit::dpi::PhysicalPosition::new(x, y),
+                });
+                let button = match button {
+                    1 => Some(MouseButton::Left),
+                    2 => Some(MouseButton::Right),
+                    4 => Some(MouseButton::Middle),
+                    _ => None,
+                };
+                if let Some(button) = button {
+                    self.window_event(event_loop, id, WindowEvent::MouseInput {
+                        device_id,
+                        state: if pressed { ElementState::Pressed } else { ElementState::Released },
+                        button,
+                    });
+                }
+            }
+            horizon_client::AndroidInjectedInput::MouseScroll { amount, x, y } => {
+                self.window_event(event_loop, id, WindowEvent::CursorMoved {
+                    device_id,
+                    position: winit::dpi::PhysicalPosition::new(x, y),
+                });
+                self.window_event(event_loop, id, WindowEvent::MouseWheel {
+                    device_id,
+                    delta: MouseScrollDelta::LineDelta(0.0, amount),
+                    phase: TouchPhase::Moved,
+                });
+            }
+        }
+    }
+
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+"""
 content = game.read_text(encoding="utf-8")
+content = content[:idx] + content[idx:].replace(impl_start, injected_impl, 1)
+idx = content.find("impl ApplicationHandler<horizon_client::AndroidInjectedInput> for Game<'_> {")
+if idx < 0:
+    raise SystemExit("Could not replace Game ApplicationHandler implementation")
 guard = '''        if self.window.as_ref().is_none_or(|w| w.id() != id) {
             return;
         }
@@ -259,22 +336,24 @@ game.write_text(content, encoding="utf-8");
 
 replace_once(game,
     "fn run_event_loop(mut game: Game<'_>) -> Result<()> {\n    EventLoop::new()?.run_app(&mut game)?;",
-    """fn new_event_loop() -> Result<EventLoop<()>> {
+    """fn new_event_loop<T: 'static + Send>() -> Result<EventLoop<T>> {
     #[cfg(target_os = "android")]
     {
         use winit::platform::android::EventLoopBuilderExtAndroid;
-        let mut builder = EventLoop::<()>::builder();
+        let mut builder = EventLoop::<T>::builder();
         builder.with_android_app(crate::android_app()?);
         Ok(builder.build()?)
     }
     #[cfg(not(target_os = "android"))]
     {
-        Ok(EventLoop::new()?)
+        Ok(EventLoop::<T>::new()?)
     }
 }
 
 fn run_event_loop(mut game: Game<'_>) -> Result<()> {
-    new_event_loop()?.run_app(&mut game)?;""")
+    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
+    horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
+    event_loop.run_app(&mut game)?;""")
 replace_once(game, '    EventLoop::new()?.run_app(&mut app)?;', '    new_event_loop()?.run_app(&mut app)?;')
 
 replace_once(workspace_cargo, '"crates/horizon-client",',
