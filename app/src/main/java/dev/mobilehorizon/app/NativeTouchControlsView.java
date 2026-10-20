@@ -153,7 +153,8 @@ final class NativeTouchControlsView extends View {
             drawJoystick(canvas);
             for (ButtonSpec spec : buttonSpecs()) drawButton(canvas, spec);
         }
-        drawToggle(canvas);
+        drawToolbar(canvas);
+        if (editingControls) drawEditorToolbar(canvas);
         drawMouseCursor(canvas);
     }
 
@@ -174,7 +175,7 @@ final class NativeTouchControlsView extends View {
 
     /** Draw an on-screen pointer so menus can be targeted without a hardware mouse. */
     private void drawMouseCursor(Canvas canvas) {
-        if (getWidth() <= 0 || getHeight() <= 0) return;
+        if (getWidth() <= 0 || getHeight() <= 0 || (gameplayMode && !editingControls)) return;
         float x = clamp(virtualMouseX, 0, getWidth() - 1f);
         float y = clamp(virtualMouseY, 0, getHeight() - 1f);
         android.graphics.Path cursor = new android.graphics.Path();
@@ -216,48 +217,110 @@ final class NativeTouchControlsView extends View {
     }
 
     private void drawButton(Canvas canvas, ButtonSpec spec) {
-        circle(canvas, spec.x, spec.y, spec.radius, false,
-                pressedControls.contains(spec.id) ? 0.98f : 0.74f);
-        circle(canvas, spec.x, spec.y, spec.radius, true, 0.95f);
-        paint.setStyle(Paint.Style.FILL); paint.setColor(Color.WHITE);
+        boolean pressed = pressedControls.contains(spec.id);
+        float r = spec.radius;
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(Math.round(255 * opacity * (pressed ? 0.91f : 0.67f)),
+                pressed ? 30 : 17, pressed ? 112 : 31, pressed ? 196 : 51));
+        canvas.drawCircle(spec.x, spec.y, r, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(editingControls ? 2.2f : 1.5f));
+        paint.setColor(Color.argb(Math.round(255 * opacity * (pressed ? 1f : 0.9f)),
+                pressed ? 115 : 116, pressed ? 205 : 169, 255));
+        canvas.drawCircle(spec.x, spec.y, r * 0.94f, paint);
+        if (editingControls) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1f));
+            paint.setColor(Color.argb(210, 115, 205, 255));
+            canvas.drawCircle(spec.x, spec.y, r + dp(3), paint);
+        }
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.WHITE);
         paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTextSize(dp(spec.radius < dp(27) ? 11 : 15) * scale);
+        paint.setTextSize(dp(spec.radius < dp(27) ? 10.5f : 14f) * scale);
+        paint.setFakeBoldText(true);
         Paint.FontMetrics metrics = paint.getFontMetrics();
         canvas.drawText(spec.label, spec.x, spec.y - (metrics.ascent + metrics.descent) / 2f, paint);
+        paint.setFakeBoldText(false);
     }
 
-    private void drawToggle(Canvas canvas) {
-        float x = mirrorControlX(getWidth() - dp(98)), y = dp(31);
-        circle(canvas, x, y, dp(18), false, 0.86f);
-        circle(canvas, x, y, dp(18), true, 0.95f);
-        paint.setStyle(Paint.Style.FILL); paint.setColor(Color.WHITE);
-        paint.setTextAlign(Paint.Align.CENTER); paint.setTextSize(dp(14));
+    private float toolbarX(float offset) { return mirrorControlX(dp(offset)); }
+    private float toolbarY() { return dp(31); }
+
+    private void drawToolbar(Canvas canvas) {
+        if (controlsVisible) {
+            drawToolbarButton(canvas, KEYBOARD, "⌨", toolbarX(34), toolbarY());
+            drawToolbarButton(canvas, EDITOR, editingControls ? "✎" : "⚙", toolbarX(78), toolbarY());
+        }
+        drawToolbarButton(canvas, TOGGLE, controlsVisible ? "×" : "+", toolbarX(122), toolbarY());
+    }
+
+    private void drawEditorToolbar(Canvas canvas) {
+        drawToolbarButton(canvas, ADD_BUTTON, "+", toolbarX(166), toolbarY());
+        drawToolbarButton(canvas, DONE_EDITING, "✓", toolbarX(210), toolbarY());
+    }
+
+    private void drawToolbarButton(Canvas canvas, int id, String label, float x, float y) {
+        float radius = dp(id == TOGGLE ? 18 : 17);
+        boolean active = id == EDITOR && editingControls;
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(Math.round(235 * opacity), active ? 22 : 17,
+                active ? 111 : 31, active ? 166 : 51));
+        canvas.drawCircle(x, y, radius, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1.5f));
+        paint.setColor(Color.argb(235, 118, 190, 255));
+        canvas.drawCircle(x, y, radius - dp(1), paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.WHITE);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(dp(label.length() > 2 ? 10 : 15));
+        paint.setFakeBoldText(true);
         Paint.FontMetrics metrics = paint.getFontMetrics();
-        canvas.drawText(controlsVisible ? "×" : "+", x, y - (metrics.ascent + metrics.descent) / 2f, paint);
+        canvas.drawText(label, x, y - (metrics.ascent + metrics.descent) / 2f, paint);
+        paint.setFakeBoldText(false);
     }
 
     private ButtonSpec[] buttonSpecs() {
         float s = scale, w = getWidth(), h = getHeight();
-        return new ButtonSpec[] {
-                new ButtonSpec(MOUSE_LEFT, "LMB", mirrorControlX(w - dp(164) * s), dp(31) * s, dp(20) * s),
-                new ButtonSpec(MOUSE_RIGHT, "RMB", mirrorControlX(w - dp(216) * s), dp(31) * s, dp(20) * s),
-                new ButtonSpec(JUMP, "↑", mirrorControlX(w - dp(72) * s), h - dp(109) * s, dp(32) * s),
-                new ButtonSpec(SNEAK, "SNEAK", mirrorControlX(w - dp(141) * s), h - dp(55) * s, dp(25) * s),
-                new ButtonSpec(SPRINT, "RUN", mirrorControlX(w - dp(72) * s), h - dp(55) * s, dp(25) * s),
-                new ButtonSpec(INVENTORY, "INV", mirrorControlX(w - dp(210) * s), h - dp(55) * s, dp(24) * s),
-                new ButtonSpec(DROP, "Q", mirrorControlX(w - dp(210) * s), h - dp(113) * s, dp(20) * s),
-                new ButtonSpec(SWAP, "F", mirrorControlX(w - dp(210) * s), h - dp(166) * s, dp(20) * s),
-                new ButtonSpec(ATTACK, "HIT", mirrorControlX(w - dp(137) * s), h - dp(196) * s, dp(34) * s),
-                new ButtonSpec(USE, "USE", mirrorControlX(w - dp(61) * s), h - dp(222) * s, dp(28) * s),
-                new ButtonSpec(PICK, "MID", mirrorControlX(w - dp(145) * s), h - dp(265) * s, dp(22) * s),
-                new ButtonSpec(PERSPECTIVE, "F5", mirrorControlX(w - dp(210) * s), h - dp(218) * s, dp(21) * s),
-                new ButtonSpec(CHAT, "T", mirrorControlX(w - dp(285) * s), h - dp(55) * s, dp(21) * s),
-                new ButtonSpec(HOTBAR_PREV, "‹", mirrorControlX(w - dp(285) * s), h - dp(112) * s, dp(20) * s),
-                new ButtonSpec(HOTBAR_NEXT, "›", mirrorControlX(w - dp(285) * s), h - dp(166) * s, dp(20) * s),
-                new ButtonSpec(TAB, "TAB", mirrorControlX(w - dp(285) * s), h - dp(218) * s, dp(22) * s),
-                new ButtonSpec(ENTER, "ENT", mirrorControlX(w - dp(285) * s), h - dp(265) * s, dp(22) * s),
-                new ButtonSpec(ESCAPE, "ESC", mirrorControlX(w - dp(36)), dp(31), dp(21))
-        };
+        List<ButtonSpec> specs = new ArrayList<>();
+        addButtonSpec(specs, MOUSE_LEFT, "LMB", mirrorControlX(w - dp(164) * s), dp(31) * s, dp(20) * s);
+        addButtonSpec(specs, MOUSE_RIGHT, "RMB", mirrorControlX(w - dp(216) * s), dp(31) * s, dp(20) * s);
+        addButtonSpec(specs, JUMP, "↑", mirrorControlX(w - dp(72) * s), h - dp(109) * s, dp(32) * s);
+        addButtonSpec(specs, SNEAK, "SNEAK", mirrorControlX(w - dp(141) * s), h - dp(55) * s, dp(25) * s);
+        addButtonSpec(specs, SPRINT, "RUN", mirrorControlX(w - dp(72) * s), h - dp(55) * s, dp(25) * s);
+        addButtonSpec(specs, INVENTORY, "INV", mirrorControlX(w - dp(210) * s), h - dp(55) * s, dp(24) * s);
+        addButtonSpec(specs, DROP, "Q", mirrorControlX(w - dp(210) * s), h - dp(113) * s, dp(20) * s);
+        addButtonSpec(specs, SWAP, "F", mirrorControlX(w - dp(210) * s), h - dp(166) * s, dp(20) * s);
+        addButtonSpec(specs, ATTACK, "HIT", mirrorControlX(w - dp(137) * s), h - dp(196) * s, dp(34) * s);
+        addButtonSpec(specs, USE, "USE", mirrorControlX(w - dp(61) * s), h - dp(222) * s, dp(28) * s);
+        addButtonSpec(specs, PICK, "MID", mirrorControlX(w - dp(145) * s), h - dp(265) * s, dp(22) * s);
+        addButtonSpec(specs, PERSPECTIVE, "F5", mirrorControlX(w - dp(210) * s), h - dp(218) * s, dp(21) * s);
+        addButtonSpec(specs, CHAT, "T", mirrorControlX(w - dp(285) * s), h - dp(55) * s, dp(21) * s);
+        addButtonSpec(specs, HOTBAR_PREV, "‹", mirrorControlX(w - dp(285) * s), h - dp(112) * s, dp(20) * s);
+        addButtonSpec(specs, HOTBAR_NEXT, "›", mirrorControlX(w - dp(285) * s), h - dp(166) * s, dp(20) * s);
+        addButtonSpec(specs, TAB, "TAB", mirrorControlX(w - dp(285) * s), h - dp(218) * s, dp(22) * s);
+        addButtonSpec(specs, ENTER, "ENT", mirrorControlX(w - dp(285) * s), h - dp(265) * s, dp(22) * s);
+        addButtonSpec(specs, ESCAPE, "ESC", mirrorControlX(w - dp(36)), dp(31), dp(21));
+        for (CustomButton custom : customButtons) {
+            float radius = dp(24) * s * custom.scale;
+            specs.add(new ButtonSpec(custom.id, custom.label,
+                    clamp(custom.x * w, radius, Math.max(radius, w - radius)),
+                    clamp(custom.y * h, radius, Math.max(radius, h - radius)),
+                    radius, true, custom.keyCode));
+        }
+        return specs.toArray(new ButtonSpec[0]);
+    }
+
+    private void addButtonSpec(List<ButtonSpec> specs, int id, String label, float x, float y, float radius) {
+        ButtonLayout layout = buttonLayouts.get(id);
+        ButtonSpec spec = new ButtonSpec(id, label, x, y,
+                radius * (layout == null ? 1f : layout.scale));
+        if (layout != null) {
+            if (layout.x >= 0f) spec.x = layout.x * getWidth();
+            if (layout.y >= 0f) spec.y = layout.y * getHeight();
+        }
+        specs.add(spec);
     }
 
     private void circle(Canvas canvas, float x, float y, float radius, boolean stroke, float alpha) {
