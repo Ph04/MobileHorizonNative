@@ -22,6 +22,7 @@ public final class NativeGameActivity extends NativeActivity {
     private static native void nativeInjectKeyCode(int keyCode, boolean pressed);
     private static native void nativeInjectChatText(String text);
     private static native boolean nativeIsGameplay();
+    private static native boolean nativeHasLoadedWorld();
 
     static {
         // NativeActivity later opens the same bundled library for android_main; loading
@@ -167,6 +168,11 @@ public final class NativeGameActivity extends NativeActivity {
 
     boolean isGameplayMode() {
         try { return nativeIsGameplay(); }
+        catch (UnsatisfiedLinkError error) { return false; }
+    }
+
+    boolean hasLoadedWorld() {
+        try { return nativeHasLoadedWorld(); }
         catch (UnsatisfiedLinkError error) { return false; }
     }
 
