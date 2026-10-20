@@ -188,7 +188,7 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
             "horizon-native-smoke-result.txt",
             "FAIL: O teste Vulkan iniciou, mas não concluiu; a atividade ou o processo pode ter sido encerrado durante a inicialização. Este relatório será substituído se o diagnóstico terminar.",
         );
-        let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run_vulkan_smoke_test));
+        let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_vulkan_smoke_test()));
         let result = match attempt {
             Ok(Ok(details)) => format!("PASS: {details}"),
             Ok(Err(error)) => format!("FAIL: {error}"),
