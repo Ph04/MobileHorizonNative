@@ -18,6 +18,9 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
@@ -44,6 +47,18 @@ final class HorizonPrepareRunner {
         ensureDirectory(new File(workspace, "home"));
         report(listener, "Instalando fontes do preparador", "Versão upstream " + UPSTREAM_COMMIT, 1, 6);
         installSupportAssets(context.getAssets(), workspace, cancelled, listener);
+
+        // Horizon has its own manifest SHA-1 allowlist in research-lock.json. The downloader
+        // records a receipt only after fetching the manifest from Mojang's official metadata,
+        // matching its advertised SHA-1, and verifying the pinned client/server JAR metadata.
+        // Add that verified digest to the *workspace copy* of the upstream lock before running
+        // horizon-prepare, so an asset-index-only Mojang republish does not break conversion.
+        File versionJsonFile = new File(context.getFilesDir(),
+                "minecraft/versions/" + OfficialMinecraftInstaller.VERSION + "/"
+                        + OfficialMinecraftInstaller.VERSION + ".json");
+        String activeManifestSha1 = synchronizeVerifiedManifestWithHorizonLock(workspace, versionJsonFile);
+        report(listener, "Validando manifesto para Horizon",
+                "SHA-1 oficial confirmado: " + activeManifestSha1, 2, 6);
 
         File lock = new File(workspace, "research-lock.json");
         File parityDir = new File(workspace,
@@ -436,6 +451,85 @@ final class HorizonPrepareRunner {
             }
         }
         return process.exitValue();
+    }
+
+    /**
+     * Horizon's Rust preparer independently checks research-lock.json. Keep that second
+     * allowlist synchronized with the exact manifest already accepted by the downloader.
+     * A non-pinned hash is admitted only if the version JSON has the app's verified receipt
+     * and still describes the pinned 26.3 client/server JARs and Java 25 runtime.
+     */
+    static String synchronizeVerifiedManifestWithHorizonLock(File workspace,
+                                                               File versionJsonFile) throws Exception {
+        if (workspace == null || versionJsonFile == null || !versionJsonFile.isFile()) {
+            throw new IOException("Manifesto oficial ausente para sincronizar a validação Horizon.");
+        }
+        String manifestSha1 = sha1(versionJsonFile);
+        if (!OfficialMinecraftInstaller.isAcceptedVersionJsonSha1(manifestSha1)
+                && !OfficialMinecraftInstaller.hasVerifiedVersionJsonSha1(versionJsonFile)) {
+            throw new IOException("Manifesto sem hash reconhecido nem recibo oficial verificado: " + manifestSha1);
+        }
+
+        org.json.JSONObject manifest = new org.json.JSONObject(
+                readText(versionJsonFile, 64 * 1024 * 1024));
+        if (!OfficialMinecraftInstaller.VERSION.equals(manifest.optString("id", ""))) {
+            throw new IOException("O manifesto não declara Minecraft "
+                    + OfficialMinecraftInstaller.VERSION + ".");
+        }
+        org.json.JSONObject javaVersion = manifest.optJSONObject("javaVersion");
+        if (javaVersion == null || javaVersion.optInt("majorVersion", -1) != 25) {
+            throw new IOException("O manifesto não corresponde ao snapshot com Java 25.");
+        }
+        org.json.JSONObject downloads = manifest.optJSONObject("downloads");
+        org.json.JSONObject client = downloads == null ? null : downloads.optJSONObject("client");
+        org.json.JSONObject server = downloads == null ? null : downloads.optJSONObject("server");
+        if (client == null || server == null
+                || !OfficialMinecraftInstaller.CLIENT_SHA1.equalsIgnoreCase(client.optString("sha1", ""))
+                || !OfficialMinecraftInstaller.SERVER_SHA1.equalsIgnoreCase(server.optString("sha1", ""))) {
+            throw new IOException("O manifesto não corresponde aos JARs de cliente/servidor fixados.");
+        }
+
+        File lockFile = new File(workspace, "research-lock.json");
+        org.json.JSONObject lock = new org.json.JSONObject(readText(lockFile, 4 * 1024 * 1024));
+        org.json.JSONObject minecraft = lock.optJSONObject("minecraft");
+        if (minecraft == null
+                || !OfficialMinecraftInstaller.VERSION.equals(minecraft.optString("version", ""))
+                || minecraft.optInt("java_major", -1) != 25
+                || !OfficialMinecraftInstaller.CLIENT_SHA1.equalsIgnoreCase(minecraft.optString("client_sha1", ""))
+                || !OfficialMinecraftInstaller.SERVER_SHA1.equalsIgnoreCase(minecraft.optString("server_sha1", ""))) {
+            throw new IOException("research-lock.json não corresponde ao perfil de Minecraft 26.3 esperado.");
+        }
+
+        org.json.JSONArray accepted = minecraft.optJSONArray("accepted_manifest_sha1");
+        if (accepted == null) {
+            accepted = new org.json.JSONArray();
+            minecraft.put("accepted_manifest_sha1", accepted);
+        }
+        boolean alreadyPresent = false;
+        for (int i = 0; i < accepted.length(); i++) {
+            if (manifestSha1.equalsIgnoreCase(accepted.optString(i, ""))) {
+                alreadyPresent = true;
+                break;
+            }
+        }
+        if (!alreadyPresent
+                && !manifestSha1.equalsIgnoreCase(minecraft.optString("manifest_sha1", ""))) {
+            accepted.put(manifestSha1);
+            File temporary = new File(workspace, "research-lock.json.tmp");
+            try (OutputStream output = new FileOutputStream(temporary)) {
+                output.write(lock.toString(2).getBytes(StandardCharsets.UTF_8));
+                output.flush();
+            }
+            try {
+                Files.move(temporary.toPath(), lockFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(temporary.toPath(), lockFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            } finally {
+                if (temporary.exists()) temporary.delete();
+            }
+        }
+        return manifestSha1;
     }
 
     private static void installSupportAssets(AssetManager assets, File workspace,
