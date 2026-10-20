@@ -360,6 +360,16 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                         self.physical_keys.remove(&key);
                     }
                     self.last_input = Instant::now();
+                    // Deliver unbound keys to Horizon's mod/extension hotkey hooks as
+                    // well as translating vanilla key bindings (custom controls may use R, G, etc.).
+                    self.extras_key(key, pressed, false);
+                    if self.screen == Screen::Playing
+                        && pressed
+                        && horizon_client::keybinds::key_name(key)
+                            .is_some_and(|name| self.settings.keys.get("key.smoothCamera") == name)
+                    {
+                        self.smooth_camera = !self.smooth_camera;
+                    }
                     let result = match self.settings.keys.translate(key) {
                         Some(Ok(mapped_key)) => self.mapped_key(mapped_key, pressed, false),
                         Some(Err(button)) if self.screen == Screen::Playing => self.play_mouse(button, pressed),
