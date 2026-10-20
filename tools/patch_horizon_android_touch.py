@@ -162,6 +162,17 @@ pub fn android_is_gameplay() -> bool {
     HORIZON_ANDROID_GAMEPLAY.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+static HORIZON_ANDROID_WORLD_ACTIVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_android_world_active(active: bool) {
+    HORIZON_ANDROID_WORLD_ACTIVE.store(active, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn android_has_world() -> bool {
+    HORIZON_ANDROID_WORLD_ACTIVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 static HORIZON_ANDROID_EVENT_LOOP_PROXY:
     std::sync::OnceLock<std::sync::Mutex<Option<winit::event_loop::EventLoopProxy<AndroidInjectedInput>>>> =
     std::sync::OnceLock::new();
@@ -381,7 +392,7 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                 }
             }
             horizon_client::AndroidInjectedInput::ChatText { text } => {
-                if self.screen == Screen::Playing && self.player.is_some() {
+                if self.player.is_some() && self.title.is_none() && self.screen != Screen::Chat {
                     self.open_chat("");
                 }
                 if self.screen == Screen::Chat && !text.is_empty() {
@@ -390,6 +401,10 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                 }
             }
         }
+        horizon_client::set_android_gameplay(
+            self.screen == Screen::Playing && self.player.is_some() && self.title.is_none()
+        );
+        horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
     }
 
 """
@@ -500,6 +515,7 @@ replace_once(game,
         horizon_client::set_android_gameplay(
             self.screen == Screen::Playing && self.player.is_some() && self.title.is_none()
         );
+        horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
     }""")
 
 replace_once(game,
