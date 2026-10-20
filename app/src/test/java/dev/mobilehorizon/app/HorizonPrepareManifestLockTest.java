@@ -75,7 +75,7 @@ public final class HorizonPrepareManifestLockTest {
             HorizonPrepareRunner.synchronizeVerifiedManifestWithHorizonLock(workspace, manifestFile);
             fail("A manifest without a matching official verification receipt must not be accepted");
         } catch (IOException expected) {
-            assertTrue(expected.getMessage().contains("Manifesto sem hash reconhecido"));
+            assertTrue(expected.getMessage().contains("O Horizon não reconhece este SHA-1"));
         }
 
         assertEquals(originalLock, new String(
