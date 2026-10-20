@@ -74,10 +74,15 @@ jobs:
           LIB="$TEMP_DIR/unpacked/HorizonAndroidPrep/prebuilt/android/arm64-v8a/libhorizon_android.so"
           test -s "$LIB"
           echo "9d564adb67e7aa9b36c5ae66f4e6cf1a74549746216220bc5a1cba235421ab82  $LIB" | sha256sum --check -
-          readelf -h "$LIB" | grep -q "AArch64"
-          readelf -Ws "$LIB" | grep -q "ANativeActivity_onCreate"
-          readelf -Ws "$LIB" | grep -q "android_main"
-          if strings "$LIB" | grep -q "HORIZON_PLAYER_NAME"; then
+          # Write tool output to files before grep; grep -q on a pipe can close
+          # early and make readelf/strings fail under the workflow's pipefail.
+          readelf -h "$LIB" > "$TEMP_DIR/lib-header.txt"
+          grep -Fq "AArch64" "$TEMP_DIR/lib-header.txt"
+          readelf -Ws "$LIB" > "$TEMP_DIR/lib-symbols.txt"
+          grep -Fq "ANativeActivity_onCreate" "$TEMP_DIR/lib-symbols.txt"
+          grep -Fq "android_main" "$TEMP_DIR/lib-symbols.txt"
+          strings "$LIB" > "$TEMP_DIR/lib-strings.txt"
+          if grep -Fq "HORIZON_PLAYER_NAME" "$TEMP_DIR/lib-strings.txt"; then
             echo "Native runtime contains HORIZON_PLAYER_NAME; offline nickname handoff is available."
           else
             echo "::warning::Pinned native runtime does not advertise HORIZON_PLAYER_NAME; offline launch will use its built-in/default name until the runtime is rebuilt."
@@ -127,7 +132,8 @@ jobs:
           cp -a "$SOURCE/mods/horizon/src/test/java/dev/horizonlab/parity/." "$ASSETS/support/mods/horizon/src/test/java/dev/horizonlab/parity/"
           if test -f "$SOURCE/LICENSE"; then cp "$SOURCE/LICENSE" "$ASSETS/support/UPSTREAM-LICENSE.txt"; fi
           cp "$SOURCE/target/aarch64-linux-android/release/horizon-prepare" "$ASSETS/horizon-prepare-arm64"
-          readelf -h "$ASSETS/horizon-prepare-arm64" | grep -q "AArch64"
+          readelf -h "$ASSETS/horizon-prepare-arm64" > "$RUNNER_TEMP/horizon-prepare-elf-header.txt"
+          grep -Fq "AArch64" "$RUNNER_TEMP/horizon-prepare-elf-header.txt"
           echo "Bundled the pinned ARM64 horizon-prepare executable and vanilla oracle sources."
 
           # Pin the Java 25 Android runtime package closure into the APK as metadata.
@@ -288,9 +294,19 @@ jobs:
           cargo build --release --no-default-features --manifest-path "$SOURCE/Cargo.toml" -p mobilehorizon-android --target aarch64-linux-android
           LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_android.so"
           test -s "$LIB"
-          "$TOOLCHAIN/llvm-readelf" -h "$LIB" | grep -q 'AArch64'
-          "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" | grep -q 'ANativeActivity_onCreate'
-          "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" | grep -q 'android_main'
+          # Avoid grep -q closing a pipe early: with pipefail this can return
+          # a nonzero status even though the symbol was found.
+          "$TOOLCHAIN/llvm-readelf" -h "$LIB" > "$RUNNER_TEMP/horizon-elf-header.txt"
+          grep -Fq 'AArch64' "$RUNNER_TEMP/horizon-elf-header.txt"
+          "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" > "$RUNNER_TEMP/horizon-elf-symbols.txt"
+          grep -Fq 'ANativeActivity_onCreate' "$RUNNER_TEMP/horizon-elf-symbols.txt" || {
+            echo "::error::The native library is missing ANativeActivity_onCreate."
+            exit 1
+          }
+          grep -Fq 'android_main' "$RUNNER_TEMP/horizon-elf-symbols.txt" || {
+            echo "::error::The native library is missing android_main."
+            exit 1
+          }
           cp "$LIB" app/src/main/jniLibs/arm64-v8a/libhorizon_android.so
           echo "Built and staged the patched NativeActivity client with Android touch translated to mouse input."
           sha256sum app/src/main/jniLibs/arm64-v8a/libhorizon_android.so | tee "$RUNNER_TEMP/horizon-android-sha256.txt"
@@ -321,31 +337,47 @@ jobs:
 
       - name: Verify the built APK and required runtime payloads
         shell: bash
+        env:
+          STABLE_SIGNING: ${{ steps.signing.outputs.enabled }}
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           unzip -tq "$APK"
-          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libhorizon_android.so'
-          unzip -l "$APK" | grep -q 'assets/horizon-prepare/horizon-prepare-arm64'
-          unzip -l "$APK" | grep -q 'assets/horizon-prepare/jdk-manifest.json'
+          unzip -l "$APK" > "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'lib/arm64-v8a/libhorizon_android.so' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/horizon-prepare/horizon-prepare-arm64' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
-          grep -F "name='dev.mobilehorizon.app.offline1' versionCode='7' versionName='0.3.4-offline1'" "$RUNNER_TEMP/apk-badging.txt"
+          if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
+            grep -F "name='dev.mobilehorizon.app.offline1' versionCode='7' versionName='0.3.4-offline1'" "$RUNNER_TEMP/apk-badging.txt"
+          else
+            grep -F "name='dev.mobilehorizon.app.offline1.test' versionCode='7' versionName='0.3.4-offline1-test'" "$RUNNER_TEMP/apk-badging.txt"
+          fi
           sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
           CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
           echo "APK signer certificate SHA-256: $CERT_SHA256"
           echo "APK signer certificate SHA-256: $CERT_SHA256" >> "$GITHUB_STEP_SUMMARY"
           if [[ "${{ steps.signing.outputs.enabled }}" != "true" ]]; then
-            echo "::warning::APK compiled successfully, but publication is skipped until stable signing secrets are configured."
-            echo "Update-safe APK not published: stable signing key is not configured." >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::APK is test-only and uses a separate application ID because stable signing secrets are missing. It will not overwrite the installed app or share its data."
+            echo "Test-only APK published under dev.mobilehorizon.app.offline1.test; existing app/data remain separate. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "APK is valid, package/version match, and both Horizon ARM64 executables and Java 25 manifest payload are included."
+          echo "APK is valid, package/version match, and Horizon ARM64 runtime plus Java 25 manifest payload are included."
 
-      - name: Upload debug APK
+      - name: Upload update-safe APK
         if: success() && steps.signing.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: mobilehorizon-native-offline1-debug
+          name: mobilehorizon-native-offline1-update-safe
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload isolated test APK
+        if: success() && steps.signing.outputs.enabled != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobilehorizon-native-offline1-test-only
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
