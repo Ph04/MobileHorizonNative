@@ -270,7 +270,14 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                 });
             }
             horizon_client::AndroidInjectedInput::MouseMotion { dx, dy } => {
-                self.device_event(event_loop, device_id, DeviceEvent::MouseMotion { delta: (dx, dy) });
+                // Android generally cannot lock/grab the cursor like a desktop window.
+                // Treat a finger drag as a grabbed pointer while a world is active, so
+                // Game::apply_mouse_look consumes MouseHandler's relative-delta buffer.
+                if self.focused && self.screen == Screen::Playing && self.player.is_some() {
+                    self.agent_pointer = true;
+                    self.mouse.on_move(0.0, 0.0, dx, dy, true, true);
+                    self.last_input = Instant::now();
+                }
             }
             horizon_client::AndroidInjectedInput::KeyInput { key_code, pressed } => {
                 // Activity.dispatchKeyEvent is not delivered to the NativeActivity's
