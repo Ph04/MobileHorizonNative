@@ -240,6 +240,12 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                 });
             }
             horizon_client::AndroidInjectedInput::MouseButton { button, pressed, x, y } => {
+                // A virtual pointer substitutes for the physical cursor on touch-only Android.
+                // Set this before handling the press, otherwise the desktop capture check can
+                // consume each click because Android cannot lock a hardware cursor.
+                if self.screen == Screen::Playing && self.player.is_some() {
+                    self.agent_pointer = true;
+                }
                 self.window_event(event_loop, id, WindowEvent::CursorMoved {
                     device_id,
                     position: winit::dpi::PhysicalPosition::new(x, y),
@@ -424,6 +430,14 @@ touch_handler = '''        if self.window.as_ref().is_none_or(|w| w.id() != id) 
         }
 '''
 content = content[:gidx] + content[gidx:].replace(guard, touch_handler, 1)
+capture_condition = 'if pressed && !self.captured {'
+if content.count(capture_condition) != 1:
+    raise SystemExit(f"Expected one pointer-capture guard, found {content.count(capture_condition)}")
+content = content.replace(
+    capture_condition,
+    'if pressed && !self.captured && !self.agent_pointer {',
+    1,
+)
 game.write_text(content, encoding="utf-8");
 
 replace_once(game,
