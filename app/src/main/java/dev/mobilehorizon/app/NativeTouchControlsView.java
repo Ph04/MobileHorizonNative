@@ -437,7 +437,7 @@ final class NativeTouchControlsView extends View {
     }
 
     private void showKeyboardDialog() {
-        if (!activity.isGameplayMode()) {
+        if (!activity.hasLoadedWorld()) {
             Toast.makeText(activity, "Entre em um mundo para escrever no chat.", Toast.LENGTH_SHORT).show();
             return;
         }
