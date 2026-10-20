@@ -237,7 +237,7 @@ final class NativeTouchControlsView extends View {
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.WHITE);
         paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTextSize(dp(spec.radius < dp(27) ? 10.5f : 14f) * scale);
+        paint.setTextSize(Math.max(dp(8), spec.radius * 0.48f));
         paint.setFakeBoldText(true);
         Paint.FontMetrics metrics = paint.getFontMetrics();
         canvas.drawText(spec.label, spec.x, spec.y - (metrics.ascent + metrics.descent) / 2f, paint);
@@ -410,6 +410,10 @@ final class NativeTouchControlsView extends View {
         return null;
     }
 
+    private boolean isEditableButton(int id) {
+        return findButton(id) != null;
+    }
+
     private void setButtonPosition(int id, float x, float y) {
         float width = Math.max(1, getWidth()), height = Math.max(1, getHeight());
         float nx = clamp(x / width, 0.035f, 0.965f);
@@ -418,12 +422,10 @@ final class NativeTouchControlsView extends View {
         if (custom != null) {
             custom.x = nx;
             custom.y = ny;
-            saveCustomButtons();
         } else {
             ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> new ButtonLayout());
             layout.x = nx;
             layout.y = ny;
-            saveButtonLayouts();
         }
         invalidate();
     }
