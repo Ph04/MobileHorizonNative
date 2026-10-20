@@ -1,4 +1,25 @@
+use std::path::Path;
+
 use winit::platform::android::activity::AndroidApp;
+
+fn write_client_result(home: &Path, message: &str) {
+    // MainActivity lives in the main process and reads this shared app-private file
+    // after NativeGameActivity returns. HORIZON_HOME is <filesDir>/horizon.
+    if let Some(files_dir) = home.parent() {
+        let path = files_dir.join("horizon-client-result.txt");
+        let _ = std::fs::write(path, format!("{message}\n"));
+    }
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        return message.as_str();
+    }
+    if let Some(message) = payload.downcast_ref::<&'static str>() {
+        return message;
+    }
+    "panic Rust sem mensagem textual"
+}
 
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
@@ -6,22 +27,75 @@ fn android_main(app: AndroidApp) {
     horizon_client::telemetry::mark_start();
 
     let home = horizon_client::logging::game_home();
+    // The renderer smoke test has its own result file and must not be overwritten
+    // by the full-client status report.
+    let smoke_test = home
+        .parent()
+        .is_some_and(|files_dir| files_dir.join("horizon-native-smoke.flag").is_file());
+
+    if !smoke_test {
+        // Leave a failure sentinel behind so a native process crash/abort before
+        // normal return is still visible in MainActivity instead of looking silent.
+        write_client_result(
+            &home,
+            "FAIL: O processo nativo encerrou antes de concluir a inicialização; não foi possível registrar a causa. Confira o log Horizon e tente novamente.",
+        );
+    }
+
     if let Err(error) = std::fs::create_dir_all(&home) {
-        eprintln!("Horizon: cannot create game directory {}: {error}", home.display());
+        let message = format!(
+            "FAIL: Não foi possível criar o diretório do jogo {}: {error}",
+            home.display()
+        );
+        eprintln!("{message}");
+        if !smoke_test {
+            write_client_result(&home, &message);
+        }
         return;
     }
     if let Err(error) = std::env::set_current_dir(&home) {
-        eprintln!("Horizon: cannot enter game directory {}: {error}", home.display());
+        let message = format!(
+            "FAIL: Não foi possível entrar no diretório do jogo {}: {error}",
+            home.display()
+        );
+        eprintln!("{message}");
+        if !smoke_test {
+            write_client_result(&home, &message);
+        }
         return;
     }
 
-    horizon_client::logging::init(&home, "Render thread");
-    horizon_client::crash::install(home.clone(), "client");
-    if let Err(error) = horizon_client::game::run() {
-        eprintln!("Horizon: {error}");
-        horizon_client::crash::report_error(&home, "client", &*error);
-    }
+    let execution = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || -> horizon_client::Result<()> {
+            horizon_client::logging::init(&home, "Render thread");
+            horizon_client::crash::install(home.clone(), "client");
+            if let Err(error) = horizon_client::game::run() {
+                eprintln!("Horizon: {error}");
+                horizon_client::crash::report_error(&home, "client", &*error);
+                return Err(error);
+            }
+            Ok(())
+        },
+    ));
+
     horizon_client::logging::flush();
+
+    if !smoke_test {
+        match execution {
+            Ok(Ok(())) => write_client_result(
+                &home,
+                "EXIT: O loop do cliente Horizon terminou sem retornar um erro explícito. Isso não confirma que o Minecraft chegou a carregar um mundo.",
+            ),
+            Ok(Err(error)) => write_client_result(
+                &home,
+                &format!("FAIL: O cliente Horizon encerrou com erro: {error:#}"),
+            ),
+            Err(payload) => write_client_result(
+                &home,
+                &format!("FAIL: O cliente Horizon sofreu um panic Rust: {}", panic_message(&*payload)),
+            ),
+        }
+    }
 }
 
 // JNI bridge for the Android overlay. Events are enqueued onto Winit's own loop,
