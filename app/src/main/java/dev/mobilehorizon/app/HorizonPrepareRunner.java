@@ -465,11 +465,6 @@ final class HorizonPrepareRunner {
             throw new IOException("Manifesto oficial ausente para sincronizar a validação Horizon.");
         }
         String manifestSha1 = sha1(versionJsonFile);
-        if (!OfficialMinecraftInstaller.isAcceptedVersionJsonSha1(manifestSha1)
-                && !OfficialMinecraftInstaller.hasVerifiedVersionJsonSha1(versionJsonFile)) {
-            throw new IOException("Manifesto sem hash reconhecido nem recibo oficial verificado: " + manifestSha1);
-        }
-
         org.json.JSONObject manifest = new org.json.JSONObject(
                 readText(versionJsonFile, 64 * 1024 * 1024));
         if (!OfficialMinecraftInstaller.VERSION.equals(manifest.optString("id", ""))) {
@@ -505,15 +500,24 @@ final class HorizonPrepareRunner {
             accepted = new org.json.JSONArray();
             minecraft.put("accepted_manifest_sha1", accepted);
         }
-        boolean alreadyPresent = false;
+        boolean alreadyPresent = manifestSha1.equalsIgnoreCase(
+                minecraft.optString("manifest_sha1", ""));
         for (int i = 0; i < accepted.length(); i++) {
             if (manifestSha1.equalsIgnoreCase(accepted.optString(i, ""))) {
                 alreadyPresent = true;
                 break;
             }
         }
+        // Unlike the app's compatibility list, Horizon's own lock is the authority for
+        // already-known files. A new hash is admitted only when the downloader's matching
+        // receipt proves the exact local JSON was verified against Mojang's official metadata.
         if (!alreadyPresent
-                && !manifestSha1.equalsIgnoreCase(minecraft.optString("manifest_sha1", ""))) {
+                && !OfficialMinecraftInstaller.hasVerifiedVersionJsonSha1(versionJsonFile)) {
+            throw new IOException("O Horizon não reconhece este SHA-1 e o manifesto não possui "
+                    + "recibo oficial válido: " + manifestSha1
+                    + ". Baixe novamente os arquivos base oficiais.");
+        }
+        if (!alreadyPresent) {
             accepted.put(manifestSha1);
             File temporary = new File(workspace, "research-lock.json.tmp");
             try (OutputStream output = new FileOutputStream(temporary)) {
