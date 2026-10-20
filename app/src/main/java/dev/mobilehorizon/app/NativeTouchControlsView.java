@@ -1,18 +1,34 @@
 package dev.mobilehorizon.app;
 
+import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.os.SystemClock;
+import android.graphics.RectF;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.InputType;
 import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.SeekBar;
+import android.widget.TextView;
+import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -24,12 +40,15 @@ final class NativeTouchControlsView extends View {
     static final String KEY_OPACITY = "opacity";
     static final String KEY_SENSITIVITY = "sensitivity";
     static final String KEY_LEFT_HANDED = "left_handed";
+    static final String KEY_LAYOUT = "button_layout_v2";
+    static final String KEY_CUSTOM_BUTTONS = "custom_buttons_v1";
 
     private static final int NONE = 0, JOYSTICK = 1, TOGGLE = 2, JUMP = 3, SNEAK = 4,
             SPRINT = 5, INVENTORY = 6, ATTACK = 7, USE = 8, ESCAPE = 9,
             DROP = 10, SWAP = 11, PICK = 12, PERSPECTIVE = 13, CHAT = 14,
             HOTBAR_PREV = 15, HOTBAR_NEXT = 16, TAB = 17, ENTER = 18, IGNORED = 19,
-            MOUSE_LEFT = 20, MOUSE_RIGHT = 21;
+            MOUSE_LEFT = 20, MOUSE_RIGHT = 21, KEYBOARD = 22, EDITOR = 23,
+            ADD_BUTTON = 24, DONE_EDITING = 25, CUSTOM_BUTTON_START = 1000;
     private final NativeGameActivity activity;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<Integer, PointerTrack> pointers = new HashMap<>();
@@ -37,6 +56,21 @@ final class NativeTouchControlsView extends View {
     private final Set<Integer> pressedControls = new HashSet<>();
     private final Set<Integer> joystickKeys = new HashSet<>();
     private final Map<Integer, Integer> controlPointerCounts = new HashMap<>();
+    private final Map<Integer, ButtonLayout> buttonLayouts = new HashMap<>();
+    private final List<CustomButton> customButtons = new ArrayList<>();
+    private final Handler modeHandler = new Handler(Looper.getMainLooper());
+    private boolean editingControls;
+    private boolean gameplayMode;
+    private final Runnable modePoll = new Runnable() {
+        @Override public void run() {
+            boolean active = activity.isGameplayMode();
+            if (active != gameplayMode) {
+                gameplayMode = active;
+                invalidate();
+            }
+            modeHandler.postDelayed(this, 220);
+        }
+    };
 
     private final float density;
     private final float scale;
@@ -54,15 +88,41 @@ final class NativeTouchControlsView extends View {
         float lastX, lastY;
         final int control;
         boolean moved;
+        boolean editorDrag;
         PointerTrack(float x, float y, int control) {
             startX = lastX = x; startY = lastY = y; this.control = control;
         }
     }
 
     private static final class ButtonSpec {
-        final int id; final String label; final float x, y, radius;
+        final int id;
+        String label;
+        float x, y, radius;
+        final boolean custom;
+        int keyCode;
         ButtonSpec(int id, String label, float x, float y, float radius) {
+            this(id, label, x, y, radius, false, 0);
+        }
+        ButtonSpec(int id, String label, float x, float y, float radius, boolean custom, int keyCode) {
             this.id = id; this.label = label; this.x = x; this.y = y; this.radius = radius;
+            this.custom = custom; this.keyCode = keyCode;
+        }
+    }
+
+    private static final class ButtonLayout {
+        float x = -1f;
+        float y = -1f;
+        float scale = 1f;
+    }
+
+    private static final class CustomButton {
+        final int id;
+        String label;
+        int keyCode;
+        float x, y, scale;
+        CustomButton(int id, String label, int keyCode, float x, float y, float scale) {
+            this.id = id; this.label = label; this.keyCode = keyCode;
+            this.x = x; this.y = y; this.scale = scale;
         }
     }
 
@@ -75,6 +135,10 @@ final class NativeTouchControlsView extends View {
         opacity = clamp(prefs.getFloat(KEY_OPACITY, 0.82f), 0.35f, 1f);
         sensitivity = clamp(prefs.getFloat(KEY_SENSITIVITY, 1f), 0.50f, 2f);
         leftHanded = prefs.getBoolean(KEY_LEFT_HANDED, false);
+        loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
+        loadCustomButtons(prefs.getString(KEY_CUSTOM_BUTTONS, ""));
+        gameplayMode = activity.isGameplayMode();
+        modeHandler.post(modePoll);
         setBackgroundColor(Color.TRANSPARENT);
         setFocusable(false);
         setFocusableInTouchMode(false);
