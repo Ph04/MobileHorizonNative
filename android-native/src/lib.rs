@@ -1,4 +1,5 @@
 use std::{any::Any, path::Path, sync::Arc, time::Duration};
+use jni::{JNIEnv, objects::{JClass, JString}};
 
 use winit::{
     application::ApplicationHandler,
@@ -319,4 +320,23 @@ pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjec
         key_code,
         pressed: pressed != 0,
     });
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectChatText(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    value: JString<'_>,
+) {
+    let Ok(java_text) = env.get_string(&value) else { return; };
+    let text = java_text.to_string_lossy().into_owned();
+    horizon_client::inject_android_input(horizon_client::AndroidInjectedInput::ChatText { text });
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeIsGameplay(
+    _env: *mut core::ffi::c_void,
+    _class: *mut core::ffi::c_void,
+) -> u8 {
+    u8::from(horizon_client::android_is_gameplay())
 }
