@@ -272,9 +272,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The native client is built from a newer upstream revision with controller
-          # and audio backends behind optional features. The Android target disables
-          # those desktop-only hardware backends (including hidapi/libudev).
+          # Keep desktop controller/HID backends disabled on Android to avoid
+          # libudev/hidapi dependencies. CPAL audio is enabled by android-native's
+          # horizon-client feature selection and uses Android's native audio backend.
           UPSTREAM_COMMIT="defaa7cd2ade6dc45bcac0b418bf10601f05a120"
           SOURCE="$RUNNER_TEMP/horizon-native-upstream"
           git init "$SOURCE"
