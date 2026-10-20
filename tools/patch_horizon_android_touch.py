@@ -9,9 +9,10 @@ repo_root = Path(__file__).resolve().parents[1]
 game = root / "crates/horizon-client/src/game.rs"
 lib = root / "crates/horizon-client/src/lib.rs"
 client_cargo = root / "crates/horizon-client/Cargo.toml"
+clipboard = root / "crates/horizon-client/src/clipboard.rs"
 workspace_cargo = root / "Cargo.toml"
 
-for path in (game, lib, client_cargo, workspace_cargo):
+for path in (game, lib, client_cargo, clipboard, workspace_cargo):
     if not path.is_file():
         raise SystemExit(f"Missing pinned Horizon source file: {path}")
 
@@ -24,6 +25,113 @@ def replace_once(path: Path, old: str, new: str) -> None:
 
 replace_once(client_cargo, 'winit = "0.30.13"',
              'winit = { version = "0.30.13", features = ["android-native-activity"] }')
+
+# Keep the desktop clipboard for desktop builds, but don't compile it on Android.
+replace_once(client_cargo,
+    'arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }',
+    'arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"], optional = true }')
+replace_once(client_cargo,
+    'default = ["audio", "controllers"]',
+    'default = ["audio", "controllers", "system-clipboard"]')
+replace_once(client_cargo,
+    'controllers = ["dep:gilrs", "dep:horizon-dualsense"]',
+    'controllers = ["dep:gilrs", "dep:horizon-dualsense"]\nsystem-clipboard = ["dep:arboard"]')
+
+clipboard_struct_old = """#[derive(Default)]
+pub struct SystemClipboard {
+    system: Option<arboard::Clipboard>,
+    /// The text Horizon last copied (horizon-ctl status).
+    copied: Option<String>,
+}"""
+clipboard_struct_new = """#[derive(Default)]
+pub struct SystemClipboard {
+    #[cfg(feature = "system-clipboard")]
+    system: Option<arboard::Clipboard>,
+    /// The text Horizon last copied (horizon-ctl status).
+    copied: Option<String>,
+}"""
+replace_once(clipboard, clipboard_struct_old, clipboard_struct_new)
+
+clipboard_method_old = """    fn system(&mut self) -> Option<&mut arboard::Clipboard> {
+        if self.system.is_none() {
+            self.system = arboard::Clipboard::new().ok();
+        }
+        self.system.as_mut()
+    }"""
+clipboard_method_new = """    #[cfg(feature = "system-clipboard")]
+    fn system(&mut self) -> Option<&mut arboard::Clipboard> {
+        if self.system.is_none() {
+            self.system = arboard::Clipboard::new().ok();
+        }
+        self.system.as_mut()
+    }"""
+replace_once(clipboard, clipboard_method_old, clipboard_method_new)
+
+clipboard_impl_old = """impl Clipboard for SystemClipboard {
+    fn get(&mut self) -> String {
+        let Some(system) = self.system() else {
+            return self.copied.clone().unwrap_or_default();
+        };
+        match system.get_text() {
+            Ok(text) => text,
+            Err(arboard::Error::ContentNotAvailable) => String::new(),
+            Err(_) => {
+                // A lost connection (a restarted compositor): reconnect next time.
+                self.system = None;
+                String::new()
+            }
+        }
+    }
+    fn set(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.copied = Some(text.to_owned());
+        if let Some(system) = self.system()
+            && system.set_text(text.to_owned()).is_err()
+        {
+            self.system = None;
+        }
+    }
+}"""
+clipboard_impl_new = """impl Clipboard for SystemClipboard {
+    fn get(&mut self) -> String {
+        #[cfg(feature = "system-clipboard")]
+        {
+            let Some(system) = self.system() else {
+                return self.copied.clone().unwrap_or_default();
+            };
+            match system.get_text() {
+                Ok(text) => text,
+                Err(arboard::Error::ContentNotAvailable) => String::new(),
+                Err(_) => {
+                    // A lost connection (a restarted compositor): reconnect next time.
+                    self.system = None;
+                    String::new()
+                }
+            }
+        }
+        #[cfg(not(feature = "system-clipboard"))]
+        {
+            self.copied.clone().unwrap_or_default()
+        }
+    }
+    fn set(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.copied = Some(text.to_owned());
+        #[cfg(feature = "system-clipboard")]
+        {
+            if let Some(system) = self.system()
+                && system.set_text(text.to_owned()).is_err()
+            {
+                self.system = None;
+            }
+        }
+    }
+}"""
+replace_once(clipboard, clipboard_impl_old, clipboard_impl_new)
 
 replace_once(lib, 'pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;',
 '''pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -144,7 +252,7 @@ touch_handler = '''        if self.window.as_ref().is_none_or(|w| w.id() != id) 
             return;
         }
 '''
-content = content.slice(0,gidx)+content.slice(gidx).replace(guard,touch_handler);
+content = content[:gidx] + content[gidx:].replace(guard, touch_handler, 1)
 game.write_text(content, encoding="utf-8");
 
 replace_once(game,
