@@ -732,13 +732,16 @@ final class NativeTouchControlsView extends View {
             if (distanceSquared(x, y, toolbarX(166), toolbarY()) <= dp(24) * dp(24)) return ADD_BUTTON;
             if (distanceSquared(x, y, toolbarX(210), toolbarY()) <= dp(24) * dp(24)) return DONE_EDITING;
         }
-        float jx = joystickHomeX(), jy = joystickHomeY(), jr = dp(82) * scale;
-        if (distanceSquared(x, y, jx, jy) <= jr * jr) return JOYSTICK;
         ButtonSpec best = null; float bestDistance = Float.MAX_VALUE;
         for (ButtonSpec spec : buttonSpecs()) {
             float d = distanceSquared(x, y, spec.x, spec.y), hit = spec.radius + dp(13);
             if (d <= hit * hit && d < bestDistance) { best = spec; bestDistance = d; }
         }
+        // While editing, prefer the visible button over the joystick hit region so
+        // custom buttons can be dragged anywhere on screen.
+        if (editingControls && best != null) return best.id;
+        float jx = joystickHomeX(), jy = joystickHomeY(), jr = dp(82) * scale;
+        if (distanceSquared(x, y, jx, jy) <= jr * jr) return JOYSTICK;
         return best == null ? NONE : best.id;
     }
 
@@ -919,5 +922,11 @@ final class NativeTouchControlsView extends View {
     }
     private static float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        modeHandler.removeCallbacks(modePoll);
+        releaseAllInputs();
+        super.onDetachedFromWindow();
     }
 }
