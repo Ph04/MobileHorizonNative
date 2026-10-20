@@ -54,6 +54,9 @@ final class OfficialMinecraftInstaller {
         ACCEPTED_VERSION_JSON_SHA1.add("11f1aefe473eefba0af62e3286c33b692807b2eb");
         ACCEPTED_VERSION_JSON_SHA1.add("4fe1aa1ef8da1cb95c5bad1fb98890ca56dd8ca3");
         ACCEPTED_VERSION_JSON_SHA1.add("702fe59163c6ee6578607daa85811d9bc9c7cc40");
+        // New official 26.3 manifest published by Mojang; the client/server JAR pins
+        // and Java 25 checks below remain mandatory before the files can be used.
+        ACCEPTED_VERSION_JSON_SHA1.add("61fff1316bd50312624a858bbb5eb18fa45208ed");
     }
 
     static boolean isAcceptedVersionJsonSha1(String value) {
