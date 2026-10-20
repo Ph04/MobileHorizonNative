@@ -406,9 +406,8 @@ final class NativeTouchControlsView extends View {
         if (held) mouseButtons |= button; else mouseButtons &= ~button;
         if (previous == mouseButtons) return;
 
-        // NativeActivity receives pointer input through Android's native InputQueue.
-        // A MotionEvent manufactured here is not inserted into that queue. Use the
-        // opt-in accessibility bridge to dispatch a real touchscreen tap instead.
+        // A tap from the virtual cursor is routed locally by NativeGameActivity.
+        // The method deliberately avoids the system-wide Accessibility gesture API.
         if (!held && (button == MotionEvent.BUTTON_PRIMARY
                 || button == MotionEvent.BUTTON_SECONDARY
                 || button == MotionEvent.BUTTON_TERTIARY)) {
