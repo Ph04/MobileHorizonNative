@@ -215,8 +215,9 @@ final class HorizonPrepareRunner {
         requireFile(serverJar, "Falta o JAR oficial do servidor 26.3.");
 
         String versionJsonHash = sha1(versionJsonFile);
-        if (!OfficialMinecraftInstaller.isAcceptedVersionJsonSha1(versionJsonHash)) {
-            throw new IOException("O JSON instalado não corresponde a um manifesto conhecido do Minecraft 26.3.");
+        if (!OfficialMinecraftInstaller.isAcceptedVersionJsonSha1(versionJsonHash)
+                && !OfficialMinecraftInstaller.hasVerifiedVersionJsonSha1(versionJsonFile)) {
+            throw new IOException("O JSON instalado não corresponde a um manifesto conhecido nem possui recibo de verificação oficial do Minecraft 26.3.");
         }
         org.json.JSONObject version = new org.json.JSONObject(readText(versionJsonFile, 64 * 1024 * 1024));
         if (!"26.3".equals(version.optString("id", ""))
