@@ -323,6 +323,276 @@ final class NativeTouchControlsView extends View {
         specs.add(spec);
     }
 
+    private void loadButtonLayouts(String json) {
+        if (json == null || json.isEmpty()) return;
+        try {
+            JSONArray items = new JSONArray(json);
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.optJSONObject(i);
+                if (item == null) continue;
+                ButtonLayout layout = new ButtonLayout();
+                layout.x = (float) item.optDouble("x", -1);
+                layout.y = (float) item.optDouble("y", -1);
+                layout.scale = clamp((float) item.optDouble("scale", 1), 0.60f, 2.40f);
+                buttonLayouts.put(item.optInt("id", -1), layout);
+            }
+        } catch (Exception error) {
+            android.util.Log.w("MobileHorizon", "Layout de controles inválido; usando posições padrão.", error);
+        }
+    }
+
+    private void loadCustomButtons(String json) {
+        if (json == null || json.isEmpty()) return;
+        try {
+            JSONArray items = new JSONArray(json);
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.optJSONObject(i);
+                if (item == null) continue;
+                int id = item.optInt("id", -1);
+                int keyCode = item.optInt("keyCode", KeyEvent.KEYCODE_UNKNOWN);
+                String label = item.optString("label", "").trim();
+                if (id < CUSTOM_BUTTON_START || keyCode == KeyEvent.KEYCODE_UNKNOWN || label.isEmpty()) continue;
+                customButtons.add(new CustomButton(id, label, keyCode,
+                        clamp((float) item.optDouble("x", 0.62), 0.03f, 0.97f),
+                        clamp((float) item.optDouble("y", 0.55), 0.05f, 0.95f),
+                        clamp((float) item.optDouble("scale", 1), 0.60f, 2.40f)));
+            }
+        } catch (Exception error) {
+            android.util.Log.w("MobileHorizon", "Botões personalizados inválidos; ignorando o perfil.", error);
+        }
+    }
+
+    private void saveButtonLayouts() {
+        JSONArray items = new JSONArray();
+        try {
+            for (Map.Entry<Integer, ButtonLayout> entry : buttonLayouts.entrySet()) {
+                JSONObject item = new JSONObject();
+                item.put("id", entry.getKey());
+                item.put("x", entry.getValue().x);
+                item.put("y", entry.getValue().y);
+                item.put("scale", entry.getValue().scale);
+                items.put(item);
+            }
+            activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+                    .putString(KEY_LAYOUT, items.toString()).apply();
+        } catch (Exception error) {
+            android.util.Log.w("MobileHorizon", "Não foi possível salvar o layout dos controles.", error);
+        }
+    }
+
+    private void saveCustomButtons() {
+        JSONArray items = new JSONArray();
+        try {
+            for (CustomButton custom : customButtons) {
+                JSONObject item = new JSONObject();
+                item.put("id", custom.id);
+                item.put("label", custom.label);
+                item.put("keyCode", custom.keyCode);
+                item.put("x", custom.x);
+                item.put("y", custom.y);
+                item.put("scale", custom.scale);
+                items.put(item);
+            }
+            activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+                    .putString(KEY_CUSTOM_BUTTONS, items.toString()).apply();
+        } catch (Exception error) {
+            android.util.Log.w("MobileHorizon", "Não foi possível salvar os botões personalizados.", error);
+        }
+    }
+
+    private ButtonSpec findButton(int id) {
+        for (ButtonSpec spec : buttonSpecs()) if (spec.id == id) return spec;
+        return null;
+    }
+
+    private CustomButton findCustomButton(int id) {
+        for (CustomButton item : customButtons) if (item.id == id) return item;
+        return null;
+    }
+
+    private void setButtonPosition(int id, float x, float y) {
+        float width = Math.max(1, getWidth()), height = Math.max(1, getHeight());
+        float nx = clamp(x / width, 0.035f, 0.965f);
+        float ny = clamp(y / height, 0.055f, 0.945f);
+        CustomButton custom = findCustomButton(id);
+        if (custom != null) {
+            custom.x = nx;
+            custom.y = ny;
+            saveCustomButtons();
+        } else {
+            ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> new ButtonLayout());
+            layout.x = nx;
+            layout.y = ny;
+            saveButtonLayouts();
+        }
+        invalidate();
+    }
+
+    private void showKeyboardDialog() {
+        if (!activity.isGameplayMode()) {
+            Toast.makeText(activity, "Entre em um mundo para escrever no chat.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        EditText input = new EditText(activity);
+        input.setSingleLine(true);
+        input.setHint("Mensagem ou comando (use /)");
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(8), dp(20), dp(4));
+        panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle("Teclado do Minecraft")
+                .setView(panel)
+                .setNegativeButton("Cancelar", (d, which) -> { })
+                .setPositiveButton("Enviar", (d, which) -> {
+                    String text = input.getText().toString();
+                    if (!text.trim().isEmpty()) activity.injectChatText(text);
+                })
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            input.requestFocus();
+            input.postDelayed(() -> {
+                InputMethodManager manager = (InputMethodManager) activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (manager != null) manager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+            }, 120);
+        });
+        dialog.show();
+    }
+
+    private void showAddButtonDialog() {
+        EditText label = new EditText(activity);
+        label.setSingleLine(true);
+        label.setHint("Texto do botão (ex.: MAP)");
+        label.setText("G");
+        EditText key = new EditText(activity);
+        key.setSingleLine(true);
+        key.setHint("Tecla (ex.: G, SPACE, F6)");
+        key.setText("G");
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(8), dp(20), dp(4));
+        panel.addView(label, new LinearLayout.LayoutParams(-1, -2));
+        panel.addView(key, new LinearLayout.LayoutParams(-1, -2));
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle("Adicionar botão")
+                .setMessage("O botão mantém a tecla pressionada enquanto você segura.")
+                .setView(panel)
+                .setNegativeButton("Cancelar", (d, which) -> { })
+                .setPositiveButton("Adicionar", null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String caption = label.getText().toString().trim();
+            int keyCode = parseKeyCode(key.getText().toString());
+            if (caption.isEmpty() || caption.length() > 7 || keyCode == KeyEvent.KEYCODE_UNKNOWN) {
+                Toast.makeText(activity, "Informe um nome curto e uma tecla válida.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            int id = CUSTOM_BUTTON_START;
+            for (CustomButton item : customButtons) id = Math.max(id, item.id + 1);
+            float x = 0.62f + (customButtons.size() % 3) * 0.055f;
+            float y = 0.50f + (customButtons.size() % 4) * 0.055f;
+            customButtons.add(new CustomButton(id, caption, keyCode,
+                    clamp(x, 0.10f, 0.90f), clamp(y, 0.15f, 0.85f), 1f));
+            saveCustomButtons();
+            invalidate();
+            dialog.dismiss();
+        }));
+        dialog.show();
+    }
+
+    private void showButtonEditor(int id) {
+        ButtonSpec spec = findButton(id);
+        if (spec == null) return;
+        CustomButton custom = findCustomButton(id);
+        ButtonLayout layout = buttonLayouts.get(id);
+        float currentScale = custom != null ? custom.scale : (layout == null ? 1f : layout.scale);
+        TextView sizeText = new TextView(activity);
+        SeekBar size = new SeekBar(activity);
+        size.setMax(180);
+        size.setProgress(Math.round(clamp(currentScale, 0.60f, 2.40f) * 100f) - 60);
+        sizeText.setText("Escala individual: " + Math.round(currentScale * 100) + "%");
+        size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                sizeText.setText("Escala individual: " + (progress + 60) + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(10), dp(20), dp(4));
+        panel.addView(sizeText, new LinearLayout.LayoutParams(-1, -2));
+        panel.addView(size, new LinearLayout.LayoutParams(-1, -2));
+        EditText label = null, key = null;
+        if (custom != null) {
+            label = new EditText(activity);
+            label.setSingleLine(true);
+            label.setHint("Texto do botão");
+            label.setText(custom.label);
+            key = new EditText(activity);
+            key.setSingleLine(true);
+            key.setHint("Tecla (ex.: G, SPACE, F6)");
+            key.setText(KeyEvent.keyCodeToString(custom.keyCode).replace("KEYCODE_", ""));
+            panel.addView(label, new LinearLayout.LayoutParams(-1, -2));
+            panel.addView(key, new LinearLayout.LayoutParams(-1, -2));
+        }
+        final EditText customLabel = label, customKey = key;
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle("Personalizar " + spec.label)
+                .setView(panel)
+                .setNegativeButton("Cancelar", (d, which) -> { })
+                .setNeutralButton(custom != null ? "Excluir" : "Restaurar", null)
+                .setPositiveButton("Salvar", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                int progress = size.getProgress();
+                float newScale = (progress + 60) / 100f;
+                if (custom != null) {
+                    String caption = customLabel.getText().toString().trim();
+                    int newKey = parseKeyCode(customKey.getText().toString());
+                    if (caption.isEmpty() || caption.length() > 7 || newKey == KeyEvent.KEYCODE_UNKNOWN) {
+                        Toast.makeText(activity, "Informe um nome curto e uma tecla válida.", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    custom.label = caption;
+                    custom.keyCode = newKey;
+                    custom.scale = newScale;
+                    saveCustomButtons();
+                } else {
+                    ButtonLayout updated = buttonLayouts.computeIfAbsent(id, ignoredId -> new ButtonLayout());
+                    updated.scale = newScale;
+                    saveButtonLayouts();
+                }
+                invalidate();
+                dialog.dismiss();
+            });
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                if (custom != null) {
+                    customButtons.remove(custom);
+                    saveCustomButtons();
+                } else {
+                    buttonLayouts.remove(id);
+                    saveButtonLayouts();
+                }
+                invalidate();
+                dialog.dismiss();
+            });
+        });
+        dialog.show();
+    }
+
+    private int parseKeyCode(String value) {
+        String key = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (key.startsWith("KEYCODE_")) key = key.substring("KEYCODE_".length());
+        if (key.startsWith("KEY_")) key = key.substring("KEY_".length());
+        int result = KeyEvent.keyCodeFromString("KEYCODE_" + key);
+        return result == KeyEvent.KEYCODE_UNKNOWN ? KeyEvent.KEYCODE_UNKNOWN : result;
+    }
+
     private void circle(Canvas canvas, float x, float y, float radius, boolean stroke, float alpha) {
         paint.setStyle(stroke ? Paint.Style.STROKE : Paint.Style.FILL);
         paint.setStrokeWidth(dp(1.4f));
