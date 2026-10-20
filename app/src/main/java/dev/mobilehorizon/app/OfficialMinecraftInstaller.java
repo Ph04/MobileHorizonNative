@@ -47,18 +47,11 @@ final class OfficialMinecraftInstaller {
     static final String SERVER_SHA1 = "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c";
     private static final String VERSION_MANIFEST_URL =
             "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
-    private static final Set<String> ACCEPTED_VERSION_JSON_SHA1 = new HashSet<>();
     private static final int CONNECT_TIMEOUT_MS = 20_000;
     private static final int READ_TIMEOUT_MS = 60_000;
     private static final int MAX_JSON_BYTES = 64 * 1024 * 1024;
     private static final int ASSET_THREADS = 3;
     private static final int BUFFER_SIZE = 128 * 1024;
-
-    static {
-        ACCEPTED_VERSION_JSON_SHA1.add("11f1aefe473eefba0af62e3286c33b692807b2eb");
-        ACCEPTED_VERSION_JSON_SHA1.add("4fe1aa1ef8da1cb95c5bad1fb98890ca56dd8ca3");
-        ACCEPTED_VERSION_JSON_SHA1.add("702fe59163c6ee6578607daa85811d9bc9c7cc40");
-    }
 
     interface Listener {
         void onProgress(Progress progress);
@@ -109,10 +102,6 @@ final class OfficialMinecraftInstaller {
         }
     }
 
-    static boolean isAcceptedVersionJsonSha1(String value) {
-        return value != null && ACCEPTED_VERSION_JSON_SHA1.contains(value.toLowerCase(Locale.ROOT));
-    }
-
     private static final class Asset {
         final String hash;
         final long size;
@@ -139,22 +128,30 @@ final class OfficialMinecraftInstaller {
         if (versions == null) throw new IllegalStateException("O manifesto oficial não contém a lista de versões.");
 
         String versionUrl = null;
+        String advertisedVersionSha1 = null;
         for (int i = 0; i < versions.length(); i++) {
             JSONObject item = versions.optJSONObject(i);
             if (item != null && VERSION.equals(item.optString("id", ""))) {
                 versionUrl = item.optString("url", "");
+                advertisedVersionSha1 = item.optString("sha1", "");
                 break;
             }
         }
         requireOfficialUrl(versionUrl, "URL do manifesto da versão");
+        if (!isSha1(normalizeSha1(advertisedVersionSha1))) {
+            throw new IllegalStateException(
+                    "O manifesto global oficial não anuncia um SHA-1 válido para Minecraft " + VERSION + ".");
+        }
 
         notify(listener, "Validando o manifesto da versão", VERSION + ".json", 1, 5, 0, -1, 0, -1);
         byte[] versionBytes = readUrl(versionUrl, MAX_JSON_BYTES, cancelled);
         String versionSha1 = sha1(versionBytes);
-        if (!ACCEPTED_VERSION_JSON_SHA1.contains(versionSha1)) {
+        if (!matchesAdvertisedVersionSha1(advertisedVersionSha1, versionSha1)) {
             throw new IllegalStateException(
-                    "O manifesto de Minecraft " + VERSION + " mudou e ainda não está reconhecido pelo motor. SHA-1 recebido: "
-                            + versionSha1 + ". Os arquivos não serão ativados.");
+                    "O SHA-1 do manifesto de Minecraft " + VERSION
+                            + " não confere com o valor anunciado pelo manifesto global oficial. Esperado: "
+                            + normalizeSha1(advertisedVersionSha1) + "; recebido: " + versionSha1
+                            + ". Os arquivos não serão ativados.");
         }
 
         JSONObject version = new JSONObject(new String(versionBytes, StandardCharsets.UTF_8));
@@ -511,6 +508,17 @@ final class OfficialMinecraftInstaller {
 
     static boolean isSha1(String value) {
         return value != null && value.matches("[0-9a-f]{40}");
+    }
+
+    static boolean matchesAdvertisedVersionSha1(String advertised, String actual) {
+        String expectedNormalized = normalizeSha1(advertised);
+        String actualNormalized = normalizeSha1(actual);
+        return isSha1(expectedNormalized) && isSha1(actualNormalized)
+                && expectedNormalized.equals(actualNormalized);
+    }
+
+    private static String normalizeSha1(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private static File safeFile(File root, String relative) throws Exception {
