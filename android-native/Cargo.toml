@@ -11,6 +11,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 horizon-client = { path = "../horizon-client", default-features = false }
+pollster = "0.4"
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "wgsl"] }
 winit = { version = "0.30.13", features = ["android-native-activity"] }
 
 [lints]
