@@ -28,6 +28,7 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_TOUCH_CONTROLS = "dev.mobilehorizon.app.EXTRA_TOUCH_CONTROLS";
     static final String EXTRA_PLAYER_NAME = "dev.mobilehorizon.app.EXTRA_PLAYER_NAME";
     static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
+    static final String EXTRA_NATIVE_SMOKE_TEST = "dev.mobilehorizon.app.EXTRA_NATIVE_SMOKE_TEST";
     private NativeTouchControlsView touchControls;
     private PopupWindow touchControlsPopup;
     @Override
@@ -43,12 +44,26 @@ public final class NativeGameActivity extends NativeActivity {
             if (!home.isDirectory() && !home.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório de dados Horizon.");
             }
+            // Use an explicit per-launch flag. The old marker file could survive a
+            // previous smoke test and accidentally suppress diagnostics for the real game.
+            android.content.Intent launchIntent = getIntent();
+            boolean smokeTest = launchIntent != null
+                    && launchIntent.getBooleanExtra(EXTRA_NATIVE_SMOKE_TEST, false);
+            if (smokeTest) {
+                android.system.Os.setenv("HORIZON_NATIVE_SMOKE_TEST", "1", true);
+            } else {
+                android.system.Os.unsetenv("HORIZON_NATIVE_SMOKE_TEST");
+            }
+            // Clear leftovers from earlier versions/launches before the native entry point.
+            new java.io.File(gameRoot, "horizon-native-smoke.flag").delete();
+            new java.io.File(gameRoot, "horizon-native-smoke-result.txt").delete();
+            new java.io.File(gameRoot, "horizon-client-result.txt").delete();
+
             // NativeActivity already starts the runtime with the app's private working directory
             // on supported builds; Os.chdir is not exposed by Android's public SDK.
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
             // NativeGameActivity runs in :game, so copy launch context explicitly:
             // environment changes made in MainActivity are not inherited across processes.
-            android.content.Intent launchIntent = getIntent();
             if (launchIntent != null) {
                 String playerName = launchIntent.getStringExtra(EXTRA_PLAYER_NAME);
                 if (playerName != null && playerName.matches("[A-Za-z0-9_]{1,16}")) {
