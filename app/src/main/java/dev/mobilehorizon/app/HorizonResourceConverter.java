@@ -135,7 +135,8 @@ final class HorizonResourceConverter {
 
         report(listener, "Verificando manifesto oficial", 0, 5, VERSION + ".json");
         String versionJsonSha1 = sha1(versionJsonFile);
-        if (!OfficialMinecraftInstaller.isAcceptedVersionJsonSha1(versionJsonSha1)) {
+        if (!OfficialMinecraftInstaller.isAcceptedVersionJsonSha1(versionJsonSha1)
+                && !OfficialMinecraftInstaller.hasVerifiedVersionJsonSha1(versionJsonFile)) {
             throw new IllegalStateException("O manifesto local não é um dos manifestos conhecidos pelo motor. SHA-1: " + versionJsonSha1);
         }
         JSONObject version = new JSONObject(readText(versionJsonFile, 64 * 1024 * 1024));
