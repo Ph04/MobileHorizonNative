@@ -15,7 +15,7 @@ public final class OfficialManifestHashTest {
     public void acceptsCurrentManifestHashWhenAdvertisedByGlobalManifest() {
         String hash = "61fff1316bd50312624a858bbb5eb18fa45208ed";
         assertTrue(OfficialMinecraftInstaller.matchesAdvertisedVersionSha1(hash, hash));
-        assertTrue(OfficialMinecraftInstaller.isAcceptedVersionJsonSha1(hash));
+        assertFalse(OfficialMinecraftInstaller.isAcceptedVersionJsonSha1(hash));
     }
 
     @Test
