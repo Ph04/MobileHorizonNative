@@ -248,7 +248,6 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
         }
     }
 
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 """
 content = game.read_text(encoding="utf-8")
 content = content[:idx] + content[idx:].replace(impl_start, injected_impl, 1)
