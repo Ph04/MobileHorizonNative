@@ -340,3 +340,11 @@ pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeIsGam
 ) -> u8 {
     u8::from(horizon_client::android_is_gameplay())
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeHasLoadedWorld(
+    _env: *mut core::ffi::c_void,
+    _class: *mut core::ffi::c_void,
+) -> u8 {
+    u8::from(horizon_client::android_has_world())
+}
