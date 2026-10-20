@@ -37,32 +37,66 @@ replace_once(client_cargo,
     'controllers = ["dep:gilrs", "dep:horizon-dualsense"]',
     'controllers = ["dep:gilrs", "dep:horizon-dualsense"]\nsystem-clipboard = ["dep:arboard"]')
 
-# The pinned source now keeps the reusable clipboard trait in clipboard.rs but
-# the game loop still needs SystemClipboard. Add a compatible implementation;
-# on Android (built with --no-default-features), keep clipboard data in memory.
-clipboard_marker = """/// A clipboard in memory.
-#[derive(Default, Debug)]
-pub struct MemoryClipboard(pub String);"""
-clipboard_system = """/// The game's clipboard. On desktop builds this uses arboard when enabled;
-/// on Android it deliberately falls back to an in-memory clipboard.
-#[derive(Default)]
+# Keep the existing SystemClipboard type, but make its desktop-only backend optional.
+# The Android NativeActivity is built with --no-default-features and uses memory clipboard.
+clipboard_struct_old = """#[derive(Default)]
+pub struct SystemClipboard {
+    system: Option<arboard::Clipboard>,
+    /// The text Horizon last copied (`horizon-ctl status`).
+    copied: Option<String>,
+}"""
+clipboard_struct_new = """#[derive(Default)]
 pub struct SystemClipboard {
     #[cfg(feature = "system-clipboard")]
     system: Option<arboard::Clipboard>,
+    /// The text Horizon last copied (`horizon-ctl status`).
     copied: Option<String>,
-}
+}"""
+replace_once(clipboard, clipboard_struct_old, clipboard_struct_new)
 
-impl SystemClipboard {
-    #[cfg(feature = "system-clipboard")]
+clipboard_method_old = """    fn system(&mut self) -> Option<&mut arboard::Clipboard> {
+        if self.system.is_none() {
+            self.system = arboard::Clipboard::new().ok();
+        }
+        self.system.as_mut()
+    }"""
+clipboard_method_new = """    #[cfg(feature = "system-clipboard")]
     fn system(&mut self) -> Option<&mut arboard::Clipboard> {
         if self.system.is_none() {
             self.system = arboard::Clipboard::new().ok();
         }
         self.system.as_mut()
-    }
-}
+    }"""
+replace_once(clipboard, clipboard_method_old, clipboard_method_new)
 
-impl Clipboard for SystemClipboard {
+clipboard_impl_old = """impl Clipboard for SystemClipboard {
+    fn get(&mut self) -> String {
+        let Some(system) = self.system() else {
+            return self.copied.clone().unwrap_or_default();
+        };
+        match system.get_text() {
+            Ok(text) => text,
+            Err(arboard::Error::ContentNotAvailable) => String::new(),
+            Err(_) => {
+                // A lost connection (a restarted compositor): reconnect next time.
+                self.system = None;
+                String::new()
+            }
+        }
+    }
+    fn set(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.copied = Some(text.to_owned());
+        if let Some(system) = self.system()
+            && system.set_text(text.to_owned()).is_err()
+        {
+            self.system = None;
+        }
+    }
+}"""
+clipboard_impl_new = """impl Clipboard for SystemClipboard {
     fn get(&mut self) -> String {
         #[cfg(feature = "system-clipboard")]
         {
@@ -73,6 +107,7 @@ impl Clipboard for SystemClipboard {
                 Ok(text) => text,
                 Err(arboard::Error::ContentNotAvailable) => String::new(),
                 Err(_) => {
+                    // A lost connection (a restarted compositor): reconnect next time.
                     self.system = None;
                     self.copied.clone().unwrap_or_default()
                 }
@@ -83,7 +118,6 @@ impl Clipboard for SystemClipboard {
             self.copied.clone().unwrap_or_default()
         }
     }
-
     fn set(&mut self, text: &str) {
         if text.is_empty() {
             return;
@@ -98,10 +132,8 @@ impl Clipboard for SystemClipboard {
             }
         }
     }
-}
-
-""" + clipboard_marker
-replace_once(clipboard, clipboard_marker, clipboard_system)
+}"""
+replace_once(clipboard, clipboard_impl_old, clipboard_impl_new)
 
 replace_once(lib, 'pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;',
 '''pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
