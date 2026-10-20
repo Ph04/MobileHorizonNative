@@ -95,6 +95,8 @@ public final class MainActivity extends Activity {
     private boolean pendingAuthPermission;
     private boolean authBusy;
     private boolean launchBusy;
+    private boolean pendingNativeSmokeResult;
+    private boolean pendingNativeClientResult;
     private boolean sessionEnvSet;
     private boolean offlineNameEnvSet;
     private String lastPresentedDeviceCode;
@@ -189,8 +191,25 @@ public final class MainActivity extends Activity {
             try { Os.unsetenv("HORIZON_PLAYER_NAME"); } catch (Exception ignored) {}
             offlineNameEnvSet = false;
         }
+        boolean smokeResultExists = new File(getFilesDir(), "horizon-native-smoke-result.txt").isFile();
+        boolean clientResultExists = new File(getFilesDir(), "horizon-client-result.txt").isFile();
         showNativeSmokeResultIfAvailable();
         showNativeClientResultIfAvailable();
+        if (pendingNativeSmokeResult) {
+            pendingNativeSmokeResult = false;
+            if (!smokeResultExists) {
+                new File(getFilesDir(), "horizon-native-smoke.flag").delete();
+                setStatus("Teste Vulkan terminou sem relatório",
+                        "A atividade nativa voltou sem gravar o resultado do teste. Isso pode indicar uma falha antes do início do código nativo ou encerramento do processo; ainda não identifica a causa. Confira os registros Android se puder.");
+            }
+        }
+        if (pendingNativeClientResult) {
+            pendingNativeClientResult = false;
+            if (!clientResultExists) {
+                setStatus("Cliente nativo encerrou sem relatório",
+                        "A atividade do jogo voltou sem entregar um relatório de inicialização. Isso sugere que o processo nativo terminou antes de registrar o resultado; ainda não é possível atribuir a causa ao Vulkan ou aos recursos do Minecraft.");
+            }
+        }
     }
 
     @Override
@@ -1018,6 +1037,10 @@ public final class MainActivity extends Activity {
             String playerName = OfflineProfile.loadName(this);
             MobilePerformanceProfile.applyInitialOptions(this);
             new File(getFilesDir(), "horizon-client-result.txt").delete();
+            new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
+            new File(getFilesDir(), "horizon-native-smoke.flag").delete();
+            pendingNativeClientResult = true;
+            pendingNativeSmokeResult = false;
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
             Os.setenv("HORIZON_PLAYER_NAME", playerName, true);
@@ -1030,6 +1053,7 @@ public final class MainActivity extends Activity {
                     "Perfil local: " + playerName + "\n" + resourceSummary
                             + "\n\nA primeira abertura pode ter pequenas pausas enquanto o renderer inicializa e cria caches. O perfil não autentica uma conta Microsoft nem concede licença online.");
         } catch (Exception error) {
+            pendingNativeClientResult = false;
             try { Os.unsetenv("HORIZON_PLAYER_NAME"); } catch (Exception ignored) {}
             offlineNameEnvSet = false;
             showRuntimeError("Não foi possível iniciar offline",
@@ -1331,6 +1355,10 @@ public final class MainActivity extends Activity {
                     try {
                         MobilePerformanceProfile.applyInitialOptions(this);
                         new File(getFilesDir(), "horizon-client-result.txt").delete();
+                        new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
+                        new File(getFilesDir(), "horizon-native-smoke.flag").delete();
+                        pendingNativeClientResult = true;
+                        pendingNativeSmokeResult = false;
                         sessionFile = writeOneShotSession(account);
                         Os.setenv("HORIZON_SESSION_FILE", sessionFile.getAbsolutePath(), true);
                         sessionEnvSet = true;
@@ -1340,6 +1368,7 @@ public final class MainActivity extends Activity {
                         setStatus("Iniciando cliente Horizon",
                                 "A sessão oficial foi verificada. A inicialização ainda depende de recursos derivados completos e validação real de gameplay.");
                     } catch (Exception error) {
+                        pendingNativeClientResult = false;
                         try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
                         if (sessionFile != null && sessionFile.exists()) sessionFile.delete();
                         sessionEnvSet = false;
@@ -1457,20 +1486,18 @@ public final class MainActivity extends Activity {
             return;
         }
         File marker = new File(getFilesDir(), "horizon-native-smoke.flag");
-        try (FileOutputStream output = new FileOutputStream(marker, false)) {
-            output.write("vulkan-smoke-v1".getBytes(StandardCharsets.UTF_8));
-            output.getFD().sync();
-        } catch (Exception error) {
-            marker.delete();
-            showRuntimeError("Não foi possível preparar o teste Vulkan", safeMessage(error));
-            return;
-        }
+        marker.delete(); // Legacy flag: smoke mode is now passed explicitly in the Intent.
+        new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
+        new File(getFilesDir(), "horizon-client-result.txt").delete();
+        pendingNativeSmokeResult = true;
+        pendingNativeClientResult = false;
         try {
             startActivity(new Intent(this, NativeGameActivity.class)
-                    .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, false));
-            setStatus("Teste Vulkan iniciado", "Este teste só confirma a criação da superfície e apresentação de um frame, não o carregamento de Minecraft.");
+                    .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, false)
+                    .putExtra(NativeGameActivity.EXTRA_NATIVE_SMOKE_TEST, true));
+            setStatus("Teste Vulkan iniciado", "Este teste cria uma superfície WGPU, solicita um adaptador Vulkan e tenta apresentar um frame de cor simples; não carrega os recursos do Minecraft.");
         } catch (Exception error) {
-            marker.delete();
+            pendingNativeSmokeResult = false;
             showRuntimeError("Não foi possível abrir NativeActivity", safeMessage(error));
         }
     }
