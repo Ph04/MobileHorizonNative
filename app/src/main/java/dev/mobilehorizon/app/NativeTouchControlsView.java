@@ -393,12 +393,7 @@ final class NativeTouchControlsView extends View {
         boolean previous = heldKeys.contains(keyCode);
         if (previous == held) return;
         if (held) heldKeys.add(keyCode); else heldKeys.remove(keyCode);
-        long now = SystemClock.uptimeMillis();
-        KeyEvent key = new KeyEvent(now, now, held ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP,
-                keyCode, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
-                KeyEvent.FLAG_SOFT_KEYBOARD | KeyEvent.FLAG_KEEP_TOUCH_MODE);
-        key.setSource(InputDevice.SOURCE_KEYBOARD);
-        activity.dispatchKeyEvent(key);
+        activity.injectKeyCode(keyCode, held);
     }
 
     private void setMouseButton(int button, boolean held, float x, float y) {

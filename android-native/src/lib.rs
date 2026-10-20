@@ -294,3 +294,16 @@ pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjec
         y: y as f64,
     });
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectKeyCode(
+    _env: *mut core::ffi::c_void,
+    _class: *mut core::ffi::c_void,
+    key_code: i32,
+    pressed: u8,
+) {
+    horizon_client::inject_android_input(horizon_client::AndroidInjectedInput::KeyInput {
+        key_code,
+        pressed: pressed != 0,
+    });
+}

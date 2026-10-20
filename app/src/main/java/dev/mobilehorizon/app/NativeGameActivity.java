@@ -18,6 +18,7 @@ public final class NativeGameActivity extends NativeActivity {
     private static native void nativeInjectCursorMove(float x, float y);
     private static native void nativeInjectMouseButton(int button, boolean pressed, float x, float y);
     private static native void nativeInjectMouseScroll(float amount, float x, float y);
+    private static native void nativeInjectKeyCode(int keyCode, boolean pressed);
 
     static {
         // NativeActivity later opens the same bundled library for android_main; loading
@@ -147,6 +148,10 @@ public final class NativeGameActivity extends NativeActivity {
 
     void injectMouseScroll(float amount, float x, float y) {
         nativeInjectMouseScroll(amount, x, y);
+    }
+
+    void injectKeyCode(int keyCode, boolean pressed) {
+        nativeInjectKeyCode(keyCode, pressed);
     }
 
     @Override

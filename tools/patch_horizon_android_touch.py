@@ -143,6 +143,8 @@ pub enum AndroidInjectedInput {
     CursorMoved { x: f64, y: f64 },
     MouseButton { button: u32, pressed: bool, x: f64, y: f64 },
     MouseScroll { amount: f32, x: f64, y: f64 },
+    /// Android KeyEvent key code and edge state from the touchscreen control layer.
+    KeyInput { key_code: i32, pressed: bool },
 }
 
 static HORIZON_ANDROID_EVENT_LOOP_PROXY:
@@ -265,6 +267,65 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                     phase: TouchPhase::Moved,
                 });
             }
+            horizon_client::AndroidInjectedInput::KeyInput { key_code, pressed } => {
+                // Activity.dispatchKeyEvent is not delivered to the NativeActivity's
+                // Winit queue. Translate Android key codes at the native input boundary.
+                let key = match key_code {
+                    4 | 111 => Some(KeyCode::Escape), // BACK / ESCAPE
+                    7 => Some(KeyCode::Digit0),
+                    8 => Some(KeyCode::Digit1),
+                    9 => Some(KeyCode::Digit2),
+                    10 => Some(KeyCode::Digit3),
+                    11 => Some(KeyCode::Digit4),
+                    12 => Some(KeyCode::Digit5),
+                    13 => Some(KeyCode::Digit6),
+                    14 => Some(KeyCode::Digit7),
+                    15 => Some(KeyCode::Digit8),
+                    16 => Some(KeyCode::Digit9),
+                    19 => Some(KeyCode::ArrowUp),
+                    20 => Some(KeyCode::ArrowDown),
+                    21 => Some(KeyCode::ArrowLeft),
+                    22 => Some(KeyCode::ArrowRight),
+                    29 => Some(KeyCode::KeyA),
+                    32 => Some(KeyCode::KeyD),
+                    33 => Some(KeyCode::KeyE),
+                    34 => Some(KeyCode::KeyF),
+                    45 => Some(KeyCode::KeyQ),
+                    47 => Some(KeyCode::KeyS),
+                    48 => Some(KeyCode::KeyT),
+                    51 => Some(KeyCode::KeyW),
+                    57 => Some(KeyCode::AltLeft),
+                    58 => Some(KeyCode::AltRight),
+                    59 => Some(KeyCode::ShiftLeft),
+                    60 => Some(KeyCode::ShiftRight),
+                    61 => Some(KeyCode::Tab),
+                    62 => Some(KeyCode::Space),
+                    66 => Some(KeyCode::Enter),
+                    67 => Some(KeyCode::Backspace),
+                    112 => Some(KeyCode::Delete),
+                    113 => Some(KeyCode::ControlLeft),
+                    114 => Some(KeyCode::ControlRight),
+                    135 => Some(KeyCode::F5),
+                    160 => Some(KeyCode::NumpadEnter),
+                    _ => None,
+                };
+                if let Some(key) = key {
+                    if pressed {
+                        self.physical_keys.insert(key);
+                    } else {
+                        self.physical_keys.remove(&key);
+                    }
+                    self.last_input = Instant::now();
+                    let result = match self.settings.keys.translate(key) {
+                        Some(Ok(mapped_key)) => self.mapped_key(mapped_key, pressed, false),
+                        Some(Err(button)) if self.screen == Screen::Playing => self.play_mouse(button, pressed),
+                        _ => Ok(()),
+                    };
+                    if let Err(error) = result {
+                        log::warn!("Horizon: Android touchscreen key input failed: {error}");
+                    }
+                }
+            }
         }
     }
 
@@ -373,7 +434,22 @@ fn run_event_loop(mut game: Game<'_>) -> Result<()> {
     let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
     horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
     event_loop.run_app(&mut game)?;""")
-replace_once(game, '    EventLoop::new()?.run_app(&mut app)?;', '    new_event_loop()?.run_app(&mut app)?;')
+replace_once(game,
+    'impl ApplicationHandler for App {\n    fn resumed(&mut self, event_loop: &ActiveEventLoop) {',
+    '''impl ApplicationHandler<horizon_client::AndroidInjectedInput> for App {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: horizon_client::AndroidInjectedInput) {
+        if let App::Ready(game) = self {
+            game.user_event(event_loop, event);
+        }
+        // Events during resource loading are intentionally ignored.
+    }
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {''')
+
+replace_once(game,
+    '    EventLoop::new()?.run_app(&mut app)?;',
+    '''    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
+    horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
+    event_loop.run_app(&mut app)?;''')
 
 replace_once(workspace_cargo, '"crates/horizon-client",',
              '"crates/horizon-client", "crates/mobilehorizon-android",')
