@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="cursor_gesture_service_label">Ponte de toque do MobileHorizon</string>
-    <string name="cursor_gesture_service_description">Envia um toque na posição escolhida pelo cursor virtual para permitir clicar no menu do jogo. Não lê o conteúdo da tela nem registra texto digitado.</string>
-</resources>
