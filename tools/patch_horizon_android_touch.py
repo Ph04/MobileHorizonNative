@@ -11,9 +11,11 @@ lib = root / "crates/horizon-client/src/lib.rs"
 audio = root / "crates/horizon-client/src/audio.rs"
 client_cargo = root / "crates/horizon-client/Cargo.toml"
 clipboard = root / "crates/horizon-client/src/clipboard.rs"
+pad_menu = root / "crates/horizon-client/src/game/pad_menu.rs"
+startup_menu = root / "crates/horizon-client/src/game/startup_menu.rs"
 workspace_cargo = root / "Cargo.toml"
 
-for path in (game, lib, audio, client_cargo, clipboard, workspace_cargo):
+for path in (game, lib, audio, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
     if not path.is_file():
         raise SystemExit(f"Missing pinned Horizon source file: {path}")
 
@@ -215,6 +217,56 @@ clipboard_impl_new = """impl Clipboard for SystemClipboard {
 }"""
 replace_once(clipboard, clipboard_impl_old, clipboard_impl_new)
 
+# The Android keyboard can edit title/menu fields before a world exists, including world names
+# and multiplayer names/addresses. Use Horizon's own focused-field editing APIs.
+replace_once(pad_menu,
+    "    fn pad_osk_output(&mut self, out: osk::Output) {",
+    "    pub(super) fn pad_osk_output(&mut self, out: osk::Output) {")
+
+replace_once(startup_menu,
+    "    pub(super) fn menu_event(",
+    """    pub(super) fn android_keyboard_text(&mut self, text: &str, submit: bool) {
+        if self.menu.pending.is_some() {
+            return;
+        }
+        if self.menu.options_open {
+            if let Some(gui) = self.gui.as_ref() {
+                self.menu.options.type_text(&gui.atlas, text);
+            }
+            return;
+        }
+        let (Some(title), clipboard) =
+            (self.menu.title.as_mut(), &mut self.menu.clipboard)
+        else {
+            return;
+        };
+        if title.focused_field().is_none() {
+            return;
+        }
+        if title.has_caret_field() {
+            title.field_shortcut(
+                horizon_client::clipboard::EditShortcut::SelectAll,
+                clipboard,
+            );
+            if text.is_empty() {
+                title.field_key(winit::keyboard::KeyCode::Backspace, false, false);
+            } else {
+                title.type_text(text);
+            }
+        } else {
+            if let Some((_, value, _)) = title.focused_field() {
+                value.clear();
+            }
+            title.type_text(text);
+        }
+        if submit {
+            title.confirm_edit();
+        }
+        self.save_menu_address();
+    }
+
+    pub(super) fn menu_event(""")
+
 replace_once(lib, 'pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;',
 '''pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -227,8 +279,8 @@ pub enum AndroidInjectedInput {
     /// Relative movement from a finger drag; consumed as DeviceEvent::MouseMotion when captured.
     MouseMotion { dx: f64, dy: f64 },
     KeyInput { key_code: i32, pressed: bool },
-    /// Full line entered with Android's software keyboard.
-    ChatText { text: String },
+    /// Text from Android's keyboard and whether to commit the focused editor.
+    KeyboardText { text: String, submit: bool },
 }
 
 static HORIZON_ANDROID_GAMEPLAY: std::sync::atomic::AtomicBool =
@@ -471,13 +523,51 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                     }
                 }
             }
-            horizon_client::AndroidInjectedInput::ChatText { text } => {
-                if self.player.is_some() && self.title.is_none() && self.screen != Screen::Chat {
-                    self.open_chat("");
-                }
-                if self.screen == Screen::Chat && !text.is_empty() {
-                    self.chat_type(&text);
-                    self.chat_key_code(KeyCode::Enter, None);
+            horizon_client::AndroidInjectedInput::KeyboardText { text, submit } => {
+                if self.title.is_some()
+                    && !matches!(self.screen, Screen::Options | Screen::WorldOptions)
+                {
+                    let (Some(title), clipboard) =
+                        (self.title.as_mut(), &mut self.clipboard)
+                    else { return; };
+                    if title.focused_field().is_some() {
+                        if title.has_caret_field() {
+                            title.field_shortcut(
+                                horizon_client::clipboard::EditShortcut::SelectAll,
+                                clipboard,
+                            );
+                            if text.is_empty() {
+                                title.field_key(KeyCode::Backspace, false, false);
+                            } else {
+                                title.type_text(&text);
+                            }
+                        } else {
+                            if let Some((_, value, _)) = title.focused_field() {
+                                value.clear();
+                            }
+                            title.type_text(&text);
+                        }
+                        if submit {
+                            title.confirm_edit();
+                        }
+                    }
+                } else if self.screen == Screen::Playing
+                    && self.player.is_some()
+                    && self.sign_edit.is_none()
+                    && self.book.is_none()
+                {
+                    if !text.trim().is_empty() {
+                        self.open_chat("");
+                        self.chat_type(&text);
+                        if submit {
+                            self.chat_key_code(KeyCode::Enter, None);
+                        }
+                    }
+                } else {
+                    self.pad_osk_output(horizon_client::osk::Output::Text(text.clone()));
+                    if submit {
+                        self.pad_osk_output(horizon_client::osk::Output::Enter);
+                    }
                 }
             }
         }
@@ -627,10 +717,13 @@ replace_once(game,
     'impl ApplicationHandler for App {\n    fn resumed(&mut self, event_loop: &ActiveEventLoop) {',
     '''impl ApplicationHandler<horizon_client::AndroidInjectedInput> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: horizon_client::AndroidInjectedInput) {
-        if let App::Ready(game) = self {
-            game.user_event(event_loop, event);
+        match (self, event) {
+            (App::Loading(loading), horizon_client::AndroidInjectedInput::KeyboardText { text, submit }) => {
+                loading.android_keyboard_text(&text, submit);
+            }
+            (App::Ready(game), event) => game.user_event(event_loop, event),
+            (App::Loading(_), _) => {}
         }
-        // Events during resource loading are intentionally ignored.
     }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {''')
 

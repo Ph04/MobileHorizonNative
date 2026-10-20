@@ -437,33 +437,44 @@ final class NativeTouchControlsView extends View {
     }
 
     private void showKeyboardDialog() {
-        if (!activity.hasLoadedWorld()) {
-            Toast.makeText(activity, "Entre em um mundo para escrever no chat.", Toast.LENGTH_SHORT).show();
-            return;
-        }
         EditText input = new EditText(activity);
         input.setSingleLine(true);
-        input.setHint("Mensagem ou comando (use /)");
+        input.setHint("Texto para o campo selecionado ou mensagem");
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE
                 | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding((int) dp(20), (int) dp(8), (int) dp(20), (int) dp(4));
         panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
+
         AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle("Teclado do Minecraft")
                 .setView(panel)
                 .setNegativeButton("Cancelar", (d, which) -> { })
-                .setPositiveButton("Enviar", (d, which) -> {
-                    String text = input.getText().toString();
-                    if (!text.trim().isEmpty()) activity.injectChatText(text);
-                })
+                .setPositiveButton("Aplicar / enviar", (d, which) ->
+                        activity.injectKeyboardText(input.getText().toString()))
                 .create();
+
+        input.setOnEditorActionListener((view, actionId, event) -> {
+            boolean enterKey = event != null
+                    && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                    && event.getAction() == KeyEvent.ACTION_UP;
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+                    || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+                    || enterKey) {
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+                return true;
+            }
+            return false;
+        });
+
         dialog.setOnShowListener(ignored -> {
             input.requestFocus();
             input.postDelayed(() -> {
-                InputMethodManager manager = (InputMethodManager) activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+                InputMethodManager manager = (InputMethodManager)
+                        activity.getSystemService(Context.INPUT_METHOD_SERVICE);
                 if (manager != null) manager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
             }, 120);
         });

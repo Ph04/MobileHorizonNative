@@ -20,7 +20,7 @@ public final class NativeGameActivity extends NativeActivity {
     private static native void nativeInjectMouseButton(int button, boolean pressed, float x, float y);
     private static native void nativeInjectMouseScroll(float amount, float x, float y);
     private static native void nativeInjectKeyCode(int keyCode, boolean pressed);
-    private static native void nativeInjectChatText(String text);
+    private static native void nativeInjectKeyboardText(String text, boolean submit);
     private static native boolean nativeIsGameplay();
     private static native boolean nativeHasLoadedWorld();
 
@@ -162,8 +162,8 @@ public final class NativeGameActivity extends NativeActivity {
         nativeInjectKeyCode(keyCode, pressed);
     }
 
-    void injectChatText(String text) {
-        nativeInjectChatText(text == null ? "" : text);
+    void injectKeyboardText(String text) {
+        nativeInjectKeyboardText(text == null ? "" : text, true);
     }
 
     boolean isGameplayMode() {

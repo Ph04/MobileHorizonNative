@@ -161,6 +161,11 @@ fn run_vulkan_smoke_test() -> std::result::Result<String, String> {
 
 #[unsafe(no_mangle)]
 fn android_main(app: winit::platform::android::activity::AndroidApp) {
+    // CPAL's Android AAudio backend needs the VM and Activity when launched through
+    // NativeActivity rather than cargo-apk. Initialize this before Horizon opens audio.
+    unsafe {
+        ndk_context::initialize_android_context(app.vm_as_ptr(), app.activity_as_ptr());
+    }
     horizon_client::set_android_app(app);
     horizon_client::telemetry::mark_start();
 
@@ -323,14 +328,18 @@ pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjec
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectChatText(
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectKeyboardText(
     mut env: JNIEnv<'_>,
     _class: JClass<'_>,
     value: JString<'_>,
+    submit: u8,
 ) {
     let Ok(java_text) = env.get_string(&value) else { return; };
     let text = java_text.to_string_lossy().into_owned();
-    horizon_client::inject_android_input(horizon_client::AndroidInjectedInput::ChatText { text });
+    horizon_client::inject_android_input(horizon_client::AndroidInjectedInput::KeyboardText {
+        text,
+        submit: submit != 0,
+    });
 }
 
 #[unsafe(no_mangle)]
