@@ -220,25 +220,31 @@ final class NativeTouchControlsView extends View {
         boolean pressed = pressedControls.contains(spec.id);
         float r = spec.radius;
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.argb(Math.round(255 * opacity * (pressed ? 0.91f : 0.67f)),
-                pressed ? 30 : 17, pressed ? 112 : 31, pressed ? 196 : 51));
-        canvas.drawCircle(spec.x, spec.y, r, paint);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(Math.max(dp(8), r * 0.48f));
+        paint.setFakeBoldText(true);
+        float halfWidth = Math.max(r * 0.86f, paint.measureText(spec.label) / 2f + dp(7));
+        float halfHeight = r * 0.76f;
+        RectF bounds = new RectF(spec.x - halfWidth, spec.y - halfHeight,
+                spec.x + halfWidth, spec.y + halfHeight);
+        float corner = Math.min(dp(10), halfHeight * 0.55f);
+        paint.setColor(Color.argb(Math.round(255 * opacity * (pressed ? 0.92f : 0.70f)),
+                pressed ? 29 : 15, pressed ? 105 : 28, pressed ? 183 : 46));
+        canvas.drawRoundRect(bounds, corner, corner, paint);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(editingControls ? 2.2f : 1.5f));
         paint.setColor(Color.argb(Math.round(255 * opacity * (pressed ? 1f : 0.9f)),
-                pressed ? 115 : 116, pressed ? 205 : 169, 255));
-        canvas.drawCircle(spec.x, spec.y, r * 0.94f, paint);
+                pressed ? 115 : 105, pressed ? 210 : 175, 255));
+        canvas.drawRoundRect(bounds, corner, corner, paint);
         if (editingControls) {
-            paint.setStyle(Paint.Style.STROKE);
+            RectF selection = new RectF(bounds.left - dp(3), bounds.top - dp(3),
+                    bounds.right + dp(3), bounds.bottom + dp(3));
             paint.setStrokeWidth(dp(1f));
             paint.setColor(Color.argb(210, 115, 205, 255));
-            canvas.drawCircle(spec.x, spec.y, r + dp(3), paint);
+            canvas.drawRoundRect(selection, corner + dp(2), corner + dp(2), paint);
         }
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.WHITE);
-        paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTextSize(Math.max(dp(8), spec.radius * 0.48f));
-        paint.setFakeBoldText(true);
         Paint.FontMetrics metrics = paint.getFontMetrics();
         canvas.drawText(spec.label, spec.x, spec.y - (metrics.ascent + metrics.descent) / 2f, paint);
         paint.setFakeBoldText(false);
