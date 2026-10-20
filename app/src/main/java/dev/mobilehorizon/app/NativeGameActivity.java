@@ -2,18 +2,16 @@ package dev.mobilehorizon.app;
 
 import android.app.NativeActivity;
 import android.content.SharedPreferences;
-import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.provider.Settings;
-import android.widget.Toast;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Gravity;
+import android.view.InputDevice;
+import android.view.MotionEvent;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.PopupWindow;
@@ -25,18 +23,6 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
     private NativeTouchControlsView touchControls;
     private PopupWindow touchControlsPopup;
-    private boolean gestureResultReceiverRegistered;
-    private boolean touchInjectionPending;
-    private boolean warnedAccessibilityUnavailable;
-
-    private final BroadcastReceiver touchInjectionResultReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(android.content.Context context, Intent intent) {
-            if (intent == null || !CursorGestureAccessibilityService.ACTION_TAP_FINISHED.equals(intent.getAction())) return;
-            touchInjectionPending = false;
-            getWindow().getDecorView().postDelayed(NativeGameActivity.this::showTouchControlsPopupWhenAttached, 90);
-        }
-    };
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // Horizon resolves options, saves, logs and prepared resources from these paths.
@@ -81,14 +67,6 @@ public final class NativeGameActivity extends NativeActivity {
         window.setNavigationBarColor(Color.TRANSPARENT);
         applyImmersiveMode();
 
-        IntentFilter injectedTapFilter = new IntentFilter(CursorGestureAccessibilityService.ACTION_TAP_FINISHED);
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(touchInjectionResultReceiver, injectedTapFilter, RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(touchInjectionResultReceiver, injectedTapFilter);
-        }
-        gestureResultReceiverRegistered = true;
-
         boolean requested = getIntent() == null
                 || getIntent().getBooleanExtra(EXTRA_TOUCH_CONTROLS, true);
         SharedPreferences prefs = getSharedPreferences(NativeTouchControlsView.PREFERENCES, MODE_PRIVATE);
@@ -124,7 +102,7 @@ public final class NativeGameActivity extends NativeActivity {
         PopupWindow popup = touchControlsPopup;
         View decor = getWindow().getDecorView();
         if (popup == null || popup.isShowing() || isFinishing() || isDestroyed()
-                || touchInjectionPending || decor.getWindowToken() == null) return;
+                || decor.getWindowToken() == null) return;
         try {
             popup.showAtLocation(decor, Gravity.TOP | Gravity.START, 0, 0);
         } catch (WindowManager.BadTokenException error) {
@@ -132,45 +110,75 @@ public final class NativeGameActivity extends NativeActivity {
         }
     }
 
-    /** Requests a real Android touchscreen tap at the virtual cursor's screen coordinate. */
+    /**
+     * Dispatches a short touch sequence inside this Activity instead of asking Android
+     * Accessibility to synthesize a system-wide gesture. The native Horizon patch maps
+     * NativeActivity touch contacts to mouse clicks.
+     */
     void requestTouchAtCursor(float x, float y, boolean rightClick) {
         if (touchControls == null || touchControlsPopup == null || isFinishing() || isDestroyed()) return;
-        if (!isCursorGestureServiceEnabled()) {
-            if (!warnedAccessibilityUnavailable) {
-                warnedAccessibilityUnavailable = true;
-                Toast.makeText(this,
-                        "Ative “Ponte de toque do MobileHorizon” nas Configurações de acessibilidade para clicar no menu.",
-                        Toast.LENGTH_LONG).show();
-            }
-            return;
+
+        View decor = getWindow().getDecorView();
+        int[] overlayLocation = new int[2];
+        int[] windowLocation = new int[2];
+        touchControls.getLocationOnScreen(overlayLocation);
+        decor.getLocationOnScreen(windowLocation);
+        float targetX = overlayLocation[0] + x - windowLocation[0];
+        float targetY = overlayLocation[1] + y - windowLocation[1];
+        targetX = Math.max(0f, Math.min(targetX, decor.getWidth() - 1f));
+        targetY = Math.max(0f, Math.min(targetY, decor.getHeight() - 1f));
+
+        long downTime = SystemClock.uptimeMillis();
+        dispatchCursorTouch(downTime, MotionEvent.ACTION_DOWN, targetX, targetY, false);
+        if (rightClick) {
+            int pointerDown = MotionEvent.ACTION_POINTER_DOWN
+                    | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT);
+            int pointerUp = MotionEvent.ACTION_POINTER_UP
+                    | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT);
+            dispatchCursorTouch(downTime, pointerDown, targetX, targetY, true);
+            dispatchCursorTouch(downTime, pointerUp, targetX, targetY, true);
         }
-        if (touchInjectionPending) return;
-
-        int[] location = new int[2];
-        touchControls.getLocationOnScreen(location);
-        final float screenX = location[0] + x;
-        final float screenY = location[1] + y;
-        touchInjectionPending = true;
-        if (touchControlsPopup.isShowing()) touchControlsPopup.dismiss();
-
-        // Let WindowManager remove the overlay before the service injects the tap.
-        getWindow().getDecorView().postDelayed(() -> {
-            Intent request = new Intent(CursorGestureAccessibilityService.ACTION_INJECT_TAP);
-            request.setPackage(getPackageName());
-            request.putExtra(CursorGestureAccessibilityService.EXTRA_X, screenX);
-            request.putExtra(CursorGestureAccessibilityService.EXTRA_Y, screenY);
-            request.putExtra(CursorGestureAccessibilityService.EXTRA_RIGHT, rightClick);
-            sendBroadcast(request);
-        }, 90);
+        dispatchCursorTouch(downTime, MotionEvent.ACTION_UP, targetX, targetY, false);
     }
 
-    private boolean isCursorGestureServiceEnabled() {
-        String enabled = Settings.Secure.getString(getContentResolver(),
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-        if (enabled == null || enabled.isEmpty()) return false;
-        String component = new ComponentName(this, CursorGestureAccessibilityService.class).flattenToString();
-        return enabled.toLowerCase(java.util.Locale.ROOT)
-                .contains(component.toLowerCase(java.util.Locale.ROOT));
+    private void dispatchCursorTouch(long downTime, int action, float x, float y, boolean secondPointer) {
+        int count = secondPointer ? 2 : 1;
+        MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[count];
+        MotionEvent.PointerCoords[] coordinates = new MotionEvent.PointerCoords[count];
+        for (int i = 0; i < count; i++) {
+            MotionEvent.PointerProperties pointer = new MotionEvent.PointerProperties();
+            pointer.id = i;
+            pointer.toolType = MotionEvent.TOOL_TYPE_FINGER;
+            properties[i] = pointer;
+
+            MotionEvent.PointerCoords point = new MotionEvent.PointerCoords();
+            point.x = x + (i == 1 ? 8f : 0f);
+            point.y = y + (i == 1 ? 8f : 0f);
+            point.pressure = 1f;
+            point.size = 1f;
+            coordinates[i] = point;
+        }
+
+        MotionEvent event = MotionEvent.obtain(
+                downTime,
+                SystemClock.uptimeMillis(),
+                action,
+                count,
+                properties,
+                coordinates,
+                0,
+                0,
+                1f,
+                1f,
+                0,
+                0,
+                InputDevice.SOURCE_TOUCHSCREEN,
+                0);
+        try {
+            dispatchTouchEvent(event);
+        } finally {
+            event.recycle();
+        }
     }
 
     @Override
@@ -181,10 +189,6 @@ public final class NativeGameActivity extends NativeActivity {
 
     @Override
     protected void onDestroy() {
-        if (gestureResultReceiverRegistered) {
-            try { unregisterReceiver(touchInjectionResultReceiver); } catch (IllegalArgumentException ignored) {}
-            gestureResultReceiverRegistered = false;
-        }
         if (touchControls != null) touchControls.releaseAllInputs();
         if (touchControlsPopup != null) {
             try { touchControlsPopup.dismiss(); } catch (IllegalArgumentException ignored) {}
