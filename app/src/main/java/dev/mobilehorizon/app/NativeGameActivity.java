@@ -20,6 +20,8 @@ public final class NativeGameActivity extends NativeActivity {
     private static native void nativeInjectMouseButton(int button, boolean pressed, float x, float y);
     private static native void nativeInjectMouseScroll(float amount, float x, float y);
     private static native void nativeInjectKeyCode(int keyCode, boolean pressed);
+    private static native void nativeInjectChatText(String text);
+    private static native boolean nativeIsGameplay();
 
     static {
         // NativeActivity later opens the same bundled library for android_main; loading
@@ -157,6 +159,15 @@ public final class NativeGameActivity extends NativeActivity {
 
     void injectKeyCode(int keyCode, boolean pressed) {
         nativeInjectKeyCode(keyCode, pressed);
+    }
+
+    void injectChatText(String text) {
+        nativeInjectChatText(text == null ? "" : text);
+    }
+
+    boolean isGameplayMode() {
+        try { return nativeIsGameplay(); }
+        catch (UnsatisfiedLinkError error) { return false; }
     }
 
     @Override
