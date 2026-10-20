@@ -405,38 +405,15 @@ final class NativeTouchControlsView extends View {
         int previous = mouseButtons;
         if (held) mouseButtons |= button; else mouseButtons &= ~button;
         if (previous == mouseButtons) return;
-
-        // A tap from the virtual cursor is routed locally by NativeGameActivity.
-        // The method deliberately avoids the system-wide Accessibility gesture API.
-        if (!held && (button == MotionEvent.BUTTON_PRIMARY
-                || button == MotionEvent.BUTTON_SECONDARY
-                || button == MotionEvent.BUTTON_TERTIARY)) {
-            activity.requestTouchAtCursor(x, y, button != MotionEvent.BUTTON_PRIMARY);
-        }
+        activity.injectMouseButton(button, held, x, y);
     }
 
     private void sendMouseMotion(float x, float y) {
-        // The virtual cursor is drawn by this View. A synthetic hover event dispatched
-        // from Java does not enter NativeActivity's native InputQueue.
+        activity.injectCursorMove(x, y);
     }
 
     private void sendMouseScroll(float amount) {
-        long now = SystemClock.uptimeMillis();
-        MotionEvent.PointerProperties properties = new MotionEvent.PointerProperties();
-        properties.id = 0;
-        properties.toolType = MotionEvent.TOOL_TYPE_MOUSE;
-        MotionEvent.PointerCoords coordinates = new MotionEvent.PointerCoords();
-        coordinates.x = virtualMouseX;
-        coordinates.y = virtualMouseY;
-        coordinates.pressure = 1f;
-        coordinates.size = 1f;
-        coordinates.setAxisValue(MotionEvent.AXIS_VSCROLL, amount);
-        MotionEvent event = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1,
-                new MotionEvent.PointerProperties[]{properties},
-                new MotionEvent.PointerCoords[]{coordinates},
-                0, mouseButtons, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0);
-        activity.dispatchGenericMotionEvent(event);
-        event.recycle();
+        activity.injectMouseScroll(amount, virtualMouseX, virtualMouseY);
     }
 
     /** Creates a mouse event with its button state set at construction time (MotionEvent has no public setter). */
