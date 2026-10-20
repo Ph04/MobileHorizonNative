@@ -6,18 +6,25 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
-import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Gravity;
-import android.view.InputDevice;
-import android.view.MotionEvent;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.PopupWindow;
 
 /** Fullscreen NativeActivity wrapper with optional Android touch controls. */
 public final class NativeGameActivity extends NativeActivity {
+    private static native void nativeInjectCursorMove(float x, float y);
+    private static native void nativeInjectMouseButton(int button, boolean pressed, float x, float y);
+    private static native void nativeInjectMouseScroll(float amount, float x, float y);
+
+    static {
+        // NativeActivity later opens the same bundled library for android_main; loading
+        // it in this process also makes the input bridge's JNI symbols callable from Java.
+        System.loadLibrary("horizon_android");
+    }
+
     static final String EXTRA_TOUCH_CONTROLS = "dev.mobilehorizon.app.EXTRA_TOUCH_CONTROLS";
     static final String EXTRA_PLAYER_NAME = "dev.mobilehorizon.app.EXTRA_PLAYER_NAME";
     static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
@@ -110,75 +117,16 @@ public final class NativeGameActivity extends NativeActivity {
         }
     }
 
-    /**
-     * Dispatches a short touch sequence inside this Activity instead of asking Android
-     * Accessibility to synthesize a system-wide gesture. The native Horizon patch maps
-     * NativeActivity touch contacts to mouse clicks.
-     */
-    void requestTouchAtCursor(float x, float y, boolean rightClick) {
-        if (touchControls == null || touchControlsPopup == null || isFinishing() || isDestroyed()) return;
-
-        View decor = getWindow().getDecorView();
-        int[] overlayLocation = new int[2];
-        int[] windowLocation = new int[2];
-        touchControls.getLocationOnScreen(overlayLocation);
-        decor.getLocationOnScreen(windowLocation);
-        float targetX = overlayLocation[0] + x - windowLocation[0];
-        float targetY = overlayLocation[1] + y - windowLocation[1];
-        targetX = Math.max(0f, Math.min(targetX, decor.getWidth() - 1f));
-        targetY = Math.max(0f, Math.min(targetY, decor.getHeight() - 1f));
-
-        long downTime = SystemClock.uptimeMillis();
-        dispatchCursorTouch(downTime, MotionEvent.ACTION_DOWN, targetX, targetY, false);
-        if (rightClick) {
-            int pointerDown = MotionEvent.ACTION_POINTER_DOWN
-                    | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT);
-            int pointerUp = MotionEvent.ACTION_POINTER_UP
-                    | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT);
-            dispatchCursorTouch(downTime, pointerDown, targetX, targetY, true);
-            dispatchCursorTouch(downTime, pointerUp, targetX, targetY, true);
-        }
-        dispatchCursorTouch(downTime, MotionEvent.ACTION_UP, targetX, targetY, false);
+    void injectCursorMove(float x, float y) {
+        nativeInjectCursorMove(x, y);
     }
 
-    private void dispatchCursorTouch(long downTime, int action, float x, float y, boolean secondPointer) {
-        int count = secondPointer ? 2 : 1;
-        MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[count];
-        MotionEvent.PointerCoords[] coordinates = new MotionEvent.PointerCoords[count];
-        for (int i = 0; i < count; i++) {
-            MotionEvent.PointerProperties pointer = new MotionEvent.PointerProperties();
-            pointer.id = i;
-            pointer.toolType = MotionEvent.TOOL_TYPE_FINGER;
-            properties[i] = pointer;
+    void injectMouseButton(int button, boolean pressed, float x, float y) {
+        nativeInjectMouseButton(button, pressed, x, y);
+    }
 
-            MotionEvent.PointerCoords point = new MotionEvent.PointerCoords();
-            point.x = x + (i == 1 ? 8f : 0f);
-            point.y = y + (i == 1 ? 8f : 0f);
-            point.pressure = 1f;
-            point.size = 1f;
-            coordinates[i] = point;
-        }
-
-        MotionEvent event = MotionEvent.obtain(
-                downTime,
-                SystemClock.uptimeMillis(),
-                action,
-                count,
-                properties,
-                coordinates,
-                0,
-                0,
-                1f,
-                1f,
-                0,
-                0,
-                InputDevice.SOURCE_TOUCHSCREEN,
-                0);
-        try {
-            dispatchTouchEvent(event);
-        } finally {
-            event.recycle();
-        }
+    void injectMouseScroll(float amount, float x, float y) {
+        nativeInjectMouseScroll(amount, x, y);
     }
 
     @Override
