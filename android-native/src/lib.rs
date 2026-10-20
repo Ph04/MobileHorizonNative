@@ -135,7 +135,7 @@ fn render_vulkan_smoke_frame(event_loop: &ActiveEventLoop) -> std::result::Resul
     queue.present(frame);
 
     Ok(format!(
-        "PASS: Vulkan/WGPU inicializado; adaptador='{}'; driver='{} {}'; superfície configurada e um frame enviado para apresentação.",
+        "Vulkan/WGPU inicializado; adaptador='{}'; driver='{} {}'; superfície configurada e um frame enviado para apresentação.",
         info.name, info.driver, info.driver_info
     ))
 }
