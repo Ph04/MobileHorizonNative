@@ -8,11 +8,12 @@ root = Path(sys.argv[1])
 repo_root = Path(__file__).resolve().parents[1]
 game = root / "crates/horizon-client/src/game.rs"
 lib = root / "crates/horizon-client/src/lib.rs"
+audio = root / "crates/horizon-client/src/audio.rs"
 client_cargo = root / "crates/horizon-client/Cargo.toml"
 clipboard = root / "crates/horizon-client/src/clipboard.rs"
 workspace_cargo = root / "Cargo.toml"
 
-for path in (game, lib, client_cargo, clipboard, workspace_cargo):
+for path in (game, lib, audio, client_cargo, clipboard, workspace_cargo):
     if not path.is_file():
         raise SystemExit(f"Missing pinned Horizon source file: {path}")
 
@@ -22,6 +23,85 @@ def replace_once(path: Path, old: str, new: str) -> None:
     if count != 1:
         raise SystemExit(f"{path}: expected one replacement for {old[:90]!r}, found {count}")
     path.write_text(content.replace(old, new, 1), encoding="utf-8")
+
+replace_once(audio,
+    """#[cfg(feature = "audio")]
+fn open_device(
+    device: &cpal::Device,
+    mixer: Arc<Mutex<Mixer>>,
+) -> Result<(cpal::Stream, cpal::SupportedStreamConfig)> {
+    use cpal::SampleFormat as F;
+    let config = device.default_output_config()?;
+    let stream = match config.sample_format() {
+        F::F32 => build_stream::<f32>(device, &config, mixer),
+        F::F64 => build_stream::<f64>(device, &config, mixer),
+        F::I16 => build_stream::<i16>(device, &config, mixer),
+        F::I32 => build_stream::<i32>(device, &config, mixer),
+        F::I8 => build_stream::<i8>(device, &config, mixer),
+        F::U16 => build_stream::<u16>(device, &config, mixer),
+        F::U32 => build_stream::<u32>(device, &config, mixer),
+        F::U8 => build_stream::<u8>(device, &config, mixer),
+        other => Err(format!("unsupported sample format {other}").into()),
+    }?;
+    stream.play()?;
+    Ok((stream, config))
+}""",
+    """#[cfg(feature = "audio")]
+fn open_device(
+    device: &cpal::Device,
+    mixer: Arc<Mutex<Mixer>>,
+) -> Result<(cpal::Stream, cpal::SupportedStreamConfig)> {
+    use cpal::SampleFormat as F;
+
+    // Android may reject the preferred config: try the device's supported formats/rates.
+    let preferred_rate = |range: &cpal::SupportedStreamConfigRange| {
+        let min = range.min_sample_rate().0;
+        let max = range.max_sample_rate().0;
+        for rate in [48_000u32, 44_100, 32_000, 22_050] {
+            if min <= rate && rate <= max { return rate; }
+        }
+        max
+    };
+    let mut configs: Vec<_> = device.supported_output_configs()?.collect();
+    configs.sort_by_key(|range| {
+        let format_priority = match range.sample_format() { F::F32 => 0u8, F::I16 => 1u8, _ => 2u8 };
+        let channel_priority = if range.channels() >= 2 { 0u8 } else { 1u8 };
+        (format_priority, preferred_rate(range).abs_diff(48_000), channel_priority)
+    });
+
+    let mut errors = Vec::new();
+    for range in configs {
+        let rate = preferred_rate(&range);
+        let config = range.with_sample_rate(cpal::SampleRate(rate));
+        let description = format!("{} Hz, {} channel(s), {}", config.sample_rate().0, config.channels(), config.sample_format());
+        let stream = match config.sample_format() {
+            F::F32 => build_stream::<f32>(device, &config, mixer.clone()),
+            F::F64 => build_stream::<f64>(device, &config, mixer.clone()),
+            F::I16 => build_stream::<i16>(device, &config, mixer.clone()),
+            F::I32 => build_stream::<i32>(device, &config, mixer.clone()),
+            F::I8 => build_stream::<i8>(device, &config, mixer.clone()),
+            F::U16 => build_stream::<u16>(device, &config, mixer.clone()),
+            F::U32 => build_stream::<u32>(device, &config, mixer.clone()),
+            F::U8 => build_stream::<u8>(device, &config, mixer.clone()),
+            other => Err(format!("unsupported sample format {other}").into()),
+        };
+        match stream {
+            Ok(stream) => match stream.play() {
+                Ok(()) => {
+                    log::info!("Horizon: audio output {description}");
+                    return Ok((stream, config));
+                }
+                Err(error) => errors.push(format!("{description}: stream start failed: {error}")),
+            },
+            Err(error) => errors.push(format!("{description}: {error}")),
+        }
+    }
+    if errors.is_empty() {
+        Err("Android audio device reported no usable output configurations".into())
+    } else {
+        Err(format!("no usable output audio configuration: {}", errors.join("; ")).into())
+    }
+}""")
 
 replace_once(client_cargo, 'winit = "0.30.13"',
              'winit = { version = "0.30.13", features = ["android-native-activity"] }')
@@ -401,9 +481,6 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                 }
             }
         }
-        horizon_client::set_android_gameplay(
-            self.screen == Screen::Playing && self.player.is_some() && self.title.is_none()
-        );
         horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
     }
 
@@ -500,6 +577,17 @@ content = content.replace(
 )
 game.write_text(content, encoding="utf-8");
 
+# Use the game's cursor capture request as the virtual cursor visibility state.
+replace_once(game,
+    """        if capture && !self.focused {
+            return;
+        }""",
+    """        if capture && !self.focused {
+            return;
+        }
+        #[cfg(target_os = "android")]
+        horizon_client::set_android_gameplay(capture);""")
+
 # Publish whether Horizon is in the active world or currently displaying a menu.
 # Java polls this lightweight atomic to hide its virtual cursor during gameplay.
 replace_once(game,
@@ -512,9 +600,6 @@ replace_once(game,
             self.error = Some(e);
             event_loop.exit();
         }
-        horizon_client::set_android_gameplay(
-            self.screen == Screen::Playing && self.player.is_some() && self.title.is_none()
-        );
         horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
     }""")
 

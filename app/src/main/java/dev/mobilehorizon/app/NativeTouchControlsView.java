@@ -228,13 +228,13 @@ final class NativeTouchControlsView extends View {
         RectF bounds = new RectF(spec.x - halfWidth, spec.y - halfHeight,
                 spec.x + halfWidth, spec.y + halfHeight);
         float corner = Math.min(dp(10), halfHeight * 0.55f);
-        paint.setColor(Color.argb(Math.round(255 * opacity * (pressed ? 0.92f : 0.70f)),
-                pressed ? 29 : 15, pressed ? 105 : 28, pressed ? 183 : 46));
+        paint.setColor(Color.argb(Math.round(255 * opacity * (pressed ? 0.94f : 0.72f)),
+                pressed ? 54 : 25, pressed ? 91 : 31, pressed ? 116 : 39));
         canvas.drawRoundRect(bounds, corner, corner, paint);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(editingControls ? 2.2f : 1.5f));
-        paint.setColor(Color.argb(Math.round(255 * opacity * (pressed ? 1f : 0.9f)),
-                pressed ? 115 : 105, pressed ? 210 : 175, 255));
+        paint.setColor(Color.argb(Math.round(255 * opacity * (pressed ? 1f : 0.86f)),
+                pressed ? 157 : 155, pressed ? 211 : 166, pressed ? 245 : 187));
         canvas.drawRoundRect(bounds, corner, corner, paint);
         if (editingControls) {
             RectF selection = new RectF(bounds.left - dp(3), bounds.top - dp(3),
@@ -270,12 +270,12 @@ final class NativeTouchControlsView extends View {
         float radius = dp(id == TOGGLE ? 18 : 17);
         boolean active = id == EDITOR && editingControls;
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.argb(Math.round(235 * opacity), active ? 22 : 17,
-                active ? 111 : 31, active ? 166 : 51));
+        paint.setColor(Color.argb(Math.round(238 * opacity), active ? 43 : 25,
+                active ? 83 : 30, active ? 111 : 38));
         canvas.drawCircle(x, y, radius, paint);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(1.5f));
-        paint.setColor(Color.argb(235, 118, 190, 255));
+        paint.setColor(Color.argb(224, active ? 157 : 162, active ? 211 : 174, active ? 245 : 193));
         canvas.drawCircle(x, y, radius - dp(1), paint);
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.WHITE);
