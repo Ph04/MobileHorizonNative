@@ -147,6 +147,19 @@ pub enum AndroidInjectedInput {
     /// Relative movement from a finger drag; consumed as DeviceEvent::MouseMotion when captured.
     MouseMotion { dx: f64, dy: f64 },
     KeyInput { key_code: i32, pressed: bool },
+    /// Full line entered with Android's software keyboard.
+    ChatText { text: String },
+}
+
+static HORIZON_ANDROID_GAMEPLAY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_android_gameplay(active: bool) {
+    HORIZON_ANDROID_GAMEPLAY.store(active, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn android_is_gameplay() -> bool {
+    HORIZON_ANDROID_GAMEPLAY.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 static HORIZON_ANDROID_EVENT_LOOP_PROXY:
@@ -304,27 +317,40 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                     20 => Some(KeyCode::ArrowDown),
                     21 => Some(KeyCode::ArrowLeft),
                     22 => Some(KeyCode::ArrowRight),
-                    29 => Some(KeyCode::KeyA),
-                    32 => Some(KeyCode::KeyD),
-                    33 => Some(KeyCode::KeyE),
-                    34 => Some(KeyCode::KeyF),
-                    45 => Some(KeyCode::KeyQ),
-                    47 => Some(KeyCode::KeyS),
-                    48 => Some(KeyCode::KeyT),
-                    51 => Some(KeyCode::KeyW),
-                    57 => Some(KeyCode::AltLeft),
-                    58 => Some(KeyCode::AltRight),
-                    59 => Some(KeyCode::ShiftLeft),
-                    60 => Some(KeyCode::ShiftRight),
-                    61 => Some(KeyCode::Tab),
-                    62 => Some(KeyCode::Space),
-                    66 => Some(KeyCode::Enter),
-                    67 => Some(KeyCode::Backspace),
-                    112 => Some(KeyCode::Delete),
-                    113 => Some(KeyCode::ControlLeft),
-                    114 => Some(KeyCode::ControlRight),
-                    135 => Some(KeyCode::F5),
-                    160 => Some(KeyCode::NumpadEnter),
+                    29 => Some(KeyCode::KeyA), 30 => Some(KeyCode::KeyB),
+                    31 => Some(KeyCode::KeyC), 32 => Some(KeyCode::KeyD),
+                    33 => Some(KeyCode::KeyE), 34 => Some(KeyCode::KeyF),
+                    35 => Some(KeyCode::KeyG), 36 => Some(KeyCode::KeyH),
+                    37 => Some(KeyCode::KeyI), 38 => Some(KeyCode::KeyJ),
+                    39 => Some(KeyCode::KeyK), 40 => Some(KeyCode::KeyL),
+                    41 => Some(KeyCode::KeyM), 42 => Some(KeyCode::KeyN),
+                    43 => Some(KeyCode::KeyO), 44 => Some(KeyCode::KeyP),
+                    45 => Some(KeyCode::KeyQ), 46 => Some(KeyCode::KeyR),
+                    47 => Some(KeyCode::KeyS), 48 => Some(KeyCode::KeyT),
+                    49 => Some(KeyCode::KeyU), 50 => Some(KeyCode::KeyV),
+                    51 => Some(KeyCode::KeyW), 52 => Some(KeyCode::KeyX),
+                    53 => Some(KeyCode::KeyY), 54 => Some(KeyCode::KeyZ),
+                    55 => Some(KeyCode::Comma), 56 => Some(KeyCode::Period),
+                    57 => Some(KeyCode::AltLeft), 58 => Some(KeyCode::AltRight),
+                    59 => Some(KeyCode::ShiftLeft), 60 => Some(KeyCode::ShiftRight),
+                    61 => Some(KeyCode::Tab), 62 => Some(KeyCode::Space),
+                    66 | 160 => Some(KeyCode::Enter), 67 => Some(KeyCode::Backspace),
+                    68 => Some(KeyCode::Backquote), 69 => Some(KeyCode::Minus),
+                    70 => Some(KeyCode::Equal), 71 => Some(KeyCode::BracketLeft),
+                    72 => Some(KeyCode::BracketRight), 73 => Some(KeyCode::Backslash),
+                    74 => Some(KeyCode::Semicolon), 75 => Some(KeyCode::Quote),
+                    76 => Some(KeyCode::Slash), 81 => Some(KeyCode::NumpadAdd),
+                    92 => Some(KeyCode::PageUp), 93 => Some(KeyCode::PageDown),
+                    112 => Some(KeyCode::Delete), 113 => Some(KeyCode::ControlLeft),
+                    114 => Some(KeyCode::ControlRight), 115 => Some(KeyCode::CapsLock),
+                    122 => Some(KeyCode::Home), 123 => Some(KeyCode::End),
+                    124 => Some(KeyCode::Insert),
+                    131 => Some(KeyCode::F1), 132 => Some(KeyCode::F2),
+                    133 => Some(KeyCode::F3), 134 => Some(KeyCode::F4),
+                    135 => Some(KeyCode::F5), 136 => Some(KeyCode::F6),
+                    137 => Some(KeyCode::F7), 138 => Some(KeyCode::F8),
+                    139 => Some(KeyCode::F9), 140 => Some(KeyCode::F10),
+                    141 => Some(KeyCode::F11), 142 => Some(KeyCode::F12),
                     _ => None,
                 };
                 if let Some(key) = key {
@@ -342,6 +368,15 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                     if let Err(error) = result {
                         log::warn!("Horizon: Android touchscreen key input failed: {error}");
                     }
+                }
+            }
+            horizon_client::AndroidInjectedInput::ChatText { text } => {
+                if self.screen == Screen::Playing && self.player.is_some() {
+                    self.open_chat("");
+                }
+                if self.screen == Screen::Chat && !text.is_empty() {
+                    self.chat_type(&text);
+                    self.chat_key_code(KeyCode::Enter, None);
                 }
             }
         }
@@ -439,6 +474,23 @@ content = content.replace(
     1,
 )
 game.write_text(content, encoding="utf-8");
+
+# Publish whether Horizon is in the active world or currently displaying a menu.
+# Java polls this lightweight atomic to hide its virtual cursor during gameplay.
+replace_once(game,
+    """        if let Err(e) = result {
+            self.error = Some(e);
+            event_loop.exit();
+        }
+    }""",
+    """        if let Err(e) = result {
+            self.error = Some(e);
+            event_loop.exit();
+        }
+        horizon_client::set_android_gameplay(
+            self.screen == Screen::Playing && self.player.is_some() && self.title.is_none()
+        );
+    }""")
 
 replace_once(game,
     "fn run_event_loop(mut game: Game<'_>) -> Result<()> {\n    EventLoop::new()?.run_app(&mut game)?;",
