@@ -49,19 +49,19 @@ pub fn cache_dir(base: &Path) -> PathBuf {
     base.join(".horizon-cache").join("server-resource-packs")
 }
 
-fn parse_https_url(value: &str) -> Result<Url, FetchError> {
+fn parse_pack_url(value: &str) -> Result<Url, FetchError> {
     if value.chars().any(char::is_control) {
         return Err(FetchError::InvalidUrl("resource-pack URL contains control characters".into()));
     }
     let url = Url::parse(value)
         .map_err(|_| FetchError::InvalidUrl("resource-pack URL is malformed".into()))?;
-    if url.scheme() != "https"
+    if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()
     {
         return Err(FetchError::InvalidUrl(
-            "only HTTPS resource-pack URLs without embedded credentials are supported".into(),
+            "only HTTP(S) resource-pack URLs without embedded credentials are supported".into(),
         ));
     }
     Ok(url)
@@ -205,7 +205,7 @@ fn touch(path: &Path) {
     }
 }
 
-fn open_https(agent: &ureq::Agent, initial: Url) -> Result<ureq::Response, FetchError> {
+fn open_pack_url(agent: &ureq::Agent, initial: Url) -> Result<ureq::Response, FetchError> {
     let mut current = initial;
     for redirect_number in 0..=MAX_REDIRECTS {
         let response = match agent.get(current.as_str()).call() {
@@ -228,10 +228,15 @@ fn open_https(agent: &ureq::Agent, initial: Url) -> Result<ureq::Response, Fetch
                 .ok_or_else(|| FetchError::Failed("resource-pack redirect omitted Location".into()))?;
             let next = current.join(location)
                 .map_err(|_| FetchError::InvalidUrl("resource-pack redirect URL is malformed".into()))?;
-            if next.scheme() != "https" || next.host_str().is_none()
+            // Match Java's HTTP(S) support but never allow an HTTPS downgrade.
+            let scheme_allowed = next.scheme() == "https"
+                || (current.scheme() == "http" && next.scheme() == "http");
+            if !scheme_allowed || next.host_str().is_none()
                 || !next.username().is_empty() || next.password().is_some()
             {
-                return Err(FetchError::InvalidUrl("resource-pack redirects must remain on HTTPS".into()));
+                return Err(FetchError::InvalidUrl(
+                    "resource-pack redirects must use HTTP(S) without credentials and cannot downgrade HTTPS".into()
+                ));
             }
             current = next;
             continue;
@@ -255,7 +260,7 @@ pub fn fetch(
     expected_sha1: &str,
     mut progress: impl FnMut(u64, Option<u64>),
 ) -> Result<PathBuf, FetchError> {
-    let parsed_url = parse_https_url(url)?;
+    let parsed_url = parse_pack_url(url)?;
     let expected = expected_sha1.trim().to_ascii_lowercase();
     if !expected.is_empty() && !valid_sha1(&expected) {
         return Err(FetchError::Failed("server supplied a malformed SHA-1".into()));
@@ -299,7 +304,7 @@ pub fn fetch(
         .timeout_read(Duration::from_secs(30))
         .timeout_write(Duration::from_secs(30))
         .build();
-    let response = match open_https(&agent, parsed_url) {
+    let response = match open_pack_url(&agent, parsed_url) {
         Ok(response) => response,
         Err(error) => {
             drop(file);
@@ -379,11 +384,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepts_only_https_without_credentials() {
+    fn accepts_java_http_and_https_without_credentials() {
         assert!(is_supported_url("https://example.com/pack.zip"));
-        assert!(!is_supported_url("http://example.com/pack.zip"));
+        assert!(is_supported_url("http://example.com/pack.zip"));
+        assert!(!is_supported_url("ftp://example.com/pack.zip"));
         assert!(!is_supported_url("file:///tmp/pack.zip"));
         assert!(!is_supported_url("https://user:secret@example.com/pack.zip"));
+        assert!(!is_supported_url("http://user:secret@example.com/pack.zip"));
     }
 
     #[test]
