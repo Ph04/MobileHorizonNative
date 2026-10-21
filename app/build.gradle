@@ -54,8 +54,8 @@ android {
         debug {
             // Without a persistent private signing key, publish a side-by-side
             // test package instead of an APK that could be mistaken for a safe update.
-            applicationIdSuffix = hasStableSigning ? '.offline1' : '.offline1.test'
-            versionNameSuffix = hasStableSigning ? '-offline1' : '-offline1-test'
+            applicationIdSuffix = hasStableSigning ? '.offline1' : '.offline1.test.v8'
+            versionNameSuffix = hasStableSigning ? '-offline1' : '-offline1-test-v8'
             if (hasStableSigning) signingConfig signingConfigs.stable
         }
         release {
