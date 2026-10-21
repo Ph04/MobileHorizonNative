@@ -1336,7 +1336,10 @@ pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound:
                 reply(play::Serverbound::ConfigurationAcknowledged(Empty));
                 let registries = configure(reader, shared_writer, lang, send)?;
                 let _ = send.send(Event::Reconfigured(Arc::new(registries)));
-            }''', '''            play::Clientbound::ResourcePackPush(p) => {
+            }''', '''            play::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
+            }
+            play::Clientbound::ResourcePackPush(p) => {
                 let id = p.id;
                 let url = p.url;
                 let hash = p.hash;
@@ -1450,13 +1453,17 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''pub fn startup_root(van
 }''', '''pub fn startup_root(vanilla: &Path, selected: &[String]) -> std::io::Result<PathBuf> {
     startup_root_with_server(vanilla, selected, &[])
 }
-pub fn startup_root_with_server(vanilla: &Path, selected: &[String], server_ids: &[u128]) -> std::io::Result<PathBuf> {
+pub fn startup_root_with_server(vanilla: &Path, selected: &[String], server_packs: &[(u128, PathBuf)]) -> std::io::Result<PathBuf> {
     let all = packs::discover(vanilla, &packs_dir());
     let mut enabled = packs::enabled(&all, selected);
-    for id in server_ids {
-        let wanted = format!("file/serverpack-{id:032x}.zip");
-        if let Some(pack) = all.iter().find(|pack| pack.id == wanted) { enabled.push(pack.clone()); }
-        else { log::warn!("Horizon: active server resource pack missing from disk id={id:032x}"); }
+    for (id, path) in server_packs {
+        let sha1 = path.file_stem().and_then(|v| v.to_str()).unwrap_or("unknown");
+        let pack_id = format!("server/{id:032x}/{sha1}");
+        if let Some(pack) = packs::from_server(pack_id, Text::literal(format!("Server resource pack {id:032x}")), path.clone()) {
+            enabled.push(pack);
+        } else {
+            log::warn!("Horizon: invalid server resource pack metadata id={id:032x}");
+        }
     }
     packs::resource_root(vanilla, &enabled, &cache_dir())
 }''', "server pack resource overlays")
@@ -1489,10 +1496,10 @@ pack_patch("crates/horizon-client/src/game/options.rs", '''                    "
 pack_patch("crates/horizon-client/src/game/packs.rs", '''        let result = startup_root(&vanilla, &self.settings.resource_packs)
             .map_err(Into::into)
             .and_then(|root| self.reload_resources(&root));
-        if let Err(e) = result {''', '''        let server_ids: Vec<u128> = self.remote.as_ref()
-            .map(|r| r.server_packs.iter().map(|(id, _)| *id).collect())
+        if let Err(e) = result {''', '''        let server_packs: Vec<(u128, PathBuf)> = self.remote.as_ref()
+            .map(|r| r.server_packs.clone())
             .unwrap_or_default();
-        let result = startup_root_with_server(&vanilla, &self.settings.resource_packs, &server_ids)
+        let result = startup_root_with_server(&vanilla, &self.settings.resource_packs, &server_packs)
             .map_err(Into::into)
             .and_then(|root| self.reload_resources(&root));
         let succeeded = result.is_ok();
@@ -1529,8 +1536,17 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                Event:
                 Event::DecodeError(e) => {''', "resource-pack events to game")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn handle_packet(&mut self, packet: C) -> Result<()> {''', '''    fn activate_server_pack(&mut self, id: u128, path: PathBuf, required: bool) {
-        let Some(remote) = self.remote.as_mut() else { let _ = fs::remove_file(path); return; };
-        remote.server_packs.retain(|(old, _)| *old != id);
+        let Some(remote) = self.remote.as_mut() else {
+            crate::server_packs::mark_active(&path, false);
+            return;
+        };
+        remote.server_packs.retain(|(old, old_path)| {
+            if *old == id {
+                crate::server_packs::mark_active(old_path, false);
+                false
+            } else { true }
+        });
+        crate::server_packs::mark_active(&path, true);
         remote.server_packs.push((id, path.clone()));
         log::info!("Horizon: applying server resource pack id={id:032x} required={required}");
         self.pending_server_pack_responses.push(id);
@@ -1552,7 +1568,7 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn handle_packet(&
                     if ids.contains(id) { paths.push(path.clone()); false } else { true }
                 });
             }
-            for path in paths { let _ = fs::remove_file(path); }
+            for path in paths { crate::server_packs::mark_active(&path, false); }
             let _ = self.reload_packs();
         }
         if let Some(remote) = self.remote.as_ref() {
@@ -1577,7 +1593,7 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn handle_packet(&
         if let Some(remote) = self.remote.as_ref() {
             for (pack_id, path) in removed {
                 remote.session.send_resource_pack_response(pack_id, 7);
-                let _ = fs::remove_file(path);
+                crate::server_packs::mark_active(&path, false);
             }
         }
         log::info!("Horizon: removed server resource pack(s) requested by server");
@@ -1644,13 +1660,15 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''        if let Some(mu
         // Single player's server thread saves the world before the title shows.''', '''        let mut server_pack_paths = Vec::new();
         if let Some(mut r) = self.remote.take() {
             server_pack_paths.extend(r.server_packs.iter().map(|(_, path)| path.clone()));
+            for path in &server_pack_paths { crate::server_packs::mark_active(path, false); }
             r.server_packs.clear();
             r.session.disconnect();
         }
         if !server_pack_paths.is_empty() {
             if self.rest_loader.is_some() { self.pending_pack_reload = true; }
             else { let _ = self.reload_packs(); }
-            for path in server_pack_paths { let _ = fs::remove_file(path); }
+            // Keep verified, content-addressed ZIPs for the next server join.
+            let _ = server_pack_paths;
             log::info!("Horizon: cleared server resource packs after leaving multiplayer");
         }
         // Single player's server thread saves the world before the title shows.''', "clear active server packs on disconnect")
