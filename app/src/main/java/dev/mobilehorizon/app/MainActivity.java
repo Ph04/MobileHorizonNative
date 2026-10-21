@@ -41,9 +41,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -58,6 +63,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class MainActivity extends Activity {
     private static final int REQUEST_IMPORT_FOLDER = 101;
     private static final int REQUEST_IMPORT_ZIP = 102;
+    private static final int REQUEST_EXPORT_DIAGNOSTICS = 103;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
@@ -76,6 +82,7 @@ public final class MainActivity extends Activity {
     private Button fullConvertButton;
     private Button openEngineButton;
     private Button smokeTestButton;
+    private Button exportDiagnosticsButton;
     private Button microsoftLoginButton;
     private Button microsoftSignOutButton;
     private TextView accountStatusText;
@@ -95,6 +102,8 @@ public final class MainActivity extends Activity {
     private boolean pendingAuthPermission;
     private boolean authBusy;
     private boolean launchBusy;
+    private boolean diagnosticsBusy;
+    private File pendingDiagnosticsArchive;
     private boolean pendingNativeSmokeResult;
     private boolean pendingNativeClientResult;
     private boolean sessionEnvSet;
@@ -357,6 +366,22 @@ public final class MainActivity extends Activity {
         smokeParams.topMargin = dp(8);
         page.addView(smokeTestButton, smokeParams);
 
+        TextView diagnosticHeading = text("Diagnóstico multiplayer", 18, 0xff18213a, true);
+        LinearLayout.LayoutParams diagnosticHeadingParams = params(-1, -2);
+        diagnosticHeadingParams.topMargin = dp(24);
+        page.addView(diagnosticHeading, diagnosticHeadingParams);
+        TextView diagnosticNote = text(
+                "Reproduza o problema no servidor, volte para esta tela e exporte os registros. O ZIP inclui o log do Horizon, logs recentes arquivados e o relatório de falha mais recente, se houver. Revise antes de compartilhar: os logs podem conter nicknames, endereço do servidor e mensagens de chat; arquivos de sessão e tokens não são incluídos.",
+                13, 0xff59647b, false);
+        LinearLayout.LayoutParams diagnosticNoteParams = params(-1, -2);
+        diagnosticNoteParams.topMargin = dp(6);
+        page.addView(diagnosticNote, diagnosticNoteParams);
+        exportDiagnosticsButton = button(
+                "Exportar log e diagnóstico multiplayer", false, v -> exportDiagnostics());
+        LinearLayout.LayoutParams exportDiagnosticsParams = params(-1, dp(50));
+        exportDiagnosticsParams.topMargin = dp(10);
+        page.addView(exportDiagnosticsButton, exportDiagnosticsParams);
+
         TextView actionsHeading = text("Importar saída já preparada", 18, 0xff18213a, true);
         LinearLayout.LayoutParams actionsParams = params(-1, -2);
         actionsParams.topMargin = dp(24);
@@ -446,6 +471,14 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_EXPORT_DIAGNOSTICS) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                saveDiagnosticArchive(data.getData());
+            } else {
+                discardPendingDiagnosticArchive();
+            }
+            return;
+        }
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         boolean zip = requestCode == REQUEST_IMPORT_ZIP;
         if (!zip && requestCode != REQUEST_IMPORT_FOLDER) return;
@@ -1421,6 +1454,182 @@ public final class MainActivity extends Activity {
         return target;
     }
 
+    private void exportDiagnostics() {
+        if (busy || conversionBusy || downloadBusy || authBusy || launchBusy || diagnosticsBusy) {
+            showRuntimeError("Ação indisponível",
+                    "Termine a operação atual antes de preparar o pacote de diagnóstico.");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Exportar diagnóstico multiplayer?")
+                .setMessage("Será criado um ZIP com latest.log, até três logs arquivados recentes, o relatório de falha mais recente e metadados do aparelho/build. O relatório não inclui arquivos de sessão ou tokens de autenticação. O log pode conter o endereço do servidor, nicknames e mensagens de chat; compartilhe somente depois de revisar.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Preparar ZIP", (dialog, which) -> buildDiagnosticArchive())
+                .show();
+    }
+
+    private void buildDiagnosticArchive() {
+        diagnosticsBusy = true;
+        updateActionEnablement();
+        setStatus("Preparando diagnóstico", "Reunindo registros do cliente e compactando o relatório…");
+        executor.execute(() -> {
+            File archive = null;
+            try {
+                File directory = new File(getCacheDir(), "diagnostics");
+                if (!directory.isDirectory() && !directory.mkdirs()) {
+                    throw new IOException("Não foi possível criar a pasta temporária do relatório.");
+                }
+                String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
+                archive = new File(directory, "MobileHorizon-multiplayer-" + stamp + ".zip");
+
+                File horizonHome = new File(getFilesDir(), "horizon");
+                File logsDirectory = new File(horizonHome, "logs");
+                File latestLog = new File(logsDirectory, "latest.log");
+                File[] archivedLogs = logsDirectory.listFiles((dir, name) ->
+                        name.matches("\\d{4}-\\d{2}-\\d{2}-\\d+\\.log\\.gz"));
+                if (archivedLogs == null) archivedLogs = new File[0];
+                Arrays.sort(archivedLogs, (left, right) ->
+                        Long.compare(right.lastModified(), left.lastModified()));
+
+                File crashDirectory = new File(horizonHome, "crash-reports");
+                File[] crashReports = crashDirectory.listFiles((dir, name) ->
+                        name.startsWith("crash-") && name.endsWith(".txt"));
+                if (crashReports == null) crashReports = new File[0];
+                Arrays.sort(crashReports, (left, right) ->
+                        Long.compare(right.lastModified(), left.lastModified()));
+
+                File clientResult = new File(getFilesDir(), "horizon-client-result.txt");
+                File smokeResult = new File(getFilesDir(), "horizon-native-smoke-result.txt");
+
+                String metadata = "MobileHorizon multiplayer diagnostic\n"
+                        + "created=" + new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(new Date()) + "\n"
+                        + "app_version=" + BuildConfig.VERSION_NAME + "\n"
+                        + "package=" + getPackageName() + "\n"
+                        + "android_release=" + Build.VERSION.RELEASE + "\n"
+                        + "android_sdk=" + Build.VERSION.SDK_INT + "\n"
+                        + "manufacturer=" + Build.MANUFACTURER + "\n"
+                        + "model=" + Build.MODEL + "\n"
+                        + "abis=" + String.join(",", Build.SUPPORTED_ABIS) + "\n"
+                        + "latest_log_present=" + latestLog.isFile() + "\n"
+                        + "archived_logs_found=" + archivedLogs.length + "\n"
+                        + "crash_report_present=" + (crashReports.length > 0) + "\n"
+                        + "client_result_present=" + clientResult.isFile() + "\n"
+                        + "vulkan_smoke_result_present=" + smokeResult.isFile() + "\n"
+                        + "privacy=Session JSON/token files are intentionally excluded. Log text may contain chat, nicknames and server addresses.\n";
+
+                try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive, false))) {
+                    addDiagnosticText(zip, "diagnostic/metadata.txt", metadata);
+                    addDiagnosticFile(zip, latestLog, "logs/latest.log");
+                    for (int i = 0; i < Math.min(3, archivedLogs.length); i++) {
+                        addDiagnosticFile(zip, archivedLogs[i], "logs/" + archivedLogs[i].getName());
+                    }
+                    if (crashReports.length > 0) {
+                        addDiagnosticFile(zip, crashReports[0],
+                                "crash-reports/" + crashReports[0].getName());
+                    }
+                    addDiagnosticFile(zip, clientResult, "diagnostic/horizon-client-result.txt");
+                    addDiagnosticFile(zip, smokeResult, "diagnostic/horizon-native-smoke-result.txt");
+                    if (!latestLog.isFile()) {
+                        addDiagnosticText(zip, "diagnostic/LOG_MISSING.txt",
+                                "logs/latest.log was not found at export time. Launch the client, reproduce the multiplayer problem, exit to the launcher, then export again.\n");
+                    }
+                }
+
+                final File readyArchive = archive;
+                runOnUiThread(() -> {
+                    diagnosticsBusy = false;
+                    pendingDiagnosticsArchive = readyArchive;
+                    updateActionEnablement();
+                    Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    create.addCategory(Intent.CATEGORY_OPENABLE);
+                    create.setType("application/zip");
+                    create.putExtra(Intent.EXTRA_TITLE, readyArchive.getName());
+                    try {
+                        startActivityForResult(create, REQUEST_EXPORT_DIAGNOSTICS);
+                    } catch (Exception error) {
+                        discardPendingDiagnosticArchive();
+                        showRuntimeError("Não foi possível salvar o diagnóstico", safeMessage(error));
+                    }
+                });
+            } catch (Exception error) {
+                if (archive != null) archive.delete();
+                runOnUiThread(() -> {
+                    diagnosticsBusy = false;
+                    updateActionEnablement();
+                    showRuntimeError("Falha ao preparar o diagnóstico", safeMessage(error));
+                    setStatus("Falha ao exportar logs", safeMessage(error));
+                });
+            }
+        });
+    }
+
+    private void addDiagnosticText(ZipOutputStream zip, String path, String text) throws IOException {
+        zip.putNextEntry(new ZipEntry(path));
+        zip.write(text.getBytes(StandardCharsets.UTF_8));
+        zip.closeEntry();
+    }
+
+    private void addDiagnosticFile(ZipOutputStream zip, File source, String archivePath) throws IOException {
+        if (source == null || !source.isFile()) return;
+        zip.putNextEntry(new ZipEntry(archivePath));
+        try (FileInputStream input = new FileInputStream(source)) {
+            byte[] buffer = new byte[32 * 1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) zip.write(buffer, 0, read);
+        }
+        zip.closeEntry();
+    }
+
+    private void saveDiagnosticArchive(Uri destination) {
+        File source = pendingDiagnosticsArchive;
+        pendingDiagnosticsArchive = null;
+        if (source == null || !source.isFile()) {
+            diagnosticsBusy = false;
+            updateActionEnablement();
+            showRuntimeError("Relatório temporário ausente",
+                    "O ZIP temporário não está mais disponível. Gere um novo diagnóstico.");
+            return;
+        }
+        diagnosticsBusy = true;
+        updateActionEnablement();
+        setStatus("Salvando diagnóstico", "Copiando o ZIP para o local escolhido…");
+        executor.execute(() -> {
+            Exception failure = null;
+            try (FileInputStream input = new FileInputStream(source);
+                 OutputStream output = getContentResolver().openOutputStream(destination, "w")) {
+                if (output == null) throw new IOException("O Android não abriu o arquivo de destino.");
+                byte[] buffer = new byte[32 * 1024];
+                int read;
+                while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+                output.flush();
+            } catch (Exception error) {
+                failure = error;
+            } finally {
+                source.delete();
+            }
+            final Exception error = failure;
+            runOnUiThread(() -> {
+                diagnosticsBusy = false;
+                updateActionEnablement();
+                if (error == null) {
+                    setStatus("Diagnóstico exportado", "Anexe o ZIP salvo nesta conversa para eu identificar recusas de recursos, falhas de decodificação, componentes de itens descartados e problemas com texturas de NPCs.");
+                } else {
+                    showRuntimeError("Falha ao salvar o diagnóstico", safeMessage(error));
+                    setStatus("Falha ao salvar o diagnóstico", safeMessage(error));
+                }
+            });
+        });
+    }
+
+    private void discardPendingDiagnosticArchive() {
+        if (pendingDiagnosticsArchive != null) {
+            pendingDiagnosticsArchive.delete();
+            pendingDiagnosticsArchive = null;
+        }
+        diagnosticsBusy = false;
+        updateActionEnablement();
+    }
+
     private void showNativeClientResultIfAvailable() {
         File resultFile = new File(getFilesDir(), "horizon-client-result.txt");
         if (!resultFile.isFile()) return;
@@ -1536,7 +1745,7 @@ public final class MainActivity extends Activity {
     }
 
     private void updateActionEnablement() {
-        boolean blocked = busy || conversionBusy || downloadBusy || authBusy || launchBusy;
+        boolean blocked = busy || conversionBusy || downloadBusy || authBusy || launchBusy || diagnosticsBusy;
         if (importFolderButton != null) importFolderButton.setEnabled(!blocked);
         if (importZipButton != null) importZipButton.setEnabled(!blocked);
         if (downloadBaseButton != null) downloadBaseButton.setEnabled(!blocked);
@@ -1545,6 +1754,7 @@ public final class MainActivity extends Activity {
         if (fullConvertButton != null) fullConvertButton.setEnabled(!blocked);
         if (openEngineButton != null) openEngineButton.setEnabled(!blocked);
         if (smokeTestButton != null) smokeTestButton.setEnabled(!blocked);
+        if (exportDiagnosticsButton != null) exportDiagnosticsButton.setEnabled(!blocked);
         if (microsoftLoginButton != null) microsoftLoginButton.setEnabled(!blocked);
         if (microsoftSignOutButton != null) microsoftSignOutButton.setEnabled(!blocked
                 && getSharedPreferences("microsoft_account_state", MODE_PRIVATE).getBoolean("hasAccount", false));
@@ -1571,6 +1781,7 @@ public final class MainActivity extends Activity {
         if (fullConvertButton != null) fullConvertButton.setAlpha(alpha);
         if (openEngineButton != null) openEngineButton.setAlpha(alpha);
         if (smokeTestButton != null) smokeTestButton.setAlpha(alpha);
+        if (exportDiagnosticsButton != null) exportDiagnosticsButton.setAlpha(alpha);
         if (microsoftLoginButton != null) microsoftLoginButton.setAlpha(alpha);
         if (microsoftSignOutButton != null) microsoftSignOutButton.setAlpha(alpha);
     }
