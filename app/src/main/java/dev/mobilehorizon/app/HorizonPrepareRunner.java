@@ -161,6 +161,37 @@ final class HorizonPrepareRunner {
                     + ". Últimas linhas do log:\n" + tail(logFile, 8000));
         }
         checkCancelled(cancelled);
+
+        // The upstream full preparation intentionally keeps sounds optional. On Android
+        // there is no desktop launcher to run "horizon-prepare sounds" afterwards, so do
+        // that copy here while staging is still isolated. It verifies each official asset
+        // and writes sounds into the same candidate tree that will be atomically activated.
+        report(listener, "Copiando sons oficiais",
+                "Instalando os arquivos OGG e sounds.json necessários para a saída de áudio", 4, 6);
+        File minecraftDirectory = new File(context.getFilesDir(), "minecraft");
+        ProcessBuilder soundsBuilder = new ProcessBuilder(
+                "/system/bin/sh",
+                "-c",
+                "exec /system/bin/linker64 \"$@\"",
+                "linker64",
+                tool.getAbsolutePath(),
+                "sounds",
+                "--minecraft-dir", minecraftDirectory.getAbsolutePath(),
+                "--root", workspace.getAbsolutePath());
+        soundsBuilder.directory(workspace);
+        soundsBuilder.redirectErrorStream(true);
+        Map<String, String> soundsEnvironment = soundsBuilder.environment();
+        soundsEnvironment.putAll(runtime.processEnvironment(new File(workspace, "tmp")));
+        soundsEnvironment.put("HORIZON_MINECRAFT_DIR", minecraftDirectory.getAbsolutePath());
+        soundsEnvironment.put("HORIZON_SERVER_JAR",
+                new File(context.getFilesDir(), "minecraft/server.jar").getAbsolutePath());
+        int soundsExitCode = runProcess(soundsBuilder, logFile, cancelled, listener);
+        if (soundsExitCode != 0) {
+            throw new IOException("Não foi possível instalar os sons oficiais na saída Horizon. "
+                    + "Últimas linhas do log:\n" + tail(logFile, 8000));
+        }
+        checkCancelled(cancelled);
+
         report(listener, "Validando saída completa", "Checando schema, data version e arquivos obrigatórios", 5, 6);
         String summary = HorizonResourceConverter.validatePreparedResources(stagingResources);
 

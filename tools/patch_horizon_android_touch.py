@@ -9,13 +9,16 @@ repo_root = Path(__file__).resolve().parents[1]
 game = root / "crates/horizon-client/src/game.rs"
 lib = root / "crates/horizon-client/src/lib.rs"
 audio = root / "crates/horizon-client/src/audio.rs"
+skins = root / "crates/horizon-client/src/skins.rs"
+remote = root / "crates/horizon-client/src/game/remote.rs"
+net = root / "crates/horizon-client/src/net.rs"
 client_cargo = root / "crates/horizon-client/Cargo.toml"
 clipboard = root / "crates/horizon-client/src/clipboard.rs"
 pad_menu = root / "crates/horizon-client/src/game/pad_menu.rs"
 startup_menu = root / "crates/horizon-client/src/game/startup_menu.rs"
 workspace_cargo = root / "Cargo.toml"
 
-for path in (game, lib, audio, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
+for path in (game, lib, audio, skins, remote, net, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
     if not path.is_file():
         raise SystemExit(f"Missing pinned Horizon source file: {path}")
 
@@ -25,6 +28,102 @@ def replace_once(path: Path, old: str, new: str) -> None:
     if count != 1:
         raise SystemExit(f"{path}: expected one replacement for {old[:90]!r}, found {count}")
     path.write_text(content.replace(old, new, 1), encoding="utf-8")
+
+# Make multiplayer limitations visible in the game log rather than silently
+# falling back to default skins or closing a server menu without context.
+replace_once(skins,
+    """    let response = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent("Java")
+        .build()
+        .get(url)
+        .call()
+        .ok()?;
+    let mut body = Vec::new();
+    response
+        .into_reader()
+        .take(16 << 20)
+        .read_to_end(&mut body)
+        .ok()?;
+    Some(body)""",
+    """    let texture = texture_hash(url).unwrap_or_else(|| "unknown".into());
+    let response = match ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent("Java")
+        .build()
+        .get(url)
+        .call()
+    {
+        Ok(response) => response,
+        Err(error) => {
+            log::warn!("Horizon: player texture download failed for hash {texture}: {error}");
+            return None;
+        }
+    };
+    let mut body = Vec::new();
+    if let Err(error) = response.into_reader().take(16 << 20).read_to_end(&mut body) {
+        log::warn!("Horizon: player texture read failed for hash {texture}: {error}");
+        return None;
+    }
+    if body.is_empty() {
+        log::warn!("Horizon: player texture download returned an empty body for hash {texture}");
+        return None;
+    }
+    Some(body)""")
+
+replace_once(remote,
+    """                                    r.skin_textures.entry(e.uuid).or_insert(textures);
+                                }""",
+    """                                    r.skin_textures.entry(e.uuid).or_insert(textures);
+                                } else {
+                                    log::debug!(
+                                        "Horizon: player profile {name} did not provide a textures property; a default tab-list skin will be used"
+                                    );
+                                }""")
+
+replace_once(remote,
+    """            _ => {
+                // Unsupported menu: tell the server we closed it.
+                self.send(S::ContainerClose(play::ContainerClose {""",
+    """            _ => {
+                // Unsupported menus can explain a blank server GUI; leave evidence in the
+                // game log so this is distinguishable from a transport/protocol disconnect.
+                log::warn!(
+                    "Horizon: unsupported server menu '{}' (container id {}); sending ContainerClose",
+                    menu, p.container
+                );
+                self.send(S::ContainerClose(play::ContainerClose {""")
+
+replace_once(net,
+    """            play::Clientbound::ResourcePackPush(p) => {
+                // Declined: Horizon has no server resource packs.
+                reply(play::Serverbound::ResourcePack(cfg::ResourcePackResponse {""",
+    """            play::Clientbound::ResourcePackPush(p) => {
+                // Resource-pack handling is not implemented yet. Keep the reason visible:
+                // servers that require a pack may disconnect this client after the decline.
+                log::warn!(
+                    "Horizon: declined server resource pack in play (required={}, hash_present={}); download and application are not implemented yet",
+                    p.required, !p.hash.is_empty()
+                );
+                reply(play::Serverbound::ResourcePack(cfg::ResourcePackResponse {""")
+
+replace_once(net,
+    """            cfg::Clientbound::ResourcePackPush(p) => {
+                reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse {
+                    id: p.id,
+                    action: 1,
+                }))?
+            }""",
+    """            cfg::Clientbound::ResourcePackPush(p) => {
+                log::warn!(
+                    "Horizon: declined server resource pack during configuration (required={}, hash_present={}); download and application are not implemented yet",
+                    p.required, !p.hash.is_empty()
+                );
+                reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse {
+                    id: p.id,
+                    action: 1,
+                }))?
+            }""")
 
 replace_once(audio,
     """#[cfg(feature = "audio")]
