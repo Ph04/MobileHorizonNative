@@ -1252,10 +1252,12 @@ fn download_server_pack(id: u128, url: &str, expected_sha1: &str) -> Result<Path
     let dest = dir.join(&name);
     let temp = dir.join(format!(".{name}.download.tmp"));
     let _ = fs::remove_file(&temp);
-    let response = ureq::get(url)
+    let response = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(15))
         .timeout_read(Duration::from_secs(30))
         .timeout_write(Duration::from_secs(30))
+        .build()
+        .get(url)
         .call().map_err(|e| format!("HTTP download failed: {e}"))?;
     let mut reader = response.into_reader();
     let mut file = OpenOptions::new().write(true).create_new(true).open(&temp)
@@ -1630,6 +1632,14 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''r.skin_textures.entry(
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::PlayerInfoRemove(p) => {
                 if let Some(r) = self.remote.as_mut() {
                     for u in p.uuids {
+                        let had_textures = r.skin_textures.contains_key(&u);
+                        let entity_still_present = r.level_players.values().any(|profile| *profile == u);
+                        if had_textures || entity_still_present {
+                            log::warn!(
+                                "HorizonDiag: profile_removed had_texture_record={} matching_entity_still_present={}",
+                                had_textures, entity_still_present
+                            );
+                        }
                         r.players.remove(&u);
                         r.tab_players.remove(&u);
                         r.skin_textures.remove(&u);
