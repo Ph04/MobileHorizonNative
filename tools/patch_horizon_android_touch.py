@@ -1374,7 +1374,11 @@ pack_patch("crates/horizon-client/src/net.rs", '''fn receive_play(
 ) -> Result<String, String> {''', "play packet reader signature")
 
 pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound::ResourcePackPush(p) => {
-                // Declined: Horizon has no server resource packs.
+                log::warn!(
+                    "HorizonDiag: server_resource_pack phase=play decision=decline id={} required={} hash_present={} hash_len={} origin={}",
+                    p.id, p.required, !p.hash.is_empty(), p.hash.len(),
+                    safe_resource_pack_origin(&p.url)
+                );
                 reply(play::Serverbound::ResourcePack(cfg::ResourcePackResponse {
                     id: p.id,
                     action: 1,
@@ -1382,7 +1386,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound:
             }
             play::Clientbound::StartConfiguration(_) => {
                 reply(play::Serverbound::ConfigurationAcknowledged(Empty));
-                let registries = configure(reader, shared_writer, lang, send)?;
+                let registries = configure(reader, &shared_writer, lang, send)?;
                 let _ = send.send(Event::Reconfigured(Arc::new(registries)));
             }''', '''            play::Clientbound::ResourcePackPush(p) => {
                 let id = p.id;
@@ -1427,11 +1431,9 @@ pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound:
                 let _ = send.send(Event::Reconfigured(Arc::new(registries)));
             }''', "play resource-pack handling")
 
-pack_patch("crates/horizon-client/src/net.rs", '''            // Know no packs: the server then sends every registry entry in full.
-            cfg::Clientbound::SelectKnownPacks(_) => {
-                reply(cfg::Serverbound::SelectKnownPacks(cfg::SelectKnownPacks {
-                    packs: vec![],
-                }))?
+pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::SelectKnownPacks(p) => {
+                log::info!("Horizon: known-pack negotiation offered={} supported=0; requesting full registries (not a resource-pack rejection)", p.packs.len());
+                reply(cfg::Serverbound::SelectKnownPacks(cfg::SelectKnownPacks { packs: vec![] }))?
             }''', '''            // No registry cache is advertised yet; this is separate from server resource packs.
             cfg::Clientbound::SelectKnownPacks(p) => {
                 log::info!("Horizon: known-pack negotiation offered={} supported=0; requesting full registries (not a resource-pack rejection)", p.packs.len());
@@ -1439,6 +1441,11 @@ pack_patch("crates/horizon-client/src/net.rs", '''            // Know no packs: 
             }''', "known-pack negotiation diagnostics")
 
 pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPush(p) => {
+                log::warn!(
+                    "HorizonDiag: server_resource_pack phase=configuration decision=decline id={} required={} hash_present={} hash_len={} origin={}",
+                    p.id, p.required, !p.hash.is_empty(), p.hash.len(),
+                    safe_resource_pack_origin(&p.url)
+                );
                 reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse {
                     id: p.id,
                     action: 1,
@@ -1616,7 +1623,7 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn handle_packet(&
 
     fn handle_packet(&mut self, packet: C) -> Result<()> {''', "game-thread resource-pack lifecycle")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''                                    r.skin_textures.entry(e.uuid).or_insert(textures);''', '''                                    r.skin_textures.insert(e.uuid, textures);''', "refresh profile textures instead of keeping stale entries")
+pack_patch("crates/horizon-client/src/game/remote.rs", '''r.skin_textures.entry(e.uuid).or_insert(textures);''', '''r.skin_textures.insert(e.uuid, textures);''', "refresh profile textures instead of keeping stale entries")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::PlayerInfoRemove(p) => {
                 if let Some(r) = self.remote.as_mut() {
