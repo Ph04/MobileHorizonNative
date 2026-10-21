@@ -1288,7 +1288,7 @@ fn download_server_pack(id: u128, url: &str, expected_sha1: &str) -> Result<Path
         Ok(z) => z,
         Err(e) => { let _ = fs::remove_file(&temp); return Err(format!("invalid ZIP: {e}")); }
     };
-    if zip.is_empty() || zip.len() > PACK_MAX_ENTRIES {
+    if zip.len() == 0 || zip.len() > PACK_MAX_ENTRIES {
         let _ = fs::remove_file(&temp); return Err("invalid ZIP entry count".into());
     }
     let mut expanded = 0u64;
@@ -1540,10 +1540,8 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''            self.ui.opt
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''use std::{collections::HashMap, sync::Arc, time::Instant};''', '''use std::{collections::HashMap, fs, path::PathBuf, sync::Arc, time::Instant};''', "resource-pack path imports")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''    /// Each listed profile's unpacked textures property.
-    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
-    listed: std::collections::HashSet<u128>,''', '''    /// Each listed profile's unpacked texture property.
-    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
+pack_patch("crates/horizon-client/src/game/remote.rs", '''    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
+    listed: std::collections::HashSet<u128>,''', '''    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
     pub(super) server_packs: Vec<(u128, PathBuf)>,
     listed: std::collections::HashSet<u128>,''', "active server-pack state")
 
