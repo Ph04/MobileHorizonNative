@@ -2083,4 +2083,53 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''        lang::set(lang:
         );
         lang::set(loaded_language);''', "log active server-pack language reload")
 
+
+# Visual-resource diagnostics: verify both ZIP contents and the final loaded assets.
+pack_patch("crates/horizon-client/src/game/packs.rs", '''        let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
+        let mut atlas = HudAtlas::build(root)?;''', '''        let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
+        let loaded_sprite_layers = render.sprite_layers.len();
+        let mut atlas = HudAtlas::build(root)?;''', "capture loaded sprite-layer count")
+
+pack_patch("crates/horizon-client/src/game/packs.rs", '''            self.pack.context.light.clone(),
+        )?;
+        // Keep the working GPU resources, but release its exclusive window surface.''', '''            self.pack.context.light.clone(),
+        )?;
+        let active_server_packs = self.remote.as_ref().map_or(0, |remote| remote.server_packs.len());
+        log::info!(
+            "Horizon: visual resource load locale={} active_server_packs={} sprite_layers={} item_definitions={} item_prototypes={} resource_root={}",
+            lang::code(), active_server_packs, loaded_sprite_layers,
+            pack.item_renderer.models.definitions.len(),
+            pack.item_renderer.models.prototypes.len(),
+            root.display()
+        );
+        // Keep the working GPU resources, but release its exclusive window surface.''', "log loaded visual resource counts")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                let with_any_component_patch = p.items.iter().flatten().filter(|stack|
+                    !stack.added.is_empty() || !stack.removed.is_empty()
+                ).count();
+                log::info!(
+                    "HorizonDiag: container_set_content window={} state={} slots={} stacks_with_item_model={} stacks_with_custom_model_data={} stacks_with_component_patch={}",
+                    p.container, p.state, p.items.len(), with_item_model, with_custom_model_data, with_any_component_patch
+                );''', '''                let with_custom_data = p.items.iter().flatten().filter(|stack|
+                    stack.component(horizon_protocol::item::component::CUSTOM_DATA).is_some()
+                ).count();
+                let with_custom_name = p.items.iter().flatten().filter(|stack|
+                    stack.component(horizon_protocol::item::component::CUSTOM_NAME).is_some()
+                ).count();
+                let with_item_name = p.items.iter().flatten().filter(|stack|
+                    stack.component(horizon_protocol::item::component::ITEM_NAME).is_some()
+                ).count();
+                let with_lore = p.items.iter().flatten().filter(|stack|
+                    stack.component(horizon_protocol::item::component::LORE).is_some()
+                ).count();
+                let with_any_component_patch = p.items.iter().flatten().filter(|stack|
+                    !stack.added.is_empty() || !stack.removed.is_empty()
+                ).count();
+                log::info!(
+                    "HorizonDiag: container_set_content window={} state={} slots={} stacks_with_item_model={} stacks_with_custom_model_data={} stacks_with_custom_data={} stacks_with_custom_name={} stacks_with_item_name={} stacks_with_lore={} stacks_with_component_patch={}",
+                    p.container, p.state, p.items.len(), with_item_model, with_custom_model_data,
+                    with_custom_data, with_custom_name, with_item_name, with_lore, with_any_component_patch
+                );''', "measure visual item component types in server menus")
+
+
 print("Applied Java-compatible server resource packs, item text/model components and multiplayer skin fixes.")
