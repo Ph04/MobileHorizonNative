@@ -1636,6 +1636,93 @@ pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::
                 }
             }''', "download configuration resource packs in background")
 
+pack_patch("crates/horizon-client/src/game/remote.rs", '''use std::{collections::HashMap, sync::Arc, time::Instant};''', '''use std::{collections::HashMap, fs, path::PathBuf, sync::Arc, time::Instant};''', "resource-pack path imports")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
+    listed: std::collections::HashSet<u128>,''', '''    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
+    pub(super) server_packs: Vec<(u128, PathBuf)>,
+    listed: std::collections::HashSet<u128>,''', "active server-pack state")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            skin_textures: HashMap::new(),
+            listed: Default::default(),''', '''            skin_textures: HashMap::new(),
+            server_packs: Vec::new(),
+            listed: Default::default(),''', "initialize active server-pack state")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                Event::Reconfigured(registries) => self.set_registries(registries),
+                Event::DecodeError(e) => {''', '''                Event::Reconfigured(registries) => self.set_registries(registries),
+                Event::ServerResourcePackReady { id, path, required } => self.activate_server_pack(id, path, required),
+                Event::ServerResourcePackFailed { id, required, reason } => {
+                    log::warn!("Horizon: resource pack failed id={id:032x} required={required}: {reason}");
+                }
+                Event::ServerResourcePackPop { id } => self.pop_server_packs(id),
+                Event::DecodeError(e) => {''', "resource-pack events to game")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn handle_packet(&mut self, packet: C) -> Result<()> {''', '''    fn activate_server_pack(&mut self, id: u128, path: PathBuf, required: bool) {
+        let Some(remote) = self.remote.as_mut() else {
+            crate::server_packs::mark_active(&path, false);
+            return;
+        };
+        remote.server_packs.retain(|(old, old_path)| {
+            if *old == id {
+                crate::server_packs::mark_active(old_path, false);
+                false
+            } else { true }
+        });
+        crate::server_packs::mark_active(&path, true);
+        remote.server_packs.push((id, path.clone()));
+        log::info!("Horizon: applying server resource pack id={id:032x} required={required}");
+        self.pending_server_pack_responses.push(id);
+        if self.rest_loader.is_some() {
+            self.pending_pack_reload = true;
+        } else {
+            let loaded = self.reload_packs();
+            self.finish_pending_server_pack_responses(loaded);
+        }
+    }
+
+    pub(super) fn finish_pending_server_pack_responses(&mut self, success: bool) {
+        let ids = std::mem::take(&mut self.pending_server_pack_responses);
+        if ids.is_empty() { return; }
+        if !success {
+            let mut paths = Vec::new();
+            if let Some(remote) = self.remote.as_mut() {
+                remote.server_packs.retain(|(id, path)| {
+                    if ids.contains(id) { paths.push(path.clone()); false } else { true }
+                });
+            }
+            for path in paths { crate::server_packs::mark_active(&path, false); }
+            let _ = self.reload_packs();
+        }
+        if let Some(remote) = self.remote.as_ref() {
+            for id in ids { remote.session.send_resource_pack_response(id, if success { 0 } else { 6 }); }
+        }
+        if success { log::info!("Horizon: server resource packs applied and reloaded"); }
+        else { log::warn!("Horizon: server pack reload failed; invalid pack disabled"); }
+    }
+
+    fn pop_server_packs(&mut self, id: Option<u128>) {
+        let mut removed = Vec::new();
+        if let Some(remote) = self.remote.as_mut() {
+            let mut keep = Vec::new();
+            for pack in remote.server_packs.drain(..) {
+                if id.is_none() || id == Some(pack.0) { removed.push(pack); } else { keep.push(pack); }
+            }
+            remote.server_packs = keep;
+        }
+        if removed.is_empty() { log::info!("Horizon: server pack pop id={id:?}, no active match"); return; }
+        if self.rest_loader.is_some() { self.pending_pack_reload = true; }
+        else if !self.reload_packs() { log::warn!("Horizon: pack reload after pop was deferred or failed"); }
+        if let Some(remote) = self.remote.as_ref() {
+            for (pack_id, path) in removed {
+                remote.session.send_resource_pack_response(pack_id, 7);
+                crate::server_packs::mark_active(&path, false);
+            }
+        }
+        log::info!("Horizon: removed server resource pack(s) requested by server");
+    }
+
+    fn handle_packet(&mut self, packet: C) -> Result<()> {''', "game-thread resource-pack lifecycle")
+
 pack_patch("crates/horizon-client/src/game/remote.rs", '''                Event::ServerResourcePackReady { id, path, required } => self.activate_server_pack(id, path, required),
                 Event::ServerResourcePackFailed { id, required, reason } => {
                     log::warn!("Horizon: resource pack failed id={id:032x} required={required}: {reason}");
@@ -1740,92 +1827,10 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''            self.ui.opt
     }
     fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {''', "report actual resource reload result")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''use std::{collections::HashMap, sync::Arc, time::Instant};''', '''use std::{collections::HashMap, fs, path::PathBuf, sync::Arc, time::Instant};''', "resource-pack path imports")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
-    listed: std::collections::HashSet<u128>,''', '''    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
-    pub(super) server_packs: Vec<(u128, PathBuf)>,
-    listed: std::collections::HashSet<u128>,''', "active server-pack state")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''            skin_textures: HashMap::new(),
-            listed: Default::default(),''', '''            skin_textures: HashMap::new(),
-            server_packs: Vec::new(),
-            listed: Default::default(),''', "initialize active server-pack state")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''                Event::Reconfigured(registries) => self.set_registries(registries),
-                Event::DecodeError(e) => {''', '''                Event::Reconfigured(registries) => self.set_registries(registries),
-                Event::ServerResourcePackReady { id, path, required } => self.activate_server_pack(id, path, required),
-                Event::ServerResourcePackFailed { id, required, reason } => {
-                    log::warn!("Horizon: resource pack failed id={id:032x} required={required}: {reason}");
-                }
-                Event::ServerResourcePackPop { id } => self.pop_server_packs(id),
-                Event::DecodeError(e) => {''', "resource-pack events to game")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn handle_packet(&mut self, packet: C) -> Result<()> {''', '''    fn activate_server_pack(&mut self, id: u128, path: PathBuf, required: bool) {
-        let Some(remote) = self.remote.as_mut() else {
-            crate::server_packs::mark_active(&path, false);
-            return;
-        };
-        remote.server_packs.retain(|(old, old_path)| {
-            if *old == id {
-                crate::server_packs::mark_active(old_path, false);
-                false
-            } else { true }
-        });
-        crate::server_packs::mark_active(&path, true);
-        remote.server_packs.push((id, path.clone()));
-        log::info!("Horizon: applying server resource pack id={id:032x} required={required}");
-        self.pending_server_pack_responses.push(id);
-        if self.rest_loader.is_some() {
-            self.pending_pack_reload = true;
-        } else {
-            let loaded = self.reload_packs();
-            self.finish_pending_server_pack_responses(loaded);
-        }
-    }
-
-    pub(super) fn finish_pending_server_pack_responses(&mut self, success: bool) {
-        let ids = std::mem::take(&mut self.pending_server_pack_responses);
-        if ids.is_empty() { return; }
-        if !success {
-            let mut paths = Vec::new();
-            if let Some(remote) = self.remote.as_mut() {
-                remote.server_packs.retain(|(id, path)| {
-                    if ids.contains(id) { paths.push(path.clone()); false } else { true }
-                });
-            }
-            for path in paths { crate::server_packs::mark_active(&path, false); }
-            let _ = self.reload_packs();
-        }
-        if let Some(remote) = self.remote.as_ref() {
-            for id in ids { remote.session.send_resource_pack_response(id, if success { 0 } else { 6 }); }
-        }
-        if success { log::info!("Horizon: server resource packs applied and reloaded"); }
-        else { log::warn!("Horizon: server pack reload failed; invalid pack disabled"); }
-    }
-
-    fn pop_server_packs(&mut self, id: Option<u128>) {
-        let mut removed = Vec::new();
-        if let Some(remote) = self.remote.as_mut() {
-            let mut keep = Vec::new();
-            for pack in remote.server_packs.drain(..) {
-                if id.is_none() || id == Some(pack.0) { removed.push(pack); } else { keep.push(pack); }
-            }
-            remote.server_packs = keep;
-        }
-        if removed.is_empty() { log::info!("Horizon: server pack pop id={id:?}, no active match"); return; }
-        if self.rest_loader.is_some() { self.pending_pack_reload = true; }
-        else if !self.reload_packs() { log::warn!("Horizon: pack reload after pop was deferred or failed"); }
-        if let Some(remote) = self.remote.as_ref() {
-            for (pack_id, path) in removed {
-                remote.session.send_resource_pack_response(pack_id, 7);
-                crate::server_packs::mark_active(&path, false);
-            }
-        }
-        log::info!("Horizon: removed server resource pack(s) requested by server");
-    }
-
-    fn handle_packet(&mut self, packet: C) -> Result<()> {''', "game-thread resource-pack lifecycle")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''r.skin_textures.entry(e.uuid).or_insert(textures);''', '''r.skin_textures.insert(e.uuid, textures);''', "refresh profile textures instead of keeping stale entries")
 
