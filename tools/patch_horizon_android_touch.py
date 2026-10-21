@@ -1414,9 +1414,10 @@ pack_patch("crates/horizon-client/src/net.rs", '''fn receive_play(
 
 pack_patch("crates/horizon-client/src/net.rs", '''    pub fn send(&self, packet: play::Serverbound) {
         if self.debug''', '''    pub fn send(&self, packet: play::Serverbound) {
-        // A server/proxy can switch back to CONFIGURATION while the game thread
-        // is still ticking. Do not let PLAY packets (especially ClientTickEnd,
-        // packet ID 13) cross that packet-registry boundary.
+        // Serialize the phase check with packet writes. A state check before
+        // acquiring this mutex still allows a PLAY packet to slip behind the
+        // ConfigurationAcknowledged packet if the game thread is preempted.
+        let mut writer_guard = self.writer.lock().unwrap();
         if self.protocol_state.load(Ordering::Acquire) != PACK_STATE_PLAY {
             static SUPPRESSED_PHASE_PACKETS: std::sync::atomic::AtomicUsize =
                 std::sync::atomic::AtomicUsize::new(0);
@@ -1428,7 +1429,13 @@ pack_patch("crates/horizon-client/src/net.rs", '''    pub fn send(&self, packet:
             }
             return;
         }
-        if self.debug''', "suppress stale play packets during configuration")
+        if self.debug''', "serialize play phase check with packet writes")
+
+pack_patch("crates/horizon-client/src/net.rs", '''        if let Some(w) = self.writer.lock().unwrap().as_mut()
+            && w.send(&packet.encode()).is_err()
+        {''', '''        if let Some(w) = writer_guard.as_mut()
+            && w.send(&packet.encode()).is_err()
+        {''', "reuse serialized writer guard for play packet writes")
 
 pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound::ResourcePackPush(p) => {
                 log::warn!(
