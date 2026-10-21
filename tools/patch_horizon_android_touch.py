@@ -1467,6 +1467,155 @@ pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::
             }
             cfg::Clientbound::CookieRequest(q) => {''', "configuration resource-pack handling")
 
+
+# Resource-pack responses must use the same protocol phase in which each offer arrived.
+# The configuration reader is shared with a download worker, rather than blocked on HTTP.
+pack_patch("crates/horizon-client/src/net.rs", '''/// What the network thread reports to the game.
+pub enum Event {''', '''#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResourcePackPhase { Configuration, Play }
+
+/// What the network thread reports to the game.
+pub enum Event {''', "resource-pack protocol phase")
+pack_patch("crates/horizon-client/src/net.rs", '''    ServerResourcePackReady { id: u128, path: PathBuf, required: bool },
+    ServerResourcePackFailed { id: u128, required: bool, reason: String },
+    ServerResourcePackPop { id: Option<u128> },''', '''    ServerResourcePackReady { id: u128, path: PathBuf, required: bool, phase: ResourcePackPhase },
+    ServerResourcePackFailed { id: u128, required: bool, reason: String, phase: ResourcePackPhase },
+    ServerResourcePackPop { id: Option<u128>, phase: ResourcePackPhase },''', "attach protocol phase to resource-pack events")
+pack_patch("crates/horizon-client/src/net.rs", '''    pub fn send_resource_pack_response(&self, id: u128, action: i32) {
+        send_pack_status(&self.writer, &self.protocol_state, id, action);
+    }''', '''    pub fn send_resource_pack_response(&self, id: u128, action: i32) {
+        send_pack_status(&self.writer, &self.protocol_state, id, action);
+    }
+    pub fn send_resource_pack_response_in_phase(&self, id: u128, action: i32, phase: ResourcePackPhase) {
+        send_pack_status_in_phase(&self.writer, id, action, phase);
+    }''', "phase-specific resource-pack response API")
+pack_patch("crates/horizon-client/src/net.rs", '''fn send_pack_status(writer: &Mutex<Option<ConnWriter>>, state: &AtomicU8, id: u128, action: i32) {
+    let bytes = if state.load(Ordering::Acquire) == PACK_STATE_CONFIG {
+        cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action }).encode()
+    } else {
+        play::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action }).encode()
+    };
+    if let Some(w) = writer.lock().unwrap().as_mut() && w.send(&bytes).is_err() {
+        log::warn!("Horizon: failed sending resource-pack status id={id:032x} action={action}");
+        w.shutdown();
+    }
+}''', '''fn send_pack_status(writer: &Mutex<Option<ConnWriter>>, state: &AtomicU8, id: u128, action: i32) {
+    let phase = if state.load(Ordering::Acquire) == PACK_STATE_CONFIG {
+        ResourcePackPhase::Configuration
+    } else {
+        ResourcePackPhase::Play
+    };
+    send_pack_status_in_phase(writer, id, action, phase);
+}
+
+fn send_pack_status_in_phase(writer: &Mutex<Option<ConnWriter>>, id: u128, action: i32, phase: ResourcePackPhase) {
+    let bytes = match phase {
+        ResourcePackPhase::Configuration => cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action }).encode(),
+        ResourcePackPhase::Play => play::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action }).encode(),
+    };
+    if let Some(w) = writer.lock().unwrap().as_mut() && w.send(&bytes).is_err() {
+        log::warn!("Horizon: failed sending resource-pack status id={id:032x} action={action} phase={phase:?}");
+        w.shutdown();
+    }
+}''', "phase-specific resource-pack packet encoder")
+pack_patch("crates/horizon-client/src/net.rs", '''fn configure(
+    reader: &mut ConnReader,
+    writer: &Mutex<Option<ConnWriter>>,
+    lang: &Language,
+    send: &Sender<Event>,
+) -> Result<Dynamic, String> {''', '''fn configure(
+    reader: &mut ConnReader,
+    writer: Arc<Mutex<Option<ConnWriter>>>,
+    lang: &Language,
+    send: &Sender<Event>,
+) -> Result<Dynamic, String> {''', "share writer with configuration download workers")
+pack_patch("crates/horizon-client/src/net.rs", '''let registries = configure(&mut reader, shared_writer, lang, send)?;''', '''let registries = configure(&mut reader, Arc::clone(shared_writer), lang, send)?;''', "clone connection writer for initial configuration")
+pack_patch("crates/horizon-client/src/net.rs", '''let registries = configure(reader, &shared_writer, lang, send)?;''', '''let registries = configure(reader, Arc::clone(&shared_writer), lang, send)?;''', "clone connection writer for reconfiguration")
+pack_patch("crates/horizon-client/src/net.rs", '''send_pack_status(&writer, &state, id, 4);
+                            let _ = events.send(Event::ServerResourcePackReady { id, path, required });''', '''send_pack_status_in_phase(&writer, id, 4, ResourcePackPhase::Play);
+                            let _ = events.send(Event::ServerResourcePackReady { id, path, required, phase: ResourcePackPhase::Play });''', "route play download completion through play packet type")
+pack_patch("crates/horizon-client/src/net.rs", '''send_pack_status(&writer, &state, id, if supported_pack_url(&url) { 2 } else { 5 });
+                            log::warn!("Horizon: server resource-pack download failed id={id:032x} required={required}: {reason}");
+                            let _ = events.send(Event::ServerResourcePackFailed { id, required, reason });''', '''send_pack_status_in_phase(&writer, id, if supported_pack_url(&url) { 2 } else { 5 }, ResourcePackPhase::Play);
+                            log::warn!("Horizon: server resource-pack download failed id={id:032x} required={required}: {reason}");
+                            let _ = events.send(Event::ServerResourcePackFailed { id, required, reason, phase: ResourcePackPhase::Play });''', "route play download failure through play packet type")
+pack_patch("crates/horizon-client/src/net.rs", '''let _ = send.send(Event::ServerResourcePackPop { id: p.id });''', '''let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Play });''', "record phase for play resource-pack removal")
+pack_patch("crates/horizon-client/src/net.rs", '''let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: e.to_string() });''', '''let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: e.to_string(), phase: ResourcePackPhase::Play });''', "record phase for play worker-start failure")
+
+pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPush(p) => {
+                let id = p.id;
+                log::info!("Horizon: server resource-pack offer id={id:032x} state=configuration required={} hash_present={} origin={}", p.required, !p.hash.is_empty(), safe_resource_pack_origin(&p.url));
+                reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 3 }))?;
+                match download_server_pack(id, &p.url, &p.hash, send) {
+                    Ok(path) => {
+                        reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 4 }))?;
+                        let _ = send.send(Event::ServerResourcePackReady { id, path, required: p.required });
+                    }
+                    Err(reason) => {
+                        let action = if supported_pack_url(&p.url) { 2 } else { 5 };
+                        reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action }))?;
+                        log::warn!("Horizon: server resource-pack download failed id={id:032x} required={}: {reason}", p.required);
+                        let _ = send.send(Event::ServerResourcePackFailed { id, required: p.required, reason: reason.clone() });
+                        if p.required { return Err(format!("required resource pack {id:032x} failed: {reason}")); }
+                    }
+                }
+            }''', '''            cfg::Clientbound::ResourcePackPush(p) => {
+                let id = p.id;
+                let url = p.url;
+                let hash = p.hash;
+                let required = p.required;
+                let supported_url = supported_pack_url(&url);
+                log::info!("Horizon: server resource-pack offer id={id:032x} state=configuration required={required} hash_present={} origin={}", !hash.is_empty(), safe_resource_pack_origin(&url));
+                reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 3 }))?;
+                let worker_writer = Arc::clone(&writer);
+                let events = send.clone();
+                let started = std::thread::Builder::new().name("horizon-pack-download-config".into()).spawn(move || {
+                    match download_server_pack(id, &url, &hash, &events) {
+                        Ok(path) => {
+                            send_pack_status_in_phase(&worker_writer, id, 4, ResourcePackPhase::Configuration);
+                            let _ = events.send(Event::ServerResourcePackReady { id, path, required, phase: ResourcePackPhase::Configuration });
+                        }
+                        Err(reason) => {
+                            send_pack_status_in_phase(&worker_writer, id, if supported_url { 2 } else { 5 }, ResourcePackPhase::Configuration);
+                            log::warn!("Horizon: server resource-pack download failed id={id:032x} required={required}: {reason}");
+                            let _ = events.send(Event::ServerResourcePackFailed { id, required, reason: reason.clone(), phase: ResourcePackPhase::Configuration });
+                            if required {
+                                if let Some(w) = worker_writer.lock().unwrap().as_mut() { w.shutdown(); }
+                            }
+                        }
+                    }
+                });
+                if let Err(error) = started {
+                    let action = if supported_url { 2 } else { 5 };
+                    reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action }))?;
+                    log::warn!("Horizon: cannot start configuration resource-pack downloader id={id:032x}: {error}");
+                    let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: error.to_string(), phase: ResourcePackPhase::Configuration });
+                    if required { return Err(format!("required resource pack {id:032x} could not start: {error}")); }
+                }
+            }''', "download configuration resource packs in background")
+pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
+            }''', '''            cfg::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Configuration });
+            }''', "record phase for configuration resource-pack removal")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                Event::ServerResourcePackReady { id, path, required } => self.activate_server_pack(id, path, required),
+                Event::ServerResourcePackFailed { id, required, reason } => {
+                    log::warn!("Horizon: resource pack failed id={id:032x} required={required}: {reason}");
+                }
+                Event::ServerResourcePackPop { id } => self.pop_server_packs(id),''', '''                Event::ServerResourcePackReady { id, path, required, phase } => self.activate_server_pack(id, path, required, phase),
+                Event::ServerResourcePackFailed { id, required, reason, phase } => {
+                    log::warn!("Horizon: resource pack failed id={id:032x} required={required} phase={phase:?}: {reason}");
+                }
+                Event::ServerResourcePackPop { id, phase } => self.pop_server_packs(id, phase),''', "consume phase-aware resource-pack events")
+pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn activate_server_pack(&mut self, id: u128, path: PathBuf, required: bool) {''', '''    fn activate_server_pack(&mut self, id: u128, path: PathBuf, required: bool, phase: crate::net::ResourcePackPhase) {''', "track resource-pack response phase during reload")
+pack_patch("crates/horizon-client/src/game/remote.rs", '''        self.pending_server_pack_responses.push(id);''', '''        self.pending_server_pack_responses.push((id, phase));''', "store per-pack protocol phase")
+pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn pop_server_packs(&mut self, id: Option<u128>) {''', '''    fn pop_server_packs(&mut self, id: Option<u128>, phase: crate::net::ResourcePackPhase) {''', "track phase for resource-pack removal")
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                remote.session.send_resource_pack_response(pack_id, 7);''', '''                remote.session.send_resource_pack_response_in_phase(pack_id, 7, phase);''', "send discarded status in the request phase")
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                    if ids.contains(id) { paths.push(path.clone()); false } else { true }''', '''                    if ids.iter().any(|(pending_id, _)| pending_id == id) { paths.push(path.clone()); false } else { true }''', "remove failed packs by pending response UUID")
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            for id in ids { remote.session.send_resource_pack_response(id, if success { 0 } else { 6 }); }''', '''            for (id, phase) in ids { remote.session.send_resource_pack_response_in_phase(id, if success { 0 } else { 6 }, phase); }''', "send final pack status in the original protocol phase")
+pack_patch("crates/horizon-client/src/game.rs", '''    pending_server_pack_responses: Vec<u128>,''', '''    pending_server_pack_responses: Vec<(u128, crate::net::ResourcePackPhase)>,''', "preserve phase for deferred pack reload")
+
 pack_patch("crates/horizon-protocol/src/packets/play.rs", '''            ClientInformation, CustomPayload, Disconnect, KeepAlive, Ping, ResourcePackPush,
             ResourcePackResponse, UpdateTags,''', '''            ClientInformation, CustomPayload, Disconnect, KeepAlive, Ping, ResourcePackPop,
             ResourcePackPush, ResourcePackResponse, UpdateTags,''', "play packet imports")
