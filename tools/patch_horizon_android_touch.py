@@ -1528,6 +1528,8 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''    pub(super) fn reloa
             return false;
         }''', "reload status return type")
 
+pack_patch("crates/horizon-client/src/game/options.rs", '''                    "resourcePacks" | "incompatibleResourcePacks" => self.reload_packs(),''', '''                    "resourcePacks" | "incompatibleResourcePacks" => { self.reload_packs(); },''', "ignore resource reload result in settings match")
+
 pack_patch("crates/horizon-client/src/game/packs.rs", '''        let result = startup_root(&vanilla, &self.settings.resource_packs)
             .map_err(Into::into)
             .and_then(|root| self.reload_resources(&root));
