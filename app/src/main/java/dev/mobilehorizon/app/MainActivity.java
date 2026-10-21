@@ -320,7 +320,7 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams offlineStatusParams = params(-1, -2);
         offlineStatusParams.topMargin = dp(6);
         page.addView(offlineStatusText, offlineStatusParams);
-        TextView offlineNote = text("Não precisa de login Microsoft. Serve para testar o cliente e mundos locais; servidores online podem exigir autenticação oficial.", 13, 0xff59647b, false);
+        TextView offlineNote = text("Não precisa de login Microsoft. Funciona em mundos locais e servidores em modo offline. Só servidores que exigem autenticação online precisam de uma conta Microsoft verificada.", 13, 0xff59647b, false);
         LinearLayout.LayoutParams offlineNoteParams = params(-1, -2);
         offlineNoteParams.topMargin = dp(4);
         page.addView(offlineNote, offlineNoteParams);
