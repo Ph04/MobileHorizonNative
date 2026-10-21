@@ -67,7 +67,7 @@ Sem a chave persistente, os APKs de teste são assinados por uma chave de CI tem
 1. No Termux, instale os requisitos e autentique o GitHub CLI:
    ```bash
    pkg update
-   pkg install openjdk-17 gh coreutils
+   pkg install openjdk-17 gh coreutils curl
    gh auth login
    ```
 2. Baixe e execute o script de configuração deste repositório:
