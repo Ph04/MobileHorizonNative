@@ -1931,13 +1931,13 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                    if
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            for id in ids { remote.session.send_resource_pack_response(id, if success { 0 } else { 6 }); }''', '''            for (id, phase) in ids { remote.session.send_resource_pack_response_in_phase(id, if success { 0 } else { 6 }, phase); }''', "send final pack status in the original protocol phase")
 pack_patch("crates/horizon-client/src/game.rs", '''    pending_server_pack_responses: Vec<u128>,''', '''    pending_server_pack_responses: Vec<(u128, crate::net::ResourcePackPhase)>,''', "preserve phase for deferred pack reload")
 
-pack_patch("crates/horizon-client/src/item_data.rs", ```fn read_text(t: &Tag) -> Option<String> {
+pack_patch("crates/horizon-client/src/item_data.rs", '''fn read_text(t: &Tag) -> Option<String> {
     match t {
         Tag::String(s) => Some(s.to_string_lossy()),
         Tag::Compound(_) => t.get("text").and_then(string),
         _ => None,
     }
-}```, ```fn read_text(t: &Tag) -> Option<String> {
+}''', '''fn read_text(t: &Tag) -> Option<String> {
     match t {
         Tag::String(s) => Some(s.to_string_lossy()),
         Tag::Compound(_) => t.get("text").and_then(string),
@@ -1975,13 +1975,13 @@ pub fn text_component_plain(tag: &Tag) -> String {
     let mut language = std::collections::HashMap::new();
     collect(tag, &mut language);
     horizon_protocol::text::plain(tag, &language)
-}```, "resolve server item text components through active resource-pack language")
+}''', "resolve server item text components through active resource-pack language")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", ```        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
+pack_patch("crates/horizon-client/src/game/remote.rs", '''        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
             out.data_mut().map_id = Some(*id);
         }
         Some(out)
-    }```, ```        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
+    }''', '''        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
             out.data_mut().map_id = Some(*id);
         }
 
@@ -2035,17 +2035,17 @@ pack_patch("crates/horizon-client/src/game/remote.rs", ```        if let Some(Co
         }
 
         Some(out)
-    }```, "preserve server item names and modern item-model components")
+    }''', "preserve server item names and modern item-model components")
 
-pack_patch("crates/horizon-client/src/item_tooltip.rs", ```    if let Some(name) = stack.custom_name() {
+pack_patch("crates/horizon-client/src/item_tooltip.rs", '''    if let Some(name) = stack.custom_name() {
         return name.to_owned();
     }
-    if stack.data().is_some_and(|d| d.ominous_banner) {```, ```    if let Some(name) = stack.custom_name() {
+    if stack.data().is_some_and(|d| d.ominous_banner) {''', '''    if let Some(name) = stack.custom_name() {
         return name.to_owned();
     }
     if let Some(name) = stack.data().and_then(|data| data.other("minecraft:item_name")) {
         return crate::item_data::text_component_plain(name);
     }
-    if stack.data().is_some_and(|d| d.ominous_banner) {```, "display server item_name before the vanilla item translation")
+    if stack.data().is_some_and(|d| d.ominous_banner) {''', "display server item_name before the vanilla item translation")
 
 print("Applied server resource-pack download, verification, application, pop handling and skin lifetime fixes.")
