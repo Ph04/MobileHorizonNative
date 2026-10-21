@@ -1582,11 +1582,6 @@ pack_patch("crates/horizon-client/src/net.rs", '''play::Clientbound::ResourcePac
             }''', '''play::Clientbound::ResourcePackPop(p) => {
                 let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Play });
             }''', "record phase for play resource-pack removal")
-pack_patch("crates/horizon-client/src/net.rs", '''cfg::Clientbound::ResourcePackPop(p) => {
-                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
-            }''', '''cfg::Clientbound::ResourcePackPop(p) => {
-                let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Configuration });
-            }''', "record phase for configuration resource-pack removal")
 pack_patch("crates/horizon-client/src/net.rs", '''let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: e.to_string() });''', '''let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: e.to_string(), phase: ResourcePackPhase::Play });''', "record phase for play worker-start failure")
 
 pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPush(p) => {
@@ -1641,7 +1636,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::
                 }
             }''', "download configuration resource packs in background")
 pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPop(p) => {
-                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Configuration });
             }''', '''            cfg::Clientbound::ResourcePackPop(p) => {
                 let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Configuration });
             }''', "record phase for configuration resource-pack removal")
