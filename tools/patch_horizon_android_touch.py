@@ -1635,11 +1635,6 @@ pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::
                     if required { return Err(format!("required resource pack {id:032x} could not start: {error}")); }
                 }
             }''', "download configuration resource packs in background")
-pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPop(p) => {
-                let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Configuration });
-            }''', '''            cfg::Clientbound::ResourcePackPop(p) => {
-                let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Configuration });
-            }''', "record phase for configuration resource-pack removal")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''                Event::ServerResourcePackReady { id, path, required } => self.activate_server_pack(id, path, required),
                 Event::ServerResourcePackFailed { id, required, reason } => {
