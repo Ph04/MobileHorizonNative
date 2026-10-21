@@ -18,6 +18,14 @@ command -v base64 >/dev/null 2>&1 || die "O comando base64 não foi encontrado."
 command -v od >/dev/null 2>&1 || die "O comando od não foi encontrado; instale coreutils."
 gh auth status >/dev/null 2>&1 || die "Autentique sua conta primeiro com: gh auth login"
 gh repo view "$REPO" --json nameWithOwner >/dev/null 2>&1 || die "Sua conta gh não tem acesso ao repositório $REPO."
+SECRET_TABLE="$(gh secret list --repo "$REPO" 2>/dev/null)" || die "Não consegui consultar os nomes dos secrets. Confira as permissões da conta gh."
+SECRET_NAMES="$(printf '%s\\n' "$SECRET_TABLE" | awk 'NR > 1 {print $1}')"
+EXISTING_SIGNING_SECRETS=0
+for SECRET_NAME in MOBILEHORIZON_KEYSTORE_BASE64 MOBILEHORIZON_KEYSTORE_PASSWORD MOBILEHORIZON_KEY_ALIAS MOBILEHORIZON_KEY_PASSWORD; do
+  if printf '%s\\n' "$SECRET_NAMES" | grep -Fxq "$SECRET_NAME"; then
+    EXISTING_SIGNING_SECRETS=$((EXISTING_SIGNING_SECRETS + 1))
+  fi
+done
 
 mkdir -p "$KEY_DIR"
 chmod 700 "$KEY_DIR"
@@ -26,6 +34,9 @@ if [[ -s "$KEYSTORE" && -s "$PASSWORD_FILE" ]]; then
   info "Reutilizando a chave persistente já existente; nenhuma chave nova será criada."
   STORE_PASS="$(cat "$PASSWORD_FILE")"
 elif [[ ! -e "$KEYSTORE" && ! -e "$PASSWORD_FILE" ]]; then
+  if [[ "$EXISTING_SIGNING_SECRETS" -gt 0 ]]; then
+    die "O GitHub já tem pelo menos um secret de assinatura, mas a keystore local não existe. Não vou sobrescrever a chave de atualização. Recupere o arquivo original a partir do seu backup."
+  fi
   info "Gerando uma chave de assinatura nova no armazenamento privado do Termux."
   STORE_PASS="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
   TMP_KEYSTORE="$KEY_DIR/mobilehorizon-signing.tmp.jks"
