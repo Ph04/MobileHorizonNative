@@ -71,7 +71,7 @@ printf '%s' "$STORE_PASS" | gh secret set MOBILEHORIZON_KEY_PASSWORD --repo "$RE
 rm -f "$BASE64_FILE"
 
 info "Secrets cadastrados. Iniciando uma nova compilação usando a chave persistente."
-gh workflow run "Android build, official downloader and Horizon runtime" --repo "$REPO" --ref "$BRANCH"
+gh workflow run ".github/workflows/android-build.yml" --repo "$REPO" --ref "$BRANCH"
 
 printf '\nConcluído. A keystore foi preservada em:\n%s\n' "$KEYSTORE"
 printf 'Guarde uma cópia segura da pasta %s; não a envie para o repositório nem para chats.\n' "$KEY_DIR"
