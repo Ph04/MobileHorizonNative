@@ -277,10 +277,14 @@ pub fn fetch(
             && sha1_file(&cached).is_ok_and(|actual| actual.eq_ignore_ascii_case(&hash))
             && validate_zip(&cached).is_ok()
         {
+            log::info!("Horizon: server resource-pack cache hit id={id:032x} sha1={hash}");
             touch(&cached);
             return Ok(cached);
         }
-        if cached.exists() { let _ = fs::remove_file(&cached); }
+        if cached.exists() {
+            log::warn!("Horizon: server resource-pack cache entry failed verification id={id:032x} sha1={hash}; redownloading");
+            let _ = fs::remove_file(&cached);
+        }
     }
 
     let nonce = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
@@ -355,6 +359,7 @@ pub fn fetch(
         return Err(FetchError::Failed(reason));
     }
 
+    log::info!("Horizon: server resource-pack validated id={id:032x} sha1={actual_sha1} bytes={downloaded}");
     let target = dir.join(format!("{actual_sha1}.zip"));
     if target.is_file() && sha1_file(&target).is_ok_and(|existing| existing == actual_sha1) {
         let _ = fs::remove_file(&temp);
