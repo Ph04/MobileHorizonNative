@@ -1177,7 +1177,45 @@ pack_patch("crates/horizon-client/src/net.rs",
                     log::warn!("Horizon: this server requested official online authentication; offline nickname remains supported on offline-mode servers");
                 }
                 status(send, &tr(lang, "connect.authorizing"));''',
+
     "diagnose online/offline authentication per server")
+
+# Do not block an offline profile locally on a hybrid server's encryption challenge.
+# A server that truly requires official online authentication remains responsible for
+# rejecting the unauthenticated profile; this client never fabricates a Microsoft session.
+pack_patch("crates/horizon-client/src/net.rs", '''                if hello.should_authenticate {
+                    let account = auth.ok_or_else(|| NOT_SIGNED_IN.to_owned())?;
+                    let hash = server_hash(&hello.server_id, &secret, &hello.public_key);
+                    if let Err(err) = crate::auth::join_server(account, &hash) {
+                        let reason = match err.reason() {
+                            Ok(key) => tr(lang, key),
+                            Err(message) => message.to_owned(),
+                        };
+                        return Err(plain(
+                            &translatable("disconnect.loginFailedInfo", &[&reason]),
+                            lang,
+                        ));
+                    }
+                }''', '''                if hello.should_authenticate {
+                    if let Some(account) = auth {
+                        let hash = server_hash(&hello.server_id, &secret, &hello.public_key);
+                        if let Err(err) = crate::auth::join_server(account, &hash) {
+                            let reason = match err.reason() {
+                                Ok(key) => tr(lang, key),
+                                Err(message) => message.to_owned(),
+                            };
+                            return Err(plain(
+                                &translatable("disconnect.loginFailedInfo", &[&reason]),
+                                lang,
+                            ));
+                        }
+                    } else {
+                        log::warn!(
+                            "Horizon: server requested online authentication but no Microsoft session is present; sending the normal encrypted login response and letting the server decide whether offline fallback is allowed"
+                        );
+                    }
+                }''', "let hybrid servers decide offline fallback after encryption challenge")
+
 
 pack_patch("crates/horizon-client/src/net.rs", '''use std::{
     sync::{
@@ -1539,7 +1577,16 @@ pack_patch("crates/horizon-client/src/net.rs", '''send_pack_status(&writer, &sta
                             let _ = events.send(Event::ServerResourcePackFailed { id, required, reason });''', '''send_pack_status_in_phase(&writer, id, if supported_pack_url(&url) { 2 } else { 5 }, ResourcePackPhase::Play);
                             log::warn!("Horizon: server resource-pack download failed id={id:032x} required={required}: {reason}");
                             let _ = events.send(Event::ServerResourcePackFailed { id, required, reason, phase: ResourcePackPhase::Play });''', "route play download failure through play packet type")
-pack_patch("crates/horizon-client/src/net.rs", '''let _ = send.send(Event::ServerResourcePackPop { id: p.id });''', '''let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Play });''', "record phase for play resource-pack removal")
+pack_patch("crates/horizon-client/src/net.rs", '''play::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
+            }''', '''play::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Play });
+            }''', "record phase for play resource-pack removal")
+pack_patch("crates/horizon-client/src/net.rs", '''cfg::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
+            }''', '''cfg::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Configuration });
+            }''', "record phase for configuration resource-pack removal")
 pack_patch("crates/horizon-client/src/net.rs", '''let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: e.to_string() });''', '''let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: e.to_string(), phase: ResourcePackPhase::Play });''', "record phase for play worker-start failure")
 
 pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPush(p) => {
