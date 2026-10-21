@@ -2057,4 +2057,4 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''        lang::set(lang:
         );
         lang::set(loaded_language);''', "log active server-pack language reload")
 
-print("Applied server resource-pack download, verification, application, pop handling and skin lifetime fixes.")
+print("Applied Java-compatible server resource packs, item text/model components and multiplayer skin fixes.")
