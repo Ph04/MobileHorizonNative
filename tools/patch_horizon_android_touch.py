@@ -1131,3 +1131,570 @@ shutil.copyfile(repo_root / "android-native/Cargo.toml", dst / "Cargo.toml")
 shutil.copyfile(repo_root / "android-native/src/lib.rs", dst / "src/lib.rs")
 
 print("Patched Horizon Android touch input and created the NativeActivity cdylib target.")
+
+
+# ---------------------------------------------------------------------------
+# MobileHorizon: server resource packs and multiplayer profile texture lifetime
+# Apply this overlay to the pinned upstream source before the Android build.
+from pathlib import Path
+import sys
+
+pack_root = Path(sys.argv[1])
+def pack_patch(rel, old, new, label):
+    path = pack_root / rel
+    data = path.read_text(encoding="utf-8")
+    count = data.count(old)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one source anchor, found {count} in {rel}")
+    path.write_text(data.replace(old, new, 1), encoding="utf-8")
+
+pack_patch("crates/horizon-client/Cargo.toml",
+    'sha2 = "0.10.9"\n',
+    'sha2 = "0.10.9"\nsha1 = "0.10"\n',
+    "resource-pack SHA-1 dependency")
+
+pack_patch("crates/horizon-client/src/net.rs", '''use std::{
+    sync::{
+        Arc, Mutex,
+        mpsc::{Receiver, Sender, channel},
+    },
+    thread::JoinHandle,
+    time::Duration,
+};''', '''use sha1::Digest;
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
+    path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU8, Ordering},
+        mpsc::{Receiver, Sender, channel},
+    },
+    thread::JoinHandle,
+    time::Duration,
+};
+const PACK_STATE_CONFIG: u8 = 1;
+const PACK_STATE_PLAY: u8 = 2;
+const PACK_MAX_BYTES: u64 = 512 * 1024 * 1024;
+const PACK_MAX_EXPANDED: u64 = 1024 * 1024 * 1024;
+const PACK_MAX_ENTRIES: usize = 100_000;
+''', "resource-pack networking imports")
+
+pack_patch("crates/horizon-client/src/net.rs", '''    /// The server sent us back to configuration and finished it again.
+    Reconfigured(Arc<Dynamic>),
+    /// The connection ended.''', '''    /// The server sent us back to configuration and finished it again.
+    Reconfigured(Arc<Dynamic>),
+    ServerResourcePackReady { id: u128, path: PathBuf, required: bool },
+    ServerResourcePackFailed { id: u128, required: bool, reason: String },
+    ServerResourcePackPop { id: Option<u128> },
+    /// The connection ended.''', "resource-pack events")
+
+pack_patch("crates/horizon-client/src/net.rs", '''    /// HORIZON_NET_DEBUG=1 logs every packet sent from the game thread.
+    debug: bool,
+}''', '''    /// HORIZON_NET_DEBUG=1 logs every packet sent from the game thread.
+    debug: bool,
+    protocol_state: Arc<AtomicU8>,
+}''', "network state field")
+
+pack_patch("crates/horizon-client/src/net.rs", '''        let (send, events) = channel();
+        let writer = Arc::new(Mutex::new(None));
+        let counters = Arc::new(Mutex::new(None));
+        let (thread_writer, thread_counters) = (writer.clone(), counters.clone());''', '''        let (send, events) = channel();
+        let writer = Arc::new(Mutex::new(None));
+        let counters = Arc::new(Mutex::new(None));
+        let protocol_state = Arc::new(AtomicU8::new(0));
+        let (thread_writer, thread_counters, thread_protocol_state) =
+            (writer.clone(), counters.clone(), protocol_state.clone());''', "protocol state initialization")
+
+pack_patch("crates/horizon-client/src/net.rs", '''                    &thread_writer,
+                    &thread_counters,
+                );''', '''                    &thread_writer,
+                    &thread_counters,
+                    &thread_protocol_state,
+                );''', "network thread state argument")
+
+pack_patch("crates/horizon-client/src/net.rs", '''            counters,
+            debug,
+        }''', '''            counters,
+            debug,
+            protocol_state,
+        }''', "session state initialization")
+
+pack_patch("crates/horizon-client/src/net.rs", '''    pub fn disconnect(&mut self) {
+        if let Some(w) = self.writer.lock().unwrap().take() {''', '''    pub fn send_resource_pack_response(&self, id: u128, action: i32) {
+        send_pack_status(&self.writer, &self.protocol_state, id, action);
+    }
+    pub fn disconnect(&mut self) {
+        if let Some(w) = self.writer.lock().unwrap().take() {''', "resource-pack status method")
+
+pack_patch("crates/horizon-client/src/net.rs", '''    },
+}
+
+pub struct Session {''', '''    },
+}
+
+fn supported_pack_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    (lower.starts_with("https://") || lower.starts_with("http://"))
+        && !url.chars().any(char::is_control)
+}
+
+fn download_server_pack(id: u128, url: &str, expected_sha1: &str) -> Result<PathBuf, String> {
+    if !supported_pack_url(url) { return Err("unsupported resource-pack URL scheme".into()); }
+    if !expected_sha1.is_empty()
+        && (expected_sha1.len() != 40 || !expected_sha1.bytes().all(|b| b.is_ascii_hexdigit()))
+    { return Err("malformed server-supplied SHA-1".into()); }
+
+    let base = std::env::current_dir().map_err(|e| format!("game directory unavailable: {e}"))?;
+    let dir = base.join("resourcepacks");
+    fs::create_dir_all(&dir).map_err(|e| format!("cannot create resourcepacks directory: {e}"))?;
+    let name = format!("serverpack-{id:032x}.zip");
+    let dest = dir.join(&name);
+    let temp = dir.join(format!(".{name}.download.tmp"));
+    let _ = fs::remove_file(&temp);
+    let response = ureq::get(url)
+        .timeout_connect(Duration::from_secs(15))
+        .timeout_read(Duration::from_secs(30))
+        .timeout_write(Duration::from_secs(30))
+        .call().map_err(|e| format!("HTTP download failed: {e}"))?;
+    let mut reader = response.into_reader();
+    let mut file = OpenOptions::new().write(true).create_new(true).open(&temp)
+        .map_err(|e| format!("cannot create temporary pack: {e}"))?;
+    let mut hash = sha1::Sha1::new();
+    let mut size = 0u64;
+    let mut actual_sha1 = String::new();
+    let mut buffer = [0u8; 64 * 1024];
+    let downloaded = (|| -> Result<(), String> {
+        loop {
+            let n = reader.read(&mut buffer).map_err(|e| format!("download read failed: {e}"))?;
+            if n == 0 { break; }
+            size = size.saturating_add(n as u64);
+            if size > PACK_MAX_BYTES { return Err("server resource pack exceeds 512 MiB".into()); }
+            hash.update(&buffer[..n]);
+            file.write_all(&buffer[..n]).map_err(|e| format!("pack write failed: {e}"))?;
+        }
+        if size == 0 { return Err("server returned an empty resource pack".into()); }
+        file.sync_all().map_err(|e| format!("pack sync failed: {e}"))?;
+        actual_sha1 = format!("{:x}", hash.finalize());
+        if !expected_sha1.is_empty() && !actual_sha1.eq_ignore_ascii_case(expected_sha1) {
+            return Err(format!("SHA-1 mismatch (expected {expected_sha1}, got {actual_sha1})"));
+        }
+        Ok(())
+    })();
+    drop(file);
+    if let Err(e) = downloaded { let _ = fs::remove_file(&temp); return Err(e); }
+
+    let mut zip = match zip::ZipArchive::new(File::open(&temp).map_err(|e| format!("cannot open ZIP: {e}"))?) {
+        Ok(z) => z,
+        Err(e) => { let _ = fs::remove_file(&temp); return Err(format!("invalid ZIP: {e}")); }
+    };
+    if zip.is_empty() || zip.len() > PACK_MAX_ENTRIES {
+        let _ = fs::remove_file(&temp); return Err("invalid ZIP entry count".into());
+    }
+    let mut expanded = 0u64;
+    for i in 0..zip.len() {
+        let entry = zip.by_index(i).map_err(|e| format!("cannot inspect ZIP: {e}"))?;
+        if entry.enclosed_name().is_none() {
+            let _ = fs::remove_file(&temp); return Err("ZIP contains an unsafe path".into());
+        }
+        if !entry.is_dir() {
+            expanded = expanded.saturating_add(entry.size());
+            if entry.size() > PACK_MAX_BYTES || expanded > PACK_MAX_EXPANDED {
+                let _ = fs::remove_file(&temp); return Err("ZIP expands beyond the safety limit".into());
+            }
+        }
+    }
+    let mut meta = match zip.by_name("pack.mcmeta") {
+        Ok(m) => m,
+        Err(_) => { let _ = fs::remove_file(&temp); return Err("ZIP is missing root pack.mcmeta".into()); }
+    };
+    if meta.size() == 0 || meta.size() > 64 * 1024 {
+        let _ = fs::remove_file(&temp); return Err("invalid pack.mcmeta size".into());
+    }
+    let mut bytes = Vec::new();
+    (&mut meta).take(64 * 1024 + 1).read_to_end(&mut bytes)
+        .map_err(|e| format!("cannot read pack.mcmeta: {e}"))?;
+    let json: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|e| format!("invalid pack.mcmeta JSON: {e}"))?;
+    if !json.get("pack").is_some_and(serde_json::Value::is_object) {
+        let _ = fs::remove_file(&temp); return Err("pack.mcmeta has no pack object".into());
+    }
+    drop(meta);
+    drop(zip);
+    if dest.exists() { fs::remove_file(&dest).map_err(|e| format!("cannot replace old pack: {e}"))?; }
+    fs::rename(&temp, &dest).map_err(|e| format!("cannot install downloaded pack: {e}"))?;
+    log::info!("Horizon: server resource pack downloaded id={id:032x} bytes={size} sha1={actual_sha1}");
+    Ok(dest)
+}
+
+fn send_pack_status(writer: &Mutex<Option<ConnWriter>>, state: &AtomicU8, id: u128, action: i32) {
+    let bytes = if state.load(Ordering::Acquire) == PACK_STATE_CONFIG {
+        cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action }).encode()
+    } else {
+        play::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action }).encode()
+    };
+    if let Some(w) = writer.lock().unwrap().as_mut() && w.send(&bytes).is_err() {
+        log::warn!("Horizon: failed sending resource-pack status id={id:032x} action={action}");
+        w.shutdown();
+    }
+}
+
+pub struct Session {''', "validated server pack downloader")
+
+pack_patch("crates/horizon-client/src/net.rs", '''    shared_writer: &Mutex<Option<ConnWriter>>,
+    shared_counters: &Mutex<Option<Arc<Counters>>>,
+) -> Result<String, String> {''', '''    shared_writer: &Arc<Mutex<Option<ConnWriter>>>,
+    shared_counters: &Mutex<Option<Arc<Counters>>>,
+    protocol_state: &Arc<AtomicU8>,
+) -> Result<String, String> {''', "run signature")
+
+pack_patch("crates/horizon-client/src/net.rs", '''    *shared_writer.lock().unwrap() = Some(writer);
+    let registries = configure(&mut reader, shared_writer, lang, send)?;
+    let _ = send.send(Event::Joined {''', '''    *shared_writer.lock().unwrap() = Some(writer);
+    protocol_state.store(PACK_STATE_CONFIG, Ordering::Release);
+    let registries = configure(&mut reader, shared_writer, lang, send)?;
+    protocol_state.store(PACK_STATE_PLAY, Ordering::Release);
+    let _ = send.send(Event::Joined {''', "initial configuration/play state")
+
+pack_patch("crates/horizon-client/src/net.rs", '''    receive_play(&mut reader, shared_writer, lang, send)
+}''', '''    receive_play(&mut reader, Arc::clone(shared_writer), Arc::clone(protocol_state), lang, send)
+}''', "play state handoff")
+
+pack_patch("crates/horizon-client/src/net.rs", '''fn receive_play(
+    reader: &mut ConnReader,
+    shared_writer: &Mutex<Option<ConnWriter>>,
+    lang: &Language,
+    send: &Sender<Event>,
+) -> Result<String, String> {''', '''fn receive_play(
+    reader: &mut ConnReader,
+    shared_writer: Arc<Mutex<Option<ConnWriter>>>,
+    protocol_state: Arc<AtomicU8>,
+    lang: &Language,
+    send: &Sender<Event>,
+) -> Result<String, String> {''', "play packet reader signature")
+
+pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound::ResourcePackPush(p) => {
+                // Declined: Horizon has no server resource packs.
+                reply(play::Serverbound::ResourcePack(cfg::ResourcePackResponse {
+                    id: p.id,
+                    action: 1,
+                }));
+            }
+            play::Clientbound::StartConfiguration(_) => {
+                reply(play::Serverbound::ConfigurationAcknowledged(Empty));
+                let registries = configure(reader, shared_writer, lang, send)?;
+                let _ = send.send(Event::Reconfigured(Arc::new(registries)));
+            }''', '''            play::Clientbound::ResourcePackPush(p) => {
+                let id = p.id;
+                let url = p.url;
+                let hash = p.hash;
+                let required = p.required;
+                log::info!("Horizon: server resource-pack offer id={id:032x} state=play required={required} hash_present={}", !hash.is_empty());
+                reply(play::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 3 }));
+                let writer = Arc::clone(&shared_writer);
+                let state = Arc::clone(&protocol_state);
+                let events = send.clone();
+                let started = std::thread::Builder::new().name("horizon-pack-download".into()).spawn(move || {
+                    match download_server_pack(id, &url, &hash) {
+                        Ok(path) => {
+                            send_pack_status(&writer, &state, id, 4);
+                            let _ = events.send(Event::ServerResourcePackReady { id, path, required });
+                        }
+                        Err(reason) => {
+                            send_pack_status(&writer, &state, id, if supported_pack_url(&url) { 2 } else { 5 });
+                            log::warn!("Horizon: server resource-pack download failed id={id:032x} required={required}: {reason}");
+                            let _ = events.send(Event::ServerResourcePackFailed { id, required, reason });
+                            if required {
+                                if let Some(w) = writer.lock().unwrap().as_mut() { w.shutdown(); }
+                            }
+                        }
+                    }
+                });
+                if let Err(e) = started {
+                    log::warn!("Horizon: cannot start resource-pack downloader id={id:032x}: {e}");
+                    reply(play::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 2 }));
+                    let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: e.to_string() });
+                }
+            }
+            play::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
+            }
+            play::Clientbound::StartConfiguration(_) => {
+                reply(play::Serverbound::ConfigurationAcknowledged(Empty));
+                protocol_state.store(PACK_STATE_CONFIG, Ordering::Release);
+                let registries = configure(reader, &shared_writer, lang, send)?;
+                protocol_state.store(PACK_STATE_PLAY, Ordering::Release);
+                let _ = send.send(Event::Reconfigured(Arc::new(registries)));
+            }''', "play resource-pack handling")
+
+pack_patch("crates/horizon-client/src/net.rs", '''            // Know no packs: the server then sends every registry entry in full.
+            cfg::Clientbound::SelectKnownPacks(_) => {
+                reply(cfg::Serverbound::SelectKnownPacks(cfg::SelectKnownPacks {
+                    packs: vec![],
+                }))?
+            }''', '''            // No registry cache is advertised yet; this is separate from server resource packs.
+            cfg::Clientbound::SelectKnownPacks(p) => {
+                log::info!("Horizon: known-pack negotiation offered={} supported=0; requesting full registries (not a resource-pack rejection)", p.packs.len());
+                reply(cfg::Serverbound::SelectKnownPacks(cfg::SelectKnownPacks { packs: vec![] }))?
+            }''', "known-pack negotiation diagnostics")
+
+pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPush(p) => {
+                reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse {
+                    id: p.id,
+                    action: 1,
+                }))?
+            }
+            cfg::Clientbound::CookieRequest(q) => {''', '''            cfg::Clientbound::ResourcePackPush(p) => {
+                let id = p.id;
+                log::info!("Horizon: server resource-pack offer id={id:032x} state=configuration required={} hash_present={}", p.required, !p.hash.is_empty());
+                reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 3 }))?;
+                match download_server_pack(id, &p.url, &p.hash) {
+                    Ok(path) => {
+                        reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 4 }))?;
+                        let _ = send.send(Event::ServerResourcePackReady { id, path, required: p.required });
+                    }
+                    Err(reason) => {
+                        let action = if supported_pack_url(&p.url) { 2 } else { 5 };
+                        reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action }))?;
+                        log::warn!("Horizon: server resource-pack download failed id={id:032x} required={}: {reason}", p.required);
+                        let _ = send.send(Event::ServerResourcePackFailed { id, required: p.required, reason: reason.clone() });
+                        if p.required { return Err(format!("required resource pack {id:032x} failed: {reason}")); }
+                    }
+                }
+            }
+            cfg::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
+            }
+            cfg::Clientbound::CookieRequest(q) => {''', "configuration resource-pack handling")
+
+pack_patch("crates/horizon-protocol/src/packets/play.rs", '''            ClientInformation, CustomPayload, Disconnect, KeepAlive, Ping, ResourcePackPush,
+            ResourcePackResponse, UpdateTags,''', '''            ClientInformation, CustomPayload, Disconnect, KeepAlive, Ping, ResourcePackPop,
+            ResourcePackPush, ResourcePackResponse, UpdateTags,''', "play packet imports")
+
+pack_patch("crates/horizon-protocol/src/packets/play.rs", '''    ResetScore(ResetScore) = RESET_SCORE,
+    ResourcePackPush(ResourcePackPush) = RESOURCE_PACK_PUSH,''', '''    ResetScore(ResetScore) = RESET_SCORE,
+    ResourcePackPop(ResourcePackPop) = RESOURCE_PACK_POP,
+    ResourcePackPush(ResourcePackPush) = RESOURCE_PACK_PUSH,''', "play ResourcePackPop decoder")
+
+pack_patch("crates/horizon-client/src/game/packs.rs", '''pub fn startup_root(vanilla: &Path, selected: &[String]) -> std::io::Result<PathBuf> {
+    let all = packs::discover(vanilla, &packs_dir());
+    let enabled = packs::enabled(&all, selected);
+    packs::resource_root(vanilla, &enabled, &cache_dir())
+}''', '''pub fn startup_root(vanilla: &Path, selected: &[String]) -> std::io::Result<PathBuf> {
+    startup_root_with_server(vanilla, selected, &[])
+}
+pub fn startup_root_with_server(vanilla: &Path, selected: &[String], server_ids: &[u128]) -> std::io::Result<PathBuf> {
+    let all = packs::discover(vanilla, &packs_dir());
+    let mut enabled = packs::enabled(&all, selected);
+    for id in server_ids {
+        let wanted = format!("file/serverpack-{id:032x}.zip");
+        if let Some(pack) = all.iter().find(|pack| pack.id == wanted) { enabled.push(pack.clone()); }
+        else { log::warn!("Horizon: active server resource pack missing from disk id={id:032x}"); }
+    }
+    packs::resource_root(vanilla, &enabled, &cache_dir())
+}''', "server pack resource overlays")
+
+pack_patch("crates/horizon-client/src/game/packs.rs", '''    let mut infos: Vec<PackInfo> = packs::discover(vanilla, &packs_dir())
+        .iter()
+        .map(info)
+        .collect();''', '''    let mut infos: Vec<PackInfo> = packs::discover(vanilla, &packs_dir())
+        .iter()
+        .filter(|pack| !pack.id.starts_with("file/serverpack-"))
+        .map(info)
+        .collect();''', "hide cached server packs from global selector")
+
+pack_patch("crates/horizon-client/src/game/packs.rs", '''    pub(super) fn reload_packs(&mut self) {
+        // Pack reload updates tail-owned mob metadata. Keep menus responsive
+        // until those resources exist, then apply the latest selection once.
+        if self.rest_loader.is_some() {
+            self.pending_pack_reload = true;
+            return;
+        }''', '''    pub(super) fn reload_packs(&mut self) -> bool {
+        // Pack reload updates tail-owned mob metadata. Keep menus responsive
+        // until those resources exist, then apply the latest selection once.
+        if self.rest_loader.is_some() {
+            self.pending_pack_reload = true;
+            return false;
+        }''', "reload status return type")
+
+pack_patch("crates/horizon-client/src/game/packs.rs", '''        let result = startup_root(&vanilla, &self.settings.resource_packs)
+            .map_err(Into::into)
+            .and_then(|root| self.reload_resources(&root));
+        if let Err(e) = result {''', '''        let server_ids: Vec<u128> = self.remote.as_ref()
+            .map(|r| r.server_packs.iter().map(|(id, _)| *id).collect())
+            .unwrap_or_default();
+        let result = startup_root_with_server(&vanilla, &self.settings.resource_packs, &server_ids)
+            .map_err(Into::into)
+            .and_then(|root| self.reload_resources(&root));
+        let succeeded = result.is_ok();
+        if let Err(e) = result {''', "apply active server pack list")
+
+pack_patch("crates/horizon-client/src/game/packs.rs", '''            self.ui.options.resource_error = Some(e.to_string());
+        }
+    }
+    fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {''', '''            self.ui.options.resource_error = Some(e.to_string());
+        }
+        succeeded
+    }
+    fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {''', "report actual resource reload result")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''use std::{collections::HashMap, sync::Arc, time::Instant};''', '''use std::{collections::HashMap, fs, path::PathBuf, sync::Arc, time::Instant};''', "resource-pack path imports")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''    /// Each listed profile's unpacked textures property.
+    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
+    listed: std::collections::HashSet<u128>,''', '''    /// Each listed profile's unpacked texture property.
+    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
+    pub(super) server_packs: Vec<(u128, PathBuf)>,
+    listed: std::collections::HashSet<u128>,''', "active server-pack state")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            skin_textures: HashMap::new(),
+            listed: Default::default(),''', '''            skin_textures: HashMap::new(),
+            server_packs: Vec::new(),
+            listed: Default::default(),''', "initialize active server-pack state")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                Event::Reconfigured(registries) => self.set_registries(registries),
+                Event::DecodeError(e) => {''', '''                Event::Reconfigured(registries) => self.set_registries(registries),
+                Event::ServerResourcePackReady { id, path, required } => self.activate_server_pack(id, path, required),
+                Event::ServerResourcePackFailed { id, required, reason } => {
+                    log::warn!("Horizon: resource pack failed id={id:032x} required={required}: {reason}");
+                }
+                Event::ServerResourcePackPop { id } => self.pop_server_packs(id),
+                Event::DecodeError(e) => {''', "resource-pack events to game")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn handle_packet(&mut self, packet: C) -> Result<()> {''', '''    fn activate_server_pack(&mut self, id: u128, path: PathBuf, required: bool) {
+        let Some(remote) = self.remote.as_mut() else { let _ = fs::remove_file(path); return; };
+        remote.server_packs.retain(|(old, _)| *old != id);
+        remote.server_packs.push((id, path.clone()));
+        log::info!("Horizon: applying server resource pack id={id:032x} required={required}");
+        self.pending_server_pack_responses.push(id);
+        if self.rest_loader.is_some() {
+            self.pending_pack_reload = true;
+        } else {
+            let loaded = self.reload_packs();
+            self.finish_pending_server_pack_responses(loaded);
+        }
+    }
+
+    pub(super) fn finish_pending_server_pack_responses(&mut self, success: bool) {
+        let ids = std::mem::take(&mut self.pending_server_pack_responses);
+        if ids.is_empty() { return; }
+        if !success {
+            let mut paths = Vec::new();
+            if let Some(remote) = self.remote.as_mut() {
+                remote.server_packs.retain(|(id, path)| {
+                    if ids.contains(id) { paths.push(path.clone()); false } else { true }
+                });
+            }
+            for path in paths { let _ = fs::remove_file(path); }
+            let _ = self.reload_packs();
+        }
+        if let Some(remote) = self.remote.as_ref() {
+            for id in ids { remote.session.send_resource_pack_response(id, if success { 0 } else { 6 }); }
+        }
+        if success { log::info!("Horizon: server resource packs applied and reloaded"); }
+        else { log::warn!("Horizon: server pack reload failed; invalid pack disabled"); }
+    }
+
+    fn pop_server_packs(&mut self, id: Option<u128>) {
+        let mut removed = Vec::new();
+        if let Some(remote) = self.remote.as_mut() {
+            let mut keep = Vec::new();
+            for pack in remote.server_packs.drain(..) {
+                if id.is_none() || id == Some(pack.0) { removed.push(pack); } else { keep.push(pack); }
+            }
+            remote.server_packs = keep;
+        }
+        if removed.is_empty() { log::info!("Horizon: server pack pop id={id:?}, no active match"); return; }
+        if self.rest_loader.is_some() { self.pending_pack_reload = true; }
+        else if !self.reload_packs() { log::warn!("Horizon: pack reload after pop was deferred or failed"); }
+        if let Some(remote) = self.remote.as_ref() {
+            for (pack_id, path) in removed {
+                remote.session.send_resource_pack_response(pack_id, 7);
+                let _ = fs::remove_file(path);
+            }
+        }
+        log::info!("Horizon: removed server resource pack(s) requested by server");
+    }
+
+    fn handle_packet(&mut self, packet: C) -> Result<()> {''', "game-thread resource-pack lifecycle")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                                    r.skin_textures.entry(e.uuid).or_insert(textures);''', '''                                    r.skin_textures.insert(e.uuid, textures);''', "refresh profile textures instead of keeping stale entries")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::PlayerInfoRemove(p) => {
+                if let Some(r) = self.remote.as_mut() {
+                    for u in p.uuids {
+                        r.players.remove(&u);
+                        r.tab_players.remove(&u);
+                        r.skin_textures.remove(&u);
+                        r.listed.remove(&u);
+                    }
+                }
+            }''', '''            C::PlayerInfoRemove(p) => {
+                if let Some(r) = self.remote.as_mut() {
+                    for u in p.uuids {
+                        r.players.remove(&u);
+                        r.tab_players.remove(&u);
+                        r.listed.remove(&u);
+                        let entity_present = r.level_players.values().any(|profile| *profile == u);
+                        if !entity_present && u != r.profile { r.skin_textures.remove(&u); }
+                        else { log::info!("Horizon: retained skin profile uuid={u:032x} while entity remains={entity_present}"); }
+                    }
+                }
+            }''', "retain texture data while entity exists")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::RemoveEntities(p) => {
+                for id in p.ids {
+                    if let Some(r) = self.remote.as_mut() {
+                        r.level_players.remove(&id);
+                    }
+                    self.remove_entity(id);
+                }
+            }''', '''            C::RemoveEntities(p) => {
+                for id in p.ids {
+                    if let Some(r) = self.remote.as_mut() {
+                        if let Some(uuid) = r.level_players.remove(&id) {
+                            let still_present = r.level_players.values().any(|profile| *profile == uuid);
+                            if !still_present && !r.tab_players.contains_key(&uuid) && !r.players.contains_key(&uuid) && uuid != r.profile {
+                                r.skin_textures.remove(&uuid);
+                            }
+                        }
+                    }
+                    self.remove_entity(id);
+                }
+            }''', "prune textures only after the final associated entity leaves")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''        if let Some(mut r) = self.remote.take() {
+            r.session.disconnect();
+        }
+        // Single player's server thread saves the world before the title shows.''', '''        let mut server_pack_paths = Vec::new();
+        if let Some(mut r) = self.remote.take() {
+            server_pack_paths.extend(r.server_packs.iter().map(|(_, path)| path.clone()));
+            r.server_packs.clear();
+            r.session.disconnect();
+        }
+        if !server_pack_paths.is_empty() {
+            if self.rest_loader.is_some() { self.pending_pack_reload = true; }
+            else { let _ = self.reload_packs(); }
+            for path in server_pack_paths { let _ = fs::remove_file(path); }
+            log::info!("Horizon: cleared server resource packs after leaving multiplayer");
+        }
+        // Single player's server thread saves the world before the title shows.''', "clear active server packs on disconnect")
+
+pack_patch("crates/horizon-client/src/game.rs", '''    pending_pack_reload: bool,
+    world_renderer_ready: bool,''', '''    pending_pack_reload: bool,
+    pending_server_pack_responses: Vec<u128>,
+    world_renderer_ready: bool,''', "deferred pack status field")
+
+pack_patch("crates/horizon-client/src/game.rs", '''            pending_pack_reload: false,
+            world_renderer_ready: false,''', '''            pending_pack_reload: false,
+            pending_server_pack_responses: Vec::new(),
+            world_renderer_ready: false,''', "initialize deferred pack statuses")
+
+pack_patch("crates/horizon-client/src/game.rs", '''        if std::mem::take(&mut self.pending_pack_reload) {
+            self.reload_packs();
+        }''', '''        if std::mem::take(&mut self.pending_pack_reload) {
+            let loaded = self.reload_packs();
+            self.finish_pending_server_pack_responses(loaded);
+        }''', "report deferred resource reload outcome")
+
+print("Applied server resource-pack download, verification, application, pop handling and skin lifetime fixes.")
