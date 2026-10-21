@@ -2048,4 +2048,13 @@ pack_patch("crates/horizon-client/src/item_tooltip.rs", '''    if let Some(name)
     }
     if stack.data().is_some_and(|d| d.ominous_banner) {''', "display server item_name before the vanilla item translation")
 
+pack_patch("crates/horizon-client/src/game/packs.rs", '''        lang::set(lang::Language::load(&[&root.to_path_buf()], &lang::code()));''', '''        let selected_language = lang::code();
+        let loaded_language = lang::Language::load(&[&root.to_path_buf()], &selected_language);
+        let active_server_packs = self.remote.as_ref().map_or(0, |remote| remote.server_packs.len());
+        log::info!(
+            "Horizon: resource language reload locale={} translation_keys={} active_server_packs={}",
+            selected_language, loaded_language.len(), active_server_packs
+        );
+        lang::set(loaded_language);''', "log active server-pack language reload")
+
 print("Applied server resource-pack download, verification, application, pop handling and skin lifetime fixes.")
