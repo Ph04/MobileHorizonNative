@@ -1140,6 +1140,13 @@ from pathlib import Path
 import sys
 
 pack_root = Path(sys.argv[1])
+repo_root = Path(__file__).resolve().parent.parent
+server_pack_module = repo_root / "tools" / "horizon_server_packs.rs"
+if not server_pack_module.is_file():
+    raise SystemExit("Missing tools/horizon_server_packs.rs")
+(pack_root / "crates/horizon-client/src/server_packs.rs").write_text(
+    server_pack_module.read_text(encoding="utf-8"), encoding="utf-8"
+)
 def pack_patch(rel, old, new, label):
     path = pack_root / rel
     data = path.read_text(encoding="utf-8")
@@ -1150,8 +1157,11 @@ def pack_patch(rel, old, new, label):
 
 pack_patch("crates/horizon-client/Cargo.toml",
     'sha2 = "0.10.9"\n',
-    'sha2 = "0.10.9"\nsha1 = "0.10"\n',
+    'sha2 = "0.10.9"\nsha1 = "0.10"\nurl = "2.5"\n',
     "resource-pack SHA-1 dependency")
+
+pack_patch("crates/horizon-client/src/lib.rs", '''pub mod skins;''', '''pub mod server_packs;
+pub mod skins;''', "register server resource-pack module")
 
 pack_patch("crates/horizon-client/src/net.rs", '''use std::{
     sync::{
@@ -1234,99 +1244,35 @@ pub struct Session {''', '''    },
 }
 
 fn supported_pack_url(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
-    (lower.starts_with("https://") || lower.starts_with("http://"))
-        && !url.chars().any(char::is_control)
+    crate::server_packs::is_supported_url(url)
 }
 
-fn download_server_pack(id: u128, url: &str, expected_sha1: &str) -> Result<PathBuf, String> {
-    if !supported_pack_url(url) { return Err("unsupported resource-pack URL scheme".into()); }
-    if !expected_sha1.is_empty()
-        && (expected_sha1.len() != 40 || !expected_sha1.bytes().all(|b| b.is_ascii_hexdigit()))
-    { return Err("malformed server-supplied SHA-1".into()); }
-
-    let base = std::env::current_dir().map_err(|e| format!("game directory unavailable: {e}"))?;
-    let dir = base.join("resourcepacks");
-    fs::create_dir_all(&dir).map_err(|e| format!("cannot create resourcepacks directory: {e}"))?;
-    let name = format!("serverpack-{id:032x}.zip");
-    let dest = dir.join(&name);
-    let temp = dir.join(format!(".{name}.download.tmp"));
-    let _ = fs::remove_file(&temp);
-    let response = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(15))
-        .timeout_read(Duration::from_secs(30))
-        .timeout_write(Duration::from_secs(30))
-        .build()
-        .get(url)
-        .call().map_err(|e| format!("HTTP download failed: {e}"))?;
-    let mut reader = response.into_reader();
-    let mut file = OpenOptions::new().write(true).create_new(true).open(&temp)
-        .map_err(|e| format!("cannot create temporary pack: {e}"))?;
-    let mut hash = sha1::Sha1::new();
-    let mut size = 0u64;
-    let mut actual_sha1 = String::new();
-    let mut buffer = [0u8; 64 * 1024];
-    let downloaded = (|| -> Result<(), String> {
-        loop {
-            let n = reader.read(&mut buffer).map_err(|e| format!("download read failed: {e}"))?;
-            if n == 0 { break; }
-            size = size.saturating_add(n as u64);
-            if size > PACK_MAX_BYTES { return Err("server resource pack exceeds 512 MiB".into()); }
-            hash.update(&buffer[..n]);
-            file.write_all(&buffer[..n]).map_err(|e| format!("pack write failed: {e}"))?;
-        }
-        if size == 0 { return Err("server returned an empty resource pack".into()); }
-        file.sync_all().map_err(|e| format!("pack sync failed: {e}"))?;
-        actual_sha1 = format!("{:x}", hash.finalize());
-        if !expected_sha1.is_empty() && !actual_sha1.eq_ignore_ascii_case(expected_sha1) {
-            return Err(format!("SHA-1 mismatch (expected {expected_sha1}, got {actual_sha1})"));
-        }
-        Ok(())
-    })();
-    drop(file);
-    if let Err(e) = downloaded { let _ = fs::remove_file(&temp); return Err(e); }
-
-    let mut zip = match zip::ZipArchive::new(File::open(&temp).map_err(|e| format!("cannot open ZIP: {e}"))?) {
-        Ok(z) => z,
-        Err(e) => { let _ = fs::remove_file(&temp); return Err(format!("invalid ZIP: {e}")); }
-    };
-    if zip.len() == 0 || zip.len() > PACK_MAX_ENTRIES {
-        let _ = fs::remove_file(&temp); return Err("invalid ZIP entry count".into());
-    }
-    let mut expanded = 0u64;
-    for i in 0..zip.len() {
-        let entry = zip.by_index(i).map_err(|e| format!("cannot inspect ZIP: {e}"))?;
-        if entry.enclosed_name().is_none() {
-            let _ = fs::remove_file(&temp); return Err("ZIP contains an unsafe path".into());
-        }
-        if !entry.is_dir() {
-            expanded = expanded.saturating_add(entry.size());
-            if entry.size() > PACK_MAX_BYTES || expanded > PACK_MAX_EXPANDED {
-                let _ = fs::remove_file(&temp); return Err("ZIP expands beyond the safety limit".into());
-            }
-        }
-    }
-    let mut meta = match zip.by_name("pack.mcmeta") {
-        Ok(m) => m,
-        Err(_) => { let _ = fs::remove_file(&temp); return Err("ZIP is missing root pack.mcmeta".into()); }
-    };
-    if meta.size() == 0 || meta.size() > 64 * 1024 {
-        let _ = fs::remove_file(&temp); return Err("invalid pack.mcmeta size".into());
-    }
-    let mut bytes = Vec::new();
-    (&mut meta).take(64 * 1024 + 1).read_to_end(&mut bytes)
-        .map_err(|e| format!("cannot read pack.mcmeta: {e}"))?;
-    let json: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|e| format!("invalid pack.mcmeta JSON: {e}"))?;
-    if !json.get("pack").is_some_and(serde_json::Value::is_object) {
-        let _ = fs::remove_file(&temp); return Err("pack.mcmeta has no pack object".into());
-    }
-    drop(meta);
-    drop(zip);
-    if dest.exists() { fs::remove_file(&dest).map_err(|e| format!("cannot replace old pack: {e}"))?; }
-    fs::rename(&temp, &dest).map_err(|e| format!("cannot install downloaded pack: {e}"))?;
-    log::info!("Horizon: server resource pack downloaded id={id:032x} bytes={size} sha1={actual_sha1}");
-    Ok(dest)
+fn download_server_pack(
+    id: u128,
+    url: &str,
+    expected_sha1: &str,
+    events: &Sender<Event>,
+) -> Result<PathBuf, String> {
+    crate::server_packs::fetch(
+        &crate::logging::game_home(),
+        id,
+        url,
+        expected_sha1,
+        |downloaded, total| {
+            let status = match total {
+                Some(total) => format!(
+                    "Downloading server resource pack: {} / {} MiB",
+                    downloaded / (1024 * 1024),
+                    total / (1024 * 1024)
+                ),
+                None => format!(
+                    "Downloading server resource pack: {} MiB",
+                    downloaded / (1024 * 1024)
+                ),
+            };
+            let _ = events.send(Event::Status(status));
+        },
+    ).map_err(|error| error.to_string())
 }
 
 fn send_pack_status(writer: &Mutex<Option<ConnWriter>>, state: &AtomicU8, id: u128, action: i32) {
@@ -1401,7 +1347,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound:
                 let state = Arc::clone(&protocol_state);
                 let events = send.clone();
                 let started = std::thread::Builder::new().name("horizon-pack-download".into()).spawn(move || {
-                    match download_server_pack(id, &url, &hash) {
+                    match download_server_pack(id, &url, &hash, &events) {
                         Ok(path) => {
                             send_pack_status(&writer, &state, id, 4);
                             let _ = events.send(Event::ServerResourcePackReady { id, path, required });
@@ -1459,7 +1405,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::
                 let id = p.id;
                 log::info!("Horizon: server resource-pack offer id={id:032x} state=configuration required={} hash_present={}", p.required, !p.hash.is_empty());
                 reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 3 }))?;
-                match download_server_pack(id, &p.url, &p.hash) {
+                match download_server_pack(id, &p.url, &p.hash, send) {
                     Ok(path) => {
                         reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 4 }))?;
                         let _ = send.send(Event::ServerResourcePackReady { id, path, required: p.required });
@@ -1486,6 +1432,16 @@ pack_patch("crates/horizon-protocol/src/packets/play.rs", '''    ResetScore(Rese
     ResourcePackPush(ResourcePackPush) = RESOURCE_PACK_PUSH,''', '''    ResetScore(ResetScore) = RESET_SCORE,
     ResourcePackPop(ResourcePackPop) = RESOURCE_PACK_POP,
     ResourcePackPush(ResourcePackPush) = RESOURCE_PACK_PUSH,''', "play ResourcePackPop decoder")
+
+pack_patch("crates/horizon-client/src/packs.rs", '''    })
+}
+/// Built-in and `resourcepacks/` packs (vanilla itself excluded), sorted like''', '''    })
+}
+/// Construct a resource pack from a verified server ZIP outside resourcepacks/.
+pub fn from_server(id: String, title: Text, zip: PathBuf) -> Option<Pack> {
+    pack(id, title, Source::Zip(zip))
+}
+/// Built-in and `resourcepacks/` packs (vanilla itself excluded), sorted like''', "public server pack constructor")
 
 pack_patch("crates/horizon-client/src/game/packs.rs", '''pub fn startup_root(vanilla: &Path, selected: &[String]) -> std::io::Result<PathBuf> {
     let all = packs::discover(vanilla, &packs_dir());
