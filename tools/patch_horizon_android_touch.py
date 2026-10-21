@@ -2264,8 +2264,8 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         let mut reader = Reader::new(&bytes);
         let stack = Slot::read(&mut reader).unwrap().unwrap();
         assert_eq!(stack.added.len(), 2);
-        assert!(matches!(stack.added[0], (ATTRIBUTE_MODIFIERS, Component::Raw(_))));
-        assert!(matches!(stack.added[1], (PROFILE, Component::Raw(_))));
+        assert!(matches!(stack.added[0], (component::ATTRIBUTE_MODIFIERS, Component::Raw(_))));
+        assert!(matches!(stack.added[1], (component::PROFILE, Component::Raw(_))));
         assert_eq!(reader.remaining(), 0);
         let mut writer = Writer::new();
         Slot::write(&Some(stack), &mut writer);
@@ -2279,7 +2279,7 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         writer.varint(5);
         writer.varint(1);
         writer.varint(0);
-        writer.varint(ATTRIBUTE_MODIFIERS);
+        writer.varint(component::ATTRIBUTE_MODIFIERS);
         writer.varint(1);
         writer.varint(2); // attribute registry holder
         writer.string("test:modifier");
@@ -2303,7 +2303,7 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         writer.varint(5);
         writer.varint(1);
         writer.varint(0);
-        writer.varint(PROFILE);
+        writer.varint(component::PROFILE);
         writer.varint(0); // partial profile
         writer.bool(true);
         writer.string("alex");
