@@ -2209,22 +2209,19 @@ fn skip_profile(r: &mut Reader) -> Result<()> {
 fn skip_raw_component(kind: i32, r: &mut Reader) -> Result<()> {
     use component::*;
     match kind {
-        // Simple scalar/unit/NBT/string components whose wire forms are stable.
-        7 | 54 => { r.f32()?; }
-        12 | 42 | 46 | 49 | 50 | 65 | 75 | 91 | 96 | 97 | 114 | 115 | 116 | 121 => {
-            match kind {
-                49 => { r.nbt()?; }
-                _ => { r.varint()?; }
-            }
+        // Only skip values whose exact 26.3 wire codec is known here. Complex
+        // values must fail closed until their complete codec is implemented: treating
+        // them as NBT or a VarInt can silently desynchronize every later slot.
+        7 | 54 => { r.f32()?; } // minimum_attack_charge, potion_duration_scale
+        8 | 12 | 19 | 31 | 42 | 50 | 65 | 75 | 88..=117 | 121 => {
+            r.varint()?;
         }
-        20 | 34 | 120 => {}
-        21 => { r.bool()?; }
-        22 | 59 | 61 | 81 | 82 => { r.nbt()?; }
-        35 | 73 => { r.string(32767)?; }
+        20 | 22 | 34 | 120 => {} // creative_slot_lock, intangible_projectile, glider, waxed
+        21 => { r.bool()?; } // enchantment_glint_override
+        35 | 73 => { r.string(32767)?; } // tooltip_style, note_block_sound
+        60 | 61 | 62 => { r.nbt()?; } // entity_data, bucket_entity_data, block_entity_data
         ATTRIBUTE_MODIFIERS => skip_attribute_modifiers(r)?,
         PROFILE => skip_profile(r)?,
-        // Entity/item variant components in the 26.3 registry are registry/enum IDs.
-        88..=117 => { r.varint()?; }
         other => return Err(Error::new(format!("unsupported item component {other} (no safe wire codec)"))),
     }
     Ok(())
@@ -2277,20 +2274,24 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
 
     #[test]
     fn common_unrendered_component_values_are_preserved() {
-        // minimum_attack_charge (f32), rarity (VarInt), glider (unit), and item_name.
+        // minimum_attack_charge (f32), rarity (VarInt), glider (unit),
+        // intangible_projectile (unit), enchantable (VarInt).
         let mut writer = Writer::new();
         writer.varint(1);
         writer.varint(5);
-        writer.varint(3);
+        writer.varint(5);
         writer.varint(0);
         writer.varint(7);
         writer.f32(0.5);
         writer.varint(12);
         writer.varint(2);
+        writer.varint(22);
         writer.varint(34);
+        writer.varint(31);
+        writer.varint(3);
         let mut reader = Reader::new(&writer.data);
         let stack = Slot::read(&mut reader).unwrap().unwrap();
-        assert_eq!(stack.added.len(), 3);
+        assert_eq!(stack.added.len(), 5);
         assert!(stack.added.iter().all(|(_, value)| matches!(value, Component::Raw(_))));
         assert_eq!(reader.remaining(), 0);
     }
