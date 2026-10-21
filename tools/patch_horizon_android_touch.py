@@ -2036,6 +2036,15 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''        let named = sel
             .filter(|m| !self.remote.as_ref().is_some_and(|r| r.level_players.contains_key(&(m.id as i32))))
             .filter_map(|m| Some((m, m.custom_name.clone()?, false)));''', "avoid duplicate mob/player name tags for player-like NPCs")
 
+pack_patch("crates/horizon-client/src/game/names.rs", '''            let shown = match team {
+                Some(t) => t.formatted_name(Text::literal(&name)),
+                None => Text::literal(&name),
+            };''', '''            let shown = match team {
+                // Fake NPC profiles may contain legacy § colour/decorations.
+                Some(t) => t.formatted_name(Text::legacy(&name)),
+                None => Text::legacy(&name),
+            };''', "render legacy formatting in player-like NPC names")
+
 pack_patch("crates/horizon-client/src/game/remote.rs", '''        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
             out.data_mut().map_id = Some(*id);
         }
