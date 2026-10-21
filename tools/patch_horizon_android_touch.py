@@ -11,6 +11,7 @@ lib = root / "crates/horizon-client/src/lib.rs"
 audio = root / "crates/horizon-client/src/audio.rs"
 skins = root / "crates/horizon-client/src/skins.rs"
 remote = root / "crates/horizon-client/src/game/remote.rs"
+names = root / "crates/horizon-client/src/game/names.rs"
 net = root / "crates/horizon-client/src/net.rs"
 client_cargo = root / "crates/horizon-client/Cargo.toml"
 clipboard = root / "crates/horizon-client/src/clipboard.rs"
@@ -18,7 +19,7 @@ pad_menu = root / "crates/horizon-client/src/game/pad_menu.rs"
 startup_menu = root / "crates/horizon-client/src/game/startup_menu.rs"
 workspace_cargo = root / "Cargo.toml"
 
-for path in (game, lib, audio, skins, remote, net, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
+for path in (game, lib, audio, skins, remote, names, net, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
     if not path.is_file():
         raise SystemExit(f"Missing pinned Horizon source file: {path}")
 
@@ -1738,15 +1739,28 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::PlayerI
             }''', '''            C::PlayerInfoRemove(p) => {
                 if let Some(r) = self.remote.as_mut() {
                     for u in p.uuids {
-                        r.players.remove(&u);
                         r.tab_players.remove(&u);
                         r.listed.remove(&u);
                         let entity_present = r.level_players.values().any(|profile| *profile == u);
-                        if !entity_present && u != r.profile { r.skin_textures.remove(&u); }
-                        else { log::info!("Horizon: retained skin profile uuid={u:032x} while entity remains={entity_present}"); }
+                        if entity_present && u != r.profile {
+                            // Vanilla player entities retain their GameProfile after the
+                            // server removes the temporary tab-list entry. NPC plugins do
+                            // this intentionally; do not erase the world nametag's source.
+                            if let Some(name) = r.players.get(&u) {
+                                log::info!(
+                                    "HorizonDiag: retained world profile name={} while entity remains=true",
+                                    name
+                                );
+                            }
+                        } else {
+                            r.players.remove(&u);
+                        }
+                        if !entity_present && u != r.profile {
+                            r.skin_textures.remove(&u);
+                        }
                     }
                 }
-            }''', "retain texture data while entity exists")
+            }''', "retain world profile name and texture data while entity exists")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::RemoveEntities(p) => {
                 for id in p.ids {
@@ -1760,14 +1774,21 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::RemoveE
                     if let Some(r) = self.remote.as_mut() {
                         if let Some(uuid) = r.level_players.remove(&id) {
                             let still_present = r.level_players.values().any(|profile| *profile == uuid);
-                            if !still_present && !r.tab_players.contains_key(&uuid) && !r.players.contains_key(&uuid) && uuid != r.profile {
+                            if !still_present && !r.tab_players.contains_key(&uuid) && uuid != r.profile {
+                                // A profile removed from the tab list may have been retained
+                                // solely so an NPC keeps its world name. Drop it with the
+                                // last matching entity, not when PlayerInfoRemove arrives.
+                                r.players.remove(&uuid);
                                 r.skin_textures.remove(&uuid);
+                                log::info!(
+                                    "HorizonDiag: removed world profile name after final entity despawn entity_id={id}"
+                                );
                             }
                         }
                     }
                     self.remove_entity(id);
                 }
-            }''', "prune textures only after the final associated entity leaves")
+            }''', "prune retained NPC names and textures after final entity leaves")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''        if let Some(mut r) = self.remote.take() {
             r.session.disconnect();
@@ -2002,6 +2023,18 @@ pub fn text_component_plain(tag: &Tag) -> String {
     collect(tag, &mut language);
     horizon_protocol::text::plain(tag, &language)
 }''', "resolve server item text components through active resource-pack language")
+
+pack_patch("crates/horizon-client/src/game/names.rs", '''        let named = self
+            .mobs
+            .iter()
+            .filter_map(|m| Some((m, m.custom_name.clone()?, false)));''', '''        let named = self
+            .mobs
+            .iter()
+            // Player NPCs may send both a GameProfile name and custom-name
+            // metadata. Vanilla treats them as player entities and draws one tag.
+            // Do not also render them through the mob custom-name path.
+            .filter(|m| !self.remote.as_ref().is_some_and(|r| r.level_players.contains_key(&(m.id as i32))))
+            .filter_map(|m| Some((m, m.custom_name.clone()?, false)));''', "avoid duplicate mob/player name tags for player-like NPCs")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
             out.data_mut().map_id = Some(*id);
