@@ -58,3 +58,25 @@ Os downloads obtêm arquivos oficiais, mas não concedem licença. O fluxo de lo
 - `docs/architecture.md`: fluxo do downloader à runtime.
 - `docs/roadmap.md`: estado de cada marco.
 - `docs/source-audit-0.9.9.md`: auditoria da fonte antiga e do binário ARM64.
+
+
+## Configurar uma assinatura persistente pelo Termux
+
+Sem a chave persistente, os APKs de teste são assinados por uma chave de CI temporária. O Android pode recusar uma instalação sobre uma build anterior. Para configurar uma chave privada estável sem PC:
+
+1. No Termux, instale os requisitos e autentique o GitHub CLI:
+   ```bash
+   pkg update
+   pkg install openjdk-17 gh coreutils
+   gh auth login
+   ```
+2. Baixe e execute o script de configuração deste repositório:
+   ```bash
+   mkdir -p ~/MobileHorizonNative-setup
+   cd ~/MobileHorizonNative-setup
+   curl -fL https://raw.githubusercontent.com/Ph04/MobileHorizonNative/feature/android-native-import/tools/setup_android_signing_termux.sh -o setup_android_signing_termux.sh
+   bash setup_android_signing_termux.sh
+   ```
+3. O script cria a keystore no diretório privado `~/.mobilehorizon-signing`, cadastra os quatro GitHub Actions secrets e dispara uma compilação assinada. Acompanhe-a em [GitHub Actions](https://github.com/Ph04/MobileHorizonNative/actions).
+
+**Importante:** a keystore nunca deve ser enviada ao repositório, compartilhada em chats nem enviada como artifact público. Faça uma cópia segura da pasta `~/.mobilehorizon-signing`. A primeira APK com assinatura estável terá o pacote `dev.mobilehorizon.app.offline1`, diferente dos pacotes de teste antigos; ela poderá ser instalada ao lado deles. As atualizações seguintes assinadas com a mesma chave e o mesmo pacote serão instaláveis normalmente. Não desinstale a aplicação antiga antes de confirmar que a nova abre e que os recursos necessários estão acessíveis.
