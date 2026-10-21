@@ -1386,7 +1386,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound:
             }
             play::Clientbound::StartConfiguration(_) => {
                 reply(play::Serverbound::ConfigurationAcknowledged(Empty));
-                let registries = configure(reader, &shared_writer, lang, send)?;
+                let registries = configure(reader, shared_writer, lang, send)?;
                 let _ = send.send(Event::Reconfigured(Arc::new(registries)));
             }''', '''            play::Clientbound::ResourcePackPush(p) => {
                 let id = p.id;
@@ -1431,9 +1431,11 @@ pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound:
                 let _ = send.send(Event::Reconfigured(Arc::new(registries)));
             }''', "play resource-pack handling")
 
-pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::SelectKnownPacks(p) => {
-                log::info!("Horizon: known-pack negotiation offered={} supported=0; requesting full registries (not a resource-pack rejection)", p.packs.len());
-                reply(cfg::Serverbound::SelectKnownPacks(cfg::SelectKnownPacks { packs: vec![] }))?
+pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::SelectKnownPacks(_) => {
+                log::info!("HorizonDiag: known_pack_negotiation client_sent_empty_list");
+                reply(cfg::Serverbound::SelectKnownPacks(cfg::SelectKnownPacks {
+                    packs: vec![],
+                }))?
             }''', '''            // No registry cache is advertised yet; this is separate from server resource packs.
             cfg::Clientbound::SelectKnownPacks(p) => {
                 log::info!("Horizon: known-pack negotiation offered={} supported=0; requesting full registries (not a resource-pack rejection)", p.packs.len());
