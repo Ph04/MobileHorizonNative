@@ -2273,6 +2273,56 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
     }
 
     #[test]
+    fn nonempty_attribute_modifiers_are_consumed_and_round_trip() {
+        let mut writer = Writer::new();
+        writer.varint(1);
+        writer.varint(5);
+        writer.varint(1);
+        writer.varint(0);
+        writer.varint(ATTRIBUTE_MODIFIERS);
+        writer.varint(1);
+        writer.varint(2); // attribute registry holder
+        writer.string("test:modifier");
+        writer.f64(1.5);
+        writer.varint(0); // operation
+        writer.varint(0); // equipment slot group
+        writer.varint(0); // default display
+        let bytes = writer.data.clone();
+        let mut reader = Reader::new(&bytes);
+        let stack = Slot::read(&mut reader).unwrap().unwrap();
+        assert_eq!(reader.remaining(), 0);
+        let mut encoded = Writer::new();
+        Slot::write(&Some(stack), &mut encoded);
+        assert_eq!(encoded.data, bytes);
+    }
+
+    #[test]
+    fn partial_profile_and_skin_patch_are_consumed_and_round_trip() {
+        let mut writer = Writer::new();
+        writer.varint(1);
+        writer.varint(5);
+        writer.varint(1);
+        writer.varint(0);
+        writer.varint(PROFILE);
+        writer.varint(0); // partial profile
+        writer.bool(true);
+        writer.string("alex");
+        writer.bool(false); // no UUID
+        writer.varint(0); // no properties
+        writer.bool(false); // no body override
+        writer.bool(false); // no cape override
+        writer.bool(false); // no elytra override
+        writer.bool(false); // no model override
+        let bytes = writer.data.clone();
+        let mut reader = Reader::new(&bytes);
+        let stack = Slot::read(&mut reader).unwrap().unwrap();
+        assert_eq!(reader.remaining(), 0);
+        let mut encoded = Writer::new();
+        Slot::write(&Some(stack), &mut encoded);
+        assert_eq!(encoded.data, bytes);
+    }
+
+    #[test]
     fn common_unrendered_component_values_are_preserved() {
         // minimum_attack_charge (f32), rarity (VarInt), glider (unit),
         // intangible_projectile (unit), enchantable (VarInt).
