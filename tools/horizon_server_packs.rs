@@ -205,6 +205,106 @@ fn touch(path: &Path) {
     }
 }
 
+#[derive(Default)]
+struct ResourcePackAudit {
+    zip_entries: usize,
+    assets_entries: usize,
+    textures: usize,
+    entity_textures: usize,
+    item_definitions: usize,
+    item_models: usize,
+    legacy_item_overrides: usize,
+    block_models: usize,
+    atlases: usize,
+    optifine_cit: usize,
+    optifine_cem: usize,
+    custom_namespaces: HashSet<String>,
+}
+
+/// Log an aggregate inventory only; do not expose ZIP paths, texture names or server URLs.
+fn audit_resource_pack(path: &Path, id: u128, sha1: &str) {
+    let result = (|| -> Result<ResourcePackAudit, String> {
+        let file = File::open(path).map_err(|e| e.to_string())?;
+        let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
+        let mut audit = ResourcePackAudit::default();
+        let mut item_model_json = Vec::new();
+
+        for index in 0..archive.len() {
+            let entry = archive.by_index(index).map_err(|e| e.to_string())?;
+            let name = entry.name().replace('\\', "/");
+            audit.zip_entries += 1;
+            if let Some(rest) = name.strip_prefix("assets/") {
+                audit.assets_entries += 1;
+                if let Some((namespace, asset_path)) = rest.split_once('/') {
+                    if namespace != "minecraft" {
+                        audit.custom_namespaces.insert(namespace.to_owned());
+                    }
+                    if asset_path.starts_with("textures/") && asset_path.ends_with(".png") {
+                        audit.textures += 1;
+                    }
+                    if asset_path.starts_with("textures/entity/") && asset_path.ends_with(".png") {
+                        audit.entity_textures += 1;
+                    }
+                    if asset_path.starts_with("items/") && asset_path.ends_with(".json") {
+                        audit.item_definitions += 1;
+                    }
+                    if asset_path.starts_with("models/item/") && asset_path.ends_with(".json") {
+                        audit.item_models += 1;
+                        if entry.size() <= 2 * 1024 * 1024 {
+                            item_model_json.push(name.clone());
+                        }
+                    }
+                    if asset_path.starts_with("models/block/") && asset_path.ends_with(".json") {
+                        audit.block_models += 1;
+                    }
+                    if asset_path.starts_with("atlases/") && asset_path.ends_with(".json") {
+                        audit.atlases += 1;
+                    }
+                }
+            }
+            let lower = name.to_ascii_lowercase();
+            if lower.contains("/optifine/cit/") || lower.starts_with("optifine/cit/") {
+                audit.optifine_cit += 1;
+            }
+            if lower.contains("/optifine/cem/") || lower.starts_with("optifine/cem/") {
+                audit.optifine_cem += 1;
+            }
+        }
+
+        for name in item_model_json {
+            if let Ok(entry) = archive.by_name(&name) {
+                let mut bytes = Vec::with_capacity(entry.size().min(64 * 1024) as usize);
+                if entry.take(2 * 1024 * 1024).read_to_end(&mut bytes).is_ok() {
+                    if serde_json::from_slice::<serde_json::Value>(&bytes)
+                        .ok()
+                        .and_then(|json| json.get("overrides").cloned())
+                        .and_then(|overrides| overrides.as_array().cloned())
+                        .is_some_and(|overrides| !overrides.is_empty())
+                    {
+                        audit.legacy_item_overrides += 1;
+                    }
+                }
+            }
+        }
+        Ok(audit)
+    })();
+
+    match result {
+        Ok(audit) => {
+            let mut namespaces: Vec<_> = audit.custom_namespaces.into_iter().collect();
+            namespaces.sort();
+            log::info!(
+                "Horizon: server pack content audit id={id:032x} sha1={sha1} zip_entries={} asset_entries={} textures={} entity_textures={} item_definitions={} item_models={} legacy_item_overrides={} block_models={} atlases={} optifine_cit_files={} optifine_cem_files={} custom_namespace_count={} custom_namespaces={:?}",
+                audit.zip_entries, audit.assets_entries, audit.textures, audit.entity_textures,
+                audit.item_definitions, audit.item_models, audit.legacy_item_overrides,
+                audit.block_models, audit.atlases, audit.optifine_cit, audit.optifine_cem,
+                namespaces.len(), namespaces
+            );
+        }
+        Err(error) => log::warn!("Horizon: server pack content audit failed id={id:032x}: {error}"),
+    }
+}
+
 fn open_pack_url(agent: &ureq::Agent, initial: Url) -> Result<ureq::Response, FetchError> {
     let mut current = initial;
     for redirect_number in 0..=MAX_REDIRECTS {
@@ -284,6 +384,7 @@ pub fn fetch(
         {
             log::info!("Horizon: server resource-pack cache hit id={id:032x} sha1={hash}");
             touch(&cached);
+            audit_resource_pack(&cached, id, &hash);
             return Ok(cached);
         }
         if cached.exists() {
@@ -376,6 +477,7 @@ pub fn fetch(
     record_url_sha1(&dir, &key, &actual_sha1);
     touch(&target);
     prune_cache(&dir, &target);
+    audit_resource_pack(&target, id, &actual_sha1);
     Ok(target)
 }
 
