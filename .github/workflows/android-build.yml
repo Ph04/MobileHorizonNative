@@ -39,6 +39,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate Termux signing helper syntax
+        shell: bash
+        run: bash -n tools/setup_android_signing_termux.sh
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
