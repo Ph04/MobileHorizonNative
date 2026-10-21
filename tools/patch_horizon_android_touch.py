@@ -2176,27 +2176,34 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''impl Component {
 }
 
 fn skip_profile_properties(r: &mut Reader) -> Result<()> {
-    let count = r.count(1024)?;
+    // GameProfile properties are bounded to 16 entries; property names and
+    // signatures use their protocol-specific limits.
+    let count = r.count(16)?;
     for _ in 0..count {
-        r.string(32767)?;
+        r.string(64)?;
         r.string(32767)?;
         if r.bool()? {
-            r.string(32767)?;
+            r.string(1024)?;
         }
     }
     Ok(())
 }
 
 fn skip_profile(r: &mut Reader) -> Result<()> {
-    // Either<GameProfile, Partial>; then PlayerSkin.Patch's optional textures/model.
-    if r.bool()? {
-        r.uuid()?;
-        r.string(16)?;
-        skip_profile_properties(r)?;
-    } else {
-        if r.bool()? { r.string(16)?; }
-        if r.bool()? { r.uuid()?; }
-        skip_profile_properties(r)?;
+    // ResolvableProfile begins with a VarInt enum (0=partial, 1=complete),
+    // followed by the profile and PlayerSkin.Patch's optional textures/model.
+    match r.varint()? {
+        1 => {
+            r.uuid()?;
+            r.string(16)?;
+            skip_profile_properties(r)?;
+        }
+        0 => {
+            if r.bool()? { r.string(16)?; }
+            if r.bool()? { r.uuid()?; }
+            skip_profile_properties(r)?;
+        }
+        other => return Err(Error::new(format!("invalid resolvable profile kind {other}"))),
     }
     for _ in 0..3 {
         if r.bool()? { r.string(32767)?; }
