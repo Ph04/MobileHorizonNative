@@ -1,0 +1,22 @@
+name: Android build, official downloader and Horizon runtime
+
+# This default-branch registration exists so GitHub can discover the manual workflow.
+# The dispatch should target feature/android-native-import, which contains the full build.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the build branch
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "feature/android-native-import" ]]; then
+            echo "::error::This registration file only advertises the workflow. Run it with --ref feature/android-native-import."
+            exit 1
+          fi
+          echo "Manual dispatch was requested for the branch containing the full Android build workflow."
