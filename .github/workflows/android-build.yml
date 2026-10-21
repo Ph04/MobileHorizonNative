@@ -350,9 +350,9 @@ jobs:
           grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
           if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
-            grep -F "name='dev.mobilehorizon.app.offline1' versionCode='7' versionName='0.3.4-offline1'" "$RUNNER_TEMP/apk-badging.txt"
+            grep -F "name='dev.mobilehorizon.app.offline1' versionCode='8' versionName='0.3.5-offline1'" "$RUNNER_TEMP/apk-badging.txt"
           else
-            grep -F "name='dev.mobilehorizon.app.offline1.test' versionCode='7' versionName='0.3.4-offline1-test'" "$RUNNER_TEMP/apk-badging.txt"
+            grep -F "name='dev.mobilehorizon.app.offline1.test' versionCode='8' versionName='0.3.5-offline1-test'" "$RUNNER_TEMP/apk-badging.txt"
           fi
           sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
           CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
