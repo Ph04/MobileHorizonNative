@@ -306,16 +306,26 @@ replace_once(remote,
                 horizon_protocol::item::component::DAMAGE
                     | horizon_protocol::item::component::DYED_COLOR
                     | horizon_protocol::item::component::MAP_ID
-            ))
-            .collect();
-        let removed_render_components: Vec<i32> = s.removed.iter().copied()
-            .filter(|kind| matches!(
-                *kind,
-                horizon_protocol::item::component::ITEM_MODEL
+                    | horizon_protocol::item::component::CUSTOM_NAME
+                    | horizon_protocol::item::component::ITEM_NAME
+                    | horizon_protocol::item::component::ITEM_MODEL
+                    | horizon_protocol::item::component::LORE
+                    | horizon_protocol::item::component::CUSTOM_DATA
                     | horizon_protocol::item::component::CUSTOM_MODEL_DATA
             ))
             .collect();
-        if !ignored_components.is_empty() || !removed_render_components.is_empty() {
+        let removed_unhandled_components: Vec<i32> = s.removed.iter().copied()
+            .filter(|kind| !matches!(
+                *kind,
+                horizon_protocol::item::component::CUSTOM_NAME
+                    | horizon_protocol::item::component::ITEM_NAME
+                    | horizon_protocol::item::component::ITEM_MODEL
+                    | horizon_protocol::item::component::LORE
+                    | horizon_protocol::item::component::CUSTOM_DATA
+                    | horizon_protocol::item::component::CUSTOM_MODEL_DATA
+            ))
+            .collect();
+        if !ignored_components.is_empty() || !removed_unhandled_components.is_empty() {
             static COMPONENT_DIAGNOSTICS: std::sync::atomic::AtomicUsize =
                 std::sync::atomic::AtomicUsize::new(0);
             if COMPONENT_DIAGNOSTICS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 128 {
@@ -324,8 +334,8 @@ replace_once(remote,
                     .map(|(_, menu)| menu.as_str())
                     .unwrap_or("inventory");
                 log::warn!(
-                    "HorizonDiag: item_stack_components_not_preserved source_menu={} item={} added_component_ids={:?} removed_render_component_ids={:?}",
-                    source_menu, self.item_name(s.item), ignored_components, removed_render_components
+                    "HorizonDiag: item_stack_components_not_preserved source_menu={} item={} added_component_ids={:?} removed_unhandled_component_ids={:?}",
+                    source_menu, self.item_name(s.item), ignored_components, removed_unhandled_components
                 );
             }
         }
@@ -1920,5 +1930,122 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                remote
 pack_patch("crates/horizon-client/src/game/remote.rs", '''                    if ids.contains(id) { paths.push(path.clone()); false } else { true }''', '''                    if ids.iter().any(|(pending_id, _)| pending_id == id) { paths.push(path.clone()); false } else { true }''', "remove failed packs by pending response UUID")
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            for id in ids { remote.session.send_resource_pack_response(id, if success { 0 } else { 6 }); }''', '''            for (id, phase) in ids { remote.session.send_resource_pack_response_in_phase(id, if success { 0 } else { 6 }, phase); }''', "send final pack status in the original protocol phase")
 pack_patch("crates/horizon-client/src/game.rs", '''    pending_server_pack_responses: Vec<u128>,''', '''    pending_server_pack_responses: Vec<(u128, crate::net::ResourcePackPhase)>,''', "preserve phase for deferred pack reload")
+
+pack_patch("crates/horizon-client/src/item_data.rs", ```fn read_text(t: &Tag) -> Option<String> {
+    match t {
+        Tag::String(s) => Some(s.to_string_lossy()),
+        Tag::Compound(_) => t.get("text").and_then(string),
+        _ => None,
+    }
+}```, ```fn read_text(t: &Tag) -> Option<String> {
+    match t {
+        Tag::String(s) => Some(s.to_string_lossy()),
+        Tag::Compound(_) => t.get("text").and_then(string),
+        _ => None,
+    }
+}
+
+/// Resolve a Java text component with the active language loaded from the resource stack.
+/// This is used for server-provided item_name/custom_name data components.
+pub fn text_component_plain(tag: &Tag) -> String {
+    fn collect(tag: &Tag, language: &mut std::collections::HashMap<String, String>) {
+        match tag {
+            Tag::Compound(fields) => {
+                for field in ["translate", "keybind"] {
+                    if let Some(Tag::String(raw)) = tag.get(field) {
+                        let key = raw.to_string_lossy();
+                        if crate::lang::has(&key) {
+                            language.entry(key.clone()).or_insert_with(|| crate::lang::get(&key));
+                        }
+                    }
+                }
+                for value in fields.values() {
+                    collect(value, language);
+                }
+            }
+            Tag::List(values) => {
+                for value in values {
+                    collect(value, language);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut language = std::collections::HashMap::new();
+    collect(tag, &mut language);
+    horizon_protocol::text::plain(tag, &language)
+}```, "resolve server item text components through active resource-pack language")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", ```        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
+            out.data_mut().map_id = Some(*id);
+        }
+        Some(out)
+    }```, ```        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
+            out.data_mut().map_id = Some(*id);
+        }
+
+        // New Java item data components control custom item names and item models.
+        if let Some(Component::Text(name)) = s.component(component::CUSTOM_NAME) {
+            out.data_mut().custom_name = Some(crate::item_data::text_component_plain(name));
+        }
+        if let Some(Component::Text(name)) = s.component(component::ITEM_NAME) {
+            out.data_mut().set_other("minecraft:item_name", Some(name.clone()));
+        }
+        if let Some(Component::Ident(model)) = s.component(component::ITEM_MODEL) {
+            out.data_mut().set_other(
+                "minecraft:item_model",
+                Some(horizon_world::nbt::Tag::String(model.as_str().into())),
+            );
+        }
+        if let Some(Component::Lore(lines)) = s.component(component::LORE) {
+            out.data_mut().set_other("minecraft:lore", Some(horizon_world::nbt::Tag::List(lines.clone())));
+        }
+        if let Some(Component::Nbt(data)) = s.component(component::CUSTOM_DATA) {
+            out.data_mut().set_other("minecraft:custom_data", Some(data.clone()));
+        }
+        if let Some(Component::CustomModelData { floats, flags, strings, colors }) =
+            s.component(component::CUSTOM_MODEL_DATA)
+        {
+            use horizon_world::nbt::Tag;
+            let data = Tag::compound([
+                ("floats", Tag::List(floats.iter().map(|value| Tag::Float(value.to_bits())).collect())),
+                ("flags", Tag::List(flags.iter().map(|value| Tag::Byte(if *value { 1 } else { 0 })).collect())),
+                ("strings", Tag::List(strings.iter().map(|value| Tag::String(value.as_str().into())).collect())),
+                ("colors", Tag::List(colors.iter().map(|value| Tag::Int(*value)).collect())),
+            ]);
+            out.data_mut().set_other("minecraft:custom_model_data", Some(data));
+        }
+
+        // An absent component in the network patch can suppress its default component
+        // in a modern item definition; StackView interprets the leading ! convention.
+        for kind in &s.removed {
+            let key = match *kind {
+                component::CUSTOM_NAME => Some("minecraft:custom_name"),
+                component::ITEM_NAME => Some("minecraft:item_name"),
+                component::ITEM_MODEL => Some("minecraft:item_model"),
+                component::LORE => Some("minecraft:lore"),
+                component::CUSTOM_DATA => Some("minecraft:custom_data"),
+                component::CUSTOM_MODEL_DATA => Some("minecraft:custom_model_data"),
+                _ => None,
+            };
+            if let Some(key) = key {
+                out.data_mut().set_other(&format!("!{key}"), Some(horizon_world::nbt::Tag::Byte(0)));
+            }
+        }
+
+        Some(out)
+    }```, "preserve server item names and modern item-model components")
+
+pack_patch("crates/horizon-client/src/item_tooltip.rs", ```    if let Some(name) = stack.custom_name() {
+        return name.to_owned();
+    }
+    if stack.data().is_some_and(|d| d.ominous_banner) {```, ```    if let Some(name) = stack.custom_name() {
+        return name.to_owned();
+    }
+    if let Some(name) = stack.data().and_then(|data| data.other("minecraft:item_name")) {
+        return crate::item_data::text_component_plain(name);
+    }
+    if stack.data().is_some_and(|d| d.ominous_banner) {```, "display server item_name before the vanilla item translation")
 
 print("Applied server resource-pack download, verification, application, pop handling and skin lifetime fixes.")
