@@ -125,6 +125,71 @@ replace_once(net,
                 }))?
             }""")
 
+
+# Drive remote-player skin downloads independently of the player-list overlay.
+# Horizon already receives texture properties and downloads skins for tab-list heads,
+# but the world player's MobType stayed pinned to Steve and never used that result.
+replace_once(remote,
+    """    /// Puts a downloaded skin in an atlas skin slot: a free one, else the
+    /// least recently shown.
+    fn store_skin(&mut self, location: String, rgba: Vec<u8>) {""",
+    """    /// Start skin downloads and apply them to live player entities even when
+    /// the player-list overlay is closed. The shared downloader and atlas are
+    /// the same ones used by the tab list.
+    fn update_remote_entity_skins(&mut self) {
+        let players = {
+            let Some(remote) = self.remote.as_ref() else { return; };
+            remote.level_players.iter().filter_map(|(&entity_id, &uuid)| {
+                remote.skin_textures.get(&uuid)
+                    .cloned()
+                    .map(|textures| (entity_id as u32, uuid, textures, remote.profile))
+            }).collect::<Vec<_>>()
+        };
+        let mut skins = Vec::with_capacity(players.len());
+        for (entity_id, uuid, textures, profile) in players {
+            let downloader = &mut self.skin_downloads;
+            if let Some(location) = horizon_client::skins::lookup(
+                &textures,
+                uuid != profile,
+                |kind, url| downloader.state(kind, url),
+            ) {
+                skins.push((entity_id, location));
+            }
+        }
+        for (location, rgba) in self.skin_downloads.take_ready() {
+            self.store_skin(location, rgba);
+        }
+        for (entity_id, location) in skins {
+            if !self.skin_slots.iter().any(|(known, _)| known == &location) {
+                continue;
+            }
+            if let Some(mob) = self.mobs.iter_mut().find(|mob| mob.id == entity_id) {
+                if mob.kind.id != "minecraft:player" || mob.kind.texture == location {
+                    continue;
+                }
+                let mut kind = (*mob.kind).clone();
+                kind.texture = location;
+                mob.kind = Arc::new(kind);
+            }
+        }
+    }
+
+    /// Puts a downloaded skin in an atlas skin slot: a free one, else the
+    /// least recently shown.
+    fn store_skin(&mut self, location: String, rgba: Vec<u8>) {""")
+
+replace_once(remote,
+    """        self.send_suggestion_request();
+        Ok(())
+    }
+    /// ClientSuggestionProvider.customSuggestion: the chat's completion""",
+    """        self.update_remote_entity_skins();
+        self.send_suggestion_request();
+        Ok(())
+    }
+    /// ClientSuggestionProvider.customSuggestion: the chat's completion""")
+
+
 replace_once(audio,
     """#[cfg(feature = "audio")]
 fn open_device(

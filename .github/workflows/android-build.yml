@@ -356,9 +356,9 @@ jobs:
           grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
           if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
-            grep -F "name='dev.mobilehorizon.app.offline1' versionCode='9' versionName='0.3.6-offline1'" "$RUNNER_TEMP/apk-badging.txt"
+            grep -F "name='dev.mobilehorizon.app.offline1' versionCode='10' versionName='0.3.7-offline1'" "$RUNNER_TEMP/apk-badging.txt"
           else
-            grep -F "name='dev.mobilehorizon.app.offline1.test.v9' versionCode='9' versionName='0.3.6-offline1-test-v9'" "$RUNNER_TEMP/apk-badging.txt"
+            grep -F "name='dev.mobilehorizon.app.offline1.test.v10' versionCode='10' versionName='0.3.7-offline1-test-v10'" "$RUNNER_TEMP/apk-badging.txt"
           fi
           sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
           CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
@@ -366,7 +366,7 @@ jobs:
           echo "APK signer certificate SHA-256: $CERT_SHA256" >> "$GITHUB_STEP_SUMMARY"
           if [[ "${{ steps.signing.outputs.enabled }}" != "true" ]]; then
             echo "::warning::APK is test-only and uses a separate application ID because stable signing secrets are missing. It will not overwrite the installed app or share its data."
-            echo "Version-isolated test APK published under dev.mobilehorizon.app.offline1.test.v9; the previous test package and its data remain installed separately. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
+            echo "Version-isolated test APK published under dev.mobilehorizon.app.offline1.test.v10; the previous test package and its data remain installed separately. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "APK is valid, package/version match, and Horizon ARM64 runtime plus Java 25 manifest payload are included."
 
