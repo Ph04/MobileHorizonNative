@@ -1387,7 +1387,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound:
                 let url = p.url;
                 let hash = p.hash;
                 let required = p.required;
-                log::info!("Horizon: server resource-pack offer id={id:032x} state=play required={required} hash_present={}", !hash.is_empty());
+                log::info!("Horizon: server resource-pack offer id={id:032x} state=play required={required} hash_present={} origin={}", !hash.is_empty(), safe_resource_pack_origin(&url));
                 reply(play::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 3 }));
                 let writer = Arc::clone(&shared_writer);
                 let state = Arc::clone(&protocol_state);
@@ -1446,7 +1446,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::
             }
             cfg::Clientbound::CookieRequest(q) => {''', '''            cfg::Clientbound::ResourcePackPush(p) => {
                 let id = p.id;
-                log::info!("Horizon: server resource-pack offer id={id:032x} state=configuration required={} hash_present={}", p.required, !p.hash.is_empty());
+                log::info!("Horizon: server resource-pack offer id={id:032x} state=configuration required={} hash_present={} origin={}", p.required, !p.hash.is_empty(), safe_resource_pack_origin(&p.url));
                 reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 3 }))?;
                 match download_server_pack(id, &p.url, &p.hash, send) {
                     Ok(path) => {
