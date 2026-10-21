@@ -1163,6 +1163,22 @@ pack_patch("crates/horizon-client/Cargo.toml",
 pack_patch("crates/horizon-client/src/lib.rs", '''pub mod skins;''', '''pub mod server_packs;
 pub mod skins;''', "register server resource-pack module")
 
+pack_patch("crates/horizon-client/src/net.rs",
+    '''pub const NOT_SIGNED_IN: &str = "This server is in online mode. Sign in with your Microsoft account in the Horizon launcher to join it.";''',
+    '''pub const NOT_SIGNED_IN: &str = "This server requires Microsoft/Minecraft online authentication. Sign in with a verified account to join this server; servers configured for offline mode still accept an offline nickname.";''',
+    "explain account requirement only for this server")
+
+pack_patch("crates/horizon-client/src/net.rs",
+    '''            login::Clientbound::Hello(hello) => {
+                status(send, &tr(lang, "connect.authorizing"));''',
+    '''            login::Clientbound::Hello(hello) => {
+                log::info!("Horizon: server login challenge auth_required={} microsoft_session_present={}", hello.should_authenticate, auth.is_some());
+                if hello.should_authenticate && auth.is_none() {
+                    log::warn!("Horizon: this server requested official online authentication; offline nickname remains supported on offline-mode servers");
+                }
+                status(send, &tr(lang, "connect.authorizing"));''',
+    "diagnose online/offline authentication per server")
+
 pack_patch("crates/horizon-client/src/net.rs", '''use std::{
     sync::{
         Arc, Mutex,
@@ -1253,7 +1269,13 @@ fn download_server_pack(
     expected_sha1: &str,
     events: &Sender<Event>,
 ) -> Result<PathBuf, String> {
-    crate::server_packs::fetch(
+    log::info!(
+        "Horizon: server resource-pack download start id={id:032x} origin={} sha1_present={}",
+        safe_resource_pack_origin(url),
+        !expected_sha1.is_empty()
+    );
+    let mut next_progress_log = 4 * 1024 * 1024u64;
+    let result = crate::server_packs::fetch(
         &crate::logging::game_home(),
         id,
         url,
@@ -1270,9 +1292,30 @@ fn download_server_pack(
                     downloaded / (1024 * 1024)
                 ),
             };
+            if downloaded >= next_progress_log {
+                match total {
+                    Some(total) => log::info!(
+                        "Horizon: server resource-pack download progress id={id:032x} bytes={downloaded} total={total}"
+                    ),
+                    None => log::info!(
+                        "Horizon: server resource-pack download progress id={id:032x} bytes={downloaded} total=unknown"
+                    ),
+                }
+                next_progress_log = downloaded.saturating_add(4 * 1024 * 1024);
+            }
             let _ = events.send(Event::Status(status));
         },
-    ).map_err(|error| error.to_string())
+    );
+    match &result {
+        Ok(path) => log::info!(
+            "Horizon: server resource-pack download complete id={id:032x} cache_file={} ",
+            path.file_name().and_then(|v| v.to_str()).unwrap_or("<unknown>")
+        ),
+        Err(error) => log::warn!(
+            "Horizon: server resource-pack download error id={id:032x}: {error}"
+        ),
+    }
+    result.map_err(|error| error.to_string())
 }
 
 fn send_pack_status(writer: &Mutex<Option<ConnWriter>>, state: &AtomicU8, id: u128, action: i32) {
@@ -1370,9 +1413,6 @@ pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound:
                     reply(play::Serverbound::ResourcePack(cfg::ResourcePackResponse { id, action: 2 }));
                     let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: e.to_string() });
                 }
-            }
-            play::Clientbound::ResourcePackPop(p) => {
-                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
             }
             play::Clientbound::StartConfiguration(_) => {
                 reply(play::Serverbound::ConfigurationAcknowledged(Empty));
