@@ -1412,6 +1412,24 @@ pack_patch("crates/horizon-client/src/net.rs", '''fn receive_play(
     send: &Sender<Event>,
 ) -> Result<String, String> {''', "play packet reader signature")
 
+pack_patch("crates/horizon-client/src/net.rs", '''    pub fn send(&self, packet: play::Serverbound) {
+        if self.debug''', '''    pub fn send(&self, packet: play::Serverbound) {
+        // A server/proxy can switch back to CONFIGURATION while the game thread
+        // is still ticking. Do not let PLAY packets (especially ClientTickEnd,
+        // packet ID 13) cross that packet-registry boundary.
+        if self.protocol_state.load(Ordering::Acquire) != PACK_STATE_PLAY {
+            static SUPPRESSED_PHASE_PACKETS: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            if SUPPRESSED_PHASE_PACKETS.fetch_add(1, Ordering::Relaxed) < 16 {
+                log::warn!(
+                    "Horizon: suppressed PLAY packet during protocol reconfiguration: {:?}",
+                    packet
+                );
+            }
+            return;
+        }
+        if self.debug''', "suppress stale play packets during configuration")
+
 pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound::ResourcePackPush(p) => {
                 log::warn!(
                     "HorizonDiag: server_resource_pack phase=play decision=decline id={} required={} hash_present={} hash_len={} origin={}",
@@ -1463,8 +1481,9 @@ pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound:
                 }
             }
             play::Clientbound::StartConfiguration(_) => {
-                reply(play::Serverbound::ConfigurationAcknowledged(Empty));
+                // Change phase before the acknowledgement lets the server switch packet registries.
                 protocol_state.store(PACK_STATE_CONFIG, Ordering::Release);
+                reply(play::Serverbound::ConfigurationAcknowledged(Empty));
                 let registries = configure(reader, &shared_writer, lang, send)?;
                 protocol_state.store(PACK_STATE_PLAY, Ordering::Release);
                 let _ = send.send(Event::Reconfigured(Arc::new(registries)));
