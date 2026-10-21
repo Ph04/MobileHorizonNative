@@ -1,0 +1,387 @@
+name: Android build, official downloader and Horizon runtime
+
+concurrency:
+  group: mobilehorizon-android-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "app/**"
+      - "core/**"
+      - "android-native/**"
+      - "tools/patch_horizon_android_touch.py"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle.properties"
+      - ".github/workflows/android-build.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - "core/**"
+      - "android-native/**"
+      - "tools/patch_horizon_android_touch.py"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle.properties"
+      - ".github/workflows/android-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Termux signing helper syntax
+        shell: bash
+        run: bash -n tools/setup_android_signing_termux.sh
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018"
+
+      # Reuse the previous repo's committed source bundle only as a source for the
+      # native runtime. Both the archive and shared-library hashes are pinned below.
+      # The runtime is not compiled on the player's phone and is not pulled from an
+      # unverified release URL.
+      - name: Fetch and verify pinned ARM64 Horizon runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEMP_DIR="$RUNNER_TEMP/mobilehorizon-legacy"
+          mkdir -p "$TEMP_DIR"
+          BASE="https://raw.githubusercontent.com/Ph04/MobileHorizon/main"
+          for part in 00 01 02; do
+            curl --fail --location --retry 3 --retry-all-errors \
+              "$BASE/HorizonAndroidPrep_0.9.7_with_native.zip.part-$part" \
+              --output "$TEMP_DIR/source.zip.part-$part"
+          done
+          cat "$TEMP_DIR"/source.zip.part-* > "$TEMP_DIR/source.zip"
+          echo "c3e8de14e3beacbff203f2134afabe3fb801bea8eda7de42491aacfe00a2b302  $TEMP_DIR/source.zip" | sha256sum --check -
+          unzip -tq "$TEMP_DIR/source.zip"
+          mkdir -p "$TEMP_DIR/unpacked"
+          unzip -q "$TEMP_DIR/source.zip" -d "$TEMP_DIR/unpacked"
+          LIB="$TEMP_DIR/unpacked/HorizonAndroidPrep/prebuilt/android/arm64-v8a/libhorizon_android.so"
+          test -s "$LIB"
+          echo "9d564adb67e7aa9b36c5ae66f4e6cf1a74549746216220bc5a1cba235421ab82  $LIB" | sha256sum --check -
+          # Write tool output to files before grep; grep -q on a pipe can close
+          # early and make readelf/strings fail under the workflow's pipefail.
+          readelf -h "$LIB" > "$TEMP_DIR/lib-header.txt"
+          grep -Fq "AArch64" "$TEMP_DIR/lib-header.txt"
+          readelf -Ws "$LIB" > "$TEMP_DIR/lib-symbols.txt"
+          grep -Fq "ANativeActivity_onCreate" "$TEMP_DIR/lib-symbols.txt"
+          grep -Fq "android_main" "$TEMP_DIR/lib-symbols.txt"
+          strings "$LIB" > "$TEMP_DIR/lib-strings.txt"
+          if grep -Fq "HORIZON_PLAYER_NAME" "$TEMP_DIR/lib-strings.txt"; then
+            echo "Native runtime contains HORIZON_PLAYER_NAME; offline nickname handoff is available."
+          else
+            echo "::warning::Pinned native runtime does not advertise HORIZON_PLAYER_NAME; offline launch will use its built-in/default name until the runtime is rebuilt."
+          fi
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          cp "$LIB" app/src/main/jniLibs/arm64-v8a/libhorizon_android.so
+          echo "Verified and staged libhorizon_android.so for arm64-v8a."
+
+      - name: Set up Rust toolchain for Android ARM64
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Build and bundle full Horizon resource preparer
+        shell: bash
+        run: |
+          set -euo pipefail
+          UPSTREAM_COMMIT="24bcef42beaf1382e48964b7efa7aef3f5f86792"
+          SOURCE="$RUNNER_TEMP/horizon-upstream"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
+          git -C "$SOURCE" fetch --depth 1 origin "$UPSTREAM_COMMIT"
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
+
+          # Apply the Android W^X workaround on the pinned source. targetSdk 35
+          # cannot exec downloaded binaries from filesDir; java.rs must invoke the
+          # system linker for both Java and javac rather than trying execve directly.
+          python3 "$GITHUB_WORKSPACE/tools/patch_horizon_prepare_android_linker.py" "$SOURCE"
+          grep -Fq 'exec /system/bin/linker64' "$SOURCE/crates/horizon-prepare/src/java.rs"
+          grep -Fq 'command.arg(java);' "$SOURCE/crates/horizon-prepare/src/java.rs"
+          grep -Fq 'exec /system/bin/linker64' "$GITHUB_WORKSPACE/app/src/main/java/dev/mobilehorizon/app/JdkRuntimeInstaller.java"
+          grep -Fq 'exec /system/bin/linker64' "$GITHUB_WORKSPACE/app/src/main/java/dev/mobilehorizon/app/HorizonPrepareRunner.java"
+          echo "Verified shell-safe linker argument forwarding for Java/javac and the ARM64 preparer."
+
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          cargo build --locked --release --manifest-path "$SOURCE/crates/horizon-prepare/Cargo.toml" --target aarch64-linux-android
+
+          ASSETS="app/src/main/assets/horizon-prepare"
+          mkdir -p "$ASSETS/support/mods/horizon/src/test/java/dev/horizonlab/parity"
+          cp "$SOURCE/research-lock.json" "$ASSETS/support/research-lock.json"
+          cp -a "$SOURCE/mods/horizon/src/test/java/dev/horizonlab/parity/." "$ASSETS/support/mods/horizon/src/test/java/dev/horizonlab/parity/"
+          if test -f "$SOURCE/LICENSE"; then cp "$SOURCE/LICENSE" "$ASSETS/support/UPSTREAM-LICENSE.txt"; fi
+          cp "$SOURCE/target/aarch64-linux-android/release/horizon-prepare" "$ASSETS/horizon-prepare-arm64"
+          readelf -h "$ASSETS/horizon-prepare-arm64" > "$RUNNER_TEMP/horizon-prepare-elf-header.txt"
+          grep -Fq "AArch64" "$RUNNER_TEMP/horizon-prepare-elf-header.txt"
+          echo "Bundled the pinned ARM64 horizon-prepare executable and vanilla oracle sources."
+
+          # Pin the Java 25 Android runtime package closure into the APK as metadata.
+          # The runtime itself is downloaded on demand to app-private storage and hash checked.
+          python3 - <<'PY'
+          import gzip, json, lzma, re, urllib.request
+          from pathlib import Path
+
+          base = "https://packages.termux.dev/apt/termux-main/"
+          index = None
+          errors = []
+          for suffix, decoder in [
+              ("dists/stable/main/binary-aarch64/Packages", lambda b: b),
+              ("dists/stable/main/binary-aarch64/Packages.gz", gzip.decompress),
+              ("dists/stable/main/binary-aarch64/Packages.xz", lzma.decompress),
+          ]:
+              try:
+                  with urllib.request.urlopen(base + suffix, timeout=60) as response:
+                      payload = response.read(100 * 1024 * 1024 + 1)
+                  if len(payload) > 100 * 1024 * 1024:
+                      raise RuntimeError("APT package index is unexpectedly large")
+                  index = decoder(payload).decode("utf-8")
+                  break
+              except Exception as error:
+                  errors.append(f"{suffix}: {error}")
+          if index is None:
+              raise SystemExit("Cannot fetch the Termux ARM64 package index: " + "; ".join(errors))
+
+          stanzas = []
+          current = {}
+          field = None
+          for line in index.splitlines() + [""]:
+              if not line:
+                  if current.get("Package"):
+                      stanzas.append(current)
+                  current, field = {}, None
+              elif line[:1].isspace() and field:
+                  current[field] = current.get(field, "") + " " + line.strip()
+              elif ":" in line:
+                  field, value = line.split(":", 1)
+                  current[field] = value.strip()
+
+          candidates = {}
+          for package in stanzas:
+              name = package.get("Package", "")
+              arch = package.get("Architecture", "")
+              if not name or arch not in ("aarch64", "all"):
+                  continue
+              old = candidates.get(name)
+              if old is None or (old.get("Architecture") == "all" and arch == "aarch64"):
+                  candidates[name] = package
+
+          selected, visiting = {}, set()
+          system_provided = {"libc", "libm", "libdl", "liblog", "libandroid", "libjnigraphics"}
+          def dependency_names(value):
+              result = []
+              for group in (value or "").split(","):
+                  alternatives = group.split("|")
+                  names = [re.match(r"\s*([A-Za-z0-9+.-]+)", item).group(1)
+                           for item in alternatives
+                           if re.match(r"\s*([A-Za-z0-9+.-]+)", item)]
+                  chosen = next((n for n in names if n in candidates), None)
+                  if chosen:
+                      result.append(chosen)
+                  elif names and not all(n in system_provided for n in names):
+                      raise RuntimeError("Unresolved Termux package dependency: " + group.strip())
+              return result
+
+          def collect(name):
+              if name in selected or name in system_provided:
+                  return
+              if name in visiting:
+                  return
+              if name not in candidates:
+                  raise RuntimeError("Missing package in ARM64 index: " + name)
+              visiting.add(name)
+              package = candidates[name]
+              for dep in dependency_names(package.get("Pre-Depends", "")):
+                  collect(dep)
+              for dep in dependency_names(package.get("Depends", "")):
+                  collect(dep)
+              visiting.remove(name)
+              filename = package.get("Filename", "")
+              digest = package.get("SHA256", "")
+              size = int(package.get("Size", "0"))
+              if not filename.startswith("pool/") or ".." in Path(filename).parts:
+                  raise RuntimeError("Unsafe package filename: " + filename)
+              if not re.fullmatch(r"[0-9a-fA-F]{64}", digest) or size <= 0:
+                  raise RuntimeError("Package hash/size metadata missing for " + name)
+              selected[name] = {
+                  "name": name, "version": package.get("Version", ""),
+                  "architecture": package.get("Architecture", ""),
+                  "filename": filename, "sha256": digest.lower(), "size": size
+              }
+
+          collect("openjdk-25")
+          java = selected.get("openjdk-25")
+          if not java or not java["version"].startswith("25."):
+              raise RuntimeError("Termux repository did not resolve a Java 25 package")
+          packages = sorted(selected.values(), key=lambda p: p["name"])
+          if sum(p["size"] for p in packages) > 600 * 1024 * 1024:
+              raise RuntimeError("Java 25 runtime dependency set exceeds the 600 MiB safety limit")
+          manifest = {
+              "format": "mobilehorizon-termux-openjdk-runtime",
+              "format_version": 1, "java_major": 25, "architecture": "aarch64",
+              "repository": base, "packages": packages,
+              "total_download_bytes": sum(p["size"] for p in packages)
+          }
+          out = Path("app/src/main/assets/horizon-prepare/jdk-manifest.json")
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(json.dumps(manifest, indent=2) + "\n")
+          print(f"Pinned {len(packages)} Termux packages ({manifest['total_download_bytes']} bytes) for Java {java['version']}")
+          PY
+
+      - name: Prepare stable APK signing key
+        id: signing
+        shell: bash
+        env:
+          MOBILEHORIZON_KEYSTORE_BASE64: ${{ secrets.MOBILEHORIZON_KEYSTORE_BASE64 }}
+          MOBILEHORIZON_KEYSTORE_PASSWORD: ${{ secrets.MOBILEHORIZON_KEYSTORE_PASSWORD }}
+          MOBILEHORIZON_KEY_ALIAS: ${{ secrets.MOBILEHORIZON_KEY_ALIAS }}
+          MOBILEHORIZON_KEY_PASSWORD: ${{ secrets.MOBILEHORIZON_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MOBILEHORIZON_KEYSTORE_BASE64:-}" || -z "${MOBILEHORIZON_KEYSTORE_PASSWORD:-}" || -z "${MOBILEHORIZON_KEY_ALIAS:-}" || -z "${MOBILEHORIZON_KEY_PASSWORD:-}" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Stable signing secrets are missing. The build will be checked, but no APK artifact will be published because a one-run debug key cannot guarantee safe upgrades."
+            exit 0
+          fi
+          printf '%s' "$MOBILEHORIZON_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mobilehorizon-signing.jks"
+          test -s "$RUNNER_TEMP/mobilehorizon-signing.jks"
+          keytool -list -keystore "$RUNNER_TEMP/mobilehorizon-signing.jks" -storepass "$MOBILEHORIZON_KEYSTORE_PASSWORD" -alias "$MOBILEHORIZON_KEY_ALIAS" >/dev/null
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build Horizon NativeActivity client with touch-to-mouse translation
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keep desktop controller/HID backends disabled on Android to avoid
+          # libudev/hidapi dependencies. CPAL audio is enabled by android-native's
+          # horizon-client feature selection and uses Android's native audio backend.
+          UPSTREAM_COMMIT="defaa7cd2ade6dc45bcac0b418bf10601f05a120"
+          SOURCE="$RUNNER_TEMP/horizon-native-upstream"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
+          git -C "$SOURCE" fetch --depth 1 origin "$UPSTREAM_COMMIT"
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
+          python3 -m py_compile tools/patch_horizon_android_touch.py
+          python3 tools/patch_horizon_android_touch.py "$SOURCE"
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          cargo build --release --no-default-features --manifest-path "$SOURCE/Cargo.toml" -p mobilehorizon-android --target aarch64-linux-android
+          LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_android.so"
+          test -s "$LIB"
+          # Avoid grep -q closing a pipe early: with pipefail this can return
+          # a nonzero status even though the symbol was found.
+          "$TOOLCHAIN/llvm-readelf" -h "$LIB" > "$RUNNER_TEMP/horizon-elf-header.txt"
+          grep -Fq 'AArch64' "$RUNNER_TEMP/horizon-elf-header.txt"
+          "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" > "$RUNNER_TEMP/horizon-elf-symbols.txt"
+          grep -Fq 'ANativeActivity_onCreate' "$RUNNER_TEMP/horizon-elf-symbols.txt" || {
+            echo "::error::The native library is missing ANativeActivity_onCreate."
+            exit 1
+          }
+          grep -Fq 'android_main' "$RUNNER_TEMP/horizon-elf-symbols.txt" || {
+            echo "::error::The native library is missing android_main."
+            exit 1
+          }
+          cp "$LIB" app/src/main/jniLibs/arm64-v8a/libhorizon_android.so
+          echo "Built and staged the patched NativeActivity client with Android touch translated to mouse input."
+          sha256sum app/src/main/jniLibs/arm64-v8a/libhorizon_android.so | tee "$RUNNER_TEMP/horizon-android-sha256.txt"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Run compatibility tests and build debug APK
+        shell: bash
+        env:
+          HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
+          MOBILEHORIZON_KEYSTORE_PASSWORD: ${{ secrets.MOBILEHORIZON_KEYSTORE_PASSWORD }}
+          MOBILEHORIZON_KEY_ALIAS: ${{ secrets.MOBILEHORIZON_KEY_ALIAS }}
+          MOBILEHORIZON_KEY_PASSWORD: ${{ secrets.MOBILEHORIZON_KEY_PASSWORD }}
+          STABLE_SIGNING: ${{ steps.signing.outputs.enabled }}
+        run: |
+          set -euo pipefail
+          args=("-PHORIZON_MSA_CLIENT_ID=$HORIZON_MSA_CLIENT_ID")
+          if [[ "$STABLE_SIGNING" == "true" ]]; then
+            args+=("-PMOBILEHORIZON_STORE_FILE=$RUNNER_TEMP/mobilehorizon-signing.jks")
+            args+=("-PMOBILEHORIZON_STORE_PASSWORD=$MOBILEHORIZON_KEYSTORE_PASSWORD")
+            args+=("-PMOBILEHORIZON_KEY_ALIAS=$MOBILEHORIZON_KEY_ALIAS")
+            args+=("-PMOBILEHORIZON_KEY_PASSWORD=$MOBILEHORIZON_KEY_PASSWORD")
+          fi
+          gradle --no-daemon "${args[@]}" test :app:assembleDebug
+
+      - name: Verify the built APK and required runtime payloads
+        shell: bash
+        env:
+          STABLE_SIGNING: ${{ steps.signing.outputs.enabled }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -tq "$APK"
+          unzip -l "$APK" > "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'lib/arm64-v8a/libhorizon_android.so' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/horizon-prepare/horizon-prepare-arm64' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
+          if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
+            grep -F "name='dev.mobilehorizon.app.offline1' versionCode='8' versionName='0.3.5-offline1'" "$RUNNER_TEMP/apk-badging.txt"
+          else
+            grep -F "name='dev.mobilehorizon.app.offline1.test.v8' versionCode='8' versionName='0.3.5-offline1-test-v8'" "$RUNNER_TEMP/apk-badging.txt"
+          fi
+          sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
+          CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
+          echo "APK signer certificate SHA-256: $CERT_SHA256"
+          echo "APK signer certificate SHA-256: $CERT_SHA256" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.signing.outputs.enabled }}" != "true" ]]; then
+            echo "::warning::APK is test-only and uses a separate application ID because stable signing secrets are missing. It will not overwrite the installed app or share its data."
+            echo "Version-isolated test APK published under dev.mobilehorizon.app.offline1.test.v8; the previous test package and its data remain installed separately. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "APK is valid, package/version match, and Horizon ARM64 runtime plus Java 25 manifest payload are included."
+
+      - name: Upload update-safe APK
+        if: success() && steps.signing.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobilehorizon-native-offline1-update-safe
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload isolated test APK
+        if: success() && steps.signing.outputs.enabled != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobilehorizon-native-offline1-test-only
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
