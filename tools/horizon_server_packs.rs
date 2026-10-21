@@ -68,7 +68,7 @@ fn parse_pack_url(value: &str) -> Result<Url, FetchError> {
 }
 
 pub fn is_supported_url(value: &str) -> bool {
-    parse_https_url(value).is_ok()
+    parse_pack_url(value).is_ok()
 }
 
 fn valid_sha1(value: &str) -> bool {
