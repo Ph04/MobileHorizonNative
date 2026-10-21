@@ -2242,16 +2242,12 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''            other => return
 pack_patch("crates/horizon-protocol/src/item.rs", '''            Self::TooltipDisplay { hide, hidden } => {
                 w.bool(*hide);
                 w.varint(hidden.len() as i32);
-                for h in hidden {
-                    w.varint(*h);
-                }
+                hidden.iter().for_each(|h| w.varint(*h));
             }
         }''', '''            Self::TooltipDisplay { hide, hidden } => {
                 w.bool(*hide);
                 w.varint(hidden.len() as i32);
-                for h in hidden {
-                    w.varint(*h);
-                }
+                hidden.iter().for_each(|h| w.varint(*h));
             }
             Self::Raw(bytes) => w.bytes(bytes),
         }''', "write preserved raw component bytes")
@@ -2266,7 +2262,7 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         let bytes = [
             1, 5, 2, 0,
             16, 0,
-            72, 0, 0, 0, 0, 0, 0, 0,
+            72, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         let mut reader = Reader::new(&bytes);
         let stack = Slot::read(&mut reader).unwrap().unwrap();
