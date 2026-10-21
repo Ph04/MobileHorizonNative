@@ -2132,4 +2132,178 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                let wi
                 );''', "measure visual item component types in server menus")
 
 
+
+# Keep item packets decodable when servers use the full 26.3 component registry.
+# Components with known wire codecs but no renderer support are preserved as raw
+# values; truly unknown codecs still fail closed so subsequent fields cannot desync.
+pack_patch("crates/horizon-protocol/src/item.rs", '''    pub const MAP_ID: i32 = 48;
+}''', '''    pub const MAP_ID: i32 = 48;
+    pub const ATTRIBUTE_MODIFIERS: i32 = 16;
+    pub const PROFILE: i32 = 72;
+}''', "register attribute-modifiers and profile component IDs")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''    TooltipDisplay {
+        hide: bool,
+        hidden: Vec<i32>,
+    },
+}''', '''    TooltipDisplay {
+        hide: bool,
+        hidden: Vec<i32>,
+    },
+    /// A recognized component whose value is safely skippable but not yet rendered.
+    /// Payload bytes are retained verbatim so decoding does not desynchronize the slot.
+    Raw(Vec<u8>),
+}''', "preserve recognized-but-unrendered component values")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''impl Component {
+    fn read(kind: i32, r: &mut Reader) -> Result<Self> {''', '''fn skip_attribute_modifiers(r: &mut Reader) -> Result<()> {
+    let count = r.count(4096)?;
+    for _ in 0..count {
+        // Holder<Attribute>, AttributeModifier (Identifier, f64, operation id),
+        // EquipmentSlotGroup id, then Display (default=0, hidden=1, override=2).
+        r.varint()?;
+        r.string(32767)?;
+        r.f64()?;
+        r.varint()?;
+        r.varint()?;
+        match r.varint()? {
+            0 | 1 => {}
+            2 => { r.nbt()?; }
+            value => return Err(Error::new(format!("invalid attribute modifier display type {value}"))),
+        }
+    }
+    Ok(())
+}
+
+fn skip_profile_properties(r: &mut Reader) -> Result<()> {
+    let count = r.count(1024)?;
+    for _ in 0..count {
+        r.string(32767)?;
+        r.string(32767)?;
+        if r.bool()? {
+            r.string(32767)?;
+        }
+    }
+    Ok(())
+}
+
+fn skip_profile(r: &mut Reader) -> Result<()> {
+    // Either<GameProfile, Partial>; then PlayerSkin.Patch's optional textures/model.
+    if r.bool()? {
+        r.uuid()?;
+        r.string(16)?;
+        skip_profile_properties(r)?;
+    } else {
+        if r.bool()? { r.string(16)?; }
+        if r.bool()? { r.uuid()?; }
+        skip_profile_properties(r)?;
+    }
+    for _ in 0..3 {
+        if r.bool()? { r.string(32767)?; }
+    }
+    // Optional PlayerModelType id (the ID mapper is a VarInt in 26.3).
+    if r.bool()? { r.varint()?; }
+    Ok(())
+}
+
+fn skip_raw_component(kind: i32, r: &mut Reader) -> Result<()> {
+    use component::*;
+    match kind {
+        // Simple scalar/unit/NBT/string components whose wire forms are stable.
+        7 | 54 => { r.f32()?; }
+        12 | 42 | 46 | 49 | 50 | 65 | 75 | 91 | 96 | 97 | 114 | 115 | 116 | 121 => {
+            match kind {
+                49 => { r.nbt()?; }
+                _ => { r.varint()?; }
+            }
+        }
+        20 | 34 | 120 => {}
+        21 => { r.bool()?; }
+        22 | 59 | 61 | 81 | 82 => { r.nbt()?; }
+        35 | 73 => { r.string(32767)?; }
+        ATTRIBUTE_MODIFIERS => skip_attribute_modifiers(r)?,
+        PROFILE => skip_profile(r)?,
+        // Entity/item variant components in the 26.3 registry are registry/enum IDs.
+        88..=117 => { r.varint()?; }
+        other => return Err(Error::new(format!("unsupported item component {other} (no safe wire codec)"))),
+    }
+    Ok(())
+}
+
+impl Component {
+    fn read(kind: i32, r: &mut Reader) -> Result<Self> {''', "add safe readers for common 26.3 component codecs")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''            other => return Err(Error::new(format!("unsupported item component {other}"))),''', '''            other => {
+                let start = r.position();
+                skip_raw_component(other, r)?;
+                Self::Raw(r.since(start).to_vec())
+            },''', "preserve raw component payloads after safe decoding")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''            Self::TooltipDisplay { hide, hidden } => {
+                w.bool(*hide);
+                w.varint(hidden.len() as i32);
+                for h in hidden {
+                    w.varint(*h);
+                }
+            }
+        }''', '''            Self::TooltipDisplay { hide, hidden } => {
+                w.bool(*hide);
+                w.varint(hidden.len() as i32);
+                for h in hidden {
+                    w.varint(*h);
+                }
+            }
+            Self::Raw(bytes) => w.bytes(bytes),
+        }''', "write preserved raw component bytes")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
+    fn unknown_components_are_errors() {
+        let bytes = [1, 5, 1, 0, 99];
+        assert!(Slot::read(&mut Reader::new(&bytes)).is_err());
+    }''', '''    #[test]
+    fn unsupported_components_with_known_wire_types_do_not_discard_slots() {
+        // Attribute modifiers: empty list. Profile: empty partial profile and empty skin patch.
+        let bytes = [
+            1, 5, 2, 0,
+            16, 0,
+            72, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let mut reader = Reader::new(&bytes);
+        let stack = Slot::read(&mut reader).unwrap().unwrap();
+        assert_eq!(stack.added.len(), 2);
+        assert!(matches!(stack.added[0], (ATTRIBUTE_MODIFIERS, Component::Raw(_))));
+        assert!(matches!(stack.added[1], (PROFILE, Component::Raw(_))));
+        assert_eq!(reader.remaining(), 0);
+        let mut writer = Writer::new();
+        Slot::write(&Some(stack), &mut writer);
+        assert_eq!(writer.data, bytes);
+    }
+
+    #[test]
+    fn common_unrendered_component_values_are_preserved() {
+        // minimum_attack_charge (f32), rarity (VarInt), glider (unit), and item_name.
+        let mut writer = Writer::new();
+        writer.varint(1);
+        writer.varint(5);
+        writer.varint(3);
+        writer.varint(0);
+        writer.varint(7);
+        writer.f32(0.5);
+        writer.varint(12);
+        writer.varint(2);
+        writer.varint(34);
+        let mut reader = Reader::new(&writer.data);
+        let stack = Slot::read(&mut reader).unwrap().unwrap();
+        assert_eq!(stack.added.len(), 3);
+        assert!(stack.added.iter().all(|(_, value)| matches!(value, Component::Raw(_))));
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn unknown_components_are_errors() {
+        let bytes = [1, 5, 1, 0, 99];
+        assert!(Slot::read(&mut Reader::new(&bytes)).is_err());
+    }''', "test complex and scalar component preservation") 
+
+
 print("Applied Java-compatible server resource packs, item text/model components and multiplayer skin fixes.")
