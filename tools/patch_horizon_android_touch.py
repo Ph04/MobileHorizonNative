@@ -226,6 +226,8 @@ replace_once(net,
 
 replace_once(net,
     """            play::Clientbound::ResourcePackPush(p) => {
+                // Resource-pack handling is not implemented yet. Keep the reason visible:
+                // servers that require a pack may disconnect this client after the decline.
                 log::warn!(
                     "Horizon: declined server resource pack in play (required={}, hash_present={}); download and application are not implemented yet",
                     p.required, !p.hash.is_empty()
