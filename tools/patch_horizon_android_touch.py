@@ -3671,11 +3671,16 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''    packs::resource_roo
 
 pack_patch("crates/horizon-client/src/game/packs.rs", '''    fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {
         let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
+        let loaded_sprite_layers = render.sprite_layers.len();
         let mut atlas = HudAtlas::build(root)?;
         atlas.font.uniform = self.settings.force_unicode;''', '''    fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {
         log::info!("HorizonDiag: resource_reload_stage=assets_reload status=begin");
         let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
-        log::info!("HorizonDiag: resource_reload_stage=assets_reload status=success");
+        let loaded_sprite_layers = render.sprite_layers.len();
+        log::info!(
+            "HorizonDiag: resource_reload_stage=assets_reload status=success sprite_layers={}",
+            loaded_sprite_layers
+        );
         log::info!("HorizonDiag: resource_reload_stage=hud_atlas_build status=begin");
         let mut atlas = HudAtlas::build(root)?;
         log::info!(
