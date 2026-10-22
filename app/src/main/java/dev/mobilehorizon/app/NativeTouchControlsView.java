@@ -56,6 +56,10 @@ final class NativeTouchControlsView extends View {
     private static final String KEY_UNIFORM_SIZE_VERSION = "uniform_button_size_version";
     private static final String KEY_FLOAT_MENU_X = "floating_menu_x";
     private static final String KEY_FLOAT_MENU_Y = "floating_menu_y";
+    private static final String KEY_HOTBAR_SCALE = "hotbar_hit_width_scale";
+
+    private static final long LONG_PRESS_TIMEOUT_MS = 430L;
+    private static final long DOUBLE_TAP_TIMEOUT_MS = 300L;
 
     private static final int FUNCTION_DEFAULT = 0;
     private static final int FUNCTION_KEY = 1;
@@ -69,7 +73,8 @@ final class NativeTouchControlsView extends View {
             DROP = 10, SWAP = 11, PICK = 12, PERSPECTIVE = 13, CHAT = 14,
             HOTBAR_PREV = 15, HOTBAR_NEXT = 16, TAB = 17, ENTER = 18, IGNORED = 19,
             MOUSE_LEFT = 20, MOUSE_RIGHT = 21, KEYBOARD = 22, EDITOR = 23,
-            ADD_BUTTON = 24, DONE_EDITING = 25, FLOATING_MENU = 26, CUSTOM_BUTTON_START = 1000;
+            ADD_BUTTON = 24, DONE_EDITING = 25, FLOATING_MENU = 26,
+            HOTBAR_SLOT_START = 100, CUSTOM_BUTTON_START = 1000;
     private final Activity activity;
     private final NativeGameActivity gameActivity;
     private final boolean previewOnly;
@@ -108,8 +113,12 @@ final class NativeTouchControlsView extends View {
     private float scale;
     private float opacity;
     private float sensitivity;
+    private float hotbarScale;
     private boolean leftHanded;
     private boolean controlsVisible = true;
+    private long lastHotbarTapTime;
+    private int lastHotbarTapSlot = -1;
+    private float guiScrollAccumulator;
     private int joystickPointer = -1;
     private float joystickX, joystickY, virtualMouseX, virtualMouseY;
     private int mouseButtons;
@@ -119,11 +128,19 @@ final class NativeTouchControlsView extends View {
         final float startX, startY;
         float lastX, lastY;
         final int control;
+        final boolean startGameplay;
         boolean moved;
         boolean editorDrag;
         boolean menuDrag;
-        PointerTrack(float x, float y, int control) {
-            startX = lastX = x; startY = lastY = y; this.control = control;
+        boolean longPressFired;
+        boolean suppressTap;
+        boolean rightClickGesture;
+        boolean guiScrollGesture;
+        int longPressButton;
+        Runnable longPressAction;
+        PointerTrack(float x, float y, int control, boolean startGameplay) {
+            startX = lastX = x; startY = lastY = y;
+            this.control = control; this.startGameplay = startGameplay;
         }
     }
 
@@ -184,6 +201,7 @@ final class NativeTouchControlsView extends View {
         scale = clamp(prefs.getFloat(KEY_SCALE, 1f), 0.70f, 1.30f);
         opacity = clamp(prefs.getFloat(KEY_OPACITY, 0.82f), 0.35f, 1f);
         sensitivity = clamp(prefs.getFloat(KEY_SENSITIVITY, 1f), 0.50f, 2f);
+        hotbarScale = clamp(prefs.getFloat(KEY_HOTBAR_SCALE, 1f), 0.70f, 1.50f);
         leftHanded = prefs.getBoolean(KEY_LEFT_HANDED, false);
         snapGapDp = clamp(prefs.getFloat(KEY_SNAP_GAP, 12f), 4f, 32f);
         loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
@@ -263,9 +281,6 @@ final class NativeTouchControlsView extends View {
         cursorPath.lineTo(x + dp(12), y + dp(14));
         cursorPath.lineTo(x + dp(21), y + dp(13));
         cursorPath.close();
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(0x5539D6F2);
-        canvas.drawCircle(x + dp(5), y + dp(5), dp(9), paint);
         canvas.save();
         canvas.translate(dp(1.2f), dp(1.2f));
         paint.setColor(0xCC000000);
@@ -279,9 +294,6 @@ final class NativeTouchControlsView extends View {
         paint.setStrokeJoin(Paint.Join.ROUND);
         paint.setColor(0xFF17243A);
         canvas.drawPath(cursorPath, paint);
-        paint.setStrokeWidth(dp(0.9f));
-        paint.setColor(0xFF64E7FF);
-        canvas.drawLine(x + dp(3), y + dp(5), x + dp(3), y + dp(16), paint);
         paint.setStyle(Paint.Style.FILL);
     }
 
@@ -1111,10 +1123,19 @@ final class NativeTouchControlsView extends View {
         panel.addView(gapLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(gapBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
+        TextView hotbarLabel = textSetting("Largura da hotbar invisível " + Math.round(hotbarScale * 100) + "%");
+        SeekBar hotbarBar = new SeekBar(activity);
+        hotbarBar.setMax(80);
+        hotbarBar.setProgress(Math.round(hotbarScale * 100f) - 70);
+        panel.addView(hotbarLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
+        panel.addView(hotbarBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
+
         size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText("Tamanho geral " + (70 + progress) + "%")));
         alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText("Opacidade geral " + (35 + progress) + "%")));
         sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText("Sensibilidade da câmera " + (50 + progress) + "%")));
         gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText("Distância de encaixe " + (progress + 4) + " dp")));
+        hotbarBar.setOnSeekBarChangeListener(simpleSeek(progress ->
+                hotbarLabel.setText("Largura da hotbar invisível " + (progress + 70) + "%")));
 
         ScrollView settingsScroll = new ScrollView(activity);
         settingsScroll.setFillViewport(false);
@@ -1131,6 +1152,7 @@ final class NativeTouchControlsView extends View {
             opacity = (alpha.getProgress() + 35) / 100f;
             sensitivity = (sensitivityBar.getProgress() + 50) / 100f;
             snapGapDp = gapBar.getProgress() + 4;
+            hotbarScale = (hotbarBar.getProgress() + 70) / 100f;
             leftHanded = handed.isChecked();
             prefs.edit()
                     .putBoolean(KEY_ENABLED, enabled.isChecked())
@@ -1139,6 +1161,7 @@ final class NativeTouchControlsView extends View {
                     .putFloat(KEY_OPACITY, opacity)
                     .putFloat(KEY_SENSITIVITY, sensitivity)
                     .putFloat(KEY_SNAP_GAP, snapGapDp)
+                    .putFloat(KEY_HOTBAR_SCALE, hotbarScale)
                     .apply();
             invalidate();
             Toast.makeText(activity, "Ajustes dos controles salvos.", Toast.LENGTH_SHORT).show();
@@ -1189,6 +1212,7 @@ final class NativeTouchControlsView extends View {
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {
+        if (gameActivity != null) gameplayMode = gameActivity.isGameplayMode();
         int action = event.getActionMasked(), index = event.getActionIndex();
         switch (action) {
             case MotionEvent.ACTION_DOWN:
@@ -1209,6 +1233,10 @@ final class NativeTouchControlsView extends View {
         int id = event.getPointerId(index);
         float x = event.getX(index), y = event.getY(index);
         int control = hitControl(x, y);
+        if (control == NONE) {
+            int slot = hitHotbarSlot(x, y);
+            if (slot >= 0) control = HOTBAR_SLOT_START + slot;
+        }
         if (control == TOGGLE) {
             controlsVisible = !controlsVisible;
             if (!controlsVisible) {
@@ -1244,29 +1272,41 @@ final class NativeTouchControlsView extends View {
                 control = IGNORED;
             }
         }
-        PointerTrack track = new PointerTrack(x, y, control);
+        PointerTrack track = new PointerTrack(x, y, control, gameplayMode);
         track.editorDrag = editorDrag;
         track.menuDrag = control == FLOATING_MENU && !previewOnly;
         pointers.put(id, track);
+        if (control == NONE || isHotbarSlotControl(control)) schedulePointerLongPress(id, track);
+        if (control == NONE) tryStartTouchGesture(track);
+
         if (track.editorDrag || track.menuDrag) {
             // A tap opens a settings panel; dragging moves an editable control or menu button.
         } else if (control == JOYSTICK) updateJoystick(x, y);
-        else if (control != NONE && control != TOGGLE && control != IGNORED) activateControl(control, x, y);
+        else if (control != NONE && control != TOGGLE && control != IGNORED
+                && !isHotbarSlotControl(control)) activateControl(control, x, y);
         else if (control == NONE) {
             virtualMouseX = x;
             virtualMouseY = y;
-            sendMouseMotion(virtualMouseX, virtualMouseY);
+            // In a captured Minecraft world the touch is a relative camera gesture,
+            // not an absolute cursor warp. Menus need an absolute virtual cursor.
+            if (!track.startGameplay) sendMouseMotion(virtualMouseX, virtualMouseY);
         }
         invalidate();
     }
 
     private void movePointers(MotionEvent event) {
+        float menuScrollDelta = 0f;
+        int menuScrollPointers = 0;
+        float rightGestureDx = 0f, rightGestureDy = 0f, rightGestureDistance = 0f;
+        boolean hasRightGestureMovement = false;
+
         for (int i = 0; i < event.getPointerCount(); i++) {
             PointerTrack track = pointers.get(event.getPointerId(i));
             if (track == null) continue;
             float x = event.getX(i), y = event.getY(i);
             float dx = x - track.lastX, dy = y - track.lastY;
             if (Math.abs(x - track.startX) > dp(7) || Math.abs(y - track.startY) > dp(7)) track.moved = true;
+
             if (track.menuDrag) {
                 if (track.moved) {
                     floatingMenuX = clamp(x / Math.max(1f, getWidth()), 0.04f, 0.96f);
@@ -1274,17 +1314,43 @@ final class NativeTouchControlsView extends View {
                     invalidate();
                 }
             } else if (track.editorDrag) {
-                if (Math.abs(x - track.startX) > dp(7) || Math.abs(y - track.startY) > dp(7)) track.moved = true;
                 if (track.moved) setButtonPosition(track.control, x, y);
-            } else if (track.control == JOYSTICK) updateJoystick(x, y);
-            else if (track.control == NONE && track.moved
-                    && (Math.abs(dx) >= 0.75f || Math.abs(dy) >= 0.75f)) {
-                virtualMouseX = clamp(virtualMouseX + dx * sensitivity, 0, Math.max(1, getWidth()));
-                virtualMouseY = clamp(virtualMouseY + dy * sensitivity, 0, Math.max(1, getHeight()));
+            } else if (track.control == JOYSTICK) {
+                updateJoystick(x, y);
+            } else if (isHotbarSlotControl(track.control)) {
+                // The invisible hotbar hit zones act only on tap/long-press, never as camera input.
+            } else if (track.control == NONE && track.guiScrollGesture) {
+                menuScrollDelta += dy;
+                menuScrollPointers++;
+            } else if (track.control == NONE && track.startGameplay) {
+                if (track.rightClickGesture) {
+                    float distance = dx * dx + dy * dy;
+                    if (track.moved && distance > rightGestureDistance) {
+                        rightGestureDistance = distance;
+                        rightGestureDx = dx;
+                        rightGestureDy = dy;
+                        hasRightGestureMovement = true;
+                    }
+                } else if (track.moved
+                        && (Math.abs(dx) >= 0.75f || Math.abs(dy) >= 0.75f)
+                        && gameActivity != null) {
+                    // In-game touchpad: relative movement rotates the camera; no visible cursor is needed.
+                    gameActivity.injectMouseMotion(dx * sensitivity, dy * sensitivity);
+                }
+            } else if (track.control == NONE) {
+                // In menus/inventory, the touch position maps directly to the virtual pointer.
+                virtualMouseX = clamp(x, 0, Math.max(1, getWidth()));
+                virtualMouseY = clamp(y, 0, Math.max(1, getHeight()));
                 sendMouseMotion(virtualMouseX, virtualMouseY);
-                if (gameActivity != null) gameActivity.injectMouseMotion(dx * sensitivity, dy * sensitivity);
             }
-            track.lastX = x; track.lastY = y;
+            track.lastX = x;
+            track.lastY = y;
+        }
+
+        if (menuScrollPointers > 0) sendTouchScroll(menuScrollDelta / menuScrollPointers);
+        if (hasRightGestureMovement && gameActivity != null) {
+            // Use the largest finger delta so two fingers moving together do not double camera speed.
+            gameActivity.injectMouseMotion(rightGestureDx * sensitivity, rightGestureDy * sensitivity);
         }
     }
 
@@ -1292,6 +1358,7 @@ final class NativeTouchControlsView extends View {
         int id = event.getPointerId(index);
         PointerTrack track = pointers.remove(id);
         if (track == null) return;
+        cancelPointerLongPress(track);
         if (track.control == IGNORED) {
             invalidate();
             return;
@@ -1315,11 +1382,26 @@ final class NativeTouchControlsView extends View {
             } else {
                 showButtonEditor(track.control);
             }
+        } else if (isHotbarSlotControl(track.control)) {
+            if (!track.longPressFired && !track.moved && !track.suppressTap) {
+                handleHotbarTap(track.control - HOTBAR_SLOT_START, event.getEventTime());
+            }
+        } else if (track.rightClickGesture) {
+            releaseRightGestureIfFinished();
+        } else if (track.guiScrollGesture) {
+            // Two-finger swipe is a scroll gesture in menus; it must not click the GUI.
         } else if (track.control == JOYSTICK) {
             joystickPointer = -1;
             setJoystickDirections(false, false, false, false);
         } else if (track.control == NONE) {
-            if (!track.moved) sendMouseClick(virtualMouseX, virtualMouseY, MotionEvent.BUTTON_PRIMARY);
+            if (track.longPressFired) {
+                if (track.longPressButton != 0) {
+                    setMouseButton(track.longPressButton, false, virtualMouseX, virtualMouseY);
+                }
+            } else if (!track.suppressTap && !track.moved) {
+                // Single tap is the primary click; long-press is reserved for held mouse actions.
+                sendMouseClick(virtualMouseX, virtualMouseY, MotionEvent.BUTTON_PRIMARY, !track.startGameplay);
+            }
         } else if (track.control != TOGGLE) {
             deactivateControl(track.control, track.lastX, track.lastY);
         }
@@ -1361,6 +1443,107 @@ final class NativeTouchControlsView extends View {
         float jx = joystickHomeX(), jy = joystickHomeY(), jr = dp(82) * scale;
         if (distanceSquared(x, y, jx, jy) <= jr * jr) return JOYSTICK;
         return best == null ? NONE : best.id;
+    }
+
+    /** Invisible click targets aligned with the vanilla nine-slot Java hotbar. */
+    private int hitHotbarSlot(float x, float y) {
+        if (previewOnly || editingControls || !gameplayMode || getWidth() <= 0 || getHeight() <= 0) return -1;
+        float width = Math.min(dp(182f) * hotbarScale, getWidth() * 0.82f);
+        float left = (getWidth() - width) / 2f;
+        float top = getHeight() - dp(40f);
+        if (x < left || x >= left + width || y < top || y > getHeight()) return -1;
+        int slot = (int) ((x - left) / (width / 9f));
+        return slot >= 0 && slot < 9 ? slot : -1;
+    }
+
+    private boolean isHotbarSlotControl(int control) {
+        return control >= HOTBAR_SLOT_START && control < HOTBAR_SLOT_START + 9;
+    }
+
+    private void schedulePointerLongPress(int pointerId, PointerTrack track) {
+        track.longPressAction = () -> {
+            if (pointers.get(pointerId) != track || track.moved || track.suppressTap
+                    || track.rightClickGesture || track.guiScrollGesture) return;
+            track.longPressFired = true;
+            if (isHotbarSlotControl(track.control)) {
+                // A long press on a hotbar slot drops the selected item, like common Java launchers.
+                pulseKey(KeyEvent.KEYCODE_Q);
+            } else {
+                // Hold attack/break in-world; in a GUI, hold right-click for item dragging/stack splitting.
+                track.longPressButton = track.startGameplay
+                        ? MotionEvent.BUTTON_PRIMARY : MotionEvent.BUTTON_SECONDARY;
+                setMouseButton(track.longPressButton, true, virtualMouseX, virtualMouseY);
+            }
+            invalidate();
+        };
+        modeHandler.postDelayed(track.longPressAction, LONG_PRESS_TIMEOUT_MS);
+    }
+
+    private void cancelPointerLongPress(PointerTrack track) {
+        if (track.longPressAction != null) {
+            modeHandler.removeCallbacks(track.longPressAction);
+            track.longPressAction = null;
+        }
+    }
+
+    private void tryStartTouchGesture(PointerTrack newTrack) {
+        if (newTrack.control != NONE) return;
+        for (PointerTrack other : pointers.values()) {
+            if (other == newTrack || other.control != NONE
+                    || other.startGameplay != newTrack.startGameplay
+                    || other.moved || other.longPressFired || other.suppressTap) continue;
+            cancelPointerLongPress(other);
+            cancelPointerLongPress(newTrack);
+            other.suppressTap = true;
+            newTrack.suppressTap = true;
+            other.moved = true;
+            newTrack.moved = true;
+            if (newTrack.startGameplay) {
+                // Two-finger touch holds right mouse so blocks can be placed while a finger moves the camera.
+                other.rightClickGesture = true;
+                newTrack.rightClickGesture = true;
+                setMouseButton(MotionEvent.BUTTON_SECONDARY, true, virtualMouseX, virtualMouseY);
+            } else {
+                // In GUIs, a two-finger swipe becomes the mouse wheel instead of two accidental clicks.
+                other.guiScrollGesture = true;
+                newTrack.guiScrollGesture = true;
+                guiScrollAccumulator = 0f;
+            }
+            return;
+        }
+    }
+
+    private void releaseRightGestureIfFinished() {
+        for (PointerTrack active : pointers.values()) {
+            if (active.rightClickGesture) return;
+        }
+        setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY);
+    }
+
+    private void sendTouchScroll(float deltaY) {
+        guiScrollAccumulator += deltaY;
+        float threshold = dp(24f);
+        while (guiScrollAccumulator <= -threshold) {
+            // Finger moving up scrolls the GUI downward.
+            sendMouseScroll(-1f);
+            guiScrollAccumulator += threshold;
+        }
+        while (guiScrollAccumulator >= threshold) {
+            sendMouseScroll(1f);
+            guiScrollAccumulator -= threshold;
+        }
+    }
+
+    private void handleHotbarTap(int slot, long eventTime) {
+        if (lastHotbarTapSlot == slot && eventTime - lastHotbarTapTime <= DOUBLE_TAP_TIMEOUT_MS) {
+            pulseKey(KeyEvent.KEYCODE_F);
+            lastHotbarTapSlot = -1;
+            lastHotbarTapTime = 0L;
+        } else {
+            pulseKey(KeyEvent.KEYCODE_1 + slot);
+            lastHotbarTapSlot = slot;
+            lastHotbarTapTime = eventTime;
+        }
     }
 
     private void updateJoystick(float x, float y) {
@@ -1546,9 +1729,18 @@ final class NativeTouchControlsView extends View {
     }
 
     private void sendMouseClick(float x, float y, int button) {
-        sendMouseMotion(x, y);
+        sendMouseClick(x, y, button, !gameplayMode);
+    }
+
+    private void sendMouseClick(float x, float y, int button, boolean moveCursor) {
+        if (moveCursor) sendMouseMotion(x, y);
         setMouseButton(button, true, x, y);
         setMouseButton(button, false, x, y);
+    }
+
+    private void pulseKey(int keyCode) {
+        setKeyHeld(keyCode, true);
+        setKeyHeld(keyCode, false);
     }
 
     void releaseAllInputs() {
@@ -1565,8 +1757,16 @@ final class NativeTouchControlsView extends View {
         joystickKeys.clear();
         pressedControls.clear();
         controlPointerCounts.clear();
-        // Avoid generating accidental taps while the activity pauses or is destroyed.
-        mouseButtons = 0;
+        // Always send button-up events too, otherwise a long press can remain held after a pause.
+        if ((mouseButtons & MotionEvent.BUTTON_PRIMARY) != 0) {
+            setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY);
+        }
+        if ((mouseButtons & MotionEvent.BUTTON_SECONDARY) != 0) {
+            setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY);
+        }
+        if ((mouseButtons & MotionEvent.BUTTON_TERTIARY) != 0) {
+            setMouseButton(MotionEvent.BUTTON_TERTIARY, false, virtualMouseX, virtualMouseY);
+        }
         joystickPointer = -1;
     }
 
