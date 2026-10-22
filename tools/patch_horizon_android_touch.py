@@ -2494,6 +2494,77 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''        lang::set(lang:
 
 
 # Visual-resource diagnostics: verify both ZIP contents and the final loaded assets.
+# Use the normal vanilla item-model pipeline for item_display and the block
+# model catalog for block_display. The display's interpolation transform is
+# applied around the entity origin rather than inventing a second model system.
+pack_patch("crates/horizon-client/src/game/item_draw.rs", '''    /// \`ItemEntityRenderer.submit\` for every dropped item.''', '''    /// Render Java 26.3 item_display and block_display entities with the same
+    /// model resolvers used by dropped items and world blocks.
+    pub(super) fn remote_display_geometry(&self, camera: glam::DVec3, out: &mut Vec<Vertex>) {
+        for (id, position, stack, context_id, transform) in self.remote_item_displays() {
+            let at = glam::DVec3::from_array(position);
+            let relative = at - camera;
+            if relative.length_squared() > 128.0 * 128.0 {
+                continue;
+            }
+            let context = match context_id {
+                0 => DisplayContext::None,
+                1 => DisplayContext::ThirdPersonLeftHand,
+                2 => DisplayContext::ThirdPersonRightHand,
+                3 => DisplayContext::FirstPersonLeftHand,
+                4 => DisplayContext::FirstPersonRightHand,
+                5 => DisplayContext::Head,
+                6 => DisplayContext::Gui,
+                7 => DisplayContext::Ground,
+                8 => DisplayContext::Fixed,
+                9 => DisplayContext::OnShelf,
+                _ => DisplayContext::None,
+            };
+            let owner = owner_at(position, 0.0, "minecraft:item_display");
+            let state = self.resolve_item(&stack, context, Some(&owner), id as i32);
+            if state.is_empty() {
+                continue;
+            }
+            let packed = self.world.light(
+                position[0].floor() as i32,
+                position[1].floor() as i32,
+                position[2].floor() as i32,
+            );
+            let pose = glam::Mat4::from_translation(relative.as_vec3()) * transform.matrix();
+            let start = out.len();
+            self.submit_item_world(&state, pose, vertex_light(packed), out);
+            self.cull_entity_vertices(out, start);
+        }
+        for (id, position, state, transform) in self.remote_block_displays() {
+            let at = glam::DVec3::from_array(position);
+            let relative = at - camera;
+            if relative.length_squared() > 128.0 * 128.0 || state.0 == 0 {
+                continue;
+            }
+            let packed = self.world.light(
+                position[0].floor() as i32,
+                position[1].floor() as i32,
+                position[2].floor() as i32,
+            );
+            let pose = glam::Mat4::from_translation(relative.as_vec3())
+                * transform.matrix()
+                * glam::Mat4::from_translation(glam::Vec3::splat(-0.5));
+            self.block_model_vertices(
+                state,
+                i64::from(id),
+                pose,
+                vertex_light(packed),
+                true,
+                out,
+            );
+        }
+    }
+    /// \`ItemEntityRenderer.submit\` for every dropped item.''', "render item and block display entities")
+
+pack_patch("crates/horizon-client/src/game.rs", '''        // \`ItemEntityRenderer\`.
+        self.dropped_item_geometry(camera, alpha, &mut out);''', '''        // \`ItemEntityRenderer\` and server-driven display entities.
+        self.dropped_item_geometry(camera, alpha, &mut out);
+        self.remote_display_geometry(camera, &mut out);''', "submit remote display model geometry")
+
 pack_patch("crates/horizon-client/src/game/packs.rs", '''        let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
         let mut atlas = HudAtlas::build(root)?;''', '''        let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
         let loaded_sprite_layers = render.sprite_layers.len();
