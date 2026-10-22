@@ -3717,13 +3717,14 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''        self.streaming.
         );''', "log completed streaming resource refresh")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''        log::info!("Horizon: applying server resource pack id={id:032x} required={required}");
-        self.pending_server_pack_responses.push(id);''', '''        log::info!(
-            "HorizonDiag: server_resource_pack_activation id={id:032x} required={required} cache_file={} zip_bytes={} active_server_pack_layers={}",
+        self.pending_server_pack_responses.push((id, phase));''', '''        log::info!(
+            "HorizonDiag: server_resource_pack_activation id={id:032x} required={required} phase={:?} cache_file={} zip_bytes={} active_server_pack_layers={}",
+            phase,
             path.file_name().and_then(|value| value.to_str()).unwrap_or("unknown"),
             std::fs::metadata(&path).map(|metadata| metadata.len()).unwrap_or(0),
             remote.server_packs.len()
         );
-        self.pending_server_pack_responses.push(id);''', "trace server pack activation and cache metadata")
+        self.pending_server_pack_responses.push((id, phase));''', "trace server pack activation and cache metadata")
 
 
 
