@@ -56,7 +56,26 @@ jobs:
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: "platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018"
+          packages: "platforms;android-35 build-tools;35.0.0"
+
+      - name: Install Android NDK with download retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          for attempt in 1 2 3 4; do
+            # Discard partial/corrupt SDK downloads before retrying the package.
+            rm -rf "$ANDROID_HOME/temp"
+            if "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "ndk;27.2.12479018"; then
+              break
+            fi
+            if [[ "$attempt" == 4 ]]; then
+              echo "::error::Android NDK installation failed after $attempt attempts."
+              exit 1
+            fi
+            echo "::warning::Android NDK download failed (attempt $attempt); retrying."
+          done
+          test -x "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang"
 
       # Reuse the previous repo's committed source bundle only as a source for the
       # native runtime. Both the archive and shared-library hashes are pinned below.
