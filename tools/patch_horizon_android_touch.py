@@ -3288,7 +3288,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''        let (id, payload) = re
         let packet = match play::Clientbound::decode(id, &payload) {''', "trace resource-pack and world-login packet receipt")
 
 pack_patch("crates/horizon-client/src/net.rs", '''        let (id, payload) = reader.recv().map_err(|e| e.to_string())?;
-        match cfg::Clientbound::decode(id, &payload).map_err(|e| e.to_string())? {''', '''        let (id, payload) = reader.recv().map_err(|e| e.to_string())?;
+        let packet = match cfg::Clientbound::decode(id, &payload) {''', '''        let (id, payload) = reader.recv().map_err(|e| e.to_string())?;
         let packet_name = horizon_protocol::ids::name(
             horizon_protocol::State::Configuration,
             horizon_protocol::Direction::Clientbound,
@@ -3305,7 +3305,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''        let (id, payload) = re
                 id, packet_name, payload.len()
             );
         }
-        match cfg::Clientbound::decode(id, &payload).map_err(|e| e.to_string())? {''', "trace configuration resource and registry packet receipt")
+        let packet = match cfg::Clientbound::decode(id, &payload) {''', "trace configuration resource and registry packet receipt")
 
 pack_patch("crates/horizon-client/src/net.rs", '''    let mut registries = Dynamic::default();
     let reply = |p: cfg::Serverbound| -> Result<(), String> {''', '''    let mut registries = Dynamic::default();
@@ -3324,8 +3324,8 @@ pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::
                 return Ok(registries);
             }''', '''            cfg::Clientbound::FinishConfiguration(_) => {
                 log::info!(
-                    "HorizonDiag: configuration_phase_complete resource_pack_offers={} registry_count={}",
-                    diagnostic_pack_offers, registries.len()
+                    "HorizonDiag: configuration_phase_complete resource_pack_offers={}",
+                    diagnostic_pack_offers
                 );
                 reply(cfg::Serverbound::FinishConfiguration(Empty))?;
                 return Ok(registries);
@@ -3701,92 +3701,5 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''        log::info!("Ho
             remote.server_packs.len()
         );
         self.pending_server_pack_responses.push(id);''', "trace server pack activation and cache metadata")
-
-# Extra pack audit categories make it possible to distinguish a downloaded
-# pack with no item definitions from one containing textures/models that fail later.
-pack_patch("tools/horizon_server_packs.rs", '''    item_definitions: usize,
-    item_models: usize,
-    legacy_item_overrides: usize,
-    block_models: usize,
-    atlases: usize,''', '''    item_definitions: usize,
-    item_models: usize,
-    legacy_item_overrides: usize,
-    block_models: usize,
-    blockstates: usize,
-    fonts: usize,
-    language_files: usize,
-    sounds: usize,
-    sample_item_definitions: Vec<String>,
-    sample_item_models: Vec<String>,
-    sample_textures: Vec<String>,
-    sample_block_models: Vec<String>,
-    atlases: usize,''', "extend resource pack audit categories")
-
-pack_patch("tools/horizon_server_packs.rs", '''                    if asset_path.starts_with("textures/") && asset_path.ends_with(".png") {
-                        audit.textures += 1;
-                    }''', '''                    if asset_path.starts_with("textures/") && asset_path.ends_with(".png") {
-                        audit.textures += 1;
-                        if audit.sample_textures.len() < 12 {
-                            audit.sample_textures.push(format!("{namespace}:{asset_path}"));
-                        }
-                    }''', "record bounded texture path examples")
-
-pack_patch("tools/horizon_server_packs.rs", '''                    if asset_path.starts_with("items/") && asset_path.ends_with(".json") {
-                        audit.item_definitions += 1;
-                    }''', '''                    if asset_path.starts_with("items/") && asset_path.ends_with(".json") {
-                        audit.item_definitions += 1;
-                        if audit.sample_item_definitions.len() < 16 {
-                            audit.sample_item_definitions.push(format!("{namespace}:{asset_path}"));
-                        }
-                    }
-                    if asset_path.starts_with("blockstates/") && asset_path.ends_with(".json") {
-                        audit.blockstates += 1;
-                    }
-                    if asset_path.starts_with("font/") && asset_path.ends_with(".json") {
-                        audit.fonts += 1;
-                    }
-                    if asset_path.starts_with("lang/") && asset_path.ends_with(".json") {
-                        audit.language_files += 1;
-                    }
-                    if asset_path.starts_with("sounds/") && asset_path.ends_with(".json") {
-                        audit.sounds += 1;
-                    }''', "count blockstates fonts languages and sound definitions")
-
-pack_patch("tools/horizon_server_packs.rs", '''                    if asset_path.starts_with("models/item/") && asset_path.ends_with(".json") {
-                        audit.item_models += 1;
-                        if entry.size() <= 2 * 1024 * 1024 {
-                            item_model_json.push(name.clone());
-                        }
-                    }''', '''                    if asset_path.starts_with("models/item/") && asset_path.ends_with(".json") {
-                        audit.item_models += 1;
-                        if audit.sample_item_models.len() < 16 {
-                            audit.sample_item_models.push(format!("{namespace}:{asset_path}"));
-                        }
-                        if entry.size() <= 2 * 1024 * 1024 {
-                            item_model_json.push(name.clone());
-                        }
-                    }''', "record bounded item model path examples")
-
-pack_patch("tools/horizon_server_packs.rs", '''                    if asset_path.starts_with("models/block/") && asset_path.ends_with(".json") {
-                        audit.block_models += 1;
-                    }''', '''                    if asset_path.starts_with("models/block/") && asset_path.ends_with(".json") {
-                        audit.block_models += 1;
-                        if audit.sample_block_models.len() < 12 {
-                            audit.sample_block_models.push(format!("{namespace}:{asset_path}"));
-                        }
-                    }''', "record bounded block model path examples")
-
-pack_patch("tools/horizon_server_packs.rs", '''                "Horizon: server pack content audit id={id:032x} sha1={sha1} zip_entries={} asset_entries={} textures={} entity_textures={} item_definitions={} item_models={} legacy_item_overrides={} block_models={} atlases={} optifine_cit_files={} optifine_cem_files={} custom_namespace_count={} custom_namespaces={:?}",
-                audit.zip_entries, audit.assets_entries, audit.textures, audit.entity_textures,
-                audit.item_definitions, audit.item_models, audit.legacy_item_overrides,
-                audit.block_models, audit.atlases, audit.optifine_cit, audit.optifine_cem,
-                namespaces.len(), namespaces''', '''                "HorizonDiag: server_pack_content_audit id={id:032x} sha1={sha1} zip_entries={} asset_entries={} textures={} entity_textures={} item_definitions={} item_models={} legacy_item_overrides={} block_models={} blockstates={} fonts={} language_files={} sounds={} atlases={} optifine_cit_files={} optifine_cem_files={} custom_namespace_count={} custom_namespaces={:?} sample_item_definitions={:?} sample_item_models={:?} sample_textures={:?} sample_block_models={:?}",
-                audit.zip_entries, audit.assets_entries, audit.textures, audit.entity_textures,
-                audit.item_definitions, audit.item_models, audit.legacy_item_overrides,
-                audit.block_models, audit.blockstates, audit.fonts, audit.language_files, audit.sounds,
-                audit.atlases, audit.optifine_cit, audit.optifine_cem,
-                namespaces.len(), namespaces, audit.sample_item_definitions,
-                audit.sample_item_models, audit.sample_textures, audit.sample_block_models''', "write bounded path samples and expanded resource audit")
-
 
 print("Applied Java-compatible server resource packs, detailed resource/item/text diagnostics, and multiplayer skin fixes.")
