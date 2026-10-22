@@ -2335,10 +2335,8 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(N
                 continue;
             }
             let background_color = if flags & 0x04 != 0 { 0x40000000 } else { background };
-            let text_opacity = match opacity as u8 {
-                0..=3 => 255,
-                alpha => alpha,
-            };
+            // Text opacity is an unsigned alpha byte; -1 on the wire means 255.
+            let text_opacity = opacity as u8;
             let light = self.world.light(
                 position[0].floor() as i32,
                 position[1].floor() as i32,
@@ -2512,7 +2510,7 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''        lang::set(lang:
 # Use the normal vanilla item-model pipeline for item_display and the block
 # model catalog for block_display. The display's interpolation transform is
 # applied around the entity origin rather than inventing a second model system.
-pack_patch("crates/horizon-client/src/game/item_draw.rs", '''    /// \`ItemEntityRenderer.submit\` for every dropped item.''', '''    /// Render Java 26.3 item_display and block_display entities with the same
+pack_patch("crates/horizon-client/src/game/item_draw.rs", '''    /// `ItemEntityRenderer.submit` for every dropped item.''', '''    /// Render Java 26.3 item_display and block_display entities with the same
     /// model resolvers used by dropped items and world blocks.
     pub(super) fn remote_display_geometry(&self, camera: glam::DVec3, out: &mut Vec<Vertex>) {
         for (id, position, stack, context_id, transform) in self.remote_item_displays() {
@@ -2573,10 +2571,10 @@ pack_patch("crates/horizon-client/src/game/item_draw.rs", '''    /// \`ItemEntit
             );
         }
     }
-    /// \`ItemEntityRenderer.submit\` for every dropped item.''', "render item and block display entities")
+    /// `ItemEntityRenderer.submit` for every dropped item.''', "render item and block display entities")
 
-pack_patch("crates/horizon-client/src/game.rs", '''        // \`ItemEntityRenderer\`.
-        self.dropped_item_geometry(camera, alpha, &mut out);''', '''        // \`ItemEntityRenderer\` and server-driven display entities.
+pack_patch("crates/horizon-client/src/game.rs", '''        // `ItemEntityRenderer`.
+        self.dropped_item_geometry(camera, alpha, &mut out);''', '''        // `ItemEntityRenderer` and server-driven display entities.
         self.dropped_item_geometry(camera, alpha, &mut out);
         self.remote_display_geometry(camera, &mut out);''', "submit remote display model geometry")
 
