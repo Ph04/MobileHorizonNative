@@ -3074,7 +3074,10 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                compon
                 component::PROFILE => Some("minecraft:profile"),
                 _ => None,''', "preserve explicit removal of profile components")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''        for (location, rgba) in self.skin_downloads.take_ready() {''', '''        // Player-head item displays have their own profile components and are not
+pack_patch("crates/horizon-client/src/game/remote.rs", '''        for (location, rgba) in self.skin_downloads.take_ready() {
+            self.store_skin(location, rgba);
+        }
+        for (entity_id, location) in skins {''', '''        // Player-head item displays have their own profile components and are not
         // necessarily represented in the world-player profile table. Queue these
         // skin URLs through the same bounded downloader and atlas slots.
         let head_profiles = self.remote.as_ref().map(|remote| {
@@ -3124,7 +3127,10 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''        for (location,
             }
         }
 
-        for (location, rgba) in self.skin_downloads.take_ready() {''', "download textures for custom player heads displayed in the world")
+        for (location, rgba) in self.skin_downloads.take_ready() {
+            self.store_skin(location, rgba);
+        }
+        for (entity_id, location) in skins {''', "download textures for custom player heads displayed in the world")
 
 pack_patch("crates/horizon-client/src/game/item_draw.rs", '''    fn shield_texture(&self, pattern: &str) -> Option<String> {
         self.banners
