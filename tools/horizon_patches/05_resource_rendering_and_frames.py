@@ -545,12 +545,9 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                compon
                 component::PROFILE => Some("minecraft:profile"),
                 _ => None,''', "preserve explicit removal of profile components")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''        for (location, rgba) in self.skin_downloads.take_ready() {
-            self.store_skin(location, rgba);
-        }
-        for (entity_id, location) in skins {''', '''        // Player-head item displays have their own profile components and are not
-        // necessarily represented in the world-player profile table. Queue these
-        // skin URLs through the same bounded downloader and atlas slots.
+pack_patch("crates/horizon-client/src/game/remote.rs", '''        resolved.retain(|(_, skin)| !skin.starts_with("skins/") || self.show_skin(skin));''', '''        // Player-head displays may carry their own profile textures without a player-list entry.
+        // Queue those URLs through Horizon's shared downloader so its normal atlas update
+        // can make the skin available to the item renderer.
         let head_profiles = self.remote.as_ref().map(|remote| {
             remote.item_displays.values().filter_map(|display| {
                 let stack = display.item.as_ref()?;
@@ -568,9 +565,9 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''        for (location,
                         skin: Some(url.to_owned()),
                         ..Default::default()
                     };
-                    let downloader = &mut self.skin_downloads;
+                    let mut downloads = self.skin_downloads.borrow_mut();
                     let _ = horizon_client::skins::lookup(&textures, false, |kind, url| {
-                        downloader.state(kind, url)
+                        downloads.state(kind, url)
                     });
                     continue;
                 }
@@ -591,17 +588,13 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''        for (location,
                 encoded, signature, &horizon_client::skins::TEXTURE_URIS
             );
             if textures.skin.is_some() {
-                let downloader = &mut self.skin_downloads;
+                let mut downloads = self.skin_downloads.borrow_mut();
                 let _ = horizon_client::skins::lookup(&textures, false, |kind, url| {
-                    downloader.state(kind, url)
+                    downloads.state(kind, url)
                 });
             }
         }
-
-        for (location, rgba) in self.skin_downloads.take_ready() {
-            self.store_skin(location, rgba);
-        }
-        for (entity_id, location) in skins {''', "download textures for custom player heads displayed in the world")
+        resolved.retain(|(_, skin)| !skin.starts_with("skins/") || self.show_skin(skin));''', "download textures for custom player heads with current Horizon skin lifecycle")
 
 pack_patch("crates/horizon-client/src/game/item_draw.rs", '''    fn shield_texture(&self, pattern: &str) -> Option<String> {
         self.banners
