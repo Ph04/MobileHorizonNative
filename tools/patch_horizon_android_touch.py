@@ -4087,9 +4087,23 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''        let key = (pos
             log::warn!("HorizonDiag: block_entity_data_not_applied pos={:?} kind={} reason=registry_type_unresolved", pos, kind);
             return;
         };
+        // A sign update can race the chunk block-entity list. Rebuild the local
+        // block entity from the *current block state* before applying the NBT;
+        // this preserves the state-authoritative behavior and avoids dropping a
+        // valid text update solely because the local SignData was not instantiated.
+        if is_sign {
+            let state = self.world.block(pos[0], pos[1], pos[2]);
+            self.sync_block_entity(key, state);
+            log::info!(
+                "HorizonDiag: sign_block_entity_synced_from_block_state pos={:?} block={} local_entity_present={}",
+                pos,
+                self.res.facts().get(state).name,
+                self.world.block_entities.get(&key).is_some_and(|entity| matches!(entity, horizon_client::containers::BlockEntity::Sign(_)))
+            );
+        }
         let Some(entity) = self.world.block_entities.get(&key) else {
             if is_sign {
-                log::warn!("HorizonDiag: sign_text_not_applied pos={:?} type={} reason=world_has_no_sign_block_entity", pos, name);
+                log::warn!("HorizonDiag: sign_text_not_applied pos={:?} type={} reason=world_has_no_sign_block_entity_after_block_sync", pos, name);
             }
             return;
         };
