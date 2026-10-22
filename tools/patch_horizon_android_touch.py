@@ -2162,6 +2162,13 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            entities: 
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''                if let Some(r) = self.remote.as_mut() {
                     if kind == "minecraft:player" {
+                        let profile_cached = r.skin_textures.contains_key(&p.uuid);
+                        let skin_url_present = r.skin_textures.get(&p.uuid)
+                            .is_some_and(|textures| textures.skin.is_some());
+                        log::info!(
+                            "HorizonDiag: player_like_entity_spawned profile_textures_cached={} skin_url_present={}",
+                            profile_cached, skin_url_present
+                        );
                         r.level_players.insert(p.id, p.uuid);
                     } else {
                         r.level_players.remove(&p.id);
@@ -2169,6 +2176,13 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                if let
                 }
                 self.spawn_entity(p.id, &kind, p.position, rotation);''', '''                if let Some(r) = self.remote.as_mut() {
                     if kind == "minecraft:player" {
+                        let profile_cached = r.skin_textures.contains_key(&p.uuid);
+                        let skin_url_present = r.skin_textures.get(&p.uuid)
+                            .is_some_and(|textures| textures.skin.is_some());
+                        log::info!(
+                            "HorizonDiag: player_like_entity_spawned profile_textures_cached={} skin_url_present={}",
+                            profile_cached, skin_url_present
+                        );
                         r.level_players.insert(p.id, p.uuid);
                     } else {
                         r.level_players.remove(&p.id);
