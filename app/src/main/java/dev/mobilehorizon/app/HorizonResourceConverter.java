@@ -174,8 +174,10 @@ final class HorizonResourceConverter {
         if (!indexFile.isFile()) throw new IllegalStateException("Falta assets/indexes/" + assetIndexId + ".json. Execute o download oficial.");
         String expectedIndexSha1 = assetIndexMetadata.optString("sha1", "");
         String actualIndexSha1 = sha1(indexFile);
-        if (!expectedIndexSha1.equalsIgnoreCase(actualIndexSha1)) {
-            throw new IllegalStateException("O índice de assets não corresponde ao SHA-1 do manifesto.");
+        String assetIndexWarning = OfficialMinecraftInstaller.assetIndexSha1Warning(
+                expectedIndexSha1, actualIndexSha1);
+        if (assetIndexWarning != null) {
+            report(listener, "Aviso: asset index republicado", 2, 5, assetIndexWarning);
         }
 
         report(listener, "Verificando bibliotecas", 2, 5, "bibliotecas Android/ARM64");
@@ -287,6 +289,10 @@ final class HorizonResourceConverter {
         plan.put("asset_index_id", assetIndexId);
         plan.put("asset_index_path", "minecraft/assets/indexes/" + assetIndexId + ".json");
         plan.put("asset_index_sha1", actualIndexSha1);
+        plan.put("asset_index_expected_sha1", expectedIndexSha1);
+        plan.put("asset_index_sha1_matches_manifest", assetIndexWarning == null);
+        plan.put("asset_index_validation", assetIndexWarning == null
+                ? "manifest-sha1-match" : "republished-index; individual-object-sha1-verified");
         plan.put("unique_asset_objects", unique.size());
         plan.put("present_asset_objects", present);
         plan.put("missing_asset_objects", missing);
@@ -312,11 +318,13 @@ final class HorizonResourceConverter {
                 new File(planDir, "conversion-plan.json"));
         report(listener, "Entradas e recursos vanilla preparados", 6, 6,
                 "Cliente: " + extraction.clientFiles + " arquivos · servidor: " + extraction.serverFiles
-                        + " arquivos · assets baixados: " + present + "/" + unique.size());
+                        + " arquivos · assets baixados: " + present + "/" + unique.size()
+                        + (assetIndexWarning == null ? "" : " · índice republicado; hashes individuais conferidos"));
 
         String note = "Entradas oficiais verificadas; " + extraction.clientFiles
                 + " arquivos de assets/data do JAR do cliente e " + extraction.serverFiles
                 + " arquivos de data/minecraft do servidor foram extraídos. "
+                + (assetIndexWarning == null ? "" : assetIndexWarning + " ")
                 + extraction.hydratedAssetNames + " nomes de assets do índice foram materializados na árvore de entrada ("
                 + formatBytes(extraction.hydratedAssetBytes) + "), sem alterar os JARs oficiais. "
                 + "Bibliotecas verificadas: " + verifiedLibraries + ". Objetos de asset íntegros disponíveis: "

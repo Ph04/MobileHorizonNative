@@ -325,9 +325,19 @@ final class HorizonPrepareRunner {
         File indexFile = new File(minecraft, "assets/indexes/" + indexId + ".json");
         requireFile(indexFile, "Falta o índice de assets. Baixe os arquivos base novamente.");
         String expectedIndexHash = indexMeta.optString("sha1", "");
-        if (!OfficialMinecraftInstaller.isSha1(expectedIndexHash)
-                || !expectedIndexHash.equalsIgnoreCase(sha1(indexFile))) {
-            throw new IOException("O asset index não passou na verificação SHA-1.");
+        if (!OfficialMinecraftInstaller.isSha1(expectedIndexHash)) {
+            throw new IOException("O manifesto contém um SHA-1 inválido para o asset index.");
+        }
+        String actualIndexHash = sha1(indexFile);
+        final String assetIndexWarning;
+        try {
+            assetIndexWarning = OfficialMinecraftInstaller.assetIndexSha1Warning(
+                    expectedIndexHash, actualIndexHash);
+        } catch (IllegalArgumentException invalidHash) {
+            throw new IOException("O asset index não contém um SHA-1 válido.", invalidHash);
+        }
+        if (assetIndexWarning != null) {
+            report(listener, "Aviso: asset index republicado", assetIndexWarning, 2, 6);
         }
         org.json.JSONObject index = new org.json.JSONObject(readText(indexFile, 64 * 1024 * 1024));
         org.json.JSONObject objects = index.optJSONObject("objects");
