@@ -215,6 +215,14 @@ struct ResourcePackAudit {
     item_models: usize,
     legacy_item_overrides: usize,
     block_models: usize,
+    blockstates: usize,
+    fonts: usize,
+    language_files: usize,
+    sounds: usize,
+    sample_item_definitions: Vec<String>,
+    sample_item_models: Vec<String>,
+    sample_textures: Vec<String>,
+    sample_block_models: Vec<String>,
     atlases: usize,
     optifine_cit: usize,
     optifine_cem: usize,
@@ -241,21 +249,45 @@ fn audit_resource_pack(path: &Path, id: u128, sha1: &str) {
                     }
                     if asset_path.starts_with("textures/") && asset_path.ends_with(".png") {
                         audit.textures += 1;
+                        if audit.sample_textures.len() < 12 {
+                            audit.sample_textures.push(format!("{namespace}:{asset_path}"));
+                        }
                     }
                     if asset_path.starts_with("textures/entity/") && asset_path.ends_with(".png") {
                         audit.entity_textures += 1;
                     }
                     if asset_path.starts_with("items/") && asset_path.ends_with(".json") {
                         audit.item_definitions += 1;
+                        if audit.sample_item_definitions.len() < 16 {
+                            audit.sample_item_definitions.push(format!("{namespace}:{asset_path}"));
+                        }
+                    }
+                    if asset_path.starts_with("blockstates/") && asset_path.ends_with(".json") {
+                        audit.blockstates += 1;
+                    }
+                    if asset_path.starts_with("font/") && asset_path.ends_with(".json") {
+                        audit.fonts += 1;
+                    }
+                    if asset_path.starts_with("lang/") && asset_path.ends_with(".json") {
+                        audit.language_files += 1;
+                    }
+                    if asset_path.starts_with("sounds/") && asset_path.ends_with(".json") {
+                        audit.sounds += 1;
                     }
                     if asset_path.starts_with("models/item/") && asset_path.ends_with(".json") {
                         audit.item_models += 1;
+                        if audit.sample_item_models.len() < 16 {
+                            audit.sample_item_models.push(format!("{namespace}:{asset_path}"));
+                        }
                         if entry.size() <= 2 * 1024 * 1024 {
                             item_model_json.push(name.clone());
                         }
                     }
                     if asset_path.starts_with("models/block/") && asset_path.ends_with(".json") {
                         audit.block_models += 1;
+                        if audit.sample_block_models.len() < 12 {
+                            audit.sample_block_models.push(format!("{namespace}:{asset_path}"));
+                        }
                     }
                     if asset_path.starts_with("atlases/") && asset_path.ends_with(".json") {
                         audit.atlases += 1;
@@ -294,11 +326,13 @@ fn audit_resource_pack(path: &Path, id: u128, sha1: &str) {
             let mut namespaces: Vec<_> = audit.custom_namespaces.into_iter().collect();
             namespaces.sort();
             log::info!(
-                "Horizon: server pack content audit id={id:032x} sha1={sha1} zip_entries={} asset_entries={} textures={} entity_textures={} item_definitions={} item_models={} legacy_item_overrides={} block_models={} atlases={} optifine_cit_files={} optifine_cem_files={} custom_namespace_count={} custom_namespaces={:?}",
+                "HorizonDiag: server_pack_content_audit id={id:032x} sha1={sha1} zip_entries={} asset_entries={} textures={} entity_textures={} item_definitions={} item_models={} legacy_item_overrides={} block_models={} blockstates={} fonts={} language_files={} sounds={} atlases={} optifine_cit_files={} optifine_cem_files={} custom_namespace_count={} custom_namespaces={:?} sample_item_definitions={:?} sample_item_models={:?} sample_textures={:?} sample_block_models={:?}",
                 audit.zip_entries, audit.assets_entries, audit.textures, audit.entity_textures,
                 audit.item_definitions, audit.item_models, audit.legacy_item_overrides,
-                audit.block_models, audit.atlases, audit.optifine_cit, audit.optifine_cem,
-                namespaces.len(), namespaces
+                audit.block_models, audit.blockstates, audit.fonts, audit.language_files, audit.sounds,
+                audit.atlases, audit.optifine_cit, audit.optifine_cem,
+                namespaces.len(), namespaces, audit.sample_item_definitions,
+                audit.sample_item_models, audit.sample_textures, audit.sample_block_models
             );
         }
         Err(error) => log::warn!("Horizon: server pack content audit failed id={id:032x}: {error}"),
