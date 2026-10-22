@@ -867,8 +867,10 @@ final class NativeTouchControlsView extends View {
         float currentScale = custom != null ? custom.scale : (saved == null ? defaultButtonScale(id) : saved.scale);
         float currentOpacity = custom != null ? custom.opacity : (saved == null ? 1f : saved.opacity);
         int currentShape = custom != null ? custom.shape : (saved == null ? 0 : saved.shape);
-        int currentFunction = custom != null ? custom.function : (saved == null ? 0 : saved.function);
-        if (custom != null && currentFunction == FUNCTION_DEFAULT) currentFunction = FUNCTION_KEY;
+        int savedFunction = custom != null ? custom.function : (saved == null ? 0 : saved.function);
+        // Keep the normalized value final: the Save click listener captures it.
+        final int currentFunction = custom != null && savedFunction == FUNCTION_DEFAULT
+                ? FUNCTION_KEY : savedFunction;
         int currentKey = custom != null ? custom.keyCode : (saved == null ? KeyEvent.KEYCODE_UNKNOWN : saved.keyCode);
         boolean joystickButton = id == JOYSTICK;
         boolean inGame = gameActivity != null && !previewOnly;
