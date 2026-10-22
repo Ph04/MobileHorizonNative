@@ -12,6 +12,7 @@ audio = root / "crates/horizon-client/src/audio.rs"
 skins = root / "crates/horizon-client/src/skins.rs"
 remote = root / "crates/horizon-client/src/game/remote.rs"
 names = root / "crates/horizon-client/src/game/names.rs"
+item_draw = root / "crates/horizon-client/src/game/item_draw.rs"
 net = root / "crates/horizon-client/src/net.rs"
 client_cargo = root / "crates/horizon-client/Cargo.toml"
 clipboard = root / "crates/horizon-client/src/clipboard.rs"
@@ -19,7 +20,7 @@ pad_menu = root / "crates/horizon-client/src/game/pad_menu.rs"
 startup_menu = root / "crates/horizon-client/src/game/startup_menu.rs"
 workspace_cargo = root / "Cargo.toml"
 
-for path in (game, lib, audio, skins, remote, names, net, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
+for path in (game, lib, audio, skins, remote, names, item_draw, net, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
     if not path.is_file():
         raise SystemExit(f"Missing pinned Horizon source file: {path}")
 
@@ -2062,6 +2063,7 @@ struct RemoteTextDisplay {
     background_color: i32,
     text_opacity: i8,
     flags: i8,
+    transform: RemoteDisplayTransform,
 }
 impl Default for RemoteTextDisplay {
     fn default() -> Self {
@@ -2071,25 +2073,75 @@ impl Default for RemoteTextDisplay {
             background_color: 0x40000000,
             text_opacity: -1,
             flags: 0,
+            transform: RemoteDisplayTransform::default(),
         }
     }
+}
+
+#[derive(Clone)]
+pub(super) struct RemoteDisplayTransform {
+    pub(super) translation: [f32; 3],
+    pub(super) scale: [f32; 3],
+    pub(super) left_rotation: [f32; 4],
+    pub(super) right_rotation: [f32; 4],
+}
+impl Default for RemoteDisplayTransform {
+    fn default() -> Self {
+        Self {
+            translation: [0.0; 3],
+            scale: [1.0; 3],
+            left_rotation: [0.0, 0.0, 0.0, 1.0],
+            right_rotation: [0.0, 0.0, 0.0, 1.0],
+        }
+    }
+}
+impl RemoteDisplayTransform {
+    pub(super) fn matrix(&self) -> glam::Mat4 {
+        glam::Mat4::from_translation(glam::Vec3::from_array(self.translation))
+            * glam::Mat4::from_quat(glam::Quat::from_xyzw(
+                self.left_rotation[0], self.left_rotation[1],
+                self.left_rotation[2], self.left_rotation[3],
+            ))
+            * glam::Mat4::from_scale(glam::Vec3::from_array(self.scale))
+            * glam::Mat4::from_quat(glam::Quat::from_xyzw(
+                self.right_rotation[0], self.right_rotation[1],
+                self.right_rotation[2], self.right_rotation[3],
+            ))
+    }
+}
+#[derive(Clone, Default)]
+struct RemoteItemDisplay {
+    item: Option<horizon_client::items::ItemStack>,
+    transform_context: u8,
+    transform: RemoteDisplayTransform,
+}
+#[derive(Clone, Default)]
+struct RemoteBlockDisplay {
+    state: Option<horizon_world::registry::BlockStateId>,
+    transform: RemoteDisplayTransform,
 }''', "define tracked text display state")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''                r.entities.clear();
                 r.lerps.clear();
                 r.head_lerps.clear();''', '''                r.entities.clear();
                 r.text_displays.clear();
+                r.item_displays.clear();
+                r.block_displays.clear();
                 r.lerps.clear();
                 r.head_lerps.clear();''', "clear display metadata on remote dimension reset")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''    entities: HashMap<i32, Tracked>,
     lerps: HashMap<i32, Lerp>,''', '''    entities: HashMap<i32, Tracked>,
     text_displays: HashMap<i32, RemoteTextDisplay>,
+    item_displays: HashMap<i32, RemoteItemDisplay>,
+    block_displays: HashMap<i32, RemoteBlockDisplay>,
     lerps: HashMap<i32, Lerp>,''', "store remote text displays")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            entities: HashMap::new(),
             lerps: HashMap::new(),''', '''            entities: HashMap::new(),
             text_displays: HashMap::new(),
+            item_displays: HashMap::new(),
+            block_displays: HashMap::new(),
             lerps: HashMap::new(),''', "initialize remote text display storage")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''                if let Some(r) = self.remote.as_mut() {
@@ -2108,17 +2160,35 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                if let
                     if kind == "minecraft:text_display" {
                         r.text_displays.insert(p.id, RemoteTextDisplay::default());
                         log::info!("HorizonDiag: text_display_spawned entity_id={}", p.id);
-                    } else if kind == "minecraft:item_display" || kind == "minecraft:block_display" {
-                        log::warn!(
-                            "HorizonDiag: display_entity_tracked_but_not_rendered kind={} entity_id={}",
-                            kind, p.id
-                        );
+                    } else if kind == "minecraft:item_display" {
+                        r.item_displays.insert(p.id, RemoteItemDisplay::default());
+                        log::info!("HorizonDiag: item_display_spawned entity_id={}", p.id);
+                    } else if kind == "minecraft:block_display" {
+                        r.block_displays.insert(p.id, RemoteBlockDisplay::default());
+                        log::info!("HorizonDiag: block_display_spawned entity_id={}", p.id);
                     }
                 }
                 self.spawn_entity(p.id, &kind, p.position, rotation);''', "track display entities on spawn")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEntityData(p) => {
                 if let Some(m) = self.mobs.iter_mut().find(|m| m.id == p.id as u32)''', '''            C::SetEntityData(p) => {
+                let item_display_item_update = p.values.iter().find_map(|(index, serializer, value)| {
+                    if (*index, *serializer) == (23, 7) {
+                        if let Value::Item(stack) = value { Some(self.to_stack(stack)) } else { None }
+                    } else { None }
+                });
+                let item_display_context_update = p.values.iter().find_map(|(index, serializer, value)| {
+                    if (*index, *serializer) == (24, 0) {
+                        if let Value::Byte(context) = value { Some((*context).clamp(0, 9) as u8) } else { None }
+                    } else { None }
+                });
+                let block_display_state_update = p.values.iter().find_map(|(index, serializer, value)| {
+                    if (*index, *serializer) == (23, 14) {
+                        if let Value::Id(state) = value {
+                            Some(horizon_world::registry::BlockStateId((*state).max(0) as u32))
+                        } else { None }
+                    } else { None }
+                });
                 if let Some(remote) = self.remote.as_mut() {
                     if let Some(display) = remote.text_displays.get_mut(&p.id) {
                         for (index, serializer, value) in &p.values {
@@ -2131,6 +2201,16 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEnti
                                 _ => {}
                             }
                         }
+                        apply_display_transform(&mut display.transform, &p.values);
+                    }
+                    if let Some(display) = remote.item_displays.get_mut(&p.id) {
+                        if let Some(item) = item_display_item_update { display.item = item; }
+                        if let Some(context) = item_display_context_update { display.transform_context = context; }
+                        apply_display_transform(&mut display.transform, &p.values);
+                    }
+                    if let Some(display) = remote.block_displays.get_mut(&p.id) {
+                        if let Some(state) = block_display_state_update { display.state = Some(state); }
+                        apply_display_transform(&mut display.transform, &p.values);
                     }
                 }
                 if let Some(m) = self.mobs.iter_mut().find(|m| m.id == p.id as u32)''', "decode text display metadata")
@@ -2138,6 +2218,8 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEnti
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            r.entities.remove(&id);
             r.lerps.remove(&id);''', '''            r.entities.remove(&id);
             r.text_displays.remove(&id);
+            r.item_displays.remove(&id);
+            r.block_displays.remove(&id);
             r.lerps.remove(&id);''', "discard display state when entity despawns")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            .filter_map(|(id, uuid)| Some((*id as u32, r.players.get(uuid)?.clone())))
