@@ -333,10 +333,15 @@ public final class MainActivity extends Activity {
         offlinePlayParams.topMargin = dp(8);
         page.addView(offlinePlayButton, offlinePlayParams);
 
-        touchControlsButton = button("Configurar controles Touch", false, v -> showTouchControlsDialog());
-        LinearLayout.LayoutParams touchControlsParams = params(-1, dp(46));
+        touchControlsButton = button("Customizar layout dos botões", true, v -> openTouchControlsEditor());
+        LinearLayout.LayoutParams touchControlsParams = params(-1, dp(48));
         touchControlsParams.topMargin = dp(8);
         page.addView(touchControlsButton, touchControlsParams);
+
+        Button touchSettingsButton = button("Ajustes gerais dos controles", false, v -> showTouchControlsDialog());
+        LinearLayout.LayoutParams touchSettingsParams = params(-1, dp(44));
+        touchSettingsParams.topMargin = dp(6);
+        page.addView(touchSettingsButton, touchSettingsParams);
 
         TextView accountHeading = text("Conta Microsoft", 18, 0xff18213a, true);
         LinearLayout.LayoutParams accountHeadingParams = params(-1, -2);
@@ -1124,6 +1129,10 @@ public final class MainActivity extends Activity {
             return;
         }
         launchAuthenticatedClient(resourceSummary, refreshToken);
+    }
+
+    private void openTouchControlsEditor() {
+        startActivity(new Intent(this, TouchControlsEditorActivity.class));
     }
 
     private void showTouchControlsDialog() {

@@ -1,5 +1,6 @@
 package dev.mobilehorizon.app;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Canvas;
@@ -49,7 +50,9 @@ final class NativeTouchControlsView extends View {
             HOTBAR_PREV = 15, HOTBAR_NEXT = 16, TAB = 17, ENTER = 18, IGNORED = 19,
             MOUSE_LEFT = 20, MOUSE_RIGHT = 21, KEYBOARD = 22, EDITOR = 23,
             ADD_BUTTON = 24, DONE_EDITING = 25, CUSTOM_BUTTON_START = 1000;
-    private final NativeGameActivity activity;
+    private final Activity activity;
+    private final NativeGameActivity gameActivity;
+    private final boolean previewOnly;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<Integer, PointerTrack> pointers = new HashMap<>();
     private final Set<Integer> heldKeys = new HashSet<>();
@@ -63,7 +66,7 @@ final class NativeTouchControlsView extends View {
     private boolean gameplayMode;
     private final Runnable modePoll = new Runnable() {
         @Override public void run() {
-            boolean active = activity.isGameplayMode();
+            boolean active = gameActivity != null && gameActivity.isGameplayMode();
             if (active != gameplayMode) {
                 gameplayMode = active;
                 invalidate();
@@ -127,8 +130,15 @@ final class NativeTouchControlsView extends View {
     }
 
     NativeTouchControlsView(NativeGameActivity activity) {
+        this(activity, false);
+    }
+
+    /** Preview mode reuses the exact same persisted layout without injecting input into a game. */
+    NativeTouchControlsView(Activity activity, boolean previewOnly) {
         super(activity);
         this.activity = activity;
+        this.gameActivity = activity instanceof NativeGameActivity ? (NativeGameActivity) activity : null;
+        this.previewOnly = previewOnly;
         density = getResources().getDisplayMetrics().density;
         android.content.SharedPreferences prefs = activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
         scale = clamp(prefs.getFloat(KEY_SCALE, 1f), 0.70f, 1.30f);
@@ -137,8 +147,12 @@ final class NativeTouchControlsView extends View {
         leftHanded = prefs.getBoolean(KEY_LEFT_HANDED, false);
         loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
         loadCustomButtons(prefs.getString(KEY_CUSTOM_BUTTONS, ""));
-        gameplayMode = activity.isGameplayMode();
-        modeHandler.post(modePoll);
+        gameplayMode = gameActivity != null && gameActivity.isGameplayMode();
+        if (gameActivity != null) modeHandler.post(modePoll);
+        if (previewOnly) {
+            controlsVisible = true;
+            editingControls = true;
+        }
         setBackgroundColor(Color.TRANSPARENT);
         setFocusable(false);
         setFocusableInTouchMode(false);
@@ -153,7 +167,7 @@ final class NativeTouchControlsView extends View {
             drawJoystick(canvas);
             for (ButtonSpec spec : buttonSpecs()) drawButton(canvas, spec);
         }
-        drawToolbar(canvas);
+        if (!previewOnly) drawToolbar(canvas);
         if (editingControls) drawEditorToolbar(canvas);
         drawMouseCursor(canvas);
     }
@@ -175,7 +189,7 @@ final class NativeTouchControlsView extends View {
 
     /** Draw an on-screen pointer so menus can be targeted without a hardware mouse. */
     private void drawMouseCursor(Canvas canvas) {
-        if (getWidth() <= 0 || getHeight() <= 0 || (gameplayMode && !editingControls)) return;
+        if (previewOnly || getWidth() <= 0 || getHeight() <= 0 || (gameplayMode && !editingControls)) return;
         float x = clamp(virtualMouseX, 0, getWidth() - 1f);
         float y = clamp(virtualMouseY, 0, getHeight() - 1f);
         android.graphics.Path cursor = new android.graphics.Path();
@@ -262,8 +276,10 @@ final class NativeTouchControlsView extends View {
     }
 
     private void drawEditorToolbar(Canvas canvas) {
-        drawToolbarButton(canvas, ADD_BUTTON, "+", toolbarX(166), toolbarY());
-        drawToolbarButton(canvas, DONE_EDITING, "✓", toolbarX(210), toolbarY());
+        int addOffset = previewOnly ? 34 : 166;
+        int doneOffset = previewOnly ? 78 : 210;
+        drawToolbarButton(canvas, ADD_BUTTON, "+", toolbarX(addOffset), toolbarY());
+        drawToolbarButton(canvas, DONE_EDITING, "✓", toolbarX(doneOffset), toolbarY());
     }
 
     private void drawToolbarButton(Canvas canvas, int id, String label, float x, float y) {
@@ -453,8 +469,9 @@ final class NativeTouchControlsView extends View {
                 .setTitle("Teclado do Minecraft")
                 .setView(panel)
                 .setNegativeButton("Cancelar", (d, which) -> { })
-                .setPositiveButton("Aplicar / enviar", (d, which) ->
-                        activity.injectKeyboardText(input.getText().toString()))
+                .setPositiveButton("Aplicar / enviar", (d, which) -> {
+                    if (gameActivity != null) gameActivity.injectKeyboardText(input.getText().toString());
+                })
                 .create();
 
         input.setOnEditorActionListener((view, actionId, event) -> {
@@ -668,6 +685,11 @@ final class NativeTouchControlsView extends View {
             editingControls = false;
             saveButtonLayouts();
             saveCustomButtons();
+            if (previewOnly) {
+                Toast.makeText(activity, "Layout dos botões salvo.", Toast.LENGTH_SHORT).show();
+                activity.setResult(Activity.RESULT_OK);
+                activity.finish();
+            }
             control = IGNORED;
         } else if (control == JOYSTICK && joystickPointer == -1) {
             joystickPointer = id; joystickX = x; joystickY = y;
@@ -706,7 +728,7 @@ final class NativeTouchControlsView extends View {
                 virtualMouseX = clamp(virtualMouseX + dx * sensitivity, 0, Math.max(1, getWidth()));
                 virtualMouseY = clamp(virtualMouseY + dy * sensitivity, 0, Math.max(1, getHeight()));
                 sendMouseMotion(virtualMouseX, virtualMouseY);
-                activity.injectMouseMotion(dx * sensitivity, dy * sensitivity);
+                if (gameActivity != null) gameActivity.injectMouseMotion(dx * sensitivity, dy * sensitivity);
             }
             track.lastX = x; track.lastY = y;
         }
@@ -740,6 +762,24 @@ final class NativeTouchControlsView extends View {
     }
 
     private int hitControl(float x, float y) {
+        if (previewOnly) {
+            if (!controlsVisible) return NONE;
+            if (editingControls) {
+                if (distanceSquared(x, y, toolbarX(34), toolbarY()) <= dp(24) * dp(24)) return ADD_BUTTON;
+                if (distanceSquared(x, y, toolbarX(78), toolbarY()) <= dp(24) * dp(24)) return DONE_EDITING;
+            }
+            ButtonSpec previewBest = null;
+            float previewDistance = Float.MAX_VALUE;
+            for (ButtonSpec spec : buttonSpecs()) {
+                float distance = distanceSquared(x, y, spec.x, spec.y);
+                float hit = spec.radius + dp(13);
+                if (distance <= hit * hit && distance < previewDistance) {
+                    previewBest = spec;
+                    previewDistance = distance;
+                }
+            }
+            return previewBest == null ? NONE : previewBest.id;
+        }
         float toggleX = toolbarX(122), toggleY = toolbarY();
         if (distanceSquared(x, y, toggleX, toggleY) <= dp(25) * dp(25)) return TOGGLE;
         if (!controlsVisible) return NONE;
@@ -864,22 +904,22 @@ final class NativeTouchControlsView extends View {
         boolean previous = heldKeys.contains(keyCode);
         if (previous == held) return;
         if (held) heldKeys.add(keyCode); else heldKeys.remove(keyCode);
-        activity.injectKeyCode(keyCode, held);
+        if (gameActivity != null) gameActivity.injectKeyCode(keyCode, held);
     }
 
     private void setMouseButton(int button, boolean held, float x, float y) {
         int previous = mouseButtons;
         if (held) mouseButtons |= button; else mouseButtons &= ~button;
         if (previous == mouseButtons) return;
-        activity.injectMouseButton(button, held, x, y);
+        if (gameActivity != null) gameActivity.injectMouseButton(button, held, x, y);
     }
 
     private void sendMouseMotion(float x, float y) {
-        activity.injectCursorMove(x, y);
+        if (gameActivity != null) gameActivity.injectCursorMove(x, y);
     }
 
     private void sendMouseScroll(float amount) {
-        activity.injectMouseScroll(amount, virtualMouseX, virtualMouseY);
+        if (gameActivity != null) gameActivity.injectMouseScroll(amount, virtualMouseX, virtualMouseY);
     }
 
     /** Creates a mouse event with its button state set at construction time (MotionEvent has no public setter). */
