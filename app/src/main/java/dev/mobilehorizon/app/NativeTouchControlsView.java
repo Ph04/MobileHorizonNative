@@ -52,6 +52,7 @@ final class NativeTouchControlsView extends View {
     static final String KEY_LAYOUT = "button_layout_v2";
     static final String KEY_CUSTOM_BUTTONS = "custom_buttons_v1";
     static final String KEY_SNAP_GAP = "snap_gap_dp";
+    private static final String KEY_UNIFORM_SIZE_VERSION = "uniform_button_size_version";
 
     private static final int FUNCTION_DEFAULT = 0;
     private static final int FUNCTION_KEY = 1;
@@ -180,6 +181,16 @@ final class NativeTouchControlsView extends View {
         snapGapDp = clamp(prefs.getFloat(KEY_SNAP_GAP, 12f), 4f, 32f);
         loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
         loadCustomButtons(prefs.getString(KEY_CUSTOM_BUTTONS, ""));
+        if (prefs.getInt(KEY_UNIFORM_SIZE_VERSION, 0) < 1) {
+            for (Map.Entry<Integer, ButtonLayout> entry : buttonLayouts.entrySet()) {
+                int id = entry.getKey();
+                if (id != JOYSTICK && id < CUSTOM_BUTTON_START) {
+                    entry.getValue().scale = clamp(entry.getValue().scale * defaultButtonScale(id), 0.60f, 2.40f);
+                }
+            }
+            if (!buttonLayouts.isEmpty()) saveButtonLayouts();
+            prefs.edit().putInt(KEY_UNIFORM_SIZE_VERSION, 1).apply();
+        }
         gameplayMode = gameActivity != null && gameActivity.isGameplayMode();
         if (gameActivity != null) modeHandler.post(modePoll);
         if (previewOnly) {
@@ -199,7 +210,9 @@ final class NativeTouchControlsView extends View {
         if (controlsVisible) {
             drawSnapGuides(canvas);
             drawJoystick(canvas);
-            for (ButtonSpec spec : buttonSpecs()) drawButton(canvas, spec);
+            for (ButtonSpec spec : buttonSpecs()) {
+                if (spec.id != JOYSTICK) drawButton(canvas, spec);
+            }
         }
         if (!previewOnly) drawToolbar(canvas);
         if (editingControls) drawEditorToolbar(canvas);
@@ -247,8 +260,11 @@ final class NativeTouchControlsView extends View {
     private void drawJoystick(Canvas canvas) {
         float cx = joystickPointer == -1 ? joystickHomeX() : joystickX;
         float cy = joystickPointer == -1 ? joystickHomeY() : joystickY;
-        float radius = dp(67) * scale;
-        circle(canvas, cx, cy, radius, false, 0.60f);
+        ButtonSpec spec = findButton(JOYSTICK);
+        float radius = spec == null ? dp(67) * scale : spec.radius;
+        float effectiveOpacity = opacity * (spec == null ? 1f : clamp(spec.opacity, 0.20f, 1f));
+        int shape = spec == null ? 0 : spec.shape;
+        drawJoystickBase(canvas, cx, cy, radius, shape, effectiveOpacity);
         float knobX = cx, knobY = cy;
         if (joystickPointer != -1) {
             PointerTrack track = pointers.get(joystickPointer);
@@ -259,9 +275,26 @@ final class NativeTouchControlsView extends View {
                 knobX += dx; knobY += dy;
             }
         }
-        circle(canvas, knobX, knobY, radius * 0.37f, false, 0.94f);
-        circle(canvas, cx, cy, radius, true, 0.85f);
-        circle(canvas, knobX, knobY, radius * 0.37f, true, 1f);
+        circle(canvas, knobX, knobY, radius * 0.37f, false, 0.94f, effectiveOpacity);
+        circle(canvas, knobX, knobY, radius * 0.37f, true, 1f, effectiveOpacity);
+    }
+
+    private void drawJoystickBase(Canvas canvas, float cx, float cy, float radius, int shape, float effectiveOpacity) {
+        RectF bounds = new RectF(cx - radius, cy - radius, cx + radius, cy + radius);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Color.argb(Math.round(255 * effectiveOpacity * 0.60f), 18, 26, 44));
+        drawJoystickShape(canvas, bounds, radius, shape);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1.4f));
+        paint.setColor(Color.argb(Math.round(255 * effectiveOpacity * 0.85f), 228, 236, 255));
+        drawJoystickShape(canvas, bounds, radius, shape);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawJoystickShape(Canvas canvas, RectF bounds, float radius, int shape) {
+        if (shape == 1) canvas.drawOval(bounds, paint);
+        else if (shape == 2) canvas.drawRect(bounds, paint);
+        else canvas.drawRoundRect(bounds, radius * 0.88f, radius * 0.88f, paint);
     }
 
     /** Cyan guides show the axes/edges to which the dragged control is snapping. */
@@ -359,6 +392,7 @@ final class NativeTouchControlsView extends View {
     private ButtonSpec[] buttonSpecs() {
         float s = scale, w = getWidth(), h = getHeight();
         List<ButtonSpec> specs = new ArrayList<>();
+        addButtonSpec(specs, JOYSTICK, "JOY", joystickHomeX(), joystickHomeY(), dp(67) * s);
         addButtonSpec(specs, MOUSE_LEFT, "LMB", mirrorControlX(w - dp(164) * s), dp(31) * s, dp(20) * s);
         addButtonSpec(specs, MOUSE_RIGHT, "RMB", mirrorControlX(w - dp(216) * s), dp(31) * s, dp(20) * s);
         addButtonSpec(specs, JUMP, "↑", mirrorControlX(w - dp(72) * s), h - dp(109) * s, dp(32) * s);
@@ -391,10 +425,13 @@ final class NativeTouchControlsView extends View {
         return specs.toArray(new ButtonSpec[0]);
     }
 
-    private void addButtonSpec(List<ButtonSpec> specs, int id, String label, float x, float y, float radius) {
+    private void addButtonSpec(List<ButtonSpec> specs, int id, String label, float x, float y, float legacyRadius) {
         ButtonLayout layout = buttonLayouts.get(id);
-        ButtonSpec spec = new ButtonSpec(id, label, x, y,
-                radius * (layout == null ? 1f : layout.scale));
+        float baseRadius = id == JOYSTICK ? dp(67) * scale : dp(24) * scale;
+        float defaultScale = id == JOYSTICK ? 1f
+                : clamp(legacyRadius / Math.max(1f, dp(24) * scale), 0.60f, 2.40f);
+        float itemScale = layout == null ? defaultScale : layout.scale;
+        ButtonSpec spec = new ButtonSpec(id, label, x, y, baseRadius * itemScale);
         if (layout != null) {
             if (layout.x >= 0f) spec.x = layout.x * getWidth();
             if (layout.y >= 0f) spec.y = layout.y * getHeight();
@@ -404,6 +441,32 @@ final class NativeTouchControlsView extends View {
             spec.keyCode = layout.keyCode;
         }
         specs.add(spec);
+    }
+
+    private float defaultButtonScale(int id) {
+        return id == JOYSTICK ? 1f : legacyButtonRadiusDp(id) / 24f;
+    }
+
+    private float legacyButtonRadiusDp(int id) {
+        switch (id) {
+            case MOUSE_LEFT: case MOUSE_RIGHT: case DROP: case SWAP:
+            case HOTBAR_PREV: case HOTBAR_NEXT: return 20f;
+            case JUMP: return 32f;
+            case SNEAK: case SPRINT: return 25f;
+            case INVENTORY: return 24f;
+            case ATTACK: return 34f;
+            case USE: return 28f;
+            case PICK: return 22f;
+            case PERSPECTIVE: case CHAT: case ESCAPE: return 21f;
+            case TAB: case ENTER: return 22f;
+            default: return 24f;
+        }
+    }
+
+    private ButtonLayout newDefaultButtonLayout(int id) {
+        ButtonLayout layout = new ButtonLayout();
+        layout.scale = defaultButtonScale(id);
+        return layout;
     }
 
     private void loadButtonLayouts(String json) {
@@ -586,7 +649,7 @@ final class NativeTouchControlsView extends View {
             custom.x = nx;
             custom.y = ny;
         } else {
-            ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> new ButtonLayout());
+            ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
             layout.x = nx;
             layout.y = ny;
         }
@@ -696,7 +759,7 @@ final class NativeTouchControlsView extends View {
 
         CustomButton custom = findCustomButton(id);
         ButtonLayout saved = buttonLayouts.get(id);
-        float currentScale = custom != null ? custom.scale : (saved == null ? 1f : saved.scale);
+        float currentScale = custom != null ? custom.scale : (saved == null ? defaultButtonScale(id) : saved.scale);
         float currentOpacity = custom != null ? custom.opacity : (saved == null ? 1f : saved.opacity);
         int currentShape = custom != null ? custom.shape : (saved == null ? 0 : saved.shape);
         int currentFunction = custom != null ? custom.function : (saved == null ? 0 : saved.function);
@@ -886,7 +949,7 @@ final class NativeTouchControlsView extends View {
                 custom.function = selectedFunction;
                 saveCustomButtons();
             } else {
-                ButtonLayout updated = buttonLayouts.computeIfAbsent(id, ignored -> new ButtonLayout());
+                ButtonLayout updated = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
                 updated.scale = newScale;
                 updated.opacity = newOpacity;
                 updated.shape = newShape;
@@ -1010,7 +1073,7 @@ final class NativeTouchControlsView extends View {
         if (spec == null) return;
         CustomButton custom = findCustomButton(id);
         ButtonLayout layout = buttonLayouts.get(id);
-        float currentScale = custom != null ? custom.scale : (layout == null ? 1f : layout.scale);
+        float currentScale = custom != null ? custom.scale : (layout == null ? defaultButtonScale(id) : layout.scale);
         TextView sizeText = new TextView(activity);
         SeekBar size = new SeekBar(activity);
         size.setMax(180);
@@ -1095,10 +1158,10 @@ final class NativeTouchControlsView extends View {
         return result == KeyEvent.KEYCODE_UNKNOWN ? KeyEvent.KEYCODE_UNKNOWN : result;
     }
 
-    private void circle(Canvas canvas, float x, float y, float radius, boolean stroke, float alpha) {
+    private void circle(Canvas canvas, float x, float y, float radius, boolean stroke, float alpha, float effectiveOpacity) {
         paint.setStyle(stroke ? Paint.Style.STROKE : Paint.Style.FILL);
         paint.setStrokeWidth(dp(1.4f));
-        int a = Math.round(255 * opacity * alpha);
+        int a = Math.round(255 * effectiveOpacity * alpha);
         paint.setColor(stroke ? Color.argb(a, 228, 236, 255) : Color.argb(a, 18, 26, 44));
         canvas.drawCircle(x, y, radius, paint);
         paint.setStyle(Paint.Style.FILL);
@@ -1273,7 +1336,8 @@ final class NativeTouchControlsView extends View {
     private void updateJoystick(float x, float y) {
         PointerTrack track = pointers.get(joystickPointer);
         if (track == null) return;
-        float dx = x - joystickX, dy = y - joystickY, radius = dp(67) * scale;
+        ButtonSpec joystickSpec = findButton(JOYSTICK);
+        float dx = x - joystickX, dy = y - joystickY, radius = joystickSpec == null ? dp(67) * scale : joystickSpec.radius;
         float max = radius * 0.85f, len = (float) Math.sqrt(dx * dx + dy * dy);
         if (len > max && len > 0) { dx *= max / len; dy *= max / len; }
         setJoystickDirections(dy / radius < -0.25f, dy / radius > 0.25f,
@@ -1477,10 +1541,14 @@ final class NativeTouchControlsView extends View {
     }
 
     private float joystickHomeX() {
+        ButtonLayout layout = buttonLayouts.get(JOYSTICK);
+        if (layout != null && layout.x >= 0f) return layout.x * getWidth();
         return leftHanded ? getWidth() - dp(94) * scale : dp(94) * scale;
     }
 
     private float joystickHomeY() {
+        ButtonLayout layout = buttonLayouts.get(JOYSTICK);
+        if (layout != null && layout.y >= 0f) return layout.y * getHeight();
         return getHeight() - dp(99) * scale;
     }
 
