@@ -3285,6 +3285,16 @@ pack_patch("crates/horizon-client/src/net.rs", '''        let (id, payload) = re
                 id, packet_name, payload.len()
             );
         }
+        if packet_name == "set_entity_data" {
+            static SET_ENTITY_DATA_PACKET_DIAGNOSTICS: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            if SET_ENTITY_DATA_PACKET_DIAGNOSTICS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 1600 {
+                log::info!(
+                    "HorizonDiag: packet_received phase=play id={} name={} payload_bytes={}",
+                    id, packet_name, payload.len()
+                );
+            }
+        }
         let packet = match play::Clientbound::decode(id, &payload) {''', "trace resource-pack and world-login packet receipt")
 
 pack_patch("crates/horizon-client/src/net.rs", '''        let (id, payload) = reader.recv().map_err(|e| e.to_string())?;
