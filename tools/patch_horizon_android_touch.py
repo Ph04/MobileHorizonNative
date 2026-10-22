@@ -3339,7 +3339,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::
                 let hash = p.hash;
                 let required = p.required;
                 let supported_url = supported_pack_url(&url);
-                log::info!("HorizonDiag: resource_pack_offer_decoded phase=configuration offer_number={} id={id:032x} required={required} hash_present={} origin={}", diagnostic_pack_offers, id, !hash.is_empty(), safe_resource_pack_origin(&url));''', "log configuration resource-pack offer count")
+                log::info!("HorizonDiag: resource_pack_offer_decoded phase=configuration offer_number={} id={id:032x} required={required} hash_present={} origin={}", diagnostic_pack_offers, !hash.is_empty(), safe_resource_pack_origin(&url));''', "log configuration resource-pack offer count")
 
 pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::FinishConfiguration(_) => {
                 reply(cfg::Serverbound::FinishConfiguration(Empty))?;
@@ -3490,6 +3490,7 @@ pack_patch("crates/horizon-client/src/game/frames.rs", '''    pub(super) fn fram
         let diagnostic_map_count = self.item_frames.iter().filter(|frame| frame.item.as_ref().and_then(super::maps::map_id).is_some()).count();
         let diagnostic_model_quads = self.frame_model.len() + self.glow_frame_model.len()
             + self.map_frame_model.len() + self.glow_map_frame_model.len();
+        let diagnostic_atlas_sprites = self.gui.atlas.sprites.len();
         let sprites = &self.gui.atlas.sprites;''', "capture item-frame geometry input state")
 
 pack_patch("crates/horizon-client/src/game/frames.rs", '''                    let Some(r) = sprites.get(sprite) else {
@@ -3549,7 +3550,7 @@ pack_patch("crates/horizon-client/src/game/frames.rs", '''        for (id, m, li
             diagnostic_item_count,
             diagnostic_map_count,
             diagnostic_model_quads,
-            sprites.len(),
+            diagnostic_atlas_sprites,
         );
         static LAST_FRAME_RENDER_SIGNATURE: std::sync::Mutex<Option<(usize, usize, usize, usize, usize)>> =
             std::sync::Mutex::new(None);
@@ -3559,7 +3560,7 @@ pack_patch("crates/horizon-client/src/game/frames.rs", '''        for (id, m, li
                 log::info!(
                     "HorizonDiag: frame_render_snapshot frame_count={} with_items={} with_maps={} baked_model_quads={} atlas_sprites={} vertices_generated_this_pass={}",
                     diagnostic_frame_count, diagnostic_item_count, diagnostic_map_count,
-                    diagnostic_model_quads, sprites.len(), out.len().saturating_sub(geometry_start)
+                    diagnostic_model_quads, diagnostic_atlas_sprites, out.len().saturating_sub(geometry_start)
                 );
             }
         }
@@ -4269,6 +4270,7 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''            "Horizon: v
             pack.item_renderer.models.prototypes.len(),
             gui.atlas.width, gui.atlas.height, horizon_client::hud::MAP_SLOTS,
             root.display()''', "log atlas memory dimensions and map slot capacity")
+
 
 
 print("Applied Java-compatible server resource packs, detailed resource/item/text diagnostics, and multiplayer skin fixes.")
