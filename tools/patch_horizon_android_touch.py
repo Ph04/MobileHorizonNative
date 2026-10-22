@@ -3236,11 +3236,28 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEnti
                             frame.rotation = rotation.rem_euclid(8) as u8;
                         }
                         log::info!(
-                            "HorizonDiag: remote_item_frame_updated entity_id={} item_present={} item_id={} rotation={}",
+                            "HorizonDiag: remote_item_frame_updated entity_id={} item_present={} item_id={} rotation={} source_metadata_fields={:?}",
                             frame.id,
                             frame.item.is_some(),
                             frame.item.as_ref().map_or("-", |stack| stack.item.as_ref()),
-                            frame.rotation
+                            frame.rotation,
+                            p.values.iter().map(|(index, serializer, value)| (*index, *serializer, match value {
+                                Value::Item(stack) => format!("item:{}", stack.item),
+                                Value::Byte(v) => format!("byte:{}", v),
+                                Value::Int(v) => format!("int:{}", v),
+                                _ => format!("{:?}", std::mem::discriminant(value)),
+                            })).collect::<Vec<_>>()
+                        );
+                    } else {
+                        log::warn!(
+                            "HorizonDiag: item_frame_metadata_without_spawn entity_id={} fields={:?}",
+                            p.id,
+                            p.values.iter().map(|(index, serializer, value)| (*index, *serializer, match value {
+                                Value::Item(stack) => format!("item:{}", stack.item),
+                                Value::Byte(v) => format!("byte:{}", v),
+                                Value::Int(v) => format!("int:{}", v),
+                                _ => format!("{:?}", std::mem::discriminant(value)),
+                            })).collect::<Vec<_>>()
                         );
                     }
                 }
