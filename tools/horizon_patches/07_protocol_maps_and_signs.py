@@ -1,0 +1,578 @@
+# Ordered patch step. See README.md in this directory for scope and order.
+# Minecraft Java 26.3 component ID 74 is banner_patterns. Its exact wire codec
+# is a VarInt list of Holder<BannerPattern> and DyeColor enum values. Preserve
+# the original bytes after safely consuming the schema so metadata packets do
+# not get discarded just because the renderer doesn't yet interpret the patterns.
+pack_patch("crates/horizon-protocol/src/item.rs", '''    pub const PROFILE: i32 = 72;
+}''', '''    pub const PROFILE: i32 = 72;
+    pub const BANNER_PATTERNS: i32 = 74;
+}''', "register banner_patterns component ID")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''fn skip_raw_component(kind: i32, r: &mut Reader) -> Result<()> {''', '''fn skip_banner_patterns(r: &mut Reader) -> Result<()> {
+    let count = r.count(4096)?;
+    for _ in 0..count {
+        // ByteBufCodecs.holder: id + 1, with zero followed by an inline
+        // BannerPattern (asset id and translation key).
+        if r.varint()? == 0 {
+            r.string(32767)?;
+            r.string(32767)?;
+        }
+        // DyeColor is an enum encoded as a VarInt in 26.3.
+        r.varint()?;
+    }
+    Ok(())
+}
+
+fn skip_raw_component(kind: i32, r: &mut Reader) -> Result<()> {''', "read banner pattern component payloads")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''        ATTRIBUTE_MODIFIERS => skip_attribute_modifiers(r)?,
+        PROFILE => skip_profile(r)?,
+        other => return Err(Error::new(format!("unsupported item component {other} (no safe wire codec)"))),''', '''        ATTRIBUTE_MODIFIERS => skip_attribute_modifiers(r)?,
+        PROFILE => skip_profile(r)?,
+        BANNER_PATTERNS => skip_banner_patterns(r)?,
+        other => return Err(Error::new(format!("unsupported item component {other} (no safe wire codec)"))),''', "preserve raw banner patterns in item stacks")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
+    fn unknown_components_are_errors() {''', '''    #[test]
+    fn banner_patterns_component_is_preserved_without_dropping_slot() {
+        // One BannerPattern layer: registered pattern ID (holder id + 1), then dye color.
+        let bytes = [1, 5, 1, 0, 74, 1, 3, 2];
+        let mut reader = Reader::new(&bytes);
+        let stack = Slot::read(&mut reader).unwrap().unwrap();
+        assert_eq!(reader.remaining(), 0);
+        assert!(matches!(stack.added[0], (component::BANNER_PATTERNS, Component::Raw(_))));
+        let mut encoded = Writer::new();
+        Slot::write(&Some(stack), &mut encoded);
+        assert_eq!(encoded.data, bytes);
+    }
+
+    #[test]
+    fn unknown_components_are_errors() {''', "test banner-pattern stack round-trip")
+
+# MapItemData was not in the clientbound packet enum. This decoder follows the
+# Java 26.3 layout: map id, scale, locked, optional decorations, optional color patch.
+pack_patch("crates/horizon-protocol/src/packets/play.rs", '''packet_enum!(Clientbound, crate::ids::play::clientbound {''', '''#[derive(Clone, Debug, PartialEq)]
+pub struct MapDecorationData {
+    pub kind: i32,
+    pub x: i8,
+    pub y: i8,
+    pub rotation: i8,
+    pub name: Option<Tag>,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct MapColorPatch {
+    pub width: u8,
+    pub height: u8,
+    pub start_x: u8,
+    pub start_y: u8,
+    pub colors: Vec<u8>,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct MapItemData {
+    pub map_id: i32,
+    pub scale: i8,
+    pub locked: bool,
+    pub decorations: Option<Vec<MapDecorationData>>,
+    pub patch: Option<MapColorPatch>,
+}
+impl Codec<MapItemData> for MapItemData {
+    fn read(r: &mut Reader) -> Result<Self> {
+        let map_id = r.varint()?;
+        let scale = r.i8()?;
+        let locked = r.bool()?;
+        let decorations = if r.bool()? {
+            let count = r.count(4096)?;
+            let mut values = Vec::with_capacity(count);
+            for _ in 0..count {
+                let kind = r.varint()?;
+                let x = r.i8()?;
+                let y = r.i8()?;
+                let rotation = r.i8()?;
+                let name = if r.bool()? { Some(r.nbt()?) } else { None };
+                values.push(MapDecorationData { kind, x, y, rotation, name });
+            }
+            Some(values)
+        } else { None };
+        let width = r.u8()?;
+        let patch = if width == 0 {
+            None
+        } else {
+            if width > 128 {
+                return Err(Error::new(format!("map color patch width {width} exceeds 128")));
+            }
+            let height = r.u8()?;
+            let start_x = r.u8()?;
+            let start_y = r.u8()?;
+            if height == 0 || height > 128
+                || u16::from(start_x) + u16::from(width) > 128
+                || u16::from(start_y) + u16::from(height) > 128
+            {
+                return Err(Error::new("map color patch rectangle is outside the 128x128 map"));
+            }
+            let colors = r.byte_array(128 * 128)?;
+            let expected = usize::from(width) * usize::from(height);
+            if colors.len() != expected {
+                return Err(Error::new(format!(
+                    "map color patch has {} colors, expected {expected}", colors.len()
+                )));
+            }
+            Some(MapColorPatch { width, height, start_x, start_y, colors })
+        };
+        Ok(Self { map_id, scale, locked, decorations, patch })
+    }
+    fn write(v: &Self, w: &mut Writer) {
+        w.varint(v.map_id);
+        w.i8(v.scale);
+        w.bool(v.locked);
+        w.bool(v.decorations.is_some());
+        if let Some(decorations) = &v.decorations {
+            w.varint(decorations.len() as i32);
+            for d in decorations {
+                w.varint(d.kind);
+                w.i8(d.x);
+                w.i8(d.y);
+                w.i8(d.rotation);
+                w.bool(d.name.is_some());
+                if let Some(name) = &d.name { w.nbt(name); }
+            }
+        }
+        if let Some(patch) = &v.patch {
+            w.u8(patch.width);
+            w.u8(patch.height);
+            w.u8(patch.start_x);
+            w.u8(patch.start_y);
+            w.byte_array(&patch.colors);
+        } else {
+            w.u8(0);
+        }
+    }
+}
+#[cfg(test)]
+mod map_item_data_tests {
+    use super::*;
+    #[test]
+    fn map_item_data_partial_color_patch_round_trips() {
+        let packet = MapItemData {
+            map_id: 517, scale: 2, locked: true,
+            decorations: Some(vec![MapDecorationData {
+                kind: 3, x: -15, y: 21, rotation: 7, name: None,
+            }]),
+            patch: Some(MapColorPatch {
+                width: 2, height: 2, start_x: 10, start_y: 20,
+                colors: vec![1, 5, 9, 13],
+            }),
+        };
+        let mut writer = Writer::new();
+        <MapItemData as Codec<MapItemData>>::write(&packet, &mut writer);
+        let mut reader = Reader::new(&writer.data);
+        let decoded = <MapItemData as Codec<MapItemData>>::read(&mut reader).unwrap();
+        assert_eq!(decoded, packet);
+        assert_eq!(reader.remaining(), 0);
+    }
+}
+
+packet_enum!(Clientbound, crate::ids::play::clientbound {''', "decode and test Minecraft map_item_data packets")
+
+pack_patch("crates/horizon-protocol/src/packets/play.rs", '''    MerchantOffers(MerchantOffers) = MERCHANT_OFFERS,''', '''    MapItemData(MapItemData) = MAP_ITEM_DATA,
+    MerchantOffers(MerchantOffers) = MERCHANT_OFFERS,''', "register map_item_data in the clientbound packet enum")
+
+
+
+pack_patch("crates/horizon-client/src/net.rs", '''        if packet_name == "set_entity_data" {
+            static SET_ENTITY_DATA_PACKET_DIAGNOSTICS: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            if SET_ENTITY_DATA_PACKET_DIAGNOSTICS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 1600 {
+                log::info!(
+                    "HorizonDiag: packet_received phase=play id={} name={} payload_bytes={}",
+                    id, packet_name, payload.len()
+                );
+            }
+        }
+        let packet = match play::Clientbound::decode(id, &payload) {''', '''        if packet_name == "set_entity_data" {
+            static SET_ENTITY_DATA_PACKET_DIAGNOSTICS: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            if SET_ENTITY_DATA_PACKET_DIAGNOSTICS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 1600 {
+                log::info!(
+                    "HorizonDiag: packet_received phase=play id={} name={} payload_bytes={}",
+                    id, packet_name, payload.len()
+                );
+            }
+        }
+        if packet_name == "map_item_data" || packet_name == "block_entity_data" {
+            static VISUAL_WORLD_PACKET_DIAGNOSTICS: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            if VISUAL_WORLD_PACKET_DIAGNOSTICS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 2400 {
+                log::info!(
+                    "HorizonDiag: packet_received phase=play id={} name={} payload_bytes={}",
+                    id, packet_name, payload.len()
+                );
+            }
+        }
+        if packet_name == "level_chunk_with_light" {
+            static CHUNK_PACKET_DIAGNOSTICS: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            if CHUNK_PACKET_DIAGNOSTICS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 512 {
+                log::info!(
+                    "HorizonDiag: packet_received phase=play id={} name={} payload_bytes={}",
+                    id, packet_name, payload.len()
+                );
+            }
+        }
+        let packet = match play::Clientbound::decode(id, &payload) {''', "record incoming map and block-entity data packets")
+
+pack_patch("crates/horizon-client/src/hud.rs", '''pub const MAP_SLOTS: usize = 16;''', '''pub const MAP_SLOTS: usize = 640;''', "reserve map textures for large server map walls")
+
+pack_patch("crates/horizon-client/src/game/maps.rs", '''    pub(super) fn map_texture(&mut self, id: i32) -> Option<Rect> {''', '''    /// Apply the server's MapItemData packet. Keep remote map pixels separate
+    /// from files in the local saves folder and retain many IDs for large map walls.
+    pub(super) fn apply_remote_map_data(
+        &mut self,
+        id: i32,
+        scale: i8,
+        locked: bool,
+        decorations: Option<Vec<(String, i8, i8, i8)>>,
+        patch: Option<horizon_protocol::packets::play::MapColorPatch>,
+    ) {
+        let scale = scale.clamp(0, 4) as u8;
+        let dimension = self.dimension_id().to_owned();
+        if !self.maps.data.contains_key(&id) {
+            let mut data = MapData::fresh(0.0, 0.0, scale, &dimension);
+            data.dirty = false;
+            data.texture_dirty = true;
+            self.maps.data.insert(id, data);
+        }
+        self.maps.missing.remove(&id);
+        let mut applied_pixels = 0usize;
+        let mut patch_size = (0u8, 0u8);
+        let mut decorations_updated = false;
+        let mut decoration_count = -1i32;
+        if let Some(map) = self.maps.data.get_mut(&id) {
+            map.scale = scale;
+            map.locked = locked;
+            if let Some(decorations) = decorations {
+                decorations_updated = true;
+                map.decorations = decorations.into_iter().filter_map(|(name, x, y, rotation)| {
+                    decoration_sprite(&name).map(|sprite| Decoration {
+                        sprite, x, y, rot: (rotation as u8) & 15,
+                    })
+                }).collect();
+                decoration_count = map.decorations.len() as i32;
+            }
+            if let Some(patch) = patch {
+                patch_size = (patch.width, patch.height);
+                for dy in 0..usize::from(patch.height) {
+                    for dx in 0..usize::from(patch.width) {
+                        let x = usize::from(patch.start_x) + dx;
+                        let y = usize::from(patch.start_y) + dy;
+                        let source = dy * usize::from(patch.width) + dx;
+                        let target = y * 128 + x;
+                        if target < map.colors.len() && source < patch.colors.len() {
+                            map.colors[target] = patch.colors[source];
+                            applied_pixels += 1;
+                        }
+                    }
+                }
+                if applied_pixels > 0 { map.texture_dirty = true; }
+            }
+            map.dirty = false;
+        }
+        log::info!(
+            "HorizonDiag: map_item_data_applied map_id={} scale={} locked={} patch={}x{} pixels_applied={} decorations_updated={} decoration_count={} cached_server_maps={} atlas_slots={}",
+            id, scale, locked, patch_size.0, patch_size.1, applied_pixels,
+            decorations_updated, decoration_count, self.maps.data.len(), MAP_SLOTS
+        );
+    }
+
+    pub(super) fn clear_remote_map_cache(&mut self) {
+        self.maps.data.clear();
+        self.maps.missing.clear();
+        self.maps.slots.clear();
+        self.map_patches.clear();
+    }
+
+    pub(super) fn map_texture(&mut self, id: i32) -> Option<Rect> {''', "apply server map pixels and isolate remote map cache")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''        self.world = World::new(self.res.facts().air, 0);
+        self.save = Arc::new(SaveDir::new(
+            std::env::temp_dir().join("horizon-remote-unused"),
+        ));''', '''        self.world = World::new(self.res.facts().air, 0);
+        self.clear_remote_map_cache();
+        self.save = Arc::new(SaveDir::new(
+            std::env::temp_dir().join("horizon-remote-unused"),
+        ));''', "clear stale local map data before joining a remote world")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::BlockEntityData(p) => self.remote_block_entity_data(p.pos, p.kind, &p.tag),''', '''            C::MapItemData(p) => {
+                let decorations = p.decorations.map(|values| {
+                    values.into_iter().map(|decoration| {
+                        let name = self.remote.as_ref()
+                            .and_then(|remote| remote.builtin.get("minecraft:map_decoration_type")?.name(decoration.kind))
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| format!("unknown:{}", decoration.kind));
+                        (name, decoration.x, decoration.y, decoration.rotation)
+                    }).collect()
+                });
+                self.apply_remote_map_data(p.map_id, p.scale, p.locked, decorations, p.patch);
+            }
+            C::BlockEntityData(p) => self.remote_block_entity_data(p.pos, p.kind, &p.tag),''', "consume remote map textures before rendering item frames")
+
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''        let key = (pos[0], pos[1], pos[2]);
+        let Some(name) = self
+            .remote
+            .as_ref()
+            .and_then(|r| r.builtin.get("minecraft:block_entity_type")?.name(kind))
+        else {
+            return;
+        };
+        let Some(entity) = self.world.block_entities.get(&key) else {
+            return;
+        };
+        let Tag::Compound(fields) = tag else {
+            return;
+        };
+        if entity.id() != name || fields.is_empty() {
+            return;
+        }
+        let mut full = fields.clone();
+        full.insert("id".into(), Tag::String(name.into()));
+        for (k, v) in ["x", "y", "z"].into_iter().zip(pos) {
+            full.insert(k.into(), Tag::Int(v));
+        }
+        if let Some((_, loaded)) = horizon_client::save::decode_block_entity(&Tag::Compound(full)) {
+            self.world.block_entities.insert(key, loaded);
+            // The section is drawn again with what the block entity shows.
+            let state = self.world.block(pos[0], pos[1], pos[2]);
+            let _ = self.world.set(pos[0], pos[1], pos[2], state);
+        }''', '''        let key = (pos[0], pos[1], pos[2]);
+        let name = self.remote.as_ref()
+            .and_then(|r| r.builtin.get("minecraft:block_entity_type")?.name(kind))
+            .map(str::to_owned);
+        let is_sign = name.as_deref().is_some_and(|name| name.ends_with("sign"));
+        static BLOCK_ENTITY_RECEIVE_DIAGNOSTICS: std::sync::atomic::AtomicUsize =
+            std::sync::atomic::AtomicUsize::new(0);
+        let diagnostic_count = BLOCK_ENTITY_RECEIVE_DIAGNOSTICS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if is_sign || diagnostic_count < 1024 {
+            let tag_keys: Vec<String> = match tag {
+                Tag::Compound(fields) => fields.keys().map(|key| key.to_string_lossy()).collect(),
+                _ => Vec::new(),
+            };
+            log::info!(
+                "HorizonDiag: block_entity_data_received pos={:?} kind={} registry_name={} tag_type={} tag_keys={:?}",
+                pos, kind, name.as_deref().unwrap_or("unresolved"),
+                if matches!(tag, Tag::Compound(_)) { "compound" } else { "other" }, tag_keys
+            );
+        }
+        let Some(name) = name.as_deref() else {
+            log::warn!("HorizonDiag: block_entity_data_not_applied pos={:?} kind={} reason=registry_type_unresolved", pos, kind);
+            return;
+        };
+        // A sign update can race the chunk block-entity list. Rebuild the local
+        // block entity from the *current block state* before applying the NBT;
+        // this preserves the state-authoritative behavior and avoids dropping a
+        // valid text update solely because the local SignData was not instantiated.
+        if is_sign {
+            let state = self.world.block(pos[0], pos[1], pos[2]);
+            self.sync_block_entity(key, state);
+            log::info!(
+                "HorizonDiag: sign_block_entity_synced_from_block_state pos={:?} block={} local_entity_present={}",
+                pos,
+                self.res.facts().get(state).name,
+                self.world.block_entities.get(&key).is_some_and(|entity| matches!(entity, horizon_client::containers::BlockEntity::Sign(_)))
+            );
+        }
+        let Some(entity) = self.world.block_entities.get(&key) else {
+            if is_sign {
+                log::warn!("HorizonDiag: sign_text_not_applied pos={:?} type={} reason=world_has_no_sign_block_entity_after_block_sync", pos, name);
+            }
+            return;
+        };
+        let Tag::Compound(fields) = tag else {
+            if is_sign {
+                log::warn!("HorizonDiag: sign_text_not_applied pos={:?} type={} reason=tag_is_not_compound", pos, name);
+            }
+            return;
+        };
+        if entity.id() != name || fields.is_empty() {
+            if is_sign {
+                log::warn!(
+                    "HorizonDiag: sign_text_not_applied pos={:?} packet_type={} world_type={} tag_empty={} reason=type_mismatch_or_empty_tag",
+                    pos, name, entity.id(), fields.is_empty()
+                );
+            }
+            return;
+        }
+        let mut full = fields.clone();
+        full.insert("id".into(), Tag::String(name.into()));
+        for (k, v) in ["x", "y", "z"].into_iter().zip(pos) {
+            full.insert(k.into(), Tag::Int(v));
+        }
+        if let Some((_, loaded)) = horizon_client::save::decode_block_entity(&Tag::Compound(full)) {
+            if let horizon_client::containers::BlockEntity::Sign(sign) = &loaded {
+                let front = sign.front.lines.iter().filter(|line| !line.is_empty()).cloned().collect::<Vec<_>>().join(" / ");
+                let back = sign.back.lines.iter().filter(|line| !line.is_empty()).cloned().collect::<Vec<_>>().join(" / ");
+                let front_preview: String = front.chars().take(96).collect();
+                let back_preview: String = back.chars().take(96).collect();
+                log::info!(
+                    "HorizonDiag: sign_text_applied pos={:?} front_nonempty={} back_nonempty={} front_preview={:?} back_preview={:?} front_glowing={} back_glowing={}",
+                    pos, sign.front.lines.iter().filter(|line| !line.is_empty()).count(),
+                    sign.back.lines.iter().filter(|line| !line.is_empty()).count(),
+                    front_preview, back_preview, sign.front.glowing, sign.back.glowing
+                );
+            }
+            self.world.block_entities.insert(key, loaded);
+            // The section is drawn again with what the block entity shows.
+            let state = self.world.block(pos[0], pos[1], pos[2]);
+            let _ = self.world.set(pos[0], pos[1], pos[2], state);
+        } else if is_sign {
+            log::warn!("HorizonDiag: sign_text_not_applied pos={:?} type={} reason=decode_block_entity_rejected_tag", pos, name);
+        }''', "trace sign receive failures and successful decoded lines")
+
+# Replace only the function body anchor; avoid depending on the original backtick description.
+pack_patch("crates/horizon-client/src/signs.rs", '''fn component_text(tag: &Tag) -> String {
+    match tag {
+        Tag::String(s) => {
+            let s = s.to_string_lossy();
+            match serde_json::from_str::<serde_json::Value>(&s) {
+                Ok(serde_json::Value::String(text)) => text,
+                Ok(v) if v.get("text").is_some() => {
+                    v["text"].as_str().unwrap_or_default().to_owned()
+                }
+                _ => s,
+            }
+        }
+        Tag::Compound(_) => match tag.get("text") {
+            Some(Tag::String(t)) => t.to_string_lossy(),
+            _ => String::new(),
+        },
+        _ => String::new(),
+    }
+}''', '''fn append_json_component(value: &serde_json::Value, out: &mut String) {
+    match value {
+        serde_json::Value::String(text) => out.push_str(text),
+        serde_json::Value::Array(children) => {
+            for child in children { append_json_component(child, out); }
+        }
+        serde_json::Value::Object(fields) => {
+            if let Some(text) = fields.get("text").and_then(serde_json::Value::as_str) {
+                out.push_str(text);
+            } else if let Some(keybind) = fields.get("keybind").and_then(serde_json::Value::as_str) {
+                out.push_str(keybind);
+            } else if let Some(fallback) = fields.get("fallback").and_then(serde_json::Value::as_str) {
+                out.push_str(fallback);
+            } else if let Some(translate) = fields.get("translate").and_then(serde_json::Value::as_str) {
+                out.push_str(translate);
+            } else if let Some(value) = fields.get("score").and_then(|score| score.get("value")).and_then(serde_json::Value::as_str) {
+                out.push_str(value);
+            } else if let Some(selector) = fields.get("selector").and_then(serde_json::Value::as_str) {
+                out.push_str(selector);
+            } else if let Some(nbt) = fields.get("nbt").and_then(serde_json::Value::as_str) {
+                out.push_str(nbt);
+            } else if let Some(score_name) = fields.get("score").and_then(|score| score.get("name")).and_then(serde_json::Value::as_str) {
+                out.push_str(score_name);
+            }
+            if let Some(extra) = fields.get("extra") {
+                append_json_component(extra, out);
+            }
+        }
+        _ => {}
+    }
+}
+fn append_nbt_component(tag: &Tag, out: &mut String) {
+    match tag {
+        Tag::String(s) => {
+            let text = s.to_string_lossy();
+            match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(component) => append_json_component(&component, out),
+                Err(_) => out.push_str(&text),
+            }
+        }
+        Tag::List(items) => {
+            for item in items { append_nbt_component(item, out); }
+        }
+        Tag::Compound(_) => {
+            if let Some(Tag::String(text)) = tag.get("text") {
+                append_nbt_component(&Tag::String(text.clone()), out);
+            } else if let Some(Tag::String(keybind)) = tag.get("keybind") {
+                out.push_str(&keybind.to_string_lossy());
+            } else if let Some(Tag::String(fallback)) = tag.get("fallback") {
+                out.push_str(&fallback.to_string_lossy());
+            } else if let Some(Tag::String(translate)) = tag.get("translate") {
+                out.push_str(&translate.to_string_lossy());
+            } else if let Some(Tag::Compound(score)) = tag.get("score") {
+                if let Some(Tag::String(value)) = score.iter().find_map(|(key, item)| (key.to_string_lossy() == "value").then_some(item)) {
+                    out.push_str(&value.to_string_lossy());
+                } else if let Some(Tag::String(name)) = score.iter().find_map(|(key, item)| (key.to_string_lossy() == "name").then_some(item)) {
+                    out.push_str(&name.to_string_lossy());
+                }
+            } else if let Some(Tag::String(selector)) = tag.get("selector") {
+                out.push_str(&selector.to_string_lossy());
+            } else if let Some(Tag::String(nbt)) = tag.get("nbt") {
+                out.push_str(&nbt.to_string_lossy());
+            }
+            if let Some(Tag::List(extra)) = tag.get("extra") {
+                for child in extra { append_nbt_component(child, out); }
+            }
+        }
+        _ => {}
+    }
+}
+fn component_text(tag: &Tag) -> String {
+    // Sign NBT stores each message as either a JSON component string or a
+    // structured NBT component. Reuse Horizon's normal component decoder so
+    // translate/with, keybinds, siblings and nested extra values get handled
+    // consistently with chat and display entities.
+    let json = if let Tag::String(source) = tag {
+        let source = source.to_string_lossy();
+        match serde_json::from_str::<serde_json::Value>(&source) {
+            Ok(component) => component,
+            Err(_) => return source,
+        }
+    } else {
+        crate::scoreboard::tag_to_json(tag)
+    };
+    let parsed = crate::component::to_text(
+        &json,
+        &mut |value| crate::text::Text::literal(value),
+    ).plain();
+    if !parsed.is_empty() {
+        return parsed;
+    }
+    // Preserve plain text on odd/legacy component forms that the standard
+    // decoder cannot interpret; empty JSON components remain empty.
+    let mut out = String::new();
+    append_nbt_component(tag, &mut out);
+    out
+}''', "preserve nested and styled sign text components")
+
+pack_patch("crates/horizon-client/src/signs.rs", '''    #[test]
+    fn names_and_colors() {''', '''    #[test]
+    fn nested_sign_components_keep_all_visible_text() {
+        let json = Tag::String(r#"{"text":"","extra":[{"text":"[Shop] "},{"text":"Hello","color":"gold"}]}"#.into());
+        assert_eq!(component_text(&json), "[Shop] Hello");
+        let nbt = Tag::compound([
+            ("extra", Tag::List(vec![
+                Tag::compound([("text", Tag::String("A".into()))]),
+                Tag::compound([("extra", Tag::List(vec![
+                    Tag::compound([("text", Tag::String("B".into()))])
+                ]))]),
+            ]))
+        ]);
+        assert_eq!(component_text(&nbt), "AB");
+    }
+
+    #[test]
+    fn names_and_colors() {''', "test nested sign component flattening")
+
+pack_patch("crates/horizon-client/src/game/packs.rs", '''            "Horizon: visual resource load locale={} active_server_packs={} sprite_layers={} item_definitions={} item_prototypes={} resource_root={}",
+            lang::code(), active_server_packs, loaded_sprite_layers,
+            pack.item_renderer.models.definitions.len(),
+            pack.item_renderer.models.prototypes.len(),
+            root.display()''', '''            "HorizonDiag: visual_resource_load locale={} active_server_packs={} sprite_layers={} item_definitions={} item_prototypes={} atlas_width={} atlas_height={} map_atlas_slots={} resource_root={}",
+            lang::code(), active_server_packs, loaded_sprite_layers,
+            pack.item_renderer.models.definitions.len(),
+            pack.item_renderer.models.prototypes.len(),
+            gui.atlas.width, gui.atlas.height, horizon_client::hud::MAP_SLOTS,
+            root.display()''', "log atlas memory dimensions and map slot capacity")
+
+
+
+print("Applied Java-compatible server resource packs, detailed resource/item/text diagnostics, and multiplayer skin fixes.")
