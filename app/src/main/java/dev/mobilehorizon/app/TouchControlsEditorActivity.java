@@ -38,7 +38,7 @@ public final class TouchControlsEditorActivity extends Activity {
         root.addView(controls, new FrameLayout.LayoutParams(-1, -1));
 
         TextView hint = new TextView(this);
-        hint.setText("PRÉVIA  ·  arraste para mover  ·  toque para ajustar");
+        hint.setText("Arraste os botões  ·  guias azuis alinham  ·  toque para editar  ·  ✓ salva");
         hint.setTextColor(Color.WHITE);
         hint.setTextSize(12);
         hint.setGravity(Gravity.CENTER);

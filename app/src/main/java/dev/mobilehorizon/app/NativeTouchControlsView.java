@@ -54,6 +54,7 @@ final class NativeTouchControlsView extends View {
     private final NativeGameActivity gameActivity;
     private final boolean previewOnly;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint snapMeasurePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<Integer, PointerTrack> pointers = new HashMap<>();
     private final Set<Integer> heldKeys = new HashSet<>();
     private final Set<Integer> pressedControls = new HashSet<>();
@@ -64,6 +65,9 @@ final class NativeTouchControlsView extends View {
     private final Handler modeHandler = new Handler(Looper.getMainLooper());
     private boolean editingControls;
     private boolean gameplayMode;
+    /** Alignment guide coordinates in view pixels; NaN means no active snap. */
+    private float snapGuideX = Float.NaN;
+    private float snapGuideY = Float.NaN;
     private final Runnable modePoll = new Runnable() {
         @Override public void run() {
             boolean active = gameActivity != null && gameActivity.isGameplayMode();
@@ -164,6 +168,7 @@ final class NativeTouchControlsView extends View {
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (controlsVisible) {
+            drawSnapGuides(canvas);
             drawJoystick(canvas);
             for (ButtonSpec spec : buttonSpecs()) drawButton(canvas, spec);
         }
@@ -228,6 +233,17 @@ final class NativeTouchControlsView extends View {
         circle(canvas, knobX, knobY, radius * 0.37f, false, 0.94f);
         circle(canvas, cx, cy, radius, true, 0.85f);
         circle(canvas, knobX, knobY, radius * 0.37f, true, 1f);
+    }
+
+    /** Cyan guides show the axes/edges to which the dragged control is snapping. */
+    private void drawSnapGuides(Canvas canvas) {
+        if (!editingControls || (Float.isNaN(snapGuideX) && Float.isNaN(snapGuideY))) return;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(Math.max(1f, dp(1.25f)));
+        paint.setColor(0xCC45E4F5);
+        if (!Float.isNaN(snapGuideX)) canvas.drawLine(snapGuideX, 0, snapGuideX, getHeight(), paint);
+        if (!Float.isNaN(snapGuideY)) canvas.drawLine(0, snapGuideY, getWidth(), snapGuideY, paint);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawButton(Canvas canvas, ButtonSpec spec) {
@@ -436,10 +452,90 @@ final class NativeTouchControlsView extends View {
         return findButton(id) != null;
     }
 
+    private float buttonHalfWidth(ButtonSpec spec) {
+        snapMeasurePaint.setTextSize(Math.max(dp(8), spec.radius * 0.48f));
+        snapMeasurePaint.setFakeBoldText(true);
+        return Math.max(spec.radius * 0.86f,
+                snapMeasurePaint.measureText(spec.label) / 2f + dp(7));
+    }
+
+    /** Align the dragged control to a nearby centre, matching edge, or adjacent edge. */
+    private float snapAxis(ButtonSpec[] specs, ButtonSpec moving, float desired,
+                           float targetHalf, float orthogonalCoordinate,
+                           float targetOrthogonalHalf, boolean horizontalAxis) {
+        final float threshold = dp(15f);
+        float bestValue = desired;
+        float bestDistance = threshold + 0.01f;
+        float bestGuide = Float.NaN;
+
+        for (ButtonSpec other : specs) {
+            if (other.id == moving.id) continue;
+            float otherCenter = horizontalAxis ? other.x : other.y;
+            float otherHalf = horizontalAxis ? buttonHalfWidth(other) : other.radius * 0.76f;
+            float otherOrthogonalCenter = horizontalAxis ? other.y : other.x;
+            float otherOrthogonalHalf = horizontalAxis ? other.radius * 0.76f : buttonHalfWidth(other);
+            if (Math.abs(orthogonalCoordinate - otherOrthogonalCenter)
+                    > targetOrthogonalHalf + otherOrthogonalHalf + threshold) continue;
+
+            float leadingEdge = otherCenter - otherHalf;
+            float trailingEdge = otherCenter + otherHalf;
+
+            float distance = Math.abs(desired - otherCenter);
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance; bestValue = otherCenter; bestGuide = otherCenter;
+            }
+
+            float candidate = otherCenter - otherHalf + targetHalf;
+            distance = Math.abs(desired - candidate);
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance; bestValue = candidate; bestGuide = leadingEdge;
+            }
+
+            candidate = otherCenter + otherHalf - targetHalf;
+            distance = Math.abs(desired - candidate);
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance; bestValue = candidate; bestGuide = trailingEdge;
+            }
+
+            candidate = otherCenter - otherHalf - targetHalf;
+            distance = Math.abs(desired - candidate);
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance; bestValue = candidate; bestGuide = leadingEdge;
+            }
+
+            candidate = otherCenter + otherHalf + targetHalf;
+            distance = Math.abs(desired - candidate);
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance; bestValue = candidate; bestGuide = trailingEdge;
+            }
+        }
+
+        if (horizontalAxis) snapGuideX = bestGuide;
+        else snapGuideY = bestGuide;
+        return bestValue;
+    }
+
     private void setButtonPosition(int id, float x, float y) {
         float width = Math.max(1, getWidth()), height = Math.max(1, getHeight());
-        float nx = clamp(x / width, 0.035f, 0.965f);
-        float ny = clamp(y / height, 0.055f, 0.945f);
+        ButtonSpec[] specs = buttonSpecs();
+        ButtonSpec moving = null;
+        for (ButtonSpec spec : specs) {
+            if (spec.id == id) {
+                moving = spec;
+                break;
+            }
+        }
+        if (moving == null) return;
+
+        float halfWidth = buttonHalfWidth(moving);
+        float halfHeight = moving.radius * 0.76f;
+        snapGuideX = Float.NaN;
+        snapGuideY = Float.NaN;
+        float snappedX = snapAxis(specs, moving, x, halfWidth, y, halfHeight, true);
+        float snappedY = snapAxis(specs, moving, y, halfHeight, snappedX, halfWidth, false);
+
+        float nx = clamp(snappedX / width, 0.035f, 0.965f);
+        float ny = clamp(snappedY / height, 0.055f, 0.945f);
         CustomButton custom = findCustomButton(id);
         if (custom != null) {
             custom.x = nx;
@@ -670,8 +766,10 @@ final class NativeTouchControlsView extends View {
             control = IGNORED;
         } else if (control == EDITOR) {
             editingControls = !editingControls;
+            snapGuideX = Float.NaN;
+            snapGuideY = Float.NaN;
             Toast.makeText(activity, editingControls
-                    ? "Modo de edição: arraste um botão ou toque para alterar seu tamanho."
+                    ? "Modo de edição: arraste os botões; as guias azuis ajudam a alinhar."
                     : "Layout de controles salvo.", Toast.LENGTH_SHORT).show();
             if (!editingControls) {
                 saveButtonLayouts();
@@ -683,6 +781,8 @@ final class NativeTouchControlsView extends View {
             control = IGNORED;
         } else if (control == DONE_EDITING && editingControls) {
             editingControls = false;
+            snapGuideX = Float.NaN;
+            snapGuideY = Float.NaN;
             saveButtonLayouts();
             saveCustomButtons();
             if (previewOnly) {
@@ -743,6 +843,8 @@ final class NativeTouchControlsView extends View {
             return;
         }
         if (track.editorDrag) {
+            snapGuideX = Float.NaN;
+            snapGuideY = Float.NaN;
             if (track.moved) {
                 CustomButton custom = findCustomButton(track.control);
                 if (custom != null) saveCustomButtons();
@@ -946,6 +1048,8 @@ final class NativeTouchControlsView extends View {
 
     void releaseAllInputs() {
         releaseHeldControls();
+        snapGuideX = Float.NaN;
+        snapGuideY = Float.NaN;
         pointers.clear();
         joystickPointer = -1;
         invalidate();
