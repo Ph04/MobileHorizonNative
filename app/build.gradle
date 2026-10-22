@@ -24,8 +24,8 @@ android {
         applicationId 'dev.mobilehorizon.app'
         minSdk 26
         targetSdk 35
-        versionCode 16
-        versionName '0.3.13'
+        versionCode 17
+        versionName '0.3.14'
     }
 
     compileOptions {
@@ -54,8 +54,8 @@ android {
         debug {
             // Without a persistent private signing key, publish a side-by-side
             // test package instead of an APK that could be mistaken for a safe update.
-            applicationIdSuffix = hasStableSigning ? '.offline1' : '.offline1.test.v16'
-            versionNameSuffix = hasStableSigning ? '-offline1' : '-offline1-test-v16'
+            applicationIdSuffix = hasStableSigning ? '.offline1' : '.offline1.test.v17'
+            versionNameSuffix = hasStableSigning ? '-offline1' : '-offline1-test-v17'
             if (hasStableSigning) signingConfig signingConfigs.stable
         }
         release {

@@ -355,3 +355,18 @@ pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeHasLo
 ) -> u8 {
     u8::from(horizon_client::android_has_world())
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeGetGuiMetrics(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+) -> jni::sys::jintArray {
+    let metrics = horizon_client::hud::android_gui_metrics();
+    let Ok(array) = env.new_int_array(metrics.len() as i32) else {
+        return std::ptr::null_mut();
+    };
+    if env.set_int_array_region(&array, 0, &metrics).is_err() {
+        return std::ptr::null_mut();
+    }
+    array.into_raw()
+}

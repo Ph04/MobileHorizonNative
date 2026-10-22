@@ -23,6 +23,7 @@ public final class NativeGameActivity extends NativeActivity {
     private static native void nativeInjectKeyboardText(String text, boolean submit);
     private static native boolean nativeIsGameplay();
     private static native boolean nativeHasLoadedWorld();
+    private static native int[] nativeGetGuiMetrics();
 
     static {
         // NativeActivity later opens the same bundled library for android_main; loading
@@ -174,6 +175,12 @@ public final class NativeGameActivity extends NativeActivity {
     boolean hasLoadedWorld() {
         try { return nativeHasLoadedWorld(); }
         catch (UnsatisfiedLinkError error) { return false; }
+    }
+
+    /** Current HUD viewport and GUI scale from the actual Horizon renderer. */
+    int[] getGuiMetrics() {
+        try { return nativeGetGuiMetrics(); }
+        catch (UnsatisfiedLinkError error) { return null; }
     }
 
     @Override

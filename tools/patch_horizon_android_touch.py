@@ -8,6 +8,7 @@ root = Path(sys.argv[1])
 repo_root = Path(__file__).resolve().parents[1]
 game = root / "crates/horizon-client/src/game.rs"
 lib = root / "crates/horizon-client/src/lib.rs"
+hud = root / "crates/horizon-client/src/hud.rs"
 audio = root / "crates/horizon-client/src/audio.rs"
 skins = root / "crates/horizon-client/src/skins.rs"
 remote = root / "crates/horizon-client/src/game/remote.rs"
@@ -20,7 +21,7 @@ pad_menu = root / "crates/horizon-client/src/game/pad_menu.rs"
 startup_menu = root / "crates/horizon-client/src/game/startup_menu.rs"
 workspace_cargo = root / "Cargo.toml"
 
-for path in (game, lib, audio, skins, remote, names, item_draw, net, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
+for path in (game, lib, hud, audio, skins, remote, names, item_draw, net, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
     if not path.is_file():
         raise SystemExit(f"Missing pinned Horizon source file: {path}")
 
@@ -751,6 +752,51 @@ pub fn android_app() -> Result<winit::platform::android::activity::AndroidApp> {
         })
     })
 }''')
+
+replace_once(hud,
+    'pub static GUI_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);',
+    '''pub static GUI_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// Latest viewport and logical GUI dimensions used to render Minecraft's HUD.
+/// [actualScale, guiWidth, guiHeight, framebufferWidth, framebufferHeight].
+pub static ANDROID_GUI_METRICS: [std::sync::atomic::AtomicU32; 5] = [
+    std::sync::atomic::AtomicU32::new(1),
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
+    std::sync::atomic::AtomicU32::new(0),
+];
+pub fn android_gui_metrics() -> [i32; 5] {
+    [
+        ANDROID_GUI_METRICS[0].load(std::sync::atomic::Ordering::Relaxed) as i32,
+        ANDROID_GUI_METRICS[1].load(std::sync::atomic::Ordering::Relaxed) as i32,
+        ANDROID_GUI_METRICS[2].load(std::sync::atomic::Ordering::Relaxed) as i32,
+        ANDROID_GUI_METRICS[3].load(std::sync::atomic::Ordering::Relaxed) as i32,
+        ANDROID_GUI_METRICS[4].load(std::sync::atomic::Ordering::Relaxed) as i32,
+    ]
+}''')
+
+replace_once(hud,
+    '''        Self {
+            vertices: Vec::new(),
+            scale: scale as f32,
+            width: (window[0] as f32 / scale as f32).ceil(),
+            height: (window[1] as f32 / scale as f32).ceil(),
+            patches: Vec::new(),
+            blends: Vec::new(),
+        }''',
+    '''        let gui_width = (window[0] as f32 / scale as f32).ceil() as u32;
+        let gui_height = (window[1] as f32 / scale as f32).ceil() as u32;
+        for (index, value) in [scale, gui_width, gui_height, window[0], window[1]].into_iter().enumerate() {
+            ANDROID_GUI_METRICS[index].store(value, std::sync::atomic::Ordering::Relaxed);
+        }
+        Self {
+            vertices: Vec::new(),
+            scale: scale as f32,
+            width: gui_width as f32,
+            height: gui_height as f32,
+            patches: Vec::new(),
+            blends: Vec::new(),
+        }''')
 
 # NativeGameActivity sets the private data root to filesDir/horizon, whereas the
 # launcher imports/exports the actual prepared resource tree under filesDir/.local.

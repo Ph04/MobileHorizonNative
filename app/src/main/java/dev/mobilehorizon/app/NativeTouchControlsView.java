@@ -56,7 +56,6 @@ final class NativeTouchControlsView extends View {
     private static final String KEY_UNIFORM_SIZE_VERSION = "uniform_button_size_version";
     private static final String KEY_FLOAT_MENU_X = "floating_menu_x";
     private static final String KEY_FLOAT_MENU_Y = "floating_menu_y";
-    private static final String KEY_HOTBAR_SCALE = "hotbar_hit_width_scale";
 
     private static final long LONG_PRESS_TIMEOUT_MS = 430L;
     private static final long DOUBLE_TAP_TIMEOUT_MS = 300L;
@@ -113,7 +112,6 @@ final class NativeTouchControlsView extends View {
     private float scale;
     private float opacity;
     private float sensitivity;
-    private float hotbarScale;
     private boolean leftHanded;
     private boolean controlsVisible = true;
     private long lastHotbarTapTime;
@@ -201,7 +199,6 @@ final class NativeTouchControlsView extends View {
         scale = clamp(prefs.getFloat(KEY_SCALE, 1f), 0.70f, 1.30f);
         opacity = clamp(prefs.getFloat(KEY_OPACITY, 0.82f), 0.35f, 1f);
         sensitivity = clamp(prefs.getFloat(KEY_SENSITIVITY, 1f), 0.50f, 2f);
-        hotbarScale = clamp(prefs.getFloat(KEY_HOTBAR_SCALE, 1f), 0.70f, 1.50f);
         leftHanded = prefs.getBoolean(KEY_LEFT_HANDED, false);
         snapGapDp = clamp(prefs.getFloat(KEY_SNAP_GAP, 12f), 4f, 32f);
         loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
@@ -1123,20 +1120,10 @@ final class NativeTouchControlsView extends View {
         panel.addView(gapLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(gapBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
-        TextView hotbarLabel = textSetting("Largura da hotbar invisível " + Math.round(hotbarScale * 100) + "%");
-        SeekBar hotbarBar = new SeekBar(activity);
-        hotbarBar.setMax(80);
-        hotbarBar.setProgress(Math.round(hotbarScale * 100f) - 70);
-        panel.addView(hotbarLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
-        panel.addView(hotbarBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
-
         size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText("Tamanho geral " + (70 + progress) + "%")));
         alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText("Opacidade geral " + (35 + progress) + "%")));
         sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText("Sensibilidade da câmera " + (50 + progress) + "%")));
         gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText("Distância de encaixe " + (progress + 4) + " dp")));
-        hotbarBar.setOnSeekBarChangeListener(simpleSeek(progress ->
-                hotbarLabel.setText("Largura da hotbar invisível " + (progress + 70) + "%")));
-
         ScrollView settingsScroll = new ScrollView(activity);
         settingsScroll.setFillViewport(false);
         settingsScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
@@ -1152,7 +1139,6 @@ final class NativeTouchControlsView extends View {
             opacity = (alpha.getProgress() + 35) / 100f;
             sensitivity = (sensitivityBar.getProgress() + 50) / 100f;
             snapGapDp = gapBar.getProgress() + 4;
-            hotbarScale = (hotbarBar.getProgress() + 70) / 100f;
             leftHanded = handed.isChecked();
             prefs.edit()
                     .putBoolean(KEY_ENABLED, enabled.isChecked())
@@ -1161,7 +1147,6 @@ final class NativeTouchControlsView extends View {
                     .putFloat(KEY_OPACITY, opacity)
                     .putFloat(KEY_SENSITIVITY, sensitivity)
                     .putFloat(KEY_SNAP_GAP, snapGapDp)
-                    .putFloat(KEY_HOTBAR_SCALE, hotbarScale)
                     .apply();
             invalidate();
             Toast.makeText(activity, "Ajustes dos controles salvos.", Toast.LENGTH_SHORT).show();
@@ -1444,14 +1429,34 @@ final class NativeTouchControlsView extends View {
         return best == null ? NONE : best.id;
     }
 
-    /** Invisible click targets aligned with the vanilla nine-slot Java hotbar. */
+    /**
+     * Hit-test the nine hotbar slots in the exact logical GUI space used by Horizon.
+     * Metrics are published by HudBatch::new, so this follows GUI Scale (including Auto),
+     * renderer resize and the game's own ceil-divided GUI width/height.
+     */
     private int hitHotbarSlot(float x, float y) {
-        if (previewOnly || editingControls || !gameplayMode || getWidth() <= 0 || getHeight() <= 0) return -1;
-        float width = Math.min(dp(182f) * hotbarScale, getWidth() * 0.82f);
-        float left = (getWidth() - width) / 2f;
-        float top = getHeight() - dp(40f);
-        if (x < left || x >= left + width || y < top || y > getHeight()) return -1;
-        int slot = (int) ((x - left) / (width / 9f));
+        if (previewOnly || editingControls || !gameplayMode || gameActivity == null
+                || getWidth() <= 0 || getHeight() <= 0) return -1;
+        int[] metrics = gameActivity.getGuiMetrics();
+        if (metrics == null || metrics.length < 5) return -1;
+        int guiScale = metrics[0], guiWidth = metrics[1], guiHeight = metrics[2];
+        int framebufferWidth = metrics[3], framebufferHeight = metrics[4];
+        if (guiScale < 1 || guiWidth <= 0 || guiHeight <= 0
+                || framebufferWidth <= 0 || framebufferHeight <= 0) return -1;
+
+        // Map overlay coordinates to the native renderer's framebuffer, then into GUI pixels.
+        float frameX = x * framebufferWidth / (float) getWidth();
+        float frameY = y * framebufferHeight / (float) getHeight();
+        float guiX = frameX / guiScale;
+        float guiY = frameY / guiScale;
+
+        int center = guiWidth / 2;
+        float slotsLeft = center - 90f; // Nine 20-GUI-pixel slots; the frame has a 1-pixel border.
+        float slotsRight = center + 90f;
+        float hotbarTop = guiHeight - 22f;
+        if (guiX < slotsLeft || guiX >= slotsRight
+                || guiY < hotbarTop || guiY >= guiHeight) return -1;
+        int slot = (int) ((guiX - slotsLeft) / 20f);
         return slot >= 0 && slot < 9 ? slot : -1;
     }
 
