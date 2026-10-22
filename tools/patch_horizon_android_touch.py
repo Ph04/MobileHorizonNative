@@ -2075,6 +2075,13 @@ impl Default for RemoteTextDisplay {
     }
 }''', "define tracked text display state")
 
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                r.entities.clear();
+                r.lerps.clear();
+                r.head_lerps.clear();''', '''                r.entities.clear();
+                r.text_displays.clear();
+                r.lerps.clear();
+                r.head_lerps.clear();''', "clear display metadata on remote dimension reset")
+
 pack_patch("crates/horizon-client/src/game/remote.rs", '''    entities: HashMap<i32, Tracked>,
     lerps: HashMap<i32, Lerp>,''', '''    entities: HashMap<i32, Tracked>,
     text_displays: HashMap<i32, RemoteTextDisplay>,
@@ -2683,7 +2690,7 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         writer.bool(false); // unresolved
         writer.varint(60); // entity_data: type id + NBT
         writer.varint(2);
-        writer.nbt(&Tag::Compound(Default::default()));
+        writer.nbt(&Tag::compound([("id", Tag::String("minecraft:pig".into()))]));
         let bytes = writer.data.clone();
         let mut reader = Reader::new(&bytes);
         let stack = Slot::read(&mut reader).unwrap().unwrap();
