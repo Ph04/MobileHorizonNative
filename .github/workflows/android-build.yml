@@ -12,6 +12,7 @@ on:
       - "core/**"
       - "android-native/**"
       - "tools/patch_horizon_android_touch.py"
+      - "tools/horizon_patches/**"
       - "tools/horizon_server_packs.rs"
       - "tools/setup_android_signing_termux.sh"
       - "build.gradle"
@@ -24,6 +25,7 @@ on:
       - "core/**"
       - "android-native/**"
       - "tools/patch_horizon_android_touch.py"
+      - "tools/horizon_patches/**"
       - "tools/horizon_server_packs.rs"
       - "tools/setup_android_signing_termux.sh"
       - "build.gradle"
@@ -314,7 +316,7 @@ jobs:
           git -C "$SOURCE" fetch --depth 1 origin "$UPSTREAM_COMMIT"
           git -C "$SOURCE" checkout --detach FETCH_HEAD
           test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
-          python3 -m py_compile tools/patch_horizon_android_touch.py
+          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
