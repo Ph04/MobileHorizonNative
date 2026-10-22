@@ -177,7 +177,7 @@ final class NativeTouchControlsView extends View {
         opacity = clamp(prefs.getFloat(KEY_OPACITY, 0.82f), 0.35f, 1f);
         sensitivity = clamp(prefs.getFloat(KEY_SENSITIVITY, 1f), 0.50f, 2f);
         leftHanded = prefs.getBoolean(KEY_LEFT_HANDED, false);
-        snapGapDp = clamp(prefs.getFloat(KEY_SNAP_GAP, 12f), 0f, 32f);
+        snapGapDp = clamp(prefs.getFloat(KEY_SNAP_GAP, 12f), 4f, 32f);
         loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
         loadCustomButtons(prefs.getString(KEY_CUSTOM_BUTTONS, ""));
         gameplayMode = gameActivity != null && gameActivity.isGameplayMode();
@@ -940,15 +940,15 @@ final class NativeTouchControlsView extends View {
 
         TextView gapLabel = textSetting("Distância de encaixe " + Math.round(snapGapDp) + " dp");
         SeekBar gapBar = new SeekBar(activity);
-        gapBar.setMax(32);
-        gapBar.setProgress(Math.round(snapGapDp));
+        gapBar.setMax(28);
+        gapBar.setProgress(Math.round(snapGapDp) - 4);
         panel.addView(gapLabel, new LinearLayout.LayoutParams(-1, dp(19)));
         panel.addView(gapBar, new LinearLayout.LayoutParams(-1, dp(30)));
 
         size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText("Tamanho geral " + (70 + progress) + "%")));
         alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText("Opacidade geral " + (35 + progress) + "%")));
         sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText("Sensibilidade da câmera " + (50 + progress) + "%")));
-        gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText("Distância de encaixe " + progress + " dp")));
+        gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText("Distância de encaixe " + (progress + 4) + " dp")));
 
         ScrollView settingsScroll = new ScrollView(activity);
         settingsScroll.setFillViewport(false);
@@ -964,7 +964,7 @@ final class NativeTouchControlsView extends View {
             scale = (size.getProgress() + 70) / 100f;
             opacity = (alpha.getProgress() + 35) / 100f;
             sensitivity = (sensitivityBar.getProgress() + 50) / 100f;
-            snapGapDp = gapBar.getProgress();
+            snapGapDp = gapBar.getProgress() + 4;
             leftHanded = handed.isChecked();
             prefs.edit()
                     .putBoolean(KEY_ENABLED, enabled.isChecked())
