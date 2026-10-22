@@ -1539,7 +1539,11 @@ pack_patch("crates/horizon-client/src/net.rs", '''send_pack_status(&writer, &sta
                             let _ = events.send(Event::ServerResourcePackFailed { id, required, reason });''', '''send_pack_status_in_phase(&writer, id, if supported_pack_url(&url) { 2 } else { 5 }, ResourcePackPhase::Play);
                             log::warn!("Horizon: server resource-pack download failed id={id:032x} required={required}: {reason}");
                             let _ = events.send(Event::ServerResourcePackFailed { id, required, reason, phase: ResourcePackPhase::Play });''', "route play download failure through play packet type")
-pack_patch("crates/horizon-client/src/net.rs", '''let _ = send.send(Event::ServerResourcePackPop { id: p.id });''', '''let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Play });''', "record phase for play resource-pack removal")
+pack_patch("crates/horizon-client/src/net.rs", '''            play::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
+            }''', '''            play::Clientbound::ResourcePackPop(p) => {
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Play });
+            }''', "record phase for play resource-pack removal")
 pack_patch("crates/horizon-client/src/net.rs", '''let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: e.to_string() });''', '''let _ = send.send(Event::ServerResourcePackFailed { id, required, reason: e.to_string(), phase: ResourcePackPhase::Play });''', "record phase for play worker-start failure")
 
 pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPush(p) => {
@@ -1594,7 +1598,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::
                 }
             }''', "download configuration resource packs in background")
 pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPop(p) => {
-                let _ = send.send(Event::ServerResourcePackPop { id: p.id });
+                let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Configuration });
             }''', '''            cfg::Clientbound::ResourcePackPop(p) => {
                 let _ = send.send(Event::ServerResourcePackPop { id: p.id, phase: ResourcePackPhase::Configuration });
             }''', "record phase for configuration resource-pack removal")
