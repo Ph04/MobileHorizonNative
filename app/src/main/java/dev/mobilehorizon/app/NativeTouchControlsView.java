@@ -550,29 +550,32 @@ final class NativeTouchControlsView extends View {
             float aboveY = other.y - otherHalfH - halfH - gap;
             float belowY = other.y + otherHalfH + halfH + gap;
 
-            float[][] candidates = {
-                    {leftX, other.y, other.x, other.y},
-                    {rightX, other.y, other.x, other.y},
-                    {other.x, aboveY, other.x, other.y},
-                    {other.x, belowY, other.x, other.y}
-            };
-            for (float[] candidate : candidates) {
-                float dx = Math.abs(x - candidate[0]);
-                float dy = Math.abs(y - candidate[1]);
-                if (dx > threshold || dy > threshold) continue;
-                float score = dx * dx + dy * dy;
-                if (score < bestScore) {
-                    bestScore = score;
-                    bestX = candidate[0];
-                    bestY = candidate[1];
-                    if (Math.abs(candidate[0] - other.x) > 0.5f) {
-                        snapGuideY = other.y;
-                        snapGuideX = Float.NaN;
-                    } else {
-                        snapGuideX = other.x;
-                        snapGuideY = Float.NaN;
-                    }
-                }
+            float dx = Math.abs(x - leftX), dy = Math.abs(y - other.y);
+            float score = dx * dx + dy * dy;
+            if (dx <= threshold && dy <= threshold && score < bestScore) {
+                bestScore = score; bestX = leftX; bestY = other.y;
+                snapGuideY = other.y; snapGuideX = Float.NaN;
+            }
+
+            dx = Math.abs(x - rightX); dy = Math.abs(y - other.y);
+            score = dx * dx + dy * dy;
+            if (dx <= threshold && dy <= threshold && score < bestScore) {
+                bestScore = score; bestX = rightX; bestY = other.y;
+                snapGuideY = other.y; snapGuideX = Float.NaN;
+            }
+
+            dx = Math.abs(x - other.x); dy = Math.abs(y - aboveY);
+            score = dx * dx + dy * dy;
+            if (dx <= threshold && dy <= threshold && score < bestScore) {
+                bestScore = score; bestX = other.x; bestY = aboveY;
+                snapGuideX = other.x; snapGuideY = Float.NaN;
+            }
+
+            dx = Math.abs(x - other.x); dy = Math.abs(y - belowY);
+            score = dx * dx + dy * dy;
+            if (dx <= threshold && dy <= threshold && score < bestScore) {
+                bestScore = score; bestX = other.x; bestY = belowY;
+                snapGuideX = other.x; snapGuideY = Float.NaN;
             }
         }
 
@@ -697,6 +700,7 @@ final class NativeTouchControlsView extends View {
         float currentOpacity = custom != null ? custom.opacity : (saved == null ? 1f : saved.opacity);
         int currentShape = custom != null ? custom.shape : (saved == null ? 0 : saved.shape);
         int currentFunction = custom != null ? custom.function : (saved == null ? 0 : saved.function);
+        if (custom != null && currentFunction == FUNCTION_DEFAULT) currentFunction = FUNCTION_KEY;
         int currentKey = custom != null ? custom.keyCode : (saved == null ? KeyEvent.KEYCODE_UNKNOWN : saved.keyCode);
 
         LinearLayout panel = new LinearLayout(activity);
@@ -768,6 +772,13 @@ final class NativeTouchControlsView extends View {
         key.setText(currentKey == KeyEvent.KEYCODE_UNKNOWN ? "" : KeyEvent.keyCodeToString(currentKey).replace("KEYCODE_", ""));
         key.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff7e91ad));
         panel.addView(key, new LinearLayout.LayoutParams(-1, dp(36)));
+        key.setVisibility(function.getSelectedItemPosition() == FUNCTION_KEY ? View.VISIBLE : View.GONE);
+        function.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long itemId) {
+                key.setVisibility(position == FUNCTION_KEY ? View.VISIBLE : View.GONE);
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+        });
 
         EditText label = null;
         if (custom != null) {
@@ -896,13 +907,13 @@ final class NativeTouchControlsView extends View {
 
         android.widget.CheckBox enabled = new android.widget.CheckBox(activity);
         enabled.setText("Ativar controles na tela do jogo");
-        enabled.setTextColor(0xffeaf0ff);
+        enabled.setTextColor(0xff18213a);
         enabled.setChecked(prefs.getBoolean(KEY_ENABLED, true));
         panel.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
 
         android.widget.CheckBox handed = new android.widget.CheckBox(activity);
         handed.setText("Layout canhoto (joystick à direita)");
-        handed.setTextColor(0xffeaf0ff);
+        handed.setTextColor(0xff18213a);
         handed.setChecked(leftHanded);
         panel.addView(handed, new LinearLayout.LayoutParams(-1, -2));
 
@@ -939,9 +950,13 @@ final class NativeTouchControlsView extends View {
         sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText("Sensibilidade da câmera " + (50 + progress) + "%")));
         gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText("Distância de encaixe " + progress + " dp")));
 
+        ScrollView settingsScroll = new ScrollView(activity);
+        settingsScroll.setFillViewport(false);
+        settingsScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
+
         AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle("Ajustes dos controles")
-                .setView(panel)
+                .setView(settingsScroll)
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Salvar", null)
                 .create();
@@ -981,7 +996,7 @@ final class NativeTouchControlsView extends View {
     private TextView textSetting(String value) {
         TextView text = new TextView(activity);
         text.setText(value);
-        text.setTextColor(0xffeaf0ff);
+        text.setTextColor(0xff18213a);
         text.setTextSize(12);
         return text;
     }
