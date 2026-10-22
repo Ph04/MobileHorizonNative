@@ -12,7 +12,7 @@ These files are ordered patch steps, not reusable .hmod gameplay mods. They patc
 6. 06_resource_diagnostics.py — bounded logging for received packets, pack application and rendered output.
 7. 07_protocol_maps_and_signs.py — 26.3 packet/component compatibility, map images and sign text components.
 
-The order is explicit in tools/patch_horizon_android_touch.py. These steps share an execution namespace because later edits depend on helpers or paths created by earlier steps. Keep each change in the appropriate step and preserve fail-fast exact-anchor checks. Do not change the pinned Horizon revision in the production workflow as part of this refactor.
+The upstream runtime and preparation revisions are centralized in tools/horizon-revisions.env; the workflow reads that file for both source checkouts. The order is explicit in tools/patch_horizon_android_touch.py. These steps share an execution namespace because later edits depend on helpers or paths created by earlier steps. Keep each change in the appropriate step and preserve fail-fast exact-anchor checks. Do not change the pinned Horizon revision in the production workflow as part of this refactor.
 
 ## Updating Horizon
 
