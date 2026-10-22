@@ -1,5 +1,6 @@
 package dev.mobilehorizon.app;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Canvas;
@@ -49,8 +50,11 @@ final class NativeTouchControlsView extends View {
             HOTBAR_PREV = 15, HOTBAR_NEXT = 16, TAB = 17, ENTER = 18, IGNORED = 19,
             MOUSE_LEFT = 20, MOUSE_RIGHT = 21, KEYBOARD = 22, EDITOR = 23,
             ADD_BUTTON = 24, DONE_EDITING = 25, CUSTOM_BUTTON_START = 1000;
-    private final NativeGameActivity activity;
+    private final Activity activity;
+    private final NativeGameActivity gameActivity;
+    private final boolean previewOnly;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint snapMeasurePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Map<Integer, PointerTrack> pointers = new HashMap<>();
     private final Set<Integer> heldKeys = new HashSet<>();
     private final Set<Integer> pressedControls = new HashSet<>();
@@ -61,9 +65,12 @@ final class NativeTouchControlsView extends View {
     private final Handler modeHandler = new Handler(Looper.getMainLooper());
     private boolean editingControls;
     private boolean gameplayMode;
+    /** Alignment guide coordinates in view pixels; NaN means no active snap. */
+    private float snapGuideX = Float.NaN;
+    private float snapGuideY = Float.NaN;
     private final Runnable modePoll = new Runnable() {
         @Override public void run() {
-            boolean active = activity.isGameplayMode();
+            boolean active = gameActivity != null && gameActivity.isGameplayMode();
             if (active != gameplayMode) {
                 gameplayMode = active;
                 invalidate();
@@ -127,8 +134,15 @@ final class NativeTouchControlsView extends View {
     }
 
     NativeTouchControlsView(NativeGameActivity activity) {
+        this(activity, false);
+    }
+
+    /** Preview mode reuses the exact same persisted layout without injecting input into a game. */
+    NativeTouchControlsView(Activity activity, boolean previewOnly) {
         super(activity);
         this.activity = activity;
+        this.gameActivity = activity instanceof NativeGameActivity ? (NativeGameActivity) activity : null;
+        this.previewOnly = previewOnly;
         density = getResources().getDisplayMetrics().density;
         android.content.SharedPreferences prefs = activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
         scale = clamp(prefs.getFloat(KEY_SCALE, 1f), 0.70f, 1.30f);
@@ -137,8 +151,12 @@ final class NativeTouchControlsView extends View {
         leftHanded = prefs.getBoolean(KEY_LEFT_HANDED, false);
         loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
         loadCustomButtons(prefs.getString(KEY_CUSTOM_BUTTONS, ""));
-        gameplayMode = activity.isGameplayMode();
-        modeHandler.post(modePoll);
+        gameplayMode = gameActivity != null && gameActivity.isGameplayMode();
+        if (gameActivity != null) modeHandler.post(modePoll);
+        if (previewOnly) {
+            controlsVisible = true;
+            editingControls = true;
+        }
         setBackgroundColor(Color.TRANSPARENT);
         setFocusable(false);
         setFocusableInTouchMode(false);
@@ -150,10 +168,11 @@ final class NativeTouchControlsView extends View {
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (controlsVisible) {
+            drawSnapGuides(canvas);
             drawJoystick(canvas);
             for (ButtonSpec spec : buttonSpecs()) drawButton(canvas, spec);
         }
-        drawToolbar(canvas);
+        if (!previewOnly) drawToolbar(canvas);
         if (editingControls) drawEditorToolbar(canvas);
         drawMouseCursor(canvas);
     }
@@ -175,7 +194,7 @@ final class NativeTouchControlsView extends View {
 
     /** Draw an on-screen pointer so menus can be targeted without a hardware mouse. */
     private void drawMouseCursor(Canvas canvas) {
-        if (getWidth() <= 0 || getHeight() <= 0 || (gameplayMode && !editingControls)) return;
+        if (previewOnly || getWidth() <= 0 || getHeight() <= 0 || (gameplayMode && !editingControls)) return;
         float x = clamp(virtualMouseX, 0, getWidth() - 1f);
         float y = clamp(virtualMouseY, 0, getHeight() - 1f);
         android.graphics.Path cursor = new android.graphics.Path();
@@ -214,6 +233,17 @@ final class NativeTouchControlsView extends View {
         circle(canvas, knobX, knobY, radius * 0.37f, false, 0.94f);
         circle(canvas, cx, cy, radius, true, 0.85f);
         circle(canvas, knobX, knobY, radius * 0.37f, true, 1f);
+    }
+
+    /** Cyan guides show the axes/edges to which the dragged control is snapping. */
+    private void drawSnapGuides(Canvas canvas) {
+        if (!editingControls || (Float.isNaN(snapGuideX) && Float.isNaN(snapGuideY))) return;
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(Math.max(1f, dp(1.25f)));
+        paint.setColor(0xCC45E4F5);
+        if (!Float.isNaN(snapGuideX)) canvas.drawLine(snapGuideX, 0, snapGuideX, getHeight(), paint);
+        if (!Float.isNaN(snapGuideY)) canvas.drawLine(0, snapGuideY, getWidth(), snapGuideY, paint);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawButton(Canvas canvas, ButtonSpec spec) {
@@ -420,18 +450,82 @@ final class NativeTouchControlsView extends View {
         return findButton(id) != null;
     }
 
+    private float buttonHalfWidth(ButtonSpec spec) {
+        snapMeasurePaint.setTextSize(Math.max(dp(8), spec.radius * 0.48f));
+        snapMeasurePaint.setFakeBoldText(true);
+        return Math.max(spec.radius * 0.86f,
+                snapMeasurePaint.measureText(spec.label) / 2f + dp(7));
+    }
+
+    /** Align the dragged control to a nearby centre, matching edge, or adjacent edge. */
+    private float snapAxis(ButtonSpec[] specs, ButtonSpec moving, float desired,
+                           float targetHalf, float orthogonalCoordinate,
+                           float targetOrthogonalHalf, boolean horizontalAxis) {
+        final float threshold = dp(15f);
+        float bestValue = desired;
+        float bestDistance = threshold + 0.01f;
+        float bestGuide = Float.NaN;
+        for (ButtonSpec other : specs) {
+            if (other.id == moving.id) continue;
+            float otherCenter = horizontalAxis ? other.x : other.y;
+            float otherHalf = horizontalAxis ? buttonHalfWidth(other) : other.radius * 0.76f;
+            float otherOrthogonalCenter = horizontalAxis ? other.y : other.x;
+            float otherOrthogonalHalf = horizontalAxis ? other.radius * 0.76f : buttonHalfWidth(other);
+            if (Math.abs(orthogonalCoordinate - otherOrthogonalCenter)
+                    > targetOrthogonalHalf + otherOrthogonalHalf + threshold) continue;
+            float leadingEdge = otherCenter - otherHalf;
+            float trailingEdge = otherCenter + otherHalf;
+            float candidate = otherCenter;
+            float distance = Math.abs(desired - candidate);
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance; bestValue = candidate; bestGuide = otherCenter;
+            }
+            candidate = otherCenter - otherHalf + targetHalf;
+            distance = Math.abs(desired - candidate);
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance; bestValue = candidate; bestGuide = leadingEdge;
+            }
+            candidate = otherCenter + otherHalf - targetHalf;
+            distance = Math.abs(desired - candidate);
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance; bestValue = candidate; bestGuide = trailingEdge;
+            }
+            candidate = otherCenter - otherHalf - targetHalf;
+            distance = Math.abs(desired - candidate);
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance; bestValue = candidate; bestGuide = leadingEdge;
+            }
+            candidate = otherCenter + otherHalf + targetHalf;
+            distance = Math.abs(desired - candidate);
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance; bestValue = candidate; bestGuide = trailingEdge;
+            }
+        }
+        if (horizontalAxis) snapGuideX = bestGuide;
+        else snapGuideY = bestGuide;
+        return bestValue;
+    }
+
     private void setButtonPosition(int id, float x, float y) {
         float width = Math.max(1, getWidth()), height = Math.max(1, getHeight());
-        float nx = clamp(x / width, 0.035f, 0.965f);
-        float ny = clamp(y / height, 0.055f, 0.945f);
+        ButtonSpec[] specs = buttonSpecs();
+        ButtonSpec moving = null;
+        for (ButtonSpec spec : specs) if (spec.id == id) { moving = spec; break; }
+        if (moving == null) return;
+        float halfWidth = buttonHalfWidth(moving);
+        float halfHeight = moving.radius * 0.76f;
+        snapGuideX = Float.NaN;
+        snapGuideY = Float.NaN;
+        float snappedX = snapAxis(specs, moving, x, halfWidth, y, halfHeight, true);
+        float snappedY = snapAxis(specs, moving, y, halfHeight, snappedX, halfWidth, false);
+        float nx = clamp(snappedX / width, 0.035f, 0.965f);
+        float ny = clamp(snappedY / height, 0.055f, 0.945f);
         CustomButton custom = findCustomButton(id);
         if (custom != null) {
-            custom.x = nx;
-            custom.y = ny;
+            custom.x = nx; custom.y = ny;
         } else {
             ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> new ButtonLayout());
-            layout.x = nx;
-            layout.y = ny;
+            layout.x = nx; layout.y = ny;
         }
         invalidate();
     }
@@ -453,8 +547,9 @@ final class NativeTouchControlsView extends View {
                 .setTitle("Teclado do Minecraft")
                 .setView(panel)
                 .setNegativeButton("Cancelar", (d, which) -> { })
-                .setPositiveButton("Aplicar / enviar", (d, which) ->
-                        activity.injectKeyboardText(input.getText().toString()))
+                .setPositiveButton("Aplicar / enviar", (d, which) -> {
+                    if (gameActivity != null) gameActivity.injectKeyboardText(input.getText().toString());
+                })
                 .create();
 
         input.setOnEditorActionListener((view, actionId, event) -> {
@@ -653,8 +748,10 @@ final class NativeTouchControlsView extends View {
             control = IGNORED;
         } else if (control == EDITOR) {
             editingControls = !editingControls;
+            snapGuideX = Float.NaN;
+            snapGuideY = Float.NaN;
             Toast.makeText(activity, editingControls
-                    ? "Modo de edição: arraste um botão ou toque para alterar seu tamanho."
+                    ? "Modo de edição: arraste os botões; as guias azuis ajudam a alinhar."
                     : "Layout de controles salvo.", Toast.LENGTH_SHORT).show();
             if (!editingControls) {
                 saveButtonLayouts();
@@ -666,8 +763,15 @@ final class NativeTouchControlsView extends View {
             control = IGNORED;
         } else if (control == DONE_EDITING && editingControls) {
             editingControls = false;
+            snapGuideX = Float.NaN;
+            snapGuideY = Float.NaN;
             saveButtonLayouts();
             saveCustomButtons();
+            if (previewOnly) {
+                Toast.makeText(activity, "Layout dos botões salvo.", Toast.LENGTH_SHORT).show();
+                activity.setResult(Activity.RESULT_OK);
+                activity.finish();
+            }
             control = IGNORED;
         } else if (control == JOYSTICK && joystickPointer == -1) {
             joystickPointer = id; joystickX = x; joystickY = y;
@@ -706,7 +810,7 @@ final class NativeTouchControlsView extends View {
                 virtualMouseX = clamp(virtualMouseX + dx * sensitivity, 0, Math.max(1, getWidth()));
                 virtualMouseY = clamp(virtualMouseY + dy * sensitivity, 0, Math.max(1, getHeight()));
                 sendMouseMotion(virtualMouseX, virtualMouseY);
-                activity.injectMouseMotion(dx * sensitivity, dy * sensitivity);
+                if (gameActivity != null) gameActivity.injectMouseMotion(dx * sensitivity, dy * sensitivity);
             }
             track.lastX = x; track.lastY = y;
         }
@@ -721,6 +825,8 @@ final class NativeTouchControlsView extends View {
             return;
         }
         if (track.editorDrag) {
+            snapGuideX = Float.NaN;
+            snapGuideY = Float.NaN;
             if (track.moved) {
                 CustomButton custom = findCustomButton(track.control);
                 if (custom != null) saveCustomButtons();
@@ -740,6 +846,20 @@ final class NativeTouchControlsView extends View {
     }
 
     private int hitControl(float x, float y) {
+        if (previewOnly) {
+            if (!controlsVisible) return NONE;
+            if (editingControls) {
+                if (distanceSquared(x, y, toolbarX(166), toolbarY()) <= dp(24) * dp(24)) return ADD_BUTTON;
+                if (distanceSquared(x, y, toolbarX(210), toolbarY()) <= dp(24) * dp(24)) return DONE_EDITING;
+            }
+            ButtonSpec best = null;
+            float bestDistance = Float.MAX_VALUE;
+            for (ButtonSpec spec : buttonSpecs()) {
+                float d = distanceSquared(x, y, spec.x, spec.y), hit = spec.radius + dp(13);
+                if (d <= hit * hit && d < bestDistance) { best = spec; bestDistance = d; }
+            }
+            return best == null ? NONE : best.id;
+        }
         float toggleX = toolbarX(122), toggleY = toolbarY();
         if (distanceSquared(x, y, toggleX, toggleY) <= dp(25) * dp(25)) return TOGGLE;
         if (!controlsVisible) return NONE;
@@ -864,22 +984,22 @@ final class NativeTouchControlsView extends View {
         boolean previous = heldKeys.contains(keyCode);
         if (previous == held) return;
         if (held) heldKeys.add(keyCode); else heldKeys.remove(keyCode);
-        activity.injectKeyCode(keyCode, held);
+        if (gameActivity != null) gameActivity.injectKeyCode(keyCode, held);
     }
 
     private void setMouseButton(int button, boolean held, float x, float y) {
         int previous = mouseButtons;
         if (held) mouseButtons |= button; else mouseButtons &= ~button;
         if (previous == mouseButtons) return;
-        activity.injectMouseButton(button, held, x, y);
+        if (gameActivity != null) gameActivity.injectMouseButton(button, held, x, y);
     }
 
     private void sendMouseMotion(float x, float y) {
-        activity.injectCursorMove(x, y);
+        if (gameActivity != null) gameActivity.injectCursorMove(x, y);
     }
 
     private void sendMouseScroll(float amount) {
-        activity.injectMouseScroll(amount, virtualMouseX, virtualMouseY);
+        if (gameActivity != null) gameActivity.injectMouseScroll(amount, virtualMouseX, virtualMouseY);
     }
 
     /** Creates a mouse event with its button state set at construction time (MotionEvent has no public setter). */
@@ -906,6 +1026,8 @@ final class NativeTouchControlsView extends View {
 
     void releaseAllInputs() {
         releaseHeldControls();
+        snapGuideX = Float.NaN;
+        snapGuideY = Float.NaN;
         pointers.clear();
         joystickPointer = -1;
         invalidate();

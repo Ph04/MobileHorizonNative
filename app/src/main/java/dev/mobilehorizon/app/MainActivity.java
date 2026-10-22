@@ -306,8 +306,10 @@ public final class MainActivity extends Activity {
         addSpaced(playCard, offlinePlayButton, 52, 10);
         offlineNameButton = button("Alterar nick offline", false, v -> showOfflineNameDialog());
         addSpaced(playCard, offlineNameButton, 46, 6);
-        touchControlsButton = button("Configurar controles touch", false, v -> showTouchControlsDialog());
-        addSpaced(playCard, touchControlsButton, 46, 6);
+        touchControlsButton = button("Customizar layout dos botões", true, v -> openTouchControlsEditor());
+        addSpaced(playCard, touchControlsButton, 48, 6);
+        Button touchSettingsButton = button("Ajustes gerais dos controles", false, v -> showTouchControlsDialog());
+        addSpaced(playCard, touchSettingsButton, 44, 6);
         TextView playHint = text(
                 "Se for a primeira vez, prepare os recursos na seção abaixo antes de iniciar.",
                 12, 0xff68728a, false);
@@ -1133,6 +1135,10 @@ public final class MainActivity extends Activity {
             return;
         }
         launchAuthenticatedClient(resourceSummary, refreshToken);
+    }
+
+    private void openTouchControlsEditor() {
+        startActivity(new Intent(this, TouchControlsEditorActivity.class));
     }
 
     private void showTouchControlsDialog() {
