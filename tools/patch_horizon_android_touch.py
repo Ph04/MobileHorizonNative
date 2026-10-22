@@ -167,7 +167,7 @@ replace_once(remote,
             self.store_skin(location, rgba);
         }
         for (entity_id, location) in skins {
-            if !self.skin_slots.iter().any(|(known, _)| known == &location) {
+            if !self.skin_slots.iter().any(|(known, _, _)| known == &location) {
                 continue;
             }
             if let Some(mob) = self.mobs.iter_mut().find(|mob| mob.id == entity_id) {
@@ -2951,3 +2951,62 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
 
 
 print("Applied Java-compatible server resource packs, item text/model components and multiplayer skin fixes.")
+
+
+# Resource-pack reloads rebuild HudAtlas. Preserve dynamic skin sprite identities
+# and the corresponding RGBA pixels, or remote players revert to missing/default
+# skins while the list incorrectly believes their skins are still resident.
+pack_patch("crates/horizon-client/src/game.rs",
+    '''    skin_slots: Vec<(String, usize)>,''',
+    '''    skin_slots: Vec<(String, usize, Vec<u8>)>,''',
+    "retain player skin pixels across resource reloads")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            let (old, slot) = self.skin_slots.remove(0);
+            self.gui.atlas.sprites.remove(&old);
+            slot''', '''            let (old, slot, _) = self.skin_slots.remove(0);
+            self.gui.atlas.sprites.remove(&old);
+            slot''', "evict old skin slot including cached pixels")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''        self.map_patches.push(horizon_client::font::Patch {
+            x: (rect.u0 * w).round() as u32,
+            y: (rect.v0 * h).round() as u32,
+            width: 64,
+            height: 64,
+            rgba,
+        });
+        self.gui.atlas.sprites.insert(location.clone(), rect);
+        self.skin_slots.push((location, slot));''', '''        self.map_patches.push(horizon_client::font::Patch {
+            x: (rect.u0 * w).round() as u32,
+            y: (rect.v0 * h).round() as u32,
+            width: 64,
+            height: 64,
+            rgba: rgba.clone(),
+        });
+        self.gui.atlas.sprites.insert(location.clone(), rect);
+        self.skin_slots.push((location, slot, rgba));''', "retain downloaded RGBA per skin slot")
+
+pack_patch("crates/horizon-client/src/game/packs.rs", '''        self.pack = pack;
+        self.gui = gui;
+        horizon_client::ui_theme::reset_atlas();''', '''        self.pack = pack;
+        self.gui = gui;
+        horizon_client::ui_theme::reset_atlas();
+        // Rebuilding HudAtlas drops runtime-added player skin sprite names and
+        // pixels. Restore both from retained RGBA before existing player entities
+        // draw with their previous skins.
+        let (skin_atlas_width, skin_atlas_height) =
+            (self.gui.atlas.width as f32, self.gui.atlas.height as f32);
+        for (location, slot, rgba) in &self.skin_slots {
+            let sprite_name = format!("horizon/skin{slot}");
+            let Some(rect) = self.gui.atlas.sprites.get(&sprite_name).copied() else {
+                log::warn!("Horizon: skin atlas slot missing after resource reload: slot={slot}");
+                continue;
+            };
+            self.gui.atlas.sprites.insert(location.clone(), rect);
+            self.map_patches.push(horizon_client::font::Patch {
+                x: (rect.u0 * skin_atlas_width).round() as u32,
+                y: (rect.v0 * skin_atlas_height).round() as u32,
+                width: 64,
+                height: 64,
+                rgba: rgba.clone(),
+            });
+        }''', "restore player skin sprites and pixels after resource reload")
