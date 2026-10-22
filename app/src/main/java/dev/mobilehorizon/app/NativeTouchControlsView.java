@@ -6,6 +6,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
@@ -53,6 +54,8 @@ final class NativeTouchControlsView extends View {
     static final String KEY_CUSTOM_BUTTONS = "custom_buttons_v1";
     static final String KEY_SNAP_GAP = "snap_gap_dp";
     private static final String KEY_UNIFORM_SIZE_VERSION = "uniform_button_size_version";
+    private static final String KEY_FLOAT_MENU_X = "floating_menu_x";
+    private static final String KEY_FLOAT_MENU_Y = "floating_menu_y";
 
     private static final int FUNCTION_DEFAULT = 0;
     private static final int FUNCTION_KEY = 1;
@@ -66,12 +69,13 @@ final class NativeTouchControlsView extends View {
             DROP = 10, SWAP = 11, PICK = 12, PERSPECTIVE = 13, CHAT = 14,
             HOTBAR_PREV = 15, HOTBAR_NEXT = 16, TAB = 17, ENTER = 18, IGNORED = 19,
             MOUSE_LEFT = 20, MOUSE_RIGHT = 21, KEYBOARD = 22, EDITOR = 23,
-            ADD_BUTTON = 24, DONE_EDITING = 25, CUSTOM_BUTTON_START = 1000;
+            ADD_BUTTON = 24, DONE_EDITING = 25, FLOATING_MENU = 26, CUSTOM_BUTTON_START = 1000;
     private final Activity activity;
     private final NativeGameActivity gameActivity;
     private final boolean previewOnly;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint snapMeasurePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path cursorPath = new Path();
     private final Map<Integer, PointerTrack> pointers = new HashMap<>();
     private final Set<Integer> heldKeys = new HashSet<>();
     private final Set<Integer> pressedControls = new HashSet<>();
@@ -83,6 +87,8 @@ final class NativeTouchControlsView extends View {
     private boolean editingControls;
     private boolean gameplayMode;
     private float snapGapDp = 12f;
+    private float floatingMenuX = 0.52f;
+    private float floatingMenuY = 0.14f;
     private PopupWindow activeButtonMenu;
     /** Alignment guide coordinates in view pixels; NaN means no active snap. */
     private float snapGuideX = Float.NaN;
@@ -94,7 +100,7 @@ final class NativeTouchControlsView extends View {
                 gameplayMode = active;
                 invalidate();
             }
-            modeHandler.postDelayed(this, 220);
+            modeHandler.postDelayed(this, 80);
         }
     };
 
@@ -115,6 +121,7 @@ final class NativeTouchControlsView extends View {
         final int control;
         boolean moved;
         boolean editorDrag;
+        boolean menuDrag;
         PointerTrack(float x, float y, int control) {
             startX = lastX = x; startY = lastY = y; this.control = control;
         }
@@ -191,6 +198,8 @@ final class NativeTouchControlsView extends View {
             if (!buttonLayouts.isEmpty()) saveButtonLayouts();
             prefs.edit().putInt(KEY_UNIFORM_SIZE_VERSION, 1).apply();
         }
+        floatingMenuX = clamp(prefs.getFloat(KEY_FLOAT_MENU_X, 0.52f), 0.04f, 0.96f);
+        floatingMenuY = clamp(prefs.getFloat(KEY_FLOAT_MENU_Y, 0.14f), 0.06f, 0.94f);
         gameplayMode = gameActivity != null && gameActivity.isGameplayMode();
         if (gameActivity != null) modeHandler.post(modePoll);
         if (previewOnly) {
@@ -214,7 +223,10 @@ final class NativeTouchControlsView extends View {
                 if (spec.id != JOYSTICK) drawButton(canvas, spec);
             }
         }
-        if (!previewOnly) drawToolbar(canvas);
+        if (!previewOnly) {
+            drawToolbar(canvas);
+            drawFloatingMenuButton(canvas);
+        }
         if (editingControls) drawEditorToolbar(canvas);
         drawMouseCursor(canvas);
     }
@@ -234,27 +246,43 @@ final class NativeTouchControlsView extends View {
         invalidate();
     }
 
-    /** Draw an on-screen pointer so menus can be targeted without a hardware mouse. */
+    /** High-contrast virtual cursor, hidden whenever Minecraft currently captures the native cursor. */
     private void drawMouseCursor(Canvas canvas) {
-        if (previewOnly || getWidth() <= 0 || getHeight() <= 0 || (gameplayMode && !editingControls)) return;
-        float x = clamp(virtualMouseX, 0, getWidth() - 1f);
-        float y = clamp(virtualMouseY, 0, getHeight() - 1f);
-        android.graphics.Path cursor = new android.graphics.Path();
-        cursor.moveTo(x, y);
-        cursor.lineTo(x + dp(1), y + dp(22));
-        cursor.lineTo(x + dp(7), y + dp(16));
-        cursor.lineTo(x + dp(13), y + dp(27));
-        cursor.lineTo(x + dp(18), y + dp(24));
-        cursor.lineTo(x + dp(12), y + dp(14));
-        cursor.lineTo(x + dp(21), y + dp(14));
-        cursor.close();
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(2.5f));
-        paint.setColor(Color.BLACK);
-        canvas.drawPath(cursor, paint);
+        if (previewOnly || getWidth() <= 0 || getHeight() <= 0 || !cursorInitialized) return;
+        if (gameActivity != null) gameplayMode = gameActivity.isGameplayMode();
+        if (gameplayMode && !editingControls) return;
+        float size = dp(24);
+        float x = clamp(virtualMouseX, dp(3), Math.max(dp(3), getWidth() - size - dp(2)));
+        float y = clamp(virtualMouseY, dp(3), Math.max(dp(3), getHeight() - size - dp(2)));
+        cursorPath.reset();
+        cursorPath.moveTo(x, y);
+        cursorPath.lineTo(x + dp(2), y + dp(22));
+        cursorPath.lineTo(x + dp(7), y + dp(16));
+        cursorPath.lineTo(x + dp(13), y + dp(27));
+        cursorPath.lineTo(x + dp(18), y + dp(24));
+        cursorPath.lineTo(x + dp(12), y + dp(14));
+        cursorPath.lineTo(x + dp(21), y + dp(13));
+        cursorPath.close();
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.WHITE);
-        canvas.drawPath(cursor, paint);
+        paint.setColor(0x5539D6F2);
+        canvas.drawCircle(x + dp(5), y + dp(5), dp(9), paint);
+        canvas.save();
+        canvas.translate(dp(1.2f), dp(1.2f));
+        paint.setColor(0xCC000000);
+        canvas.drawPath(cursorPath, paint);
+        canvas.restore();
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(0xFFF9FCFF);
+        canvas.drawPath(cursorPath, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1.6f));
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        paint.setColor(0xFF17243A);
+        canvas.drawPath(cursorPath, paint);
+        paint.setStrokeWidth(dp(0.9f));
+        paint.setColor(0xFF64E7FF);
+        canvas.drawLine(x + dp(3), y + dp(5), x + dp(3), y + dp(16), paint);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawJoystick(Canvas canvas) {
@@ -356,11 +384,37 @@ final class NativeTouchControlsView extends View {
     private float toolbarY() { return dp(31); }
 
     private void drawToolbar(Canvas canvas) {
-        if (controlsVisible) {
-            drawToolbarButton(canvas, KEYBOARD, "⌨", toolbarX(34), toolbarY());
-            drawToolbarButton(canvas, EDITOR, editingControls ? "✎" : "⚙", toolbarX(78), toolbarY());
+        if (controlsVisible) drawToolbarButton(canvas, KEYBOARD, "⌨", toolbarX(34), toolbarY());
+        drawToolbarButton(canvas, TOGGLE, controlsVisible ? "×" : "+", toolbarX(78), toolbarY());
+    }
+
+    private float floatingMenuPixelX() {
+        return clamp(floatingMenuX * getWidth(), dp(24), Math.max(dp(24), getWidth() - dp(24)));
+    }
+
+    private float floatingMenuPixelY() {
+        return clamp(floatingMenuY * getHeight(), dp(24), Math.max(dp(24), getHeight() - dp(24)));
+    }
+
+    private void drawFloatingMenuButton(Canvas canvas) {
+        if (previewOnly || getWidth() <= 0 || getHeight() <= 0) return;
+        float x = floatingMenuPixelX(), y = floatingMenuPixelY(), radius = dp(18);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(0xE22A4261);
+        canvas.drawRoundRect(x - radius, y - radius, x + radius, y + radius, dp(11), dp(11), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1.4f));
+        paint.setColor(0xFFE4F4FF);
+        canvas.drawRoundRect(x - radius, y - radius, x + radius, y + radius, dp(11), dp(11), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2f));
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setColor(Color.WHITE);
+        for (int i = -1; i <= 1; i++) {
+            float yy = y + i * dp(5);
+            canvas.drawLine(x - dp(7), yy, x + dp(7), yy, paint);
         }
-        drawToolbarButton(canvas, TOGGLE, controlsVisible ? "×" : "+", toolbarX(122), toolbarY());
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawEditorToolbar(Canvas canvas) {
@@ -750,6 +804,48 @@ final class NativeTouchControlsView extends View {
         label.setTextSize(size);
         if (bold) label.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         return label;
+    }
+
+    private void showGameControlMenu() {
+        if (gameActivity == null || previewOnly) return;
+        String[] items = new String[] {
+                "Personalizar layout",
+                "Ajustes gerais dos controles",
+                controlsVisible ? "Ocultar controles" : "Mostrar controles",
+                "Fechar jogo"
+        };
+        new AlertDialog.Builder(gameActivity)
+                .setTitle("Configurações do jogo")
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) {
+                        controlsVisible = true;
+                        editingControls = true;
+                        snapGuideX = Float.NaN;
+                        snapGuideY = Float.NaN;
+                        Toast.makeText(activity, "Arraste os controles; toque em um para configurar. ✓ salva.", Toast.LENGTH_LONG).show();
+                        invalidate();
+                    } else if (which == 1) {
+                        showGlobalSettingsDialog();
+                    } else if (which == 2) {
+                        controlsVisible = !controlsVisible;
+                        if (!controlsVisible) {
+                            editingControls = false;
+                            releaseHeldControls();
+                        }
+                        invalidate();
+                    } else if (which == 3) {
+                        new AlertDialog.Builder(gameActivity)
+                                .setTitle("Fechar o jogo?")
+                                .setMessage("Você voltará à tela inicial do MobileHorizon.")
+                                .setNegativeButton("Cancelar", (d, w) -> { })
+                                .setPositiveButton("Fechar jogo", (d, w) -> {
+                                    releaseAllInputs();
+                                    gameActivity.finish();
+                                })
+                                .show();
+                    }
+                })
+                .show();
     }
 
     private void showButtonMiniMenu(int id) {
@@ -1197,18 +1293,6 @@ final class NativeTouchControlsView extends View {
         } else if (control == KEYBOARD) {
             showKeyboardDialog();
             control = IGNORED;
-        } else if (control == EDITOR) {
-            editingControls = !editingControls;
-            snapGuideX = Float.NaN;
-            snapGuideY = Float.NaN;
-            Toast.makeText(activity, editingControls
-                    ? "Modo de edição: arraste os botões; as guias azuis ajudam a alinhar."
-                    : "Layout de controles salvo.", Toast.LENGTH_SHORT).show();
-            if (!editingControls) {
-                saveButtonLayouts();
-                saveCustomButtons();
-            }
-            control = IGNORED;
         } else if (control == ADD_BUTTON && editingControls) {
             showAddButtonDialog();
             control = IGNORED;
@@ -1224,17 +1308,22 @@ final class NativeTouchControlsView extends View {
                 activity.finish();
             }
             control = IGNORED;
-        } else if (control == JOYSTICK && joystickPointer == -1) {
-            joystickPointer = id; joystickX = x; joystickY = y;
-        } else if (control == JOYSTICK) {
-            // Never let a second finger on the joystick trigger mouse input.
-            control = IGNORED;
+        boolean editorDrag = editingControls && isEditableButton(control);
+        if (control == JOYSTICK && !editorDrag) {
+            if (joystickPointer == -1) {
+                joystickPointer = id;
+                joystickX = x;
+                joystickY = y;
+            } else {
+                control = IGNORED;
+            }
         }
         PointerTrack track = new PointerTrack(x, y, control);
-        track.editorDrag = editingControls && isEditableButton(control);
+        track.editorDrag = editorDrag;
+        track.menuDrag = control == FLOATING_MENU && !previewOnly;
         pointers.put(id, track);
-        if (track.editorDrag) {
-            // Wait for a drag before changing the position. A simple tap opens the editor.
+        if (track.editorDrag || track.menuDrag) {
+            // A tap opens a settings panel; dragging moves an editable control or menu button.
         } else if (control == JOYSTICK) updateJoystick(x, y);
         else if (control != NONE && control != TOGGLE && control != IGNORED) activateControl(control, x, y);
         else if (control == NONE) {
@@ -1252,7 +1341,13 @@ final class NativeTouchControlsView extends View {
             float x = event.getX(i), y = event.getY(i);
             float dx = x - track.lastX, dy = y - track.lastY;
             if (Math.abs(x - track.startX) > dp(7) || Math.abs(y - track.startY) > dp(7)) track.moved = true;
-            if (track.editorDrag) {
+            if (track.menuDrag) {
+                if (track.moved) {
+                    floatingMenuX = clamp(x / Math.max(1f, getWidth()), 0.04f, 0.96f);
+                    floatingMenuY = clamp(y / Math.max(1f, getHeight()), 0.06f, 0.94f);
+                    invalidate();
+                }
+            } else if (track.editorDrag) {
                 if (Math.abs(x - track.startX) > dp(7) || Math.abs(y - track.startY) > dp(7)) track.moved = true;
                 if (track.moved) setButtonPosition(track.control, x, y);
             } else if (track.control == JOYSTICK) updateJoystick(x, y);
@@ -1275,7 +1370,16 @@ final class NativeTouchControlsView extends View {
             invalidate();
             return;
         }
-        if (track.editorDrag) {
+        if (track.menuDrag) {
+            if (track.moved) {
+                activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+                        .putFloat(KEY_FLOAT_MENU_X, floatingMenuX)
+                        .putFloat(KEY_FLOAT_MENU_Y, floatingMenuY)
+                        .apply();
+            } else {
+                showGameControlMenu();
+            }
+        } else if (track.editorDrag) {
             snapGuideX = Float.NaN;
             snapGuideY = Float.NaN;
             if (track.moved) {
@@ -1297,6 +1401,7 @@ final class NativeTouchControlsView extends View {
     }
 
     private int hitControl(float x, float y) {
+        if (!previewOnly && distanceSquared(x, y, floatingMenuPixelX(), floatingMenuPixelY()) <= dp(25) * dp(25)) return FLOATING_MENU;
         if (previewOnly) {
             if (!controlsVisible) return NONE;
             if (editingControls) {
@@ -1311,11 +1416,10 @@ final class NativeTouchControlsView extends View {
             }
             return best == null ? NONE : best.id;
         }
-        float toggleX = toolbarX(122), toggleY = toolbarY();
+        float toggleX = toolbarX(78), toggleY = toolbarY();
         if (distanceSquared(x, y, toggleX, toggleY) <= dp(25) * dp(25)) return TOGGLE;
         if (!controlsVisible) return NONE;
         if (distanceSquared(x, y, toolbarX(34), toolbarY()) <= dp(24) * dp(24)) return KEYBOARD;
-        if (distanceSquared(x, y, toolbarX(78), toolbarY()) <= dp(24) * dp(24)) return EDITOR;
         if (editingControls) {
             if (distanceSquared(x, y, toolbarX(166), toolbarY()) <= dp(24) * dp(24)) return ADD_BUTTON;
             if (distanceSquared(x, y, toolbarX(210), toolbarY()) <= dp(24) * dp(24)) return DONE_EDITING;
@@ -1568,6 +1672,11 @@ final class NativeTouchControlsView extends View {
     @Override protected void onDetachedFromWindow() {
         modeHandler.removeCallbacks(modePoll);
         releaseAllInputs();
+        if (activeButtonMenu != null) {
+            try { if (activeButtonMenu.isShowing()) activeButtonMenu.dismiss(); }
+            catch (IllegalArgumentException ignored) { }
+            activeButtonMenu = null;
+        }
         super.onDetachedFromWindow();
     }
 }
