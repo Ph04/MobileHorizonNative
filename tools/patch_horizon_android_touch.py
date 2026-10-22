@@ -2045,6 +2045,255 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''            let shown =
                 None => Text::legacy(&name),
             };''', "render legacy formatting in player-like NPC names")
 
+# Minecraft Java 26.3 display entities: text_display carries its content in
+# entity metadata (indices 23..27). Horizon previously tracked its position only.
+pack_patch("crates/horizon-client/src/game/remote.rs", '''struct Tracked {
+    kind: String,
+    position: [f64; 3],
+}''', '''struct Tracked {
+    kind: String,
+    position: [f64; 3],
+}
+
+#[derive(Clone)]
+struct RemoteTextDisplay {
+    text: Option<horizon_client::text::Text>,
+    line_width: i32,
+    background_color: i32,
+    text_opacity: i8,
+    flags: i8,
+}
+impl Default for RemoteTextDisplay {
+    fn default() -> Self {
+        Self {
+            text: None,
+            line_width: 200,
+            background_color: 0x40000000,
+            text_opacity: -1,
+            flags: 0,
+        }
+    }
+}''', "define tracked text display state")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''    entities: HashMap<i32, Tracked>,
+    lerps: HashMap<i32, Lerp>,''', '''    entities: HashMap<i32, Tracked>,
+    text_displays: HashMap<i32, RemoteTextDisplay>,
+    lerps: HashMap<i32, Lerp>,''', "store remote text displays")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            entities: HashMap::new(),
+            lerps: HashMap::new(),''', '''            entities: HashMap::new(),
+            text_displays: HashMap::new(),
+            lerps: HashMap::new(),''', "initialize remote text display storage")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                if let Some(r) = self.remote.as_mut() {
+                    if kind == "minecraft:player" {
+                        r.level_players.insert(p.id, p.uuid);
+                    } else {
+                        r.level_players.remove(&p.id);
+                    }
+                }
+                self.spawn_entity(p.id, &kind, p.position, rotation);''', '''                if let Some(r) = self.remote.as_mut() {
+                    if kind == "minecraft:player" {
+                        r.level_players.insert(p.id, p.uuid);
+                    } else {
+                        r.level_players.remove(&p.id);
+                    }
+                    if kind == "minecraft:text_display" {
+                        r.text_displays.insert(p.id, RemoteTextDisplay::default());
+                        log::info!("HorizonDiag: text_display_spawned entity_id={}", p.id);
+                    } else if kind == "minecraft:item_display" || kind == "minecraft:block_display" {
+                        log::warn!(
+                            "HorizonDiag: display_entity_tracked_but_not_rendered kind={} entity_id={}",
+                            kind, p.id
+                        );
+                    }
+                }
+                self.spawn_entity(p.id, &kind, p.position, rotation);''', "track display entities on spawn")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEntityData(p) => {
+                if let Some(m) = self.mobs.iter_mut().find(|m| m.id == p.id as u32)''', '''            C::SetEntityData(p) => {
+                if let Some(remote) = self.remote.as_mut() {
+                    if let Some(display) = remote.text_displays.get_mut(&p.id) {
+                        for (index, serializer, value) in &p.values {
+                            match (*index, *serializer, value) {
+                                (23, 5, Value::Text(tag)) => display.text = Some(remote_text(tag)),
+                                (24, 1, Value::Int(width)) => display.line_width = (*width).clamp(1, 2048),
+                                (25, 1, Value::Int(color)) => display.background_color = *color,
+                                (26, 0, Value::Byte(opacity)) => display.text_opacity = *opacity,
+                                (27, 0, Value::Byte(flags)) => display.flags = *flags,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                if let Some(m) = self.mobs.iter_mut().find(|m| m.id == p.id as u32)''', "decode text display metadata")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            r.entities.remove(&id);
+            r.lerps.remove(&id);''', '''            r.entities.remove(&id);
+            r.text_displays.remove(&id);
+            r.lerps.remove(&id);''', "discard display state when entity despawns")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            .filter_map(|(id, uuid)| Some((*id as u32, r.players.get(uuid)?.clone())))
+            .collect()
+    }''', '''            .filter_map(|(id, uuid)| Some((*id as u32, r.players.get(uuid)?.clone())))
+            .collect()
+    }
+    /// Text displays use the same tracked entity positions as other remote entities.
+    pub(super) fn remote_text_displays(&self) -> Vec<([f64; 3], horizon_client::text::Text, i32, u32, i8, i8)> {
+        let Some(r) = self.remote.as_ref() else { return Vec::new(); };
+        r.text_displays.iter().filter_map(|(id, display)| {
+            Some((
+                r.entities.get(id)?.position,
+                display.text.clone()?,
+                display.line_width,
+                display.background_color as u32,
+                display.text_opacity,
+                display.flags,
+            ))
+        }).collect()
+    }''', "expose text display state to renderer")
+
+pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(NameTag {
+                at: p,
+                lines,
+                light: l,
+                discrete,
+            });
+        }
+        tags
+    }''', '''            tags.push(NameTag {
+                at: p,
+                lines,
+                light: l,
+                discrete,
+                background_color: 0x3F000000,
+                text_opacity: 255,
+                see_through: false,
+            });
+        }
+        // TextDisplay is a first-class server entity, not a mob nametag.
+        // Render its component using the same font atlas, preserving styles.
+        for (position, text, line_width, background, opacity, flags) in self.remote_text_displays() {
+            let at = glam::DVec3::new(position[0], position[1], position[2]);
+            if at.distance_squared(camera) > 128.0 * 128.0 {
+                continue;
+            }
+            let text = text.resolve_legacy();
+            let plain = text.plain();
+            if plain.is_empty() {
+                continue;
+            }
+            let chars: Vec<char> = plain.chars().collect();
+            let max_width = line_width.clamp(1, 2048) as f32;
+            let mut split_lines: Vec<(Text, f64)> = Vec::new();
+            let mut start = 0usize;
+            let mut width = 0.0f32;
+            for (i, ch) in chars.iter().copied().enumerate() {
+                if ch == '\\n' {
+                    split_lines.push((text.slice(start, i), 0.0));
+                    start = i + 1;
+                    width = 0.0;
+                    continue;
+                }
+                let advance = self.gui.atlas.glyph(ch).map_or(6.0, |g| g.1);
+                if i > start && width + advance > max_width {
+                    split_lines.push((text.slice(start, i), 0.0));
+                    start = i;
+                    width = advance;
+                } else {
+                    width += advance;
+                }
+            }
+            if start < chars.len() {
+                split_lines.push((text.slice(start, chars.len()), 0.0));
+            }
+            split_lines.retain(|(line, _)| !line.is_empty());
+            let count = split_lines.len();
+            for (i, (_, lift)) in split_lines.iter_mut().enumerate() {
+                *lift = ((count as f64 - 1.0) / 2.0 - i as f64) * 0.225;
+            }
+            if split_lines.is_empty() {
+                continue;
+            }
+            let background_color = if flags & 0x04 != 0 { 0x40000000 } else { background };
+            let text_opacity = match opacity as u8 {
+                0..=3 => 255,
+                alpha => alpha,
+            };
+            let light = self.world.light(
+                position[0].floor() as i32,
+                position[1].floor() as i32,
+                position[2].floor() as i32,
+            );
+            tags.push(NameTag {
+                at,
+                lines: split_lines,
+                light,
+                discrete: false,
+                background_color,
+                text_opacity,
+                see_through: flags & 0x02 != 0,
+            });
+        }
+        tags
+    }''', "render server text display entities")
+
+pack_patch("crates/horizon-client/src/game/names.rs", '''        for tag in self.name_tags(camera, alpha) {
+            let o = tag.at - camera;
+            if tag.discrete {
+                self.name_tag_quads(o, &tag.lines, FADED, true, 0, vertex_light(tag.light), out);
+                continue;
+            }
+            // LightCoordsUtil.lightCoordsWithEmission(lightCoords, 2).
+            let lit = (tag.light >> 4).max(2) << 4 | (tag.light & 15).max(2);
+            self.name_tag_quads(o, &tag.lines, 0xFF, false, 0, vertex_light(lit), out);
+            // RenderPipelines.TEXT_SEE_THROUGH: no depth test, no lightmap.
+            self.name_tag_quads(o, &tag.lines, FADED, true, 2, 0, see_through);
+        }''', '''        for tag in self.name_tags(camera, alpha) {
+            let o = tag.at - camera;
+            if tag.discrete {
+                self.name_tag_quads(o, &tag.lines, FADED, true, 0, vertex_light(tag.light), tag.background_color, out);
+                continue;
+            }
+            // Text displays with see_through use only the no-depth-test pipeline.
+            if tag.see_through {
+                self.name_tag_quads(o, &tag.lines, u32::from(tag.text_opacity), true, 2, 0, tag.background_color, see_through);
+                continue;
+            }
+            // LightCoordsUtil.lightCoordsWithEmission(lightCoords, 2).
+            let lit = (tag.light >> 4).max(2) << 4 | (tag.light & 15).max(2);
+            self.name_tag_quads(o, &tag.lines, u32::from(tag.text_opacity), false, 0, vertex_light(lit), tag.background_color, out);
+            // RenderPipelines.TEXT_SEE_THROUGH: no depth test, no lightmap.
+            let faded = u32::from(tag.text_opacity) * FADED / 0xFF;
+            self.name_tag_quads(o, &tag.lines, faded, true, 2, 0, tag.background_color, see_through);
+        }''', "render display opacity and see-through flags")
+
+pack_patch("crates/horizon-client/src/game/names.rs", '''        light: u32,
+        out: &mut Vec<Vertex>,
+    ) {''', '''        light: u32,
+        background_color: u32,
+        out: &mut Vec<Vertex>,
+    ) {''', "support display background colours in text geometry")
+
+pack_patch("crates/horizon-client/src/game/names.rs", '''        // Options.getBackgroundOpacity(0.25) black, as ARGB.color.
+        const BACKGROUND: u32 = 0x3F00_0000;
+        let forward = glam::DVec3::from_array(view_vector(self.yaw, self.pitch));''', '''        let forward = glam::DVec3::from_array(view_vector(self.yaw, self.pitch));''', "use name tag supplied background color")
+
+pack_patch("crates/horizon-client/src/game/names.rs", '''                    BACKGROUND,
+                    true,
+                    2,''', '''                    background_color,
+                    true,
+                    2,''', "apply per-display background color")
+
+pack_patch("crates/horizon-client/src/game/names.rs", '''    light: u8,
+    discrete: bool,
+}''', '''    light: u8,
+    discrete: bool,
+    background_color: u32,
+    text_opacity: u8,
+    see_through: bool,
+}''', "store text display render properties")
+
 pack_patch("crates/horizon-client/src/game/remote.rs", '''        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
             out.data_mut().map_id = Some(*id);
         }
