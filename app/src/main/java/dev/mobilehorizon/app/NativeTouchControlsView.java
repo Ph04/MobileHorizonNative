@@ -276,8 +276,8 @@ final class NativeTouchControlsView extends View {
     }
 
     private void drawEditorToolbar(Canvas canvas) {
-        int addOffset = previewOnly ? 34 : 166;
-        int doneOffset = previewOnly ? 78 : 210;
+        int addOffset = 166;
+        int doneOffset = 210;
         drawToolbarButton(canvas, ADD_BUTTON, "+", toolbarX(addOffset), toolbarY());
         drawToolbarButton(canvas, DONE_EDITING, "✓", toolbarX(doneOffset), toolbarY());
     }
@@ -765,8 +765,8 @@ final class NativeTouchControlsView extends View {
         if (previewOnly) {
             if (!controlsVisible) return NONE;
             if (editingControls) {
-                if (distanceSquared(x, y, toolbarX(34), toolbarY()) <= dp(24) * dp(24)) return ADD_BUTTON;
-                if (distanceSquared(x, y, toolbarX(78), toolbarY()) <= dp(24) * dp(24)) return DONE_EDITING;
+                if (distanceSquared(x, y, toolbarX(166), toolbarY()) <= dp(24) * dp(24)) return ADD_BUTTON;
+                if (distanceSquared(x, y, toolbarX(210), toolbarY()) <= dp(24) * dp(24)) return DONE_EDITING;
             }
             ButtonSpec previewBest = null;
             float previewDistance = Float.MAX_VALUE;
