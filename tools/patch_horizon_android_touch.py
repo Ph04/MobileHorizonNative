@@ -3404,19 +3404,7 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                }
                 }
                 let item_display_item_update = p.values.iter().find_map(|(index, serializer, value)| {''', "log decoded metadata field types and safe item/text summaries")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''                let item_frame_rotation_update = p.values.iter().find_map(|(index, _, value)| {
-                    if *index == 9 {
-                        if let Value::Int(rotation) = value { Some(*rotation) } else { None }
-                    } else { None }
-                });''', '''                let item_frame_rotation_update = p.values.iter().find_map(|(index, _, value)| {
-                    if *index == 9 {
-                        match value {
-                            Value::Int(rotation) => Some(*rotation),
-                            Value::Byte(rotation) => Some(i32::from(*rotation)),
-                            _ => None,
-                        }
-                    } else { None }
-                });''', "accept byte or int item-frame rotation metadata")
+
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''                    if let Some(display) = remote.text_displays.get_mut(&p.id) {
                         for (index, serializer, value) in &p.values {
