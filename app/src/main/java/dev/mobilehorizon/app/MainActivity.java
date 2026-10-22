@@ -308,6 +308,9 @@ public final class MainActivity extends Activity {
         addSpaced(playCard, offlineNameButton, 46, 6);
         touchControlsButton = button("Customizar layout dos botões", true, v -> openTouchControlsEditor());
         addSpaced(playCard, touchControlsButton, 48, 6);
+        Button resourcesManagerButton = button("Gerenciador de recursos", false,
+                v -> startActivity(new Intent(this, ResourceManagerActivity.class)));
+        addSpaced(playCard, resourcesManagerButton, 48, 6);
         TextView playHint = text(
                 "Se for a primeira vez, prepare os recursos na seção abaixo antes de iniciar.",
                 12, 0xff68728a, false);

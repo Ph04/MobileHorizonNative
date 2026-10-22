@@ -871,6 +871,8 @@ final class NativeTouchControlsView extends View {
         if (custom != null && currentFunction == FUNCTION_DEFAULT) currentFunction = FUNCTION_KEY;
         int currentKey = custom != null ? custom.keyCode : (saved == null ? KeyEvent.KEYCODE_UNKNOWN : saved.keyCode);
         boolean joystickButton = id == JOYSTICK;
+        boolean inGame = gameActivity != null && !previewOnly;
+        final int[] chosenShape = {clampShape(currentShape)};
 
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -896,15 +898,17 @@ final class NativeTouchControlsView extends View {
         });
 
         TextView shapeLabel = miniLabel("Formato", 11, false);
-        Spinner shape = new Spinner(activity);
-        ArrayAdapter<String> shapeAdapter = new ArrayAdapter<>(activity,
-                android.R.layout.simple_spinner_item,
-                new String[]{"Retângulo arredondado", "Círculo / oval", "Quadrado"});
-        shapeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        shape.setAdapter(shapeAdapter);
-        shape.setSelection(clampShape(currentShape));
+        String[] shapeNames = new String[]{"Retângulo arredondado", "Círculo / oval", "Quadrado"};
+        Button shapeButton = new Button(activity);
+        shapeButton.setTextSize(11);
+        shapeButton.setMinHeight(dpInt(34));
+        shapeButton.setText("Formato: " + shapeNames[chosenShape[0]]);
+        shapeButton.setOnClickListener(v -> {
+            chosenShape[0] = (chosenShape[0] + 1) % shapeNames.length;
+            shapeButton.setText("Formato: " + shapeNames[chosenShape[0]]);
+        });
         panel.addView(shapeLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
-        panel.addView(shape, new LinearLayout.LayoutParams(-1, dpInt(34)));
+        panel.addView(shapeButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
 
         TextView opacityLabel = miniLabel("Opacidade " + Math.round(currentOpacity * 100) + "%", 11, false);
         SeekBar alpha = new SeekBar(activity);
@@ -928,7 +932,7 @@ final class NativeTouchControlsView extends View {
         functionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         function.setAdapter(functionAdapter);
         function.setSelection(clampFunction(currentFunction));
-        if (!joystickButton) {
+        if (!joystickButton && !inGame) {
             panel.addView(functionLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
             panel.addView(function, new LinearLayout.LayoutParams(-1, dpInt(34)));
         }
@@ -942,7 +946,7 @@ final class NativeTouchControlsView extends View {
         key.setPadding(dpInt(7), 0, dpInt(7), 0);
         key.setText(currentKey == KeyEvent.KEYCODE_UNKNOWN ? "" : KeyEvent.keyCodeToString(currentKey).replace("KEYCODE_", ""));
         key.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff7e91ad));
-        if (!joystickButton) {
+        if (!joystickButton && !inGame) {
             panel.addView(key, new LinearLayout.LayoutParams(-1, dpInt(36)));
             key.setVisibility(function.getSelectedItemPosition() == FUNCTION_KEY ? View.VISIBLE : View.GONE);
             function.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
@@ -954,7 +958,7 @@ final class NativeTouchControlsView extends View {
         }
 
         EditText label = null;
-        if (custom != null) {
+        if (custom != null && !inGame) {
             label = new EditText(activity);
             label.setSingleLine(true);
             label.setTextSize(12);
@@ -1005,9 +1009,16 @@ final class NativeTouchControlsView extends View {
         int menuHeight = Math.min(dpInt(290), Math.max(dpInt(180), screenHeight - dpInt(16)));
         scroller.measure(MeasureSpec.makeMeasureSpec(menuWidth, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(menuHeight, MeasureSpec.AT_MOST));
-        PopupWindow popup = new PopupWindow(scroller, menuWidth, menuHeight, true);
+        // A focusable PopupWindow steals focus from NativeActivity and may make
+        // the native surface exit on some devices. Keep the in-game panel touchable
+        // but non-focusable, and avoid nested focusable spinners/editors while playing.
+        PopupWindow popup = new PopupWindow(scroller, menuWidth, menuHeight, !inGame);
+        popup.setFocusable(!inGame);
+        popup.setTouchable(true);
         popup.setBackgroundDrawable(background);
         popup.setOutsideTouchable(true);
+        popup.setInputMethodMode(inGame
+                ? PopupWindow.INPUT_METHOD_NOT_NEEDED : PopupWindow.INPUT_METHOD_NEEDED);
         popup.setClippingEnabled(true);
         popup.setElevation(dpInt(8));
         activeButtonMenu = popup;
@@ -1021,7 +1032,14 @@ final class NativeTouchControlsView extends View {
         int menuY = buttonY > screenHeight / 2 ? buttonY - menuHeight - dpInt(8) : buttonY + dpInt(12);
         menuX = Math.max(dpInt(8), Math.min(screenWidth - menuWidth - dpInt(8), menuX));
         menuY = Math.max(dpInt(8), Math.min(screenHeight - menuHeight - dpInt(8), menuY));
-        popup.showAtLocation(this, Gravity.TOP | Gravity.LEFT, menuX, menuY);
+        try {
+            popup.showAtLocation(this, Gravity.TOP | Gravity.LEFT, menuX, menuY);
+        } catch (RuntimeException error) {
+            if (activeButtonMenu == popup) activeButtonMenu = null;
+            android.util.Log.e("MobileHorizonTouch", "Falha ao abrir personalização de botão", error);
+            Toast.makeText(activity, "Não foi possível abrir a personalização sem interromper o jogo.", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         reset.setOnClickListener(v -> {
             if (custom != null) {
@@ -1036,15 +1054,18 @@ final class NativeTouchControlsView extends View {
         });
         cancel.setOnClickListener(v -> popup.dismiss());
         save.setOnClickListener(v -> {
-            int selectedFunction = joystickButton ? FUNCTION_DEFAULT : function.getSelectedItemPosition();
-            int selectedKey = joystickButton ? KeyEvent.KEYCODE_UNKNOWN : parseKeyCode(key.getText().toString());
-            if (!joystickButton && selectedFunction == FUNCTION_KEY && selectedKey == KeyEvent.KEYCODE_UNKNOWN) {
+            int selectedFunction = (joystickButton || inGame)
+                    ? currentFunction : function.getSelectedItemPosition();
+            int selectedKey = (joystickButton || inGame)
+                    ? currentKey : parseKeyCode(key.getText().toString());
+            if (!joystickButton && !inGame && selectedFunction == FUNCTION_KEY
+                    && selectedKey == KeyEvent.KEYCODE_UNKNOWN) {
                 Toast.makeText(activity, "Informe uma tecla válida para essa função.", Toast.LENGTH_SHORT).show();
                 return;
             }
             float newScale = (size.getProgress() + 60) / 100f;
             float newOpacity = (alpha.getProgress() + 20) / 100f;
-            int newShape = clampShape(shape.getSelectedItemPosition());
+            int newShape = clampShape(chosenShape[0]);
             if (custom != null) {
                 String caption = customLabel == null ? custom.label : customLabel.getText().toString().trim();
                 if (caption.isEmpty() || caption.length() > 7) {
@@ -1052,18 +1073,20 @@ final class NativeTouchControlsView extends View {
                     return;
                 }
                 custom.label = caption;
-                custom.keyCode = selectedKey == KeyEvent.KEYCODE_UNKNOWN ? custom.keyCode : selectedKey;
+                if (!inGame) {
+                    custom.keyCode = selectedKey == KeyEvent.KEYCODE_UNKNOWN ? custom.keyCode : selectedKey;
+                    custom.function = selectedFunction;
+                }
                 custom.scale = newScale;
                 custom.opacity = newOpacity;
                 custom.shape = newShape;
-                custom.function = selectedFunction;
                 saveCustomButtons();
             } else {
                 ButtonLayout updated = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
                 updated.scale = newScale;
                 updated.opacity = newOpacity;
                 updated.shape = newShape;
-                if (!joystickButton) {
+                if (!joystickButton && !inGame) {
                     updated.function = selectedFunction;
                     updated.keyCode = selectedFunction == FUNCTION_KEY ? selectedKey : KeyEvent.KEYCODE_UNKNOWN;
                 }
