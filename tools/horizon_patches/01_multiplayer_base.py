@@ -101,6 +101,17 @@ replace_once(net,
             }""")
 
 
+replace_once(remote,
+    """        self.send_suggestion_request();
+        Ok(())
+    }
+    /// ClientSuggestionProvider.customSuggestion: the chat's completion""",
+    """        self.update_remote_skins();
+        self.send_suggestion_request();
+        Ok(())
+    }
+    /// ClientSuggestionProvider.customSuggestion: the chat's completion""")
+
 # Multiplayer diagnostics: log packet boundaries, custom-item component loss and
 # profile-texture lifecycle without dumping raw payloads, chat, URLs or profile blobs.
 replace_once(net,
