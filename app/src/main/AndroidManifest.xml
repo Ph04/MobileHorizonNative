@@ -24,6 +24,14 @@
         </activity>
 
         <activity
+            android:name=".TouchControlsEditorActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="Personalizar controles"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/NativeGameTheme" />
+
+        <activity
             android:name=".NativeGameActivity"
             android:process=":game"
             android:configChanges="orientation|screenSize|keyboardHidden"
