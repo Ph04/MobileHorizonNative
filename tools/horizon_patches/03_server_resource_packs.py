@@ -485,15 +485,29 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''            self.ui.opt
     }
     fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {''', "report actual resource reload result")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''use std::{collections::HashMap, sync::Arc, time::Instant};''', '''use std::{collections::HashMap, fs, path::PathBuf, sync::Arc, time::Instant};''', "resource-pack path imports")
+pack_patch("crates/horizon-client/src/game/remote.rs", '''use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+    time::{Duration, Instant},
+};''', '''use std::{
+    collections::{HashMap, VecDeque},
+    fs,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};''', "resource-pack path imports")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
+    skins: HashMap<u128, String>,
     listed: std::collections::HashSet<u128>,''', '''    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
+    skins: HashMap<u128, String>,
     pub(super) server_packs: Vec<(u128, PathBuf)>,
     listed: std::collections::HashSet<u128>,''', "active server-pack state")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            skin_textures: HashMap::new(),
+            skins: HashMap::new(),
             listed: Default::default(),''', '''            skin_textures: HashMap::new(),
+            skins: HashMap::new(),
             server_packs: Vec::new(),
             listed: Default::default(),''', "initialize active server-pack state")
 
@@ -836,13 +850,17 @@ pack_patch("crates/horizon-client/src/game.rs", '''    pending_server_pack_respo
 pack_patch("crates/horizon-client/src/item_data.rs", '''fn read_text(t: &Tag) -> Option<String> {
     match t {
         Tag::String(s) => Some(s.to_string_lossy()),
-        Tag::Compound(_) => t.get("text").and_then(string),
+        // A component's root text may be empty with the visible words in
+        // extra; use Horizon's normal component flattener for this version.
+        Tag::Compound(_) => Some(crate::entity_nbt::name_text(t).plain()),
         _ => None,
     }
 }''', '''fn read_text(t: &Tag) -> Option<String> {
     match t {
         Tag::String(s) => Some(s.to_string_lossy()),
-        Tag::Compound(_) => t.get("text").and_then(string),
+        // A component's root text may be empty with the visible words in
+        // extra; use Horizon's normal component flattener for this version.
+        Tag::Compound(_) => Some(crate::entity_nbt::name_text(t).plain()),
         _ => None,
     }
 }
