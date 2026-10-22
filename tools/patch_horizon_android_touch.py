@@ -3324,10 +3324,18 @@ pack_patch("crates/horizon-client/src/net.rs", '''    let mut registries = Dynam
 
 pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPush(p) => {
                 let id = p.id;
-                log::info!("Horizon: server resource-pack offer id={id:032x} state=configuration required={} hash_present={} origin={}", p.required, !p.hash.is_empty(), safe_resource_pack_origin(&p.url));''', '''            cfg::Clientbound::ResourcePackPush(p) => {
+                let url = p.url;
+                let hash = p.hash;
+                let required = p.required;
+                let supported_url = supported_pack_url(&url);
+                log::info!("Horizon: server resource-pack offer id={id:032x} state=configuration required={required} hash_present={} origin={}", !hash.is_empty(), safe_resource_pack_origin(&url));''', '''            cfg::Clientbound::ResourcePackPush(p) => {
                 diagnostic_pack_offers += 1;
                 let id = p.id;
-                log::info!("HorizonDiag: resource_pack_offer_decoded phase=configuration offer_number={} id={id:032x} required={} hash_present={} origin={}", diagnostic_pack_offers, p.required, !p.hash.is_empty(), safe_resource_pack_origin(&p.url));''', "log configuration resource-pack offer count")
+                let url = p.url;
+                let hash = p.hash;
+                let required = p.required;
+                let supported_url = supported_pack_url(&url);
+                log::info!("HorizonDiag: resource_pack_offer_decoded phase=configuration offer_number={} id={id:032x} required={required} hash_present={} origin={}", diagnostic_pack_offers, id, !hash.is_empty(), safe_resource_pack_origin(&url));''', "log configuration resource-pack offer count")
 
 pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::FinishConfiguration(_) => {
                 reply(cfg::Serverbound::FinishConfiguration(Empty))?;
