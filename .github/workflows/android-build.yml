@@ -307,7 +307,7 @@ jobs:
           # Keep desktop controller/HID backends disabled on Android to avoid
           # libudev/hidapi dependencies. CPAL audio is enabled by android-native's
           # horizon-client feature selection and uses Android's native audio backend.
-          UPSTREAM_COMMIT="defaa7cd2ade6dc45bcac0b418bf10601f05a120"
+          UPSTREAM_COMMIT="1ec2762fe6977e6d5cea8ba7bfed9eb471616f54"
           SOURCE="$RUNNER_TEMP/horizon-native-upstream"
           git init "$SOURCE"
           git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
