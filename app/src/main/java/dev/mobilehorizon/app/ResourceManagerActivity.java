@@ -56,7 +56,7 @@ public final class ResourceManagerActivity extends Activity {
     private static final int MAX_FOLDER_ENTRIES = 20_000;
     private static final int MAX_FOLDER_DEPTH = 64;
     private static final int BUFFER_SIZE = 32 * 1024;
-    private static final Pattern MOD_ID = Pattern.compile("(?m)^\\\\s*id\\\\s*=\\\\s*\\\"([A-Za-z0-9_.-]+)\\\"\\\\s*(?:#.*)?$");
+    private static final Pattern MOD_ID = Pattern.compile("(?m)^\\s*id\\s*=\\s*\"([A-Za-z0-9_.-]+)\"\\s*(?:#.*)?$");
 
     private enum Kind { TEXTURE, MOD, SHADER }
     private enum ArchiveKind { TEXTURE, JAVA_SHADER, HORIZON_SHADER, UNKNOWN }
@@ -220,7 +220,7 @@ public final class ResourceManagerActivity extends Activity {
                 catch (Exception error) { messages.add("✗ " + displayName(uri) + ": " + message(error)); }
             }
             final int imported = success;
-            final String summary = String.join("\\n", messages);
+            final String summary = String.join("\n", messages);
             mainHandler.post(() -> {
                 busy = false; setBusyUi(false); refreshResources();
                 showStatus("Importação concluída: " + imported + "/" + uris.size() + " arquivo(s).\\n" + summary);
@@ -274,7 +274,7 @@ public final class ResourceManagerActivity extends Activity {
         try (ZipFile zip = new ZipFile(file)) {
             java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
-                String name = entries.nextElement().getName().replace('\\\\', '/');
+                String name = entries.nextElement().getName().replace('\\', '/');
                 if (name.equals("pack.mcmeta")) packMeta = true;
                 if (name.startsWith("assets/") && !name.endsWith("/")) assets = true;
                 if (name.startsWith("shaders/") && !name.endsWith("/")) shaders = true;
@@ -614,7 +614,7 @@ public final class ResourceManagerActivity extends Activity {
     private void writeEnabledModIds(Set<String> ids) throws IOException {
         StringBuilder text = new StringBuilder();
         for (String id : new TreeSet<>(ids)) {
-            if (id.matches("[A-Za-z0-9_.-]+")) text.append("mod.").append(id).append(":true\\n");
+            if (id.matches("[A-Za-z0-9_.-]+")) text.append("mod.").append(id).append(":true\n");
         }
         writeUtf8(modListFile(), text.toString());
     }
@@ -622,7 +622,7 @@ public final class ResourceManagerActivity extends Activity {
     private String readGraphicsOption(String key) { return readOption(graphicsFile(), key); }
 
     private String readOption(File file, String key) {
-        String fallback = "resourcePacks".equals(key) ? "[\\\"vanilla\\\"]" : "";
+        String fallback = "resourcePacks".equals(key) ? "[\"vanilla\"]" : "";
         if (!file.isFile()) return fallback;
         String prefix = key + ":";
         try {
@@ -646,7 +646,7 @@ public final class ResourceManagerActivity extends Activity {
             } else out.add(line);
         }
         if (!found) out.add(prefix + value);
-        writeUtf8(file, String.join("\\n", out) + "\\n");
+        writeUtf8(file, String.join("\n", out) + "\n");
     }
 
     private String displayName(Uri uri) {
@@ -700,7 +700,7 @@ public final class ResourceManagerActivity extends Activity {
 
     private static String safeName(String source) {
         if (source == null) return "resource";
-        String value = source.replace('\\\\', '_').replace('/', '_').trim()
+        String value = source.replace('\\', '_').replace('/', '_').trim()
                 .replaceAll("[^A-Za-z0-9._ ()-]", "_");
         while (value.startsWith(".")) value = value.substring(1);
         if (value.isEmpty()) value = "resource";
@@ -709,7 +709,7 @@ public final class ResourceManagerActivity extends Activity {
 
     private static String safeSegment(String source) {
         String value = safeName(source);
-        if (".".equals(value) || "..".equals(value) || value.contains("/") || value.contains("\\\\")) {
+        if (".".equals(value) || "..".equals(value) || value.contains("/") || value.contains("\\")) {
             throw new IllegalArgumentException("Nome de arquivo inseguro.");
         }
         return value;
