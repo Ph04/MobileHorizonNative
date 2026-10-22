@@ -1232,11 +1232,10 @@ final class NativeTouchControlsView extends View {
     private void addPointer(MotionEvent event, int index) {
         int id = event.getPointerId(index);
         float x = event.getX(index), y = event.getY(index);
-        int control = hitControl(x, y);
-        if (control == NONE) {
-            int slot = hitHotbarSlot(x, y);
-            if (slot >= 0) control = HOTBAR_SLOT_START + slot;
-        }
+        // The invisible hotbar hit zone wins at the bottom-center HUD area, so
+        // taps on slots 1 and 9 are not swallowed by the joystick's larger hit radius.
+        int slot = hitHotbarSlot(x, y);
+        int control = slot >= 0 ? HOTBAR_SLOT_START + slot : hitControl(x, y);
         if (control == TOGGLE) {
             controlsVisible = !controlsVisible;
             if (!controlsVisible) {
