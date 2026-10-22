@@ -2287,11 +2287,12 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(N
                 background_color: 0x3F000000,
                 text_opacity: 255,
                 see_through: false,
+                display_transform: None,
             });
         }
         // TextDisplay is a first-class server entity, not a mob nametag.
         // Render its component using the same font atlas, preserving styles.
-        for (position, text, line_width, background, opacity, flags) in self.remote_text_displays() {
+        for (position, text, line_width, background, opacity, flags, transform) in self.remote_text_displays() {
             let at = glam::DVec3::new(position[0], position[1], position[2]);
             if at.distance_squared(camera) > 128.0 * 128.0 {
                 continue;
@@ -2351,6 +2352,7 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(N
                 background_color,
                 text_opacity,
                 see_through: flags & 0x02 != 0,
+                display_transform: Some(transform),
             });
         }
         tags
@@ -2369,21 +2371,33 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''        for tag in self
             self.name_tag_quads(o, &tag.lines, FADED, true, 2, 0, see_through);
         }''', '''        for tag in self.name_tags(camera, alpha) {
             let o = tag.at - camera;
+            let out_start = out.len();
+            let see_through_start = see_through.len();
             if tag.discrete {
                 self.name_tag_quads(o, &tag.lines, FADED, true, 0, vertex_light(tag.light), tag.background_color, out);
-                continue;
-            }
-            // Text displays with see_through use only the no-depth-test pipeline.
-            if tag.see_through {
+            } else if tag.see_through {
+                // Text displays with see_through use only the no-depth-test pipeline.
                 self.name_tag_quads(o, &tag.lines, u32::from(tag.text_opacity), true, 2, 0, tag.background_color, see_through);
-                continue;
+            } else {
+                // LightCoordsUtil.lightCoordsWithEmission(lightCoords, 2).
+                let lit = (tag.light >> 4).max(2) << 4 | (tag.light & 15).max(2);
+                self.name_tag_quads(o, &tag.lines, u32::from(tag.text_opacity), false, 0, vertex_light(lit), tag.background_color, out);
+                // RenderPipelines.TEXT_SEE_THROUGH: no depth test, no lightmap.
+                let faded = u32::from(tag.text_opacity) * FADED / 0xFF;
+                self.name_tag_quads(o, &tag.lines, faded, true, 2, 0, tag.background_color, see_through);
             }
-            // LightCoordsUtil.lightCoordsWithEmission(lightCoords, 2).
-            let lit = (tag.light >> 4).max(2) << 4 | (tag.light & 15).max(2);
-            self.name_tag_quads(o, &tag.lines, u32::from(tag.text_opacity), false, 0, vertex_light(lit), tag.background_color, out);
-            // RenderPipelines.TEXT_SEE_THROUGH: no depth test, no lightmap.
-            let faded = u32::from(tag.text_opacity) * FADED / 0xFF;
-            self.name_tag_quads(o, &tag.lines, faded, true, 2, 0, tag.background_color, see_through);
+            if let Some(transform) = &tag.display_transform {
+                let center = o.as_vec3();
+                let matrix = transform.matrix();
+                for vertex in &mut out[out_start..] {
+                    let p = glam::Vec3::from_array(vertex.pos);
+                    vertex.pos = (center + matrix.transform_point3(p - center)).to_array();
+                }
+                for vertex in &mut see_through[see_through_start..] {
+                    let p = glam::Vec3::from_array(vertex.pos);
+                    vertex.pos = (center + matrix.transform_point3(p - center)).to_array();
+                }
+            }
         }''', "render display opacity and see-through flags")
 
 pack_patch("crates/horizon-client/src/game/names.rs", '''        light: u32,
@@ -2410,6 +2424,7 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''    light: u8,
     background_color: u32,
     text_opacity: u8,
     see_through: bool,
+    display_transform: Option<super::remote::RemoteDisplayTransform>,
 }''', "store text display render properties")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
