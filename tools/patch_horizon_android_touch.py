@@ -3004,10 +3004,10 @@ fn profile_component_tag(raw: &[u8]) -> Option<horizon_world::nbt::Tag> {
         }
         0 => {
             if reader.boolean()? {
-                fields.push(("name".to_owned(), Tag::String(reader.string(16)?.into())));
+                fields.push(("name", Tag::String(reader.string(16)?.as_str().into())));
             }
             if reader.boolean()? {
-                fields.push(("id".to_owned(), Tag::String(reader.uuid()?.into())));
+                fields.push(("id", Tag::String(reader.uuid()?.as_str().into())));
             }
         }
         _ => return None,
@@ -3034,7 +3034,7 @@ fn profile_component_tag(raw: &[u8]) -> Option<horizon_world::nbt::Tag> {
         }
     }
     if reader.boolean()? {
-        fields.push(("model".to_owned(), Tag::Int(reader.varint()?)));
+        fields.push(("model", Tag::Int(reader.varint()?)));
     }
     if reader.pos != raw.len() { return None; }
     Some(Tag::compound(fields))
