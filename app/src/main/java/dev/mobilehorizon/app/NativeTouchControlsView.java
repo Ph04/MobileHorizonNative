@@ -861,6 +861,7 @@ final class NativeTouchControlsView extends View {
         int currentFunction = custom != null ? custom.function : (saved == null ? 0 : saved.function);
         if (custom != null && currentFunction == FUNCTION_DEFAULT) currentFunction = FUNCTION_KEY;
         int currentKey = custom != null ? custom.keyCode : (saved == null ? KeyEvent.KEYCODE_UNKNOWN : saved.keyCode);
+        boolean joystickButton = id == JOYSTICK;
 
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -918,8 +919,10 @@ final class NativeTouchControlsView extends View {
         functionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         function.setAdapter(functionAdapter);
         function.setSelection(clampFunction(currentFunction));
-        panel.addView(functionLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
-        panel.addView(function, new LinearLayout.LayoutParams(-1, dpInt(34)));
+        if (!joystickButton) {
+            panel.addView(functionLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
+            panel.addView(function, new LinearLayout.LayoutParams(-1, dpInt(34)));
+        }
 
         EditText key = new EditText(activity);
         key.setSingleLine(true);
@@ -930,14 +933,16 @@ final class NativeTouchControlsView extends View {
         key.setPadding(dpInt(7), 0, dpInt(7), 0);
         key.setText(currentKey == KeyEvent.KEYCODE_UNKNOWN ? "" : KeyEvent.keyCodeToString(currentKey).replace("KEYCODE_", ""));
         key.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff7e91ad));
-        panel.addView(key, new LinearLayout.LayoutParams(-1, dpInt(36)));
-        key.setVisibility(function.getSelectedItemPosition() == FUNCTION_KEY ? View.VISIBLE : View.GONE);
-        function.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long itemId) {
-                key.setVisibility(position == FUNCTION_KEY ? View.VISIBLE : View.GONE);
-            }
-            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
-        });
+        if (!joystickButton) {
+            panel.addView(key, new LinearLayout.LayoutParams(-1, dpInt(36)));
+            key.setVisibility(function.getSelectedItemPosition() == FUNCTION_KEY ? View.VISIBLE : View.GONE);
+            function.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+                @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long itemId) {
+                    key.setVisibility(position == FUNCTION_KEY ? View.VISIBLE : View.GONE);
+                }
+                @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+            });
+        }
 
         EditText label = null;
         if (custom != null) {
@@ -1022,9 +1027,9 @@ final class NativeTouchControlsView extends View {
         });
         cancel.setOnClickListener(v -> popup.dismiss());
         save.setOnClickListener(v -> {
-            int selectedFunction = function.getSelectedItemPosition();
-            int selectedKey = parseKeyCode(key.getText().toString());
-            if (selectedFunction == FUNCTION_KEY && selectedKey == KeyEvent.KEYCODE_UNKNOWN) {
+            int selectedFunction = joystickButton ? FUNCTION_DEFAULT : function.getSelectedItemPosition();
+            int selectedKey = joystickButton ? KeyEvent.KEYCODE_UNKNOWN : parseKeyCode(key.getText().toString());
+            if (!joystickButton && selectedFunction == FUNCTION_KEY && selectedKey == KeyEvent.KEYCODE_UNKNOWN) {
                 Toast.makeText(activity, "Informe uma tecla válida para essa função.", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -1049,8 +1054,10 @@ final class NativeTouchControlsView extends View {
                 updated.scale = newScale;
                 updated.opacity = newOpacity;
                 updated.shape = newShape;
-                updated.function = selectedFunction;
-                updated.keyCode = selectedFunction == FUNCTION_KEY ? selectedKey : KeyEvent.KEYCODE_UNKNOWN;
+                if (!joystickButton) {
+                    updated.function = selectedFunction;
+                    updated.keyCode = selectedFunction == FUNCTION_KEY ? selectedKey : KeyEvent.KEYCODE_UNKNOWN;
+                }
                 saveButtonLayouts();
             }
             invalidate();
@@ -1161,89 +1168,7 @@ final class NativeTouchControlsView extends View {
     }
 
     private void showButtonEditor(int id) {
-        if (previewOnly) {
-            showButtonMiniMenu(id);
-            return;
-        }
-        ButtonSpec spec = findButton(id);
-        if (spec == null) return;
-        CustomButton custom = findCustomButton(id);
-        ButtonLayout layout = buttonLayouts.get(id);
-        float currentScale = custom != null ? custom.scale : (layout == null ? defaultButtonScale(id) : layout.scale);
-        TextView sizeText = new TextView(activity);
-        SeekBar size = new SeekBar(activity);
-        size.setMax(180);
-        size.setProgress(Math.round(clamp(currentScale, 0.60f, 2.40f) * 100f) - 60);
-        sizeText.setText("Escala individual: " + Math.round(currentScale * 100) + "%");
-        size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                sizeText.setText("Escala individual: " + (progress + 60) + "%");
-            }
-            @Override public void onStartTrackingTouch(SeekBar bar) { }
-            @Override public void onStopTrackingTouch(SeekBar bar) { }
-        });
-        LinearLayout panel = new LinearLayout(activity);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding((int) dpInt(20), (int) dpInt(10), (int) dpInt(20), (int) dpInt(4));
-        panel.addView(sizeText, new LinearLayout.LayoutParams(-1, -2));
-        panel.addView(size, new LinearLayout.LayoutParams(-1, -2));
-        EditText label = null, key = null;
-        if (custom != null) {
-            label = new EditText(activity);
-            label.setSingleLine(true);
-            label.setHint("Texto do botão");
-            label.setText(custom.label);
-            key = new EditText(activity);
-            key.setSingleLine(true);
-            key.setHint("Tecla (ex.: G, SPACE, F6)");
-            key.setText(KeyEvent.keyCodeToString(custom.keyCode).replace("KEYCODE_", ""));
-            panel.addView(label, new LinearLayout.LayoutParams(-1, -2));
-            panel.addView(key, new LinearLayout.LayoutParams(-1, -2));
-        }
-        final EditText customLabel = label, customKey = key;
-        AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle("Personalizar " + spec.label)
-                .setView(panel)
-                .setNegativeButton("Cancelar", (d, which) -> { })
-                .setNeutralButton(custom != null ? "Excluir" : "Restaurar", null)
-                .setPositiveButton("Salvar", null)
-                .create();
-        dialog.setOnShowListener(ignored -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                int progress = size.getProgress();
-                float newScale = (progress + 60) / 100f;
-                if (custom != null) {
-                    String caption = customLabel.getText().toString().trim();
-                    int newKey = parseKeyCode(customKey.getText().toString());
-                    if (caption.isEmpty() || caption.length() > 7 || newKey == KeyEvent.KEYCODE_UNKNOWN) {
-                        Toast.makeText(activity, "Informe um nome curto e uma tecla válida.", Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                    custom.label = caption;
-                    custom.keyCode = newKey;
-                    custom.scale = newScale;
-                    saveCustomButtons();
-                } else {
-                    ButtonLayout updated = buttonLayouts.computeIfAbsent(id, ignoredId -> new ButtonLayout());
-                    updated.scale = newScale;
-                    saveButtonLayouts();
-                }
-                invalidate();
-                dialog.dismiss();
-            });
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
-                if (custom != null) {
-                    customButtons.remove(custom);
-                    saveCustomButtons();
-                } else {
-                    buttonLayouts.remove(id);
-                    saveButtonLayouts();
-                }
-                invalidate();
-                dialog.dismiss();
-            });
-        });
-        dialog.show();
+        showButtonMiniMenu(id);
     }
 
     private int parseKeyCode(String value) {
