@@ -498,8 +498,10 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''use std::{
 };''', "resource-pack path imports")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
+    /// The skin texture each profile's players show, once its download is ready.
     skins: HashMap<u128, String>,
     listed: std::collections::HashSet<u128>,''', '''    skin_textures: HashMap<u128, horizon_client::skins::Textures>,
+    /// The skin texture each profile's players show, once its download is ready.
     skins: HashMap<u128, String>,
     pub(super) server_packs: Vec<(u128, PathBuf)>,
     listed: std::collections::HashSet<u128>,''', "active server-pack state")
@@ -850,8 +852,9 @@ pack_patch("crates/horizon-client/src/game.rs", '''    pending_server_pack_respo
 pack_patch("crates/horizon-client/src/item_data.rs", '''fn read_text(t: &Tag) -> Option<String> {
     match t {
         Tag::String(s) => Some(s.to_string_lossy()),
-        // A component's root text may be empty with the visible words in
-        // extra; use Horizon's normal component flattener for this version.
+        // A component's root `text` may be empty with the visible words in
+        // `extra` (every legacy display name ViaVersion produces looks like
+        // this), so flatten the whole component instead of reading one key.
         Tag::Compound(_) => Some(crate::entity_nbt::name_text(t).plain()),
         _ => None,
     }
