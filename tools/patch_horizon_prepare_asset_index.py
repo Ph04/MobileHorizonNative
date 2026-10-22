@@ -113,7 +113,7 @@ fn launcher_assets(
     }
     Ok((assets, index))
 }"""
-    sounds, n = re.subn(pattern, new_function, sounds, count=1)
+    sounds, n = re.subn(pattern, lambda _match: new_function, sounds, count=1)
     if n != 1:
         raise SystemExit("Refusing unsafe asset-index patch: pinned sounds.rs function changed")
     path.write_text(sounds, encoding="utf-8")

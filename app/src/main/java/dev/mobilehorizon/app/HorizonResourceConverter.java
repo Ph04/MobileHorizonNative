@@ -292,7 +292,7 @@ final class HorizonResourceConverter {
         plan.put("asset_index_expected_sha1", expectedIndexSha1);
         plan.put("asset_index_sha1_matches_manifest", assetIndexWarning == null);
         plan.put("asset_index_validation", assetIndexWarning == null
-                ? "manifest-sha1-match" : "republished-index; individual-object-sha1-verified");
+                ? "manifest-sha1-match" : "index-sha1-mismatch; individual-object-sha1-verified");
         plan.put("unique_asset_objects", unique.size());
         plan.put("present_asset_objects", present);
         plan.put("missing_asset_objects", missing);
