@@ -3351,8 +3351,8 @@ pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::
 
 # Entity metadata is logged after decode, including item IDs and component IDs,
 # while text previews are short and escaped. No NBT, texture URLs or profile blobs.
-pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEntityData(p) => {
-                let item_display_item_update = p.values.iter().find_map(|(index, serializer, value)| {''', '''            C::SetEntityData(p) => {
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                }
+                let item_display_item_update = p.values.iter().find_map(|(index, serializer, value)| {''', '''                }
                 let diagnostic_entity_kind = self.remote.as_ref()
                     .and_then(|remote| remote.entities.get(&p.id))
                     .map(|entity| entity.kind.clone())
@@ -3719,5 +3719,57 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''        log::info!("Ho
             remote.server_packs.len()
         );
         self.pending_server_pack_responses.push(id);''', "trace server pack activation and cache metadata")
+
+
+
+# Minecraft Java 26.3 component ID 74 is banner_patterns. Its exact wire codec
+# is a VarInt list of Holder<BannerPattern> and DyeColor enum values. Preserve
+# the original bytes after safely consuming the schema so metadata packets do
+# not get discarded just because the renderer doesn't yet interpret the patterns.
+pack_patch("crates/horizon-protocol/src/item.rs", '''    pub const PROFILE: i32 = 72;
+}''', '''    pub const PROFILE: i32 = 72;
+    pub const BANNER_PATTERNS: i32 = 74;
+}''', "register banner_patterns component ID")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''fn skip_raw_component(kind: i32, r: &mut Reader) -> Result<()> {''', '''fn skip_banner_patterns(r: &mut Reader) -> Result<()> {
+    let count = r.count(4096)?;
+    for _ in 0..count {
+        // ByteBufCodecs.holder: id + 1, with zero followed by an inline
+        // BannerPattern (asset id and translation key).
+        if r.varint()? == 0 {
+            r.string(32767)?;
+            r.string(32767)?;
+        }
+        // DyeColor is an enum encoded as a VarInt in 26.3.
+        r.varint()?;
+    }
+    Ok(())
+}
+
+fn skip_raw_component(kind: i32, r: &mut Reader) -> Result<()> {''', "read banner pattern component payloads")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''        ATTRIBUTE_MODIFIERS => skip_attribute_modifiers(r)?,
+        PROFILE => skip_profile(r)?,
+        other => return Err(Error::new(format!("unsupported item component {other} (no safe wire codec)"))),''', '''        ATTRIBUTE_MODIFIERS => skip_attribute_modifiers(r)?,
+        PROFILE => skip_profile(r)?,
+        BANNER_PATTERNS => skip_banner_patterns(r)?,
+        other => return Err(Error::new(format!("unsupported item component {other} (no safe wire codec)"))),''', "preserve raw banner patterns in item stacks")
+
+pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
+    fn unknown_components_are_errors() {''', '''    #[test]
+    fn banner_patterns_component_is_preserved_without_dropping_slot() {
+        // One BannerPattern layer: registered pattern ID (holder id + 1), then dye color.
+        let bytes = [1, 5, 1, 0, 74, 1, 3, 2];
+        let mut reader = Reader::new(&bytes);
+        let stack = Slot::read(&mut reader).unwrap().unwrap();
+        assert_eq!(reader.remaining(), 0);
+        assert!(matches!(stack.added[0], (component::BANNER_PATTERNS, Component::Raw(_))));
+        let mut encoded = Writer::new();
+        Slot::write(&Some(stack), &mut encoded);
+        assert_eq!(encoded.data, bytes);
+    }
+
+    #[test]
+    fn unknown_components_are_errors() {''', "test banner-pattern stack round-trip")
 
 print("Applied Java-compatible server resource packs, detailed resource/item/text diagnostics, and multiplayer skin fixes.")
