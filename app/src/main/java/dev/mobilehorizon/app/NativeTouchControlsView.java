@@ -705,19 +705,19 @@ final class NativeTouchControlsView extends View {
 
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(10), dp(8), dp(10), dp(8));
+        panel.setPadding(dpInt(10), dpInt(8), dpInt(10), dpInt(8));
         panel.setBackgroundColor(Color.TRANSPARENT);
 
         TextView title = miniLabel("Botão: " + spec.label, 13, true);
-        panel.addView(title, new LinearLayout.LayoutParams(-1, dp(24)));
+        panel.addView(title, new LinearLayout.LayoutParams(-1, dpInt(24)));
 
         TextView scaleLabel = miniLabel("Tamanho " + Math.round(currentScale * 100) + "%", 11, false);
         SeekBar size = new SeekBar(activity);
         size.setMax(180);
         size.setProgress(Math.round(clamp(currentScale, 0.60f, 2.40f) * 100f) - 60);
         size.setPadding(0, 0, 0, 0);
-        panel.addView(scaleLabel, new LinearLayout.LayoutParams(-1, dp(18)));
-        panel.addView(size, new LinearLayout.LayoutParams(-1, dp(28)));
+        panel.addView(scaleLabel, new LinearLayout.LayoutParams(-1, dpInt(18)));
+        panel.addView(size, new LinearLayout.LayoutParams(-1, dpInt(28)));
         size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
                 scaleLabel.setText("Tamanho " + (progress + 60) + "%");
@@ -734,15 +734,15 @@ final class NativeTouchControlsView extends View {
         shapeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         shape.setAdapter(shapeAdapter);
         shape.setSelection(clampShape(currentShape));
-        panel.addView(shapeLabel, new LinearLayout.LayoutParams(-1, dp(17)));
-        panel.addView(shape, new LinearLayout.LayoutParams(-1, dp(34)));
+        panel.addView(shapeLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
+        panel.addView(shape, new LinearLayout.LayoutParams(-1, dpInt(34)));
 
         TextView opacityLabel = miniLabel("Opacidade " + Math.round(currentOpacity * 100) + "%", 11, false);
         SeekBar alpha = new SeekBar(activity);
         alpha.setMax(80);
         alpha.setProgress(Math.round(clamp(currentOpacity, 0.20f, 1f) * 100f) - 20);
-        panel.addView(opacityLabel, new LinearLayout.LayoutParams(-1, dp(18)));
-        panel.addView(alpha, new LinearLayout.LayoutParams(-1, dp(28)));
+        panel.addView(opacityLabel, new LinearLayout.LayoutParams(-1, dpInt(18)));
+        panel.addView(alpha, new LinearLayout.LayoutParams(-1, dpInt(28)));
         alpha.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
                 opacityLabel.setText("Opacidade " + (progress + 20) + "%");
@@ -759,8 +759,8 @@ final class NativeTouchControlsView extends View {
         functionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         function.setAdapter(functionAdapter);
         function.setSelection(clampFunction(currentFunction));
-        panel.addView(functionLabel, new LinearLayout.LayoutParams(-1, dp(17)));
-        panel.addView(function, new LinearLayout.LayoutParams(-1, dp(34)));
+        panel.addView(functionLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
+        panel.addView(function, new LinearLayout.LayoutParams(-1, dpInt(34)));
 
         EditText key = new EditText(activity);
         key.setSingleLine(true);
@@ -768,10 +768,10 @@ final class NativeTouchControlsView extends View {
         key.setTextColor(Color.WHITE);
         key.setHintTextColor(0xffaeb9cb);
         key.setHint("Tecla, ex.: G, SPACE, F6");
-        key.setPadding(dp(7), 0, dp(7), 0);
+        key.setPadding(dpInt(7), 0, dpInt(7), 0);
         key.setText(currentKey == KeyEvent.KEYCODE_UNKNOWN ? "" : KeyEvent.keyCodeToString(currentKey).replace("KEYCODE_", ""));
         key.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff7e91ad));
-        panel.addView(key, new LinearLayout.LayoutParams(-1, dp(36)));
+        panel.addView(key, new LinearLayout.LayoutParams(-1, dpInt(36)));
         key.setVisibility(function.getSelectedItemPosition() == FUNCTION_KEY ? View.VISIBLE : View.GONE);
         function.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long itemId) {
@@ -788,11 +788,11 @@ final class NativeTouchControlsView extends View {
             label.setTextColor(Color.WHITE);
             label.setHintTextColor(0xffaeb9cb);
             label.setHint("Texto do botão");
-            label.setPadding(dp(7), 0, dp(7), 0);
+            label.setPadding(dpInt(7), 0, dpInt(7), 0);
             label.setText(custom.label);
             label.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff7e91ad));
-            LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-1, dp(36));
-            labelParams.topMargin = dp(3);
+            LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-1, dpInt(36));
+            labelParams.topMargin = dpInt(3);
             panel.addView(label, labelParams);
         }
         final EditText customLabel = label;
@@ -809,10 +809,10 @@ final class NativeTouchControlsView extends View {
         Button save = new Button(activity);
         save.setText("Salvar");
         save.setTextSize(10);
-        actions.addView(reset, new LinearLayout.LayoutParams(0, dp(38), 1f));
-        actions.addView(cancel, new LinearLayout.LayoutParams(0, dp(38), 1f));
-        actions.addView(save, new LinearLayout.LayoutParams(0, dp(38), 1f));
-        panel.addView(actions, new LinearLayout.LayoutParams(-1, dp(40)));
+        actions.addView(reset, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
+        actions.addView(save, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
+        panel.addView(actions, new LinearLayout.LayoutParams(-1, dpInt(40)));
 
         ScrollView scroller = new ScrollView(activity);
         scroller.setFillViewport(false);
@@ -821,22 +821,22 @@ final class NativeTouchControlsView extends View {
 
         GradientDrawable background = new GradientDrawable();
         background.setColor(0xF21C2638);
-        background.setCornerRadius(dp(12));
-        background.setStroke(dp(1), 0xff7188a7);
+        background.setCornerRadius(dpInt(12));
+        background.setStroke(dpInt(1), 0xff7188a7);
 
         int[] screen = new int[2];
         getLocationOnScreen(screen);
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
-        int menuWidth = Math.min(dp(224), Math.max(dp(176), screenWidth - dp(16)));
-        int menuHeight = Math.min(dp(290), Math.max(dp(180), screenHeight - dp(16)));
+        int menuWidth = Math.min(dpInt(224), Math.max(dpInt(176), screenWidth - dpInt(16)));
+        int menuHeight = Math.min(dpInt(290), Math.max(dpInt(180), screenHeight - dpInt(16)));
         scroller.measure(MeasureSpec.makeMeasureSpec(menuWidth, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(menuHeight, MeasureSpec.AT_MOST));
         PopupWindow popup = new PopupWindow(scroller, menuWidth, menuHeight, true);
         popup.setBackgroundDrawable(background);
         popup.setOutsideTouchable(true);
         popup.setClippingEnabled(true);
-        popup.setElevation(dp(8));
+        popup.setElevation(dpInt(8));
         activeButtonMenu = popup;
         popup.setOnDismissListener(() -> {
             if (activeButtonMenu == popup) activeButtonMenu = null;
@@ -844,10 +844,10 @@ final class NativeTouchControlsView extends View {
 
         int buttonX = screen[0] + Math.round(spec.x);
         int buttonY = screen[1] + Math.round(spec.y);
-        int menuX = buttonX > screenWidth / 2 ? buttonX - menuWidth - dp(12) : buttonX + dp(12);
-        int menuY = buttonY > screenHeight / 2 ? buttonY - menuHeight - dp(8) : buttonY + dp(12);
-        menuX = Math.max(dp(8), Math.min(screenWidth - menuWidth - dp(8), menuX));
-        menuY = Math.max(dp(8), Math.min(screenHeight - menuHeight - dp(8), menuY));
+        int menuX = buttonX > screenWidth / 2 ? buttonX - menuWidth - dpInt(12) : buttonX + dpInt(12);
+        int menuY = buttonY > screenHeight / 2 ? buttonY - menuHeight - dpInt(8) : buttonY + dpInt(12);
+        menuX = Math.max(dpInt(8), Math.min(screenWidth - menuWidth - dpInt(8), menuX));
+        menuY = Math.max(dpInt(8), Math.min(screenHeight - menuHeight - dpInt(8), menuY));
         popup.showAtLocation(this, Gravity.TOP | Gravity.LEFT, menuX, menuY);
 
         reset.setOnClickListener(v -> {
@@ -903,7 +903,7 @@ final class NativeTouchControlsView extends View {
         android.content.SharedPreferences prefs = activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(14), dp(4), dp(14), dp(4));
+        panel.setPadding(dpInt(14), dpInt(4), dpInt(14), dpInt(4));
 
         android.widget.CheckBox enabled = new android.widget.CheckBox(activity);
         enabled.setText("Ativar controles na tela do jogo");
@@ -921,29 +921,29 @@ final class NativeTouchControlsView extends View {
         SeekBar size = new SeekBar(activity);
         size.setMax(60);
         size.setProgress(Math.round((scale - 0.70f) * 100f));
-        panel.addView(sizeLabel, new LinearLayout.LayoutParams(-1, dp(19)));
-        panel.addView(size, new LinearLayout.LayoutParams(-1, dp(30)));
+        panel.addView(sizeLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
+        panel.addView(size, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
         TextView alphaLabel = textSetting("Opacidade geral " + Math.round(opacity * 100) + "%");
         SeekBar alpha = new SeekBar(activity);
         alpha.setMax(65);
         alpha.setProgress(Math.round(opacity * 100f - 35f));
-        panel.addView(alphaLabel, new LinearLayout.LayoutParams(-1, dp(19)));
-        panel.addView(alpha, new LinearLayout.LayoutParams(-1, dp(30)));
+        panel.addView(alphaLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
+        panel.addView(alpha, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
         TextView sensitivityLabel = textSetting("Sensibilidade da câmera " + Math.round(sensitivity * 100) + "%");
         SeekBar sensitivityBar = new SeekBar(activity);
         sensitivityBar.setMax(150);
         sensitivityBar.setProgress(Math.round((sensitivity - 0.50f) * 100f));
-        panel.addView(sensitivityLabel, new LinearLayout.LayoutParams(-1, dp(19)));
-        panel.addView(sensitivityBar, new LinearLayout.LayoutParams(-1, dp(30)));
+        panel.addView(sensitivityLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
+        panel.addView(sensitivityBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
         TextView gapLabel = textSetting("Distância de encaixe " + Math.round(snapGapDp) + " dp");
         SeekBar gapBar = new SeekBar(activity);
         gapBar.setMax(28);
         gapBar.setProgress(Math.round(snapGapDp) - 4);
-        panel.addView(gapLabel, new LinearLayout.LayoutParams(-1, dp(19)));
-        panel.addView(gapBar, new LinearLayout.LayoutParams(-1, dp(30)));
+        panel.addView(gapLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
+        panel.addView(gapBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
         size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText("Tamanho geral " + (70 + progress) + "%")));
         alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText("Opacidade geral " + (35 + progress) + "%")));
@@ -1025,7 +1025,7 @@ final class NativeTouchControlsView extends View {
         });
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding((int) dp(20), (int) dp(10), (int) dp(20), (int) dp(4));
+        panel.setPadding((int) dpInt(20), (int) dpInt(10), (int) dpInt(20), (int) dpInt(4));
         panel.addView(sizeText, new LinearLayout.LayoutParams(-1, -2));
         panel.addView(size, new LinearLayout.LayoutParams(-1, -2));
         EditText label = null, key = null;
@@ -1489,6 +1489,7 @@ final class NativeTouchControlsView extends View {
     }
 
     private float dp(float value) { return value * density; }
+    private int dpInt(float value) { return Math.round(value * density); }
     private static float distanceSquared(float x1, float y1, float x2, float y2) {
         float dx = x1 - x2, dy = y1 - y2; return dx * dx + dy * dy;
     }
