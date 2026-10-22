@@ -1233,6 +1233,7 @@ final class NativeTouchControlsView extends View {
                 activity.finish();
             }
             control = IGNORED;
+        }
         boolean editorDrag = editingControls && isEditableButton(control);
         if (control == JOYSTICK && !editorDrag) {
             if (joystickPointer == -1) {
