@@ -2996,11 +2996,11 @@ impl ProfileComponentCursor<'_> {
 fn profile_component_tag(raw: &[u8]) -> Option<horizon_world::nbt::Tag> {
     use horizon_world::nbt::Tag;
     let mut reader = ProfileComponentCursor { bytes: raw, pos: 0 };
-    let mut fields: Vec<(String, Tag)> = Vec::new();
+    let mut fields: Vec<(&str, Tag)> = Vec::new();
     match reader.varint()? {
         1 => {
-            fields.push(("id".to_owned(), Tag::String(reader.uuid()?.into())));
-            fields.push(("name".to_owned(), Tag::String(reader.string(16)?.into())));
+            fields.push(("id", Tag::String(reader.uuid()?.as_str().into())));
+            fields.push(("name", Tag::String(reader.string(16)?.as_str().into())));
         }
         0 => {
             if reader.boolean()? {
@@ -3018,19 +3018,19 @@ fn profile_component_tag(raw: &[u8]) -> Option<horizon_world::nbt::Tag> {
     for _ in 0..count {
         let name = reader.string(64)?;
         let value = reader.string(32767)?;
-        let mut property = vec![
-            ("name".to_owned(), Tag::String(name.into())),
-            ("value".to_owned(), Tag::String(value.into())),
+        let mut property: Vec<(&str, Tag)> = vec![
+            ("name", Tag::String(name.as_str().into())),
+            ("value", Tag::String(value.as_str().into())),
         ];
         if reader.boolean()? {
-            property.push(("signature".to_owned(), Tag::String(reader.string(1024)?.into())));
+            property.push(("signature", Tag::String(reader.string(1024)?.as_str().into())));
         }
         properties.push(Tag::compound(property));
     }
-    fields.push(("properties".to_owned(), Tag::List(properties)));
+    fields.push(("properties", Tag::List(properties)));
     for key in ["skin", "cape", "elytra"] {
         if reader.boolean()? {
-            fields.push((key.to_owned(), Tag::String(reader.string(32767)?.into())));
+            fields.push((key, Tag::String(reader.string(32767)?.as_str().into())));
         }
     }
     if reader.boolean()? {
@@ -3174,6 +3174,96 @@ pack_patch("crates/horizon-client/src/game/item_draw.rs", '''    fn shield_textu
     }
 }''', "resolve profile texture paths for player-head special models")
 
+
+
+
+
+# Server-world item frames were not being fed into Game::item_frames, although
+# Game::frame_geometry already renders those structs. Keep remote frame state in
+# the same renderer path so contents, rotation, glow and maps are visible online.
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                self.spawn_entity(p.id, &kind, p.position, rotation);
+                if !self.spawn_remote_object(p.id, &kind, p.position, rotation[0], p.data) {''', '''                self.spawn_entity(p.id, &kind, p.position, rotation);
+                if kind == "minecraft:item_frame" || kind == "minecraft:glow_item_frame" {
+                    let frame = horizon_client::entities::ItemFrame {
+                        id: p.id as u32,
+                        pos: p.position.map(|value| value.floor() as i32),
+                        facing: p.data.clamp(0, 5) as u8,
+                        glow: kind == "minecraft:glow_item_frame",
+                        item: None,
+                        rotation: 0,
+                        drop_chance: 1.0,
+                        fixed: false,
+                        invisible: false,
+                        check_interval: 0,
+                    };
+                    self.item_frames.retain(|known| known.id != frame.id);
+                    log::info!(
+                        "HorizonDiag: remote_item_frame_spawned entity_id={} kind={} block_pos={:?} facing={} glow={}",
+                        frame.id, kind, frame.pos, frame.facing, frame.glow
+                    );
+                    self.item_frames.push(frame);
+                }
+                if !self.spawn_remote_object(p.id, &kind, p.position, rotation[0], p.data) {''', "track server item frames in the existing frame renderer")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEntityData(p) => {
+                let item_display_item_update = p.values.iter().find_map(|(index, serializer, value)| {''', '''            C::SetEntityData(p) => {
+                // ItemFrame.DATA_ITEM is metadata index 8 and DATA_ROTATION is 9.
+                // Convert the complete server stack with the same component bridge used
+                // by inventories and item_display entities before borrowing the frame.
+                let item_frame_stack_update: Option<Option<horizon_client::items::ItemStack>> =
+                    p.values.iter().find_map(|(index, _, value)| {
+                        if *index == 8 {
+                            if let Value::Item(stack) = value {
+                                Some(self.to_stack(stack))
+                            } else { None }
+                        } else { None }
+                    });
+                let item_frame_rotation_update = p.values.iter().find_map(|(index, _, value)| {
+                    if *index == 9 {
+                        if let Value::Int(rotation) = value { Some(*rotation) } else { None }
+                    } else { None }
+                });
+                if item_frame_stack_update.is_some() || item_frame_rotation_update.is_some() {
+                    if let Some(frame) = self.item_frames.iter_mut().find(|frame| frame.id == p.id as u32) {
+                        if let Some(item) = item_frame_stack_update {
+                            frame.item = item;
+                        }
+                        if let Some(rotation) = item_frame_rotation_update {
+                            frame.rotation = rotation.rem_euclid(8) as u8;
+                        }
+                        log::info!(
+                            "HorizonDiag: remote_item_frame_updated entity_id={} item_present={} item_id={} rotation={}",
+                            frame.id,
+                            frame.item.is_some(),
+                            frame.item.as_ref().map_or("-", |stack| stack.item.as_ref()),
+                            frame.rotation
+                        );
+                    }
+                }
+                let item_display_item_update = p.values.iter().find_map(|(index, serializer, value)| {''', "apply server item frame contents and rotation")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn remove_entity(&mut self, id: i32) {
+        self.mobs.retain(|m| m.id != id as u32);''', '''    fn remove_entity(&mut self, id: i32) {
+        self.item_frames.retain(|frame| frame.id != id as u32);
+        self.mobs.retain(|m| m.id != id as u32);''', "remove server item frames when their entities despawn")
+
+# Resource packs can override item-frame models too. The four baked models were
+# loaded only once at startup, so re-bake them when the active root changes.
+pack_patch("crates/horizon-client/src/game/packs.rs", '''        self.pack = pack;
+        self.gui = gui;
+        horizon_client::ui_theme::reset_atlas();''', '''        self.pack = pack;
+        self.gui = gui;
+        self.frame_model = super::frames::bake_frame(root, "item_frame");
+        self.glow_frame_model = super::frames::bake_frame(root, "glow_item_frame");
+        self.map_frame_model = super::frames::bake_frame(root, "item_frame_map");
+        self.glow_map_frame_model = super::frames::bake_frame(root, "glow_item_frame_map");
+        log::info!(
+            "Horizon: item-frame models refreshed normal={} glow={} map={} glow_map={} atlas_sprites={}",
+            self.frame_model.len(), self.glow_frame_model.len(),
+            self.map_frame_model.len(), self.glow_map_frame_model.len(),
+            self.gui.atlas.sprites.len()
+        );
+        horizon_client::ui_theme::reset_atlas();''', "reload item-frame models from active resource packs")
 
 
 print("Applied Java-compatible server resource packs, item text/model components and multiplayer skin fixes.")
