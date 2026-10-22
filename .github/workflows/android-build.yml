@@ -14,6 +14,7 @@ on:
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
       - "tools/horizon_server_packs.rs"
+      - "tools/horizon-revisions.env"
       - "tools/setup_android_signing_termux.sh"
       - "build.gradle"
       - "settings.gradle"
@@ -27,6 +28,7 @@ on:
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
       - "tools/horizon_server_packs.rs"
+      - "tools/horizon-revisions.env"
       - "tools/setup_android_signing_termux.sh"
       - "build.gradle"
       - "settings.gradle"
@@ -129,7 +131,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          UPSTREAM_COMMIT="24bcef42beaf1382e48964b7efa7aef3f5f86792"
+          source tools/horizon-revisions.env
+          UPSTREAM_COMMIT="$HORIZON_PREPARE_COMMIT"
           SOURCE="$RUNNER_TEMP/horizon-upstream"
           git init "$SOURCE"
           git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
@@ -309,7 +312,8 @@ jobs:
           # Keep desktop controller/HID backends disabled on Android to avoid
           # libudev/hidapi dependencies. CPAL audio is enabled by android-native's
           # horizon-client feature selection and uses Android's native audio backend.
-          UPSTREAM_COMMIT="defaa7cd2ade6dc45bcac0b418bf10601f05a120"
+          source tools/horizon-revisions.env
+          UPSTREAM_COMMIT="$HORIZON_RUNTIME_COMMIT"
           SOURCE="$RUNNER_TEMP/horizon-native-upstream"
           git init "$SOURCE"
           git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
