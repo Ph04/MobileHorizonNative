@@ -118,6 +118,11 @@ jobs:
           # cannot exec downloaded binaries from filesDir; java.rs must invoke the
           # system linker for both Java and javac rather than trying execve directly.
           python3 "$GITHUB_WORKSPACE/tools/patch_horizon_prepare_android_linker.py" "$SOURCE"
+          # Backport the asset-index republish fix without moving the pinned upstream revision.
+          python3 "$GITHUB_WORKSPACE/tools/patch_horizon_prepare_asset_index.py" "$SOURCE"
+          grep -Fq 'asset_index_accepted' "$SOURCE/crates/horizon-prepare/src/artifacts.rs"
+          grep -Fq 'accepted_asset_index_sha1' "$SOURCE/research-lock.json"
+          grep -Fq 'asset_index_accepted' "$SOURCE/crates/horizon-prepare/src/sounds.rs"
           grep -Fq 'exec /system/bin/linker64' "$SOURCE/crates/horizon-prepare/src/java.rs"
           grep -Fq 'command.arg(java);' "$SOURCE/crates/horizon-prepare/src/java.rs"
           grep -Fq 'exec /system/bin/linker64' "$GITHUB_WORKSPACE/app/src/main/java/dev/mobilehorizon/app/JdkRuntimeInstaller.java"

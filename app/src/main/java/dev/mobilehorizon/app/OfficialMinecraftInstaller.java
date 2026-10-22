@@ -528,6 +528,25 @@ final class OfficialMinecraftInstaller {
         return value != null && value.matches("[0-9a-f]{40}");
     }
 
+    /**
+     * Mojang can republish an asset index under the same ID while changing only
+     * translations. A mismatch is a warning, not an automatic rejection: callers
+     * must still verify every indexed asset object against its own SHA-1.
+     * Returns null for a match and a diagnostic for a valid, different SHA-1.
+     */
+    static String assetIndexSha1Warning(String expected, String actual) {
+        String expectedNormalized = normalizeSha1(expected);
+        String actualNormalized = normalizeSha1(actual);
+        if (!isSha1(expectedNormalized) || !isSha1(actualNormalized)) {
+            throw new IllegalArgumentException("SHA-1 inválido no manifesto ou no índice de assets.");
+        }
+        if (expectedNormalized.equals(actualNormalized)) return null;
+        return "O asset index foi republicado ou pertence a uma variante oficial diferente "
+                + "(SHA-1 do manifesto: " + expectedNormalized + "; índice local: "
+                + actualNormalized + "). Continuando com a verificação SHA-1 individual "
+                + "de cada asset object.";
+    }
+
     static boolean hasVerifiedVersionJsonSha1(File versionJsonFile) {
         if (versionJsonFile == null || !versionJsonFile.isFile()) return false;
         try {
