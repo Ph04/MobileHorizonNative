@@ -2950,4 +2950,224 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
     }''', "test complex and scalar component preservation") 
 
 
+
+
+# Resolve modern minecraft:profile item components instead of leaving all custom
+# player heads on the vanilla Steve fallback. The PROFILE value is safely decoded
+# above for packet framing; here we preserve the fields needed by the item renderer.
+pack_patch("crates/horizon-client/src/game/remote.rs", '''fn apply_display_transform(transform: &mut RemoteDisplayTransform, values: &[(u8, i32, Value)]) {''', '''struct ProfileComponentCursor<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+impl ProfileComponentCursor<'_> {
+    fn take(&mut self, count: usize) -> Option<&[u8]> {
+        let end = self.pos.checked_add(count)?;
+        if end > self.bytes.len() { return None; }
+        let start = self.pos;
+        self.pos = end;
+        Some(&self.bytes[start..end])
+    }
+    fn varint(&mut self) -> Option<i32> {
+        let mut out = 0u32;
+        for shift in (0..35).step_by(7) {
+            let byte = *self.take(1)?.first()?;
+            out |= u32::from(byte & 0x7f).checked_shl(shift)?;
+            if byte & 0x80 == 0 { return Some(out as i32); }
+        }
+        None
+    }
+    fn boolean(&mut self) -> Option<bool> {
+        Some(*self.take(1)?.first()? != 0)
+    }
+    fn string(&mut self, limit: usize) -> Option<String> {
+        let length = usize::try_from(self.varint()?).ok()?;
+        if length > limit { return None; }
+        String::from_utf8(self.take(length)?.to_vec()).ok()
+    }
+    fn uuid(&mut self) -> Option<String> {
+        let b = self.take(16)?;
+        Some(format!(
+            "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+            b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+        ))
+    }
+}
+fn profile_component_tag(raw: &[u8]) -> Option<horizon_world::nbt::Tag> {
+    use horizon_world::nbt::Tag;
+    let mut reader = ProfileComponentCursor { bytes: raw, pos: 0 };
+    let mut fields: Vec<(String, Tag)> = Vec::new();
+    match reader.varint()? {
+        1 => {
+            fields.push(("id".to_owned(), Tag::String(reader.uuid()?.into())));
+            fields.push(("name".to_owned(), Tag::String(reader.string(16)?.into())));
+        }
+        0 => {
+            if reader.boolean()? {
+                fields.push(("name".to_owned(), Tag::String(reader.string(16)?.into())));
+            }
+            if reader.boolean()? {
+                fields.push(("id".to_owned(), Tag::String(reader.uuid()?.into())));
+            }
+        }
+        _ => return None,
+    }
+    let count = reader.varint()?;
+    if !(0..=16).contains(&count) { return None; }
+    let mut properties = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let name = reader.string(64)?;
+        let value = reader.string(32767)?;
+        let mut property = vec![
+            ("name".to_owned(), Tag::String(name.into())),
+            ("value".to_owned(), Tag::String(value.into())),
+        ];
+        if reader.boolean()? {
+            property.push(("signature".to_owned(), Tag::String(reader.string(1024)?.into())));
+        }
+        properties.push(Tag::compound(property));
+    }
+    fields.push(("properties".to_owned(), Tag::List(properties)));
+    for key in ["skin", "cape", "elytra"] {
+        if reader.boolean()? {
+            fields.push((key.to_owned(), Tag::String(reader.string(32767)?.into())));
+        }
+    }
+    if reader.boolean()? {
+        fields.push(("model".to_owned(), Tag::Int(reader.varint()?)));
+    }
+    if reader.pos != raw.len() { return None; }
+    Some(Tag::compound(fields))
+}
+
+fn apply_display_transform(transform: &mut RemoteDisplayTransform, values: &[(u8, i32, Value)]) {''', "decode player-head profile component for the item model pipeline")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''        // An absent component in the network patch can suppress its default component
+        // in a modern item definition; StackView interprets the leading ! convention.''', '''        if let Some(Component::Raw(raw)) =
+            s.component(horizon_protocol::item::component::PROFILE)
+        {
+            if let Some(profile) = profile_component_tag(raw) {
+                out.data_mut().set_other("minecraft:profile", Some(profile));
+            } else {
+                static BAD_PROFILE_COMPONENTS: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+                if BAD_PROFILE_COMPONENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 8 {
+                    log::warn!("HorizonDiag: could not decode a minecraft:profile item component for a player head");
+                }
+            }
+        }
+
+        // An absent component in the network patch can suppress its default component
+        // in a modern item definition; StackView interprets the leading ! convention.''', "pass profile data into custom player-head rendering")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                    | horizon_protocol::item::component::CUSTOM_MODEL_DATA
+            ))
+            .collect();
+        let removed_unhandled_components: Vec<i32> = s.removed.iter().copied()''', '''                    | horizon_protocol::item::component::CUSTOM_MODEL_DATA
+                    | horizon_protocol::item::component::PROFILE
+            ))
+            .collect();
+        let removed_unhandled_components: Vec<i32> = s.removed.iter().copied()''', "classify profile components as handled")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                component::CUSTOM_MODEL_DATA => Some("minecraft:custom_model_data"),
+                _ => None,''', '''                component::CUSTOM_MODEL_DATA => Some("minecraft:custom_model_data"),
+                component::PROFILE => Some("minecraft:profile"),
+                _ => None,''', "preserve explicit removal of profile components")
+
+pack_patch("crates/horizon-client/src/game/remote.rs", '''        for (location, rgba) in self.skin_downloads.take_ready() {''', '''        // Player-head item displays have their own profile components and are not
+        // necessarily represented in the world-player profile table. Queue these
+        // skin URLs through the same bounded downloader and atlas slots.
+        let head_profiles = self.remote.as_ref().map(|remote| {
+            remote.item_displays.values().filter_map(|display| {
+                let stack = display.item.as_ref()?;
+                horizon_client::item_render::stack_view(stack)
+                    .patch.get("minecraft:profile")
+                    .and_then(|value| value.clone())
+            }).collect::<Vec<_>>()
+        }).unwrap_or_default();
+        for profile in head_profiles {
+            if let Some(url) = profile.get("skin").and_then(serde_json::Value::as_str) {
+                if url.starts_with("https://textures.minecraft.net/texture/")
+                    || url.starts_with("http://textures.minecraft.net/texture/")
+                {
+                    let textures = horizon_client::skins::Textures {
+                        skin: Some(url.to_owned()),
+                        ..Default::default()
+                    };
+                    let downloader = &mut self.skin_downloads;
+                    let _ = horizon_client::skins::lookup(&textures, false, |kind, url| {
+                        downloader.state(kind, url)
+                    });
+                    continue;
+                }
+            }
+            let properties = profile.get("properties").and_then(serde_json::Value::as_array);
+            let Some(property) = properties.and_then(|items| items.iter().find(|property| {
+                property.get("name").and_then(serde_json::Value::as_str) == Some("textures")
+            })) else { continue; };
+            let Some(encoded) = property.get("value").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let signature = if property.get("signature").and_then(serde_json::Value::as_str).is_some() {
+                horizon_client::skins::Signature::Signed
+            } else {
+                horizon_client::skins::Signature::Unsigned
+            };
+            let textures = horizon_client::skins::unpack(
+                encoded, signature, &horizon_client::skins::TEXTURE_URIS
+            );
+            if textures.skin.is_some() {
+                let downloader = &mut self.skin_downloads;
+                let _ = horizon_client::skins::lookup(&textures, false, |kind, url| {
+                    downloader.state(kind, url)
+                });
+            }
+        }
+
+        for (location, rgba) in self.skin_downloads.take_ready() {''', "download textures for custom player heads displayed in the world")
+
+pack_patch("crates/horizon-client/src/game/item_draw.rs", '''    fn shield_texture(&self, pattern: &str) -> Option<String> {
+        self.banners
+            .pattern(pattern)
+            .map(|_| self.banners.shield_texture(pattern))
+    }
+}''', '''    fn shield_texture(&self, pattern: &str) -> Option<String> {
+        self.banners
+            .pattern(pattern)
+            .map(|_| self.banners.shield_texture(pattern))
+    }
+    fn player_skin(&self, profile: &Value) -> Option<String> {
+        // A profile can name an already-packed resource location or provide the
+        // standard signed/unsigned textures property. URLs are validated by the
+        // existing skin decoder before being mapped into the dynamic skin atlas.
+        if let Some(skin) = profile.get("skin").and_then(Value::as_str) {
+            if skin.starts_with("https://textures.minecraft.net/texture/")
+                || skin.starts_with("http://textures.minecraft.net/texture/")
+            {
+                let hash = horizon_client::skins::texture_hash(skin)?;
+                return Some(horizon_client::skins::skin_location(&hash));
+            }
+            return Some(skin.to_owned());
+        }
+        let properties = profile.get("properties")?.as_array()?;
+        let property = properties.iter().find(|property| {
+            property.get("name").and_then(Value::as_str) == Some("textures")
+        })?;
+        let encoded = property.get("value").and_then(Value::as_str)?;
+        let signature = if property.get("signature").and_then(Value::as_str).is_some() {
+            horizon_client::skins::Signature::Signed
+        } else {
+            horizon_client::skins::Signature::Unsigned
+        };
+        let textures = horizon_client::skins::unpack(
+            encoded, signature, &horizon_client::skins::TEXTURE_URIS
+        );
+        let url = textures.skin?;
+        let hash = horizon_client::skins::texture_hash(&url)?;
+        Some(horizon_client::skins::skin_location(&hash))
+    }
+}''', "resolve profile texture paths for player-head special models")
+
+
+
 print("Applied Java-compatible server resource packs, item text/model components and multiplayer skin fixes.")
