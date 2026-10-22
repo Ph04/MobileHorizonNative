@@ -4238,6 +4238,28 @@ fn append_nbt_component(tag: &Tag, out: &mut String) {
     }
 }
 fn component_text(tag: &Tag) -> String {
+    // Sign NBT stores each message as either a JSON component string or a
+    // structured NBT component. Reuse Horizon's normal component decoder so
+    // translate/with, keybinds, siblings and nested extra values get handled
+    // consistently with chat and display entities.
+    let json = if let Tag::String(source) = tag {
+        let source = source.to_string_lossy();
+        match serde_json::from_str::<serde_json::Value>(&source) {
+            Ok(component) => component,
+            Err(_) => return source,
+        }
+    } else {
+        crate::scoreboard::tag_to_json(tag)
+    };
+    let parsed = crate::component::to_text(
+        &json,
+        &mut |value| crate::text::Text::literal(value),
+    ).plain();
+    if !parsed.is_empty() {
+        return parsed;
+    }
+    // Preserve plain text on odd/legacy component forms that the standard
+    // decoder cannot interpret; empty JSON components remain empty.
     let mut out = String::new();
     append_nbt_component(tag, &mut out);
     out
