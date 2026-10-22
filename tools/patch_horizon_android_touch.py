@@ -2121,6 +2121,22 @@ struct RemoteBlockDisplay {
     transform: RemoteDisplayTransform,
 }''', "define tracked text display state")
 
+pack_patch("crates/horizon-client/src/game/remote.rs", '''#[derive(Clone, Default)]
+struct RemoteItemDisplay {''', '''fn apply_display_transform(transform: &mut RemoteDisplayTransform, values: &[(u8, i32, Value)]) {
+    for (index, serializer, value) in values {
+        match (*index, *serializer, value) {
+            (11, 39, Value::Floats(v)) if v.len() == 3 => transform.translation = [v[0], v[1], v[2]],
+            (12, 39, Value::Floats(v)) if v.len() == 3 => transform.scale = [v[0], v[1], v[2]],
+            (13, 40, Value::Floats(v)) if v.len() == 4 => transform.left_rotation = [v[0], v[1], v[2], v[3]],
+            (14, 40, Value::Floats(v)) if v.len() == 4 => transform.right_rotation = [v[0], v[1], v[2], v[3]],
+            _ => {}
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct RemoteItemDisplay {''', "decode common display transform metadata")
+
 pack_patch("crates/horizon-client/src/game/remote.rs", '''                r.entities.clear();
                 r.lerps.clear();
                 r.head_lerps.clear();''', '''                r.entities.clear();
@@ -2228,7 +2244,7 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            .filter_ma
             .collect()
     }
     /// Text displays use the same tracked entity positions as other remote entities.
-    pub(super) fn remote_text_displays(&self) -> Vec<([f64; 3], horizon_client::text::Text, i32, u32, i8, i8)> {
+    pub(super) fn remote_text_displays(&self) -> Vec<([f64; 3], horizon_client::text::Text, i32, u32, i8, i8, RemoteDisplayTransform)> {
         let Some(r) = self.remote.as_ref() else { return Vec::new(); };
         r.text_displays.iter().filter_map(|(id, display)| {
             Some((
@@ -2238,9 +2254,22 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            .filter_ma
                 display.background_color as u32,
                 display.text_opacity,
                 display.flags,
+                display.transform.clone(),
             ))
         }).collect()
-    }''', "expose text display state to renderer")
+    }
+    pub(super) fn remote_item_displays(&self) -> Vec<(u32, [f64; 3], horizon_client::items::ItemStack, u8, RemoteDisplayTransform)> {
+        let Some(r) = self.remote.as_ref() else { return Vec::new(); };
+        r.item_displays.iter().filter_map(|(id, display)| {
+            Some((*id as u32, r.entities.get(id)?.position, display.item.clone()?, display.transform_context, display.transform.clone()))
+        }).collect()
+    }
+    pub(super) fn remote_block_displays(&self) -> Vec<(u32, [f64; 3], BlockStateId, RemoteDisplayTransform)> {
+        let Some(r) = self.remote.as_ref() else { return Vec::new(); };
+        r.block_displays.iter().filter_map(|(id, display)| {
+            Some((*id as u32, r.entities.get(id)?.position, display.state?, display.transform.clone()))
+        }).collect()
+    }''', "expose text, item and block display state to renderers")
 
 pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(NameTag {
                 at: p,
