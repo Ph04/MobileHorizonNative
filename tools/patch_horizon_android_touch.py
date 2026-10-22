@@ -2025,6 +2025,14 @@ pub fn text_component_plain(tag: &Tag) -> String {
     horizon_protocol::text::plain(tag, &language)
 }''', "resolve server item text components through active resource-pack language")
 
+pack_patch("crates/horizon-client/src/game/remote.rs", '''    /// The names in the server's player list, sorted.
+    pub(super) fn remote_online_names(&self) -> Option<Vec<String>> {''', '''    /// Whether a remote world entity was spawned as a player profile.
+    pub(super) fn remote_has_player_entity(&self, id: u32) -> bool {
+        self.remote.as_ref().is_some_and(|r| r.level_players.contains_key(&(id as i32)))
+    }
+    /// The names in the server's player list, sorted.
+    pub(super) fn remote_online_names(&self) -> Option<Vec<String>> {''', "expose read-only player entity lookup")
+
 pack_patch("crates/horizon-client/src/game/names.rs", '''        let named = self
             .mobs
             .iter()
@@ -2034,7 +2042,7 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''        let named = sel
             // Player NPCs may send both a GameProfile name and custom-name
             // metadata. Vanilla treats them as player entities and draws one tag.
             // Do not also render them through the mob custom-name path.
-            .filter(|m| !self.remote.as_ref().is_some_and(|r| r.level_players.contains_key(&(m.id as i32))))
+            .filter(|m| !self.remote_has_player_entity(m.id))
             .filter_map(|m| Some((m, m.custom_name.clone()?, false)));''', "avoid duplicate mob/player name tags for player-like NPCs")
 
 pack_patch("crates/horizon-client/src/game/names.rs", '''            let shown = match team {
