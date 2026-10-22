@@ -4206,9 +4206,9 @@ fn append_nbt_component(tag: &Tag, out: &mut String) {
             } else if let Some(Tag::String(translate)) = tag.get("translate") {
                 out.push_str(&translate.to_string_lossy());
             } else if let Some(Tag::Compound(score)) = tag.get("score") {
-                if let Some(Tag::String(value)) = score.get("value") {
+                if let Some(Tag::String(value)) = score.iter().find_map(|(key, item)| (key.to_string_lossy() == "value").then_some(item)) {
                     out.push_str(&value.to_string_lossy());
-                } else if let Some(Tag::String(name)) = score.get("name") {
+                } else if let Some(Tag::String(name)) = score.iter().find_map(|(key, item)| (key.to_string_lossy() == "name").then_some(item)) {
                     out.push_str(&name.to_string_lossy());
                 }
             } else if let Some(Tag::String(selector)) = tag.get("selector") {
