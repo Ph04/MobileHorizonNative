@@ -3242,7 +3242,8 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEnti
                             frame.item.as_ref().map_or("-", |stack| stack.item.as_ref()),
                             frame.rotation,
                             p.values.iter().map(|(index, serializer, value)| (*index, *serializer, match value {
-                                Value::Item(stack) => format!("item:{}", stack.item),
+                                Value::Item(Some(stack)) => format!("item:{}", stack.item),
+                                Value::Item(None) => "item:empty".to_owned(),
                                 Value::Byte(v) => format!("byte:{}", v),
                                 Value::Int(v) => format!("int:{}", v),
                                 _ => format!("{:?}", std::mem::discriminant(value)),
@@ -3253,7 +3254,8 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEnti
                             "HorizonDiag: item_frame_metadata_without_spawn entity_id={} fields={:?}",
                             p.id,
                             p.values.iter().map(|(index, serializer, value)| (*index, *serializer, match value {
-                                Value::Item(stack) => format!("item:{}", stack.item),
+                                Value::Item(Some(stack)) => format!("item:{}", stack.item),
+                                Value::Item(None) => "item:empty".to_owned(),
                                 Value::Byte(v) => format!("byte:{}", v),
                                 Value::Int(v) => format!("int:{}", v),
                                 _ => format!("{:?}", std::mem::discriminant(value)),
