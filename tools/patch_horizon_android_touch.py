@@ -2504,6 +2504,44 @@ fn skip_profile(r: &mut Reader) -> Result<()> {
     Ok(())
 }
 
+fn skip_filterable_string(r: &mut Reader, max: usize) -> Result<()> {
+    r.string(max)?;
+    if r.bool()? {
+        r.string(max)?;
+    }
+    Ok(())
+}
+
+fn skip_filterable_text(r: &mut Reader) -> Result<()> {
+    r.nbt()?;
+    if r.bool()? {
+        r.nbt()?;
+    }
+    Ok(())
+}
+
+fn skip_writable_book_content(r: &mut Reader) -> Result<()> {
+    let pages = r.count(100)?;
+    for _ in 0..pages {
+        skip_filterable_string(r, 1024)?;
+    }
+    Ok(())
+}
+
+fn skip_written_book_content(r: &mut Reader) -> Result<()> {
+    // Filterable<String> title, author, generation, pages of
+    // Filterable<Component>, and the resolved flag (26.3 STREAM_CODEC order).
+    skip_filterable_string(r, 32)?;
+    r.string(32767)?;
+    r.varint()?;
+    let pages = r.count(100)?;
+    for _ in 0..pages {
+        skip_filterable_text(r)?;
+    }
+    r.bool()?;
+    Ok(())
+}
+
 fn skip_raw_component(kind: i32, r: &mut Reader) -> Result<()> {
     use component::*;
     match kind {
@@ -2517,7 +2555,10 @@ fn skip_raw_component(kind: i32, r: &mut Reader) -> Result<()> {
         20 | 22 | 34 | 120 => {} // creative_slot_lock, intangible_projectile, glider, waxed
         21 => { r.bool()?; } // enchantment_glint_override
         35 | 73 => { r.string(32767)?; } // tooltip_style, note_block_sound
-        60 | 61 | 62 => { r.nbt()?; } // entity_data, bucket_entity_data, block_entity_data
+        56 => skip_writable_book_content(r)?,
+        57 => skip_written_book_content(r)?,
+        60 | 62 => { r.varint()?; r.nbt()?; } // typed entity/block-entity data
+        61 => { r.nbt()?; } // bucket_entity_data
         ATTRIBUTE_MODIFIERS => skip_attribute_modifiers(r)?,
         PROFILE => skip_profile(r)?,
         other => return Err(Error::new(format!("unsupported item component {other} (no safe wire codec)"))),
@@ -2614,6 +2655,40 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         let bytes = writer.data.clone();
         let mut reader = Reader::new(&bytes);
         let stack = Slot::read(&mut reader).unwrap().unwrap();
+        assert_eq!(reader.remaining(), 0);
+        let mut encoded = Writer::new();
+        Slot::write(&Some(stack), &mut encoded);
+        assert_eq!(encoded.data, bytes);
+    }
+
+    #[test]
+    fn written_book_and_typed_entity_data_are_consumed_and_round_trip() {
+        let mut writer = Writer::new();
+        writer.varint(1);
+        writer.varint(5);
+        writer.varint(3);
+        writer.varint(0);
+        writer.varint(56); // writable_book_content
+        writer.varint(1); // one page
+        writer.string("hello");
+        writer.bool(false); // no filtered page
+        writer.varint(57); // written_book_content
+        writer.string("title");
+        writer.bool(false); // no filtered title
+        writer.string("author");
+        writer.varint(0); // generation
+        writer.varint(1); // one page
+        writer.nbt(&Tag::String("hello".into()));
+        writer.bool(false); // no filtered page
+        writer.bool(false); // unresolved
+        writer.varint(60); // entity_data: type id + NBT
+        writer.varint(2);
+        writer.nbt(&Tag::Compound(Default::default()));
+        let bytes = writer.data.clone();
+        let mut reader = Reader::new(&bytes);
+        let stack = Slot::read(&mut reader).unwrap().unwrap();
+        assert_eq!(stack.added.len(), 3);
+        assert!(stack.added.iter().all(|(_, value)| matches!(value, Component::Raw(_))));
         assert_eq!(reader.remaining(), 0);
         let mut encoded = Writer::new();
         Slot::write(&Some(stack), &mut encoded);
