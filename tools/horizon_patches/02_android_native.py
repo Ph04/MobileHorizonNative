@@ -374,15 +374,11 @@ replace_once(hud,
 # Honor an absolute resource root passed by the Android Activity instead of resolving
 # .local/horizon-client/26.3 relative to the game's save/log directory.
 replace_once(game,
-    '''            resources: std::env::var_os("HORIZON_RESOURCES")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| {
-                    if sibling.join("horizon-resources.json").exists() {
-                        sibling
-                    } else {
-                        std::path::Path::new(".local/horizon-client").join(horizon_core::VANILLA_VERSION)
-                    }
-                }),''',
+    '''            resources: if sibling.join("horizon-resources.json").exists() {
+                sibling
+            } else {
+                std::path::Path::new(".local/horizon-client").join(horizon_core::VANILLA_VERSION)
+            },''',
     '''            resources: std::env::var_os("HORIZON_RESOURCES")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| {
