@@ -78,7 +78,7 @@ class FabricBridgeAuditTests(unittest.TestCase):
             },
             entries={
                 "sample_mod.mixins.json": b'{"required":true,"package":"sample.mixin","mixins":["CommonMixin"],"client":["ClientMixin"],"injectors":{"defaultRequire":1}}',
-                "sample_mod.accesswidener": b"accessWidener v2 named\\naccessible class net/minecraft/client/Minecraft\\nmutable field net/minecraft/client/Minecraft field_1 Ljava/lang/String;\\n",
+                "sample_mod.accesswidener": b"accessWidener v2 named\naccessible class net/minecraft/client/Minecraft\nmutable field net/minecraft/client/Minecraft field_1 Ljava/lang/String;\n",
                 "assets/sample_mod/textures/item/icon.png": b"not-a-real-png",
                 "data/sample_mod/recipes/example.json": b"{}",
             },
