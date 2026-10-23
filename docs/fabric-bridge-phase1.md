@@ -34,6 +34,17 @@ This phase separates which native .hmod packages and enable-list Horizon reads. 
 
 This phase does not claim that every content .hmod is safe to use on a Vanilla server. The analyser flags evidence that a mod references registries, world simulation or networking, but a static reference scan is only a triage aid. Per-session server compatibility still requires explicit metadata and tested policy.
 
+## Resource Manager integration (Phase 2 groundwork)
+
+The Android Resource Manager uses the same `horizon_fabric_bridge/enabled` preference as the launcher screen. Its profile toggle selects which `.hmod` directory and enable-list are shown and edited:
+
+- Vanilla: `horizon-mods/` and `horizon-mods.txt`.
+- Fabric Bridge: `horizon-fabric-bridge-mods/` and `horizon-fabric-bridge-mods.txt`.
+
+The standard import action accepts Horizon `.hmod` mods and recognized resource/shader ZIPs. A dedicated Fabric JAR action accepts a user-selected `.jar`, reads `fabric.mod.json` without extraction or execution, and stores it in `horizon-fabric-bridge-inbox/`. The manager displays basic triage metadata (mod ID/name/version, class and resource counts, plus mixin/access-widener markers), and permits deleting queued JARs. Duplicate Fabric mod IDs are rejected.
+
+**Important limitation:** the inbox is an intake/triage queue, not a Fabric runtime. Imported JARs are not enabled or loaded by Horizon. Conversion from a Java mod into a compatible `.hmod`, Fabric API emulation, and missing native SDK capabilities remain future work. Selecting Fabric Bridge does not alter vanilla network handshakes or make unsupported mods compatible with servers.
+
 ## JAR audit tool
 
 Run it with Python 3.10 or newer:
