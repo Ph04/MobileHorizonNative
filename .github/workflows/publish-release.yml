@@ -1,0 +1,115 @@
+name: Publish MobileHorizonNative 0.0.1 release
+
+on:
+  push:
+    branches: ["release/0.0.1"]
+    paths:
+      - ".github/workflows/publish-release.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Wait for the verified 0.0.1 APK build
+        id: build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_SHA: "225f5b8f7b905f6a40ae50a524a3d395d2c59714"
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          build_run=""
+          for attempt in $(seq 1 120); do
+            runs="$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$api/actions/runs?branch=release%2F0.0.1&per_page=100")"
+            row="$(jq -r --arg sha "$TARGET_SHA" '
+              [.workflow_runs[] | select(.head_sha == $sha)]
+              | sort_by(.run_number)
+              | last
+              | if . == null then empty else [.id, .status, (.conclusion // "")] | @tsv end
+            ' <<< "$runs")"
+            if [[ -n "$row" ]]; then
+              read -r run_id status conclusion <<< "$row"
+              echo "Found Android build run $run_id: status=$status conclusion=${conclusion:-pending}"
+              if [[ "$status" == "completed" ]]; then
+                if [[ "$conclusion" != "success" ]]; then
+                  echo "::error::The Android build for the release commit did not succeed."
+                  exit 1
+                fi
+                artifacts="$(curl --fail --silent --show-error \
+                  -H "Authorization: Bearer $GH_TOKEN" \
+                  -H "Accept: application/vnd.github+json" \
+                  "$api/actions/runs/$run_id/artifacts")"
+                artifact_id="$(jq -r '.artifacts[] | select(.name == "mobilehorizon-native-offline1-update-safe" and .expired == false) | .id' <<< "$artifacts" | head -n1)"
+                if [[ -n "$artifact_id" ]]; then
+                  build_run="$run_id"
+                  break
+                fi
+                echo "::error::The successful run did not publish the update-safe APK artifact."
+                exit 1
+              fi
+            fi
+            sleep 15
+          done
+          if [[ -z "$build_run" ]]; then
+            echo "::error::Timed out waiting for a verified APK build for $TARGET_SHA."
+            exit 1
+          fi
+          echo "run_id=$build_run" >> "$GITHUB_OUTPUT"
+
+      - name: Download the tested update-safe APK
+        uses: actions/download-artifact@v4
+        with:
+          name: mobilehorizon-native-offline1-update-safe
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.build.outputs.run_id }}
+          path: dist/artifact
+
+      - name: Prepare the release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find dist/artifact -type f -name '*.apk' -print)
+          if [[ "${#apks[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one APK in the verified artifact, found ${#apks[@]}."
+            find dist/artifact -maxdepth 3 -type f -print
+            exit 1
+          fi
+          mkdir -p dist/release
+          cp "${apks[0]}" dist/release/MobileHorizonNative-0.0.1.apk
+          sha256sum dist/release/MobileHorizonNative-0.0.1.apk | tee dist/release/SHA256SUMS.txt
+          cat dist/release/SHA256SUMS.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.0.1
+          target_commitish: "225f5b8f7b905f6a40ae50a524a3d395d2c59714"
+          name: "MobileHorizonNative 0.0.1"
+          draft: false
+          prerelease: false
+          make_latest: true
+          generate_release_notes: true
+          body: |
+            First release of MobileHorizonNative based on Horizon 2026.10.22.07.
+
+            - Android ARM64 NativeActivity runtime.
+            - Touch controls integrated with mouse input.
+            - Horizon server resource-pack and multiplayer compatibility patches.
+            - APK version: 0.0.1 (versionCode 19).
+            - The attached APK was compiled and verified by the Android workflow before publication.
+
+            Install `MobileHorizonNative-0.0.1.apk`. Keep the same installation when updating so that application data is preserved.
+          files: |
+            dist/release/MobileHorizonNative-0.0.1.apk
+            dist/release/SHA256SUMS.txt
+          fail_on_unmatched_files: true
