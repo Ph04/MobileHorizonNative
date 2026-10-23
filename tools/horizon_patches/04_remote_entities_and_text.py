@@ -154,6 +154,9 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                if let
                 self.spawn_entity(p.id, &kind, p.position, rotation);''', "track display entities on spawn")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEntityData(p) => {
+                // Entity.DATA_SHARED_FLAGS_ID, DATA_CUSTOM_NAME and
+                // DATA_CUSTOM_NAME_VISIBLE: server NPCs and holograms rely on
+                // these instead of saved NBT.
                 if let Some(m) = self.mobs.iter_mut().find(|m| m.id == p.id as u32)''', '''            C::SetEntityData(p) => {
                 let item_display_item_update = p.values.iter().find_map(|(index, serializer, value)| {
                     if (*index, *serializer) == (23, 7) {
@@ -243,10 +246,7 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(N
                 lines,
                 light: l,
                 discrete,
-            });
-        }
-        tags
-    }''', '''            tags.push(NameTag {
+            });''', '''            tags.push(NameTag {
                 at: p,
                 lines,
                 light: l,
@@ -255,9 +255,10 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(N
                 text_opacity: 255,
                 see_through: false,
                 display_transform: None,
-            });
-        }
-        // TextDisplay is a first-class server entity, not a mob nametag.
+            });''', "add display-compatible defaults to mob nametags")
+
+pack_patch("crates/horizon-client/src/game/names.rs", '''        // Armor stands name themselves: an invisible one with a visible name
+        // is a hologram (its model is skipped, its name tag is not).''', '''        // TextDisplay is a first-class server entity, not a mob nametag.
         // Render its component using the same font atlas, preserving styles.
         for (position, text, line_width, background, opacity, flags, transform) in self.remote_text_displays() {
             let at = glam::DVec3::new(position[0], position[1], position[2]);
@@ -320,9 +321,24 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(N
                 display_transform: Some(transform),
             });
         }
-        tags
-    }''', "render server text display entities")
+        // Armor stands name themselves: an invisible one with a visible name
+        // is a hologram (its model is skipped, its name tag is not).''', "render server text display entities")
 
+pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(NameTag {
+                at: glam::DVec3::new(a.position.x, a.position.y + height + 0.5, a.position.z),
+                lines,
+                light: l,
+                discrete: false,
+            });''', '''            tags.push(NameTag {
+                at: glam::DVec3::new(a.position.x, a.position.y + height + 0.5, a.position.z),
+                lines,
+                light: l,
+                discrete: false,
+                background_color: 0x3F000000,
+                text_opacity: 255,
+                see_through: false,
+                display_transform: None,
+            });''', "add display-compatible defaults to armor stand nametags")
 pack_patch("crates/horizon-client/src/game/names.rs", '''        for tag in self.name_tags(camera, alpha) {
             let o = tag.at - camera;
             if tag.discrete {
@@ -391,66 +407,6 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''    light: u8,
     see_through: bool,
     display_transform: Option<super::remote::RemoteDisplayTransform>,
 }''', "store text display render properties")
-
-pack_patch("crates/horizon-client/src/game/remote.rs", '''        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
-            out.data_mut().map_id = Some(*id);
-        }
-        Some(out)
-    }''', '''        if let Some(Component::Int(id)) = s.component(component::MAP_ID) {
-            out.data_mut().map_id = Some(*id);
-        }
-
-        // New Java item data components control custom item names and item models.
-        if let Some(Component::Text(name)) = s.component(component::CUSTOM_NAME) {
-            out.data_mut().custom_name = Some(crate::item_data::text_component_plain(name));
-        }
-        if let Some(Component::Text(name)) = s.component(component::ITEM_NAME) {
-            out.data_mut().set_other("minecraft:item_name", Some(name.clone()));
-        }
-        if let Some(Component::Ident(model)) = s.component(component::ITEM_MODEL) {
-            out.data_mut().set_other(
-                "minecraft:item_model",
-                Some(horizon_world::nbt::Tag::String(model.as_str().into())),
-            );
-        }
-        if let Some(Component::Lore(lines)) = s.component(component::LORE) {
-            out.data_mut().set_other("minecraft:lore", Some(horizon_world::nbt::Tag::List(lines.clone())));
-        }
-        if let Some(Component::Nbt(data)) = s.component(component::CUSTOM_DATA) {
-            out.data_mut().set_other("minecraft:custom_data", Some(data.clone()));
-        }
-        if let Some(Component::CustomModelData { floats, flags, strings, colors }) =
-            s.component(component::CUSTOM_MODEL_DATA)
-        {
-            use horizon_world::nbt::Tag;
-            let data = Tag::compound([
-                ("floats", Tag::List(floats.iter().map(|value| Tag::Float(value.to_bits())).collect())),
-                ("flags", Tag::List(flags.iter().map(|value| Tag::Byte(if *value { 1 } else { 0 })).collect())),
-                ("strings", Tag::List(strings.iter().map(|value| Tag::String(value.as_str().into())).collect())),
-                ("colors", Tag::List(colors.iter().map(|value| Tag::Int(*value)).collect())),
-            ]);
-            out.data_mut().set_other("minecraft:custom_model_data", Some(data));
-        }
-
-        // An absent component in the network patch can suppress its default component
-        // in a modern item definition; StackView interprets the leading ! convention.
-        for kind in &s.removed {
-            let key = match *kind {
-                component::CUSTOM_NAME => Some("minecraft:custom_name"),
-                component::ITEM_NAME => Some("minecraft:item_name"),
-                component::ITEM_MODEL => Some("minecraft:item_model"),
-                component::LORE => Some("minecraft:lore"),
-                component::CUSTOM_DATA => Some("minecraft:custom_data"),
-                component::CUSTOM_MODEL_DATA => Some("minecraft:custom_model_data"),
-                _ => None,
-            };
-            if let Some(key) = key {
-                out.data_mut().set_other(&format!("!{key}"), Some(horizon_world::nbt::Tag::Byte(0)));
-            }
-        }
-
-        Some(out)
-    }''', "preserve server item names and modern item-model components")
 
 pack_patch("crates/horizon-client/src/item_tooltip.rs", '''    if let Some(name) = stack.custom_name() {
         return name.to_owned();
