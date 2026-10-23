@@ -122,10 +122,8 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                let wi
 # Keep item packets decodable when servers use the full 26.3 component registry.
 # Components with known wire codecs but no renderer support are preserved as raw
 # values; truly unknown codecs still fail closed so subsequent fields cannot desync.
-pack_patch("crates/horizon-protocol/src/item.rs", '''    pub const MAP_ID: i32 = 48;
-}''', '''    pub const MAP_ID: i32 = 48;
-    pub const ATTRIBUTE_MODIFIERS: i32 = 16;
-}''', "register attribute-modifiers missing from Horizon's component ID table")
+pack_patch("crates/horizon-protocol/src/item.rs", '''    pub const CUSTOM_MODEL_DATA: i32 = 17;''', '''    pub const ATTRIBUTE_MODIFIERS: i32 = 16;
+    pub const CUSTOM_MODEL_DATA: i32 = 17;''', "register attribute-modifiers missing from Horizon's component ID table")
 
 pack_patch("crates/horizon-protocol/src/item.rs", '''    WritableBook(Vec<String>),
     WrittenBook(WrittenBook),
