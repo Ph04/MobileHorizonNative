@@ -125,17 +125,12 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''                let wi
 pack_patch("crates/horizon-protocol/src/item.rs", '''    pub const MAP_ID: i32 = 48;
 }''', '''    pub const MAP_ID: i32 = 48;
     pub const ATTRIBUTE_MODIFIERS: i32 = 16;
-    pub const PROFILE: i32 = 72;
-}''', "register attribute-modifiers and profile component IDs")
+}''', "register attribute-modifiers missing from Horizon's component ID table")
 
-pack_patch("crates/horizon-protocol/src/item.rs", '''    TooltipDisplay {
-        hide: bool,
-        hidden: Vec<i32>,
-    },
-}''', '''    TooltipDisplay {
-        hide: bool,
-        hidden: Vec<i32>,
-    },
+pack_patch("crates/horizon-protocol/src/item.rs", '''    WritableBook(Vec<String>),
+    WrittenBook(WrittenBook),
+}''', '''    WritableBook(Vec<String>),
+    WrittenBook(WrittenBook),
     /// A recognized component whose value is safely skippable but not yet rendered.
     /// Payload bytes are retained verbatim so decoding does not desynchronize the slot.
     Raw(Vec<u8>),
@@ -270,15 +265,29 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''            other => return
                 Self::Raw(r.since(start).to_vec())
             },''', "preserve raw component payloads after safe decoding")
 
-pack_patch("crates/horizon-protocol/src/item.rs", '''            Self::TooltipDisplay { hide, hidden } => {
-                w.bool(*hide);
-                w.varint(hidden.len() as i32);
-                hidden.iter().for_each(|h| w.varint(*h));
+pack_patch("crates/horizon-protocol/src/item.rs", '''            Self::WrittenBook(b) => {
+                w.string(&b.title);
+                w.bool(false);
+                w.string(&b.author);
+                w.varint(b.generation);
+                w.varint(b.pages.len() as i32);
+                for page in &b.pages {
+                    w.nbt(page);
+                    w.bool(false);
+                }
+                w.bool(b.resolved);
             }
-        }''', '''            Self::TooltipDisplay { hide, hidden } => {
-                w.bool(*hide);
-                w.varint(hidden.len() as i32);
-                hidden.iter().for_each(|h| w.varint(*h));
+        }''', '''            Self::WrittenBook(b) => {
+                w.string(&b.title);
+                w.bool(false);
+                w.string(&b.author);
+                w.varint(b.generation);
+                w.varint(b.pages.len() as i32);
+                for page in &b.pages {
+                    w.nbt(page);
+                    w.bool(false);
+                }
+                w.bool(b.resolved);
             }
             Self::Raw(bytes) => w.bytes(bytes),
         }''', "write preserved raw component bytes")
@@ -289,7 +298,7 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         assert!(Slot::read(&mut Reader::new(&bytes)).is_err());
     }''', '''    #[test]
     fn unsupported_components_with_known_wire_types_do_not_discard_slots() {
-        // Attribute modifiers: empty list. Profile: empty partial profile and empty skin patch.
+        // Attribute modifiers stay raw; profile uses Horizon's native component codec.
         let bytes = [
             1, 5, 2, 0,
             16, 0,
@@ -299,7 +308,7 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         let stack = Slot::read(&mut reader).unwrap().unwrap();
         assert_eq!(stack.added.len(), 2);
         assert!(matches!(stack.added[0], (component::ATTRIBUTE_MODIFIERS, Component::Raw(_))));
-        assert!(matches!(stack.added[1], (component::PROFILE, Component::Raw(_))));
+        assert!(matches!(stack.added[1], (component::PROFILE, Component::Profile(_))));
         assert_eq!(reader.remaining(), 0);
         let mut writer = Writer::new();
         Slot::write(&Some(stack), &mut writer);
@@ -513,38 +522,6 @@ fn profile_component_tag(raw: &[u8]) -> Option<horizon_world::nbt::Tag> {
 
 fn apply_display_transform(transform: &mut RemoteDisplayTransform, values: &[(u8, i32, Value)]) {''', "decode player-head profile component for the item model pipeline")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''        // An absent component in the network patch can suppress its default component
-        // in a modern item definition; StackView interprets the leading ! convention.''', '''        if let Some(Component::Raw(raw)) =
-            s.component(horizon_protocol::item::component::PROFILE)
-        {
-            if let Some(profile) = profile_component_tag(raw) {
-                out.data_mut().set_other("minecraft:profile", Some(profile));
-            } else {
-                static BAD_PROFILE_COMPONENTS: std::sync::atomic::AtomicUsize =
-                    std::sync::atomic::AtomicUsize::new(0);
-                if BAD_PROFILE_COMPONENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 8 {
-                    log::warn!("HorizonDiag: could not decode a minecraft:profile item component for a player head");
-                }
-            }
-        }
-
-        // An absent component in the network patch can suppress its default component
-        // in a modern item definition; StackView interprets the leading ! convention.''', "pass profile data into custom player-head rendering")
-
-pack_patch("crates/horizon-client/src/game/remote.rs", '''                    | horizon_protocol::item::component::CUSTOM_MODEL_DATA
-            ))
-            .collect();
-        let removed_unhandled_components: Vec<i32> = s.removed.iter().copied()''', '''                    | horizon_protocol::item::component::CUSTOM_MODEL_DATA
-                    | horizon_protocol::item::component::PROFILE
-            ))
-            .collect();
-        let removed_unhandled_components: Vec<i32> = s.removed.iter().copied()''', "classify profile components as handled")
-
-pack_patch("crates/horizon-client/src/game/remote.rs", '''                component::CUSTOM_MODEL_DATA => Some("minecraft:custom_model_data"),
-                _ => None,''', '''                component::CUSTOM_MODEL_DATA => Some("minecraft:custom_model_data"),
-                component::PROFILE => Some("minecraft:profile"),
-                _ => None,''', "preserve explicit removal of profile components")
-
 pack_patch("crates/horizon-client/src/game/remote.rs", '''        resolved.retain(|(_, skin)| !skin.starts_with("skins/") || self.show_skin(skin));''', '''        // Player-head displays may carry their own profile textures without a player-list entry.
         // Queue those URLs through Horizon's shared downloader so its normal atlas update
         // can make the skin available to the item renderer.
@@ -595,52 +572,6 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''        resolved.retai
             }
         }
         resolved.retain(|(_, skin)| !skin.starts_with("skins/") || self.show_skin(skin));''', "download textures for custom player heads with current Horizon skin lifecycle")
-
-pack_patch("crates/horizon-client/src/game/item_draw.rs", '''    fn shield_texture(&self, pattern: &str) -> Option<String> {
-        self.banners
-            .pattern(pattern)
-            .map(|_| self.banners.shield_texture(pattern))
-    }
-}''', '''    fn shield_texture(&self, pattern: &str) -> Option<String> {
-        self.banners
-            .pattern(pattern)
-            .map(|_| self.banners.shield_texture(pattern))
-    }
-    fn player_skin(&self, profile: &Value) -> Option<String> {
-        // A profile can name an already-packed resource location or provide the
-        // standard signed/unsigned textures property. URLs are validated by the
-        // existing skin decoder before being mapped into the dynamic skin atlas.
-        if let Some(skin) = profile.get("skin").and_then(Value::as_str) {
-            if skin.starts_with("https://textures.minecraft.net/texture/")
-                || skin.starts_with("http://textures.minecraft.net/texture/")
-            {
-                let hash = horizon_client::skins::texture_hash(skin)?;
-                return Some(horizon_client::skins::skin_location(&hash));
-            }
-            return Some(skin.to_owned());
-        }
-        let properties = profile.get("properties")?.as_array()?;
-        let property = properties.iter().find(|property| {
-            property.get("name").and_then(Value::as_str) == Some("textures")
-        })?;
-        let encoded = property.get("value").and_then(Value::as_str)?;
-        let signature = if property.get("signature").and_then(Value::as_str).is_some() {
-            horizon_client::skins::Signature::Signed
-        } else {
-            horizon_client::skins::Signature::Unsigned
-        };
-        let textures = horizon_client::skins::unpack(
-            encoded, signature, &horizon_client::skins::TEXTURE_URIS
-        );
-        let url = textures.skin?;
-        let hash = horizon_client::skins::texture_hash(&url)?;
-        Some(horizon_client::skins::skin_location(&hash))
-    }
-}''', "resolve profile texture paths for player-head special models")
-
-
-
-
 
 # Server-world item frames were not being fed into Game::item_frames, although
 # Game::frame_geometry already renders those structs. Keep remote frame state in
