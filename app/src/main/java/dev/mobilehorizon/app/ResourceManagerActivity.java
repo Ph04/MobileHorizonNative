@@ -185,7 +185,7 @@ public final class ResourceManagerActivity extends Activity {
         page.addView(actions, actionsParams);
         importFilesButton = button("Importar recurso que ainda não tenho (.zip / .hmod)", true, v -> chooseFiles());
         actions.addView(importFilesButton, params(-1, 48));
-        importFabricJarButton = button("Importar mod Fabric (.jar) para análise", false, v -> chooseFabricJars());
+        importFabricJarButton = button("Importar e converter mod Fabric (.jar)", false, v -> chooseFabricJars());
         LinearLayout.LayoutParams fabricImportParams = params(-1, 46);
         fabricImportParams.topMargin = dp(6);
         actions.addView(importFabricJarButton, fabricImportParams);
@@ -212,7 +212,7 @@ public final class ResourceManagerActivity extends Activity {
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "As alterações são aplicadas ao abrir o Minecraft novamente. Mods Horizon executáveis usam .hmod. JARs Fabric podem ser importados para triagem e ficam pendentes de conversão; não são executados. Pacotes de textura precisam de ZIP Java com pack.mcmeta e assets/; shader packs compatíveis podem ser ZIPs com shaders/ ou pastas com pack.toml/shaders/.",
+                "As alterações são aplicadas ao abrir o Minecraft novamente. O conversor Horizon cria .hmod de conteúdo a partir de assets/data que entende e declara alguns blocos/itens. A lógica Java, entrypoints, Mixins e access wideners não são convertidos nem executados. Packs de textura usam ZIP com pack.mcmeta e assets/; shader packs aceitam ZIPs shaders/ ou pastas pack.toml/shaders/.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(12);
