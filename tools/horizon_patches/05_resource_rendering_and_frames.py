@@ -257,6 +257,29 @@ fn skip_raw_component(kind: i32, r: &mut Reader) -> Result<()> {
 impl Component {
     fn read(kind: i32, r: &mut Reader) -> Result<Self> {''', "add safe readers for common 26.3 component codecs")
 
+pack_patch("crates/horizon-client/src/game/remote.rs", '''                Component::TooltipDisplay { hide, hidden } => {
+                    let hidden = hidden
+                        .iter()
+                        .filter_map(|id| Some(Tag::String(name(*id)?.into())));
+                    Tag::compound([
+                        ("hide_tooltip", Tag::Byte(i8::from(*hide))),
+                        ("hidden_components", Tag::List(hidden.collect())),
+                    ])
+                }
+            };''', '''                Component::TooltipDisplay { hide, hidden } => {
+                    let hidden = hidden
+                        .iter()
+                        .filter_map(|id| Some(Tag::String(name(*id)?.into())));
+                    Tag::compound([
+                        ("hide_tooltip", Tag::Byte(i8::from(*hide))),
+                        ("hidden_components", Tag::List(hidden.collect())),
+                    ])
+                }
+                // Keep the protocol payload available for slot decoding/round-tripping,
+                // but skip it here until the renderer knows the component's data shape.
+                Component::Raw(_) => continue,
+            };''', "keep preserved raw protocol components out of the item renderer")
+
 pack_patch("crates/horizon-protocol/src/item.rs", '''            other => return Err(Error::new(format!("unsupported item component {other}"))),''', '''            other => {
                 let start = r.position();
                 skip_raw_component(other, r)?;
