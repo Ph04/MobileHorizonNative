@@ -318,7 +318,7 @@ public final class MainActivity extends Activity {
         addSpaced(playCard, touchControlsButton, 48, 6);
 
         fabricBridgeToggle = new CheckBox(this);
-        fabricBridgeToggle.setText("Ativar compatibilidade Fabric (experimental)");
+        fabricBridgeToggle.setText("Selecionar perfil Fabric Bridge (experimental)");
         fabricBridgeToggle.setTextColor(0xff18213a);
         fabricBridgeToggle.setChecked(getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE)
                 .getBoolean("enabled", false));
