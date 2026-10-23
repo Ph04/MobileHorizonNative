@@ -72,7 +72,7 @@ A lista abaixo cobre todos os projetos de API incluídos pelo settings.gradle of
 | fabric-permission-api-v1 | Consultar permissões de comandos/ações, normalmente ligadas ao servidor | **Port nativo.** Definir fonte de verdade do lado servidor e não simular permissões do servidor remoto no cliente. |
 | fabric-menu-api-v1 | Integração extensível com menus/telas do jogo e seus contextos | **Adaptador novo/port nativo.** API UI declarativa do Horizon, widgets e navegação; não expor screen objects Java. |
 | fabric-screen-api-v1 | Hooks de telas: abertura, inicialização, renderização e input/fechamento | **Adaptador novo.** Criar capability ui e ciclo de vida de telas com árvore de widgets; orçamento e validação de input são essenciais. |
-| fabric-advancement-api-v1 | Progressão/advancements e integração de eventos | **Parcial/port nativo.** Ver categoria de registries; usar IDs e snapshots em vez de objetos Java. |
+| fabric-creative-tab-api-v1 | Registrar categorias/abas criativas e decidir quais itens aparecem nelas | **Port nativo.** Adicionar uma API declarativa de grupos criativos após existir suporte a registries/itens; callback Java de preenchimento exige port. |
 
 ### Rede, sync e dados
 
