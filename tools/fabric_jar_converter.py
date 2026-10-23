@@ -16,7 +16,10 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from tools.fabric_bridge_audit import audit_jar
+try:
+    from .fabric_bridge_audit import audit_jar
+except ImportError:  # Direct script execution keeps the tools/ directory on sys.path.
+    from fabric_bridge_audit import audit_jar
 
 MAX_ENTRIES = 20_000
 MAX_ENTRY_BYTES = 128 * 1024 * 1024
@@ -36,8 +39,9 @@ class ConversionError(ValueError):
 def _safe_relative_entry(name: str) -> str:
     if not name or name.startswith("/") or "\\" in name or "\x00" in name:
         raise ConversionError(f"unsafe archive path: {name!r}")
+    raw_parts = name.split("/")
     path = PurePosixPath(name)
-    if path.is_absolute() or any(part in ("", ".", "..") for part in path.parts):
+    if path.is_absolute() or any(part in ("", ".", "..") for part in raw_parts):
         raise ConversionError(f"unsafe archive path: {name!r}")
     normalized = path.as_posix()
     if not (normalized.startswith("assets/") or normalized.startswith("data/")):
