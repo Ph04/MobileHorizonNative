@@ -56,6 +56,7 @@ steps = [
     "05_resource_rendering_and_frames.py",
     "06_resource_diagnostics.py",
     "07_protocol_maps_and_signs.py",
+    "08_fabric_bridge_profiles.py",
 ]
 context = dict(globals())
 for step in steps:
