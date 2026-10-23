@@ -29,14 +29,20 @@ replace_once(manifest,
         Capability::Config,
     ];''')
 replace_once(manifest,
-'''            Capability::Registries => "registries",
-        }''',
-'''            Capability::Registries => "registries",
+'''            Capability::Storage => "storage",
+            Capability::Registries => "registries",
+        }
+    }
+    /// What the player reads before turning the mod on: "May <this>".''',
+'''            Capability::Storage => "storage",
+            Capability::Registries => "registries",
             Capability::Events => "events",
             Capability::Keys => "keys",
             Capability::Commands => "commands",
             Capability::Config => "config",
-        }''')
+        }
+    }
+    /// What the player reads before turning the mod on: "May <this>".''')
 replace_once(manifest,
 '''            Capability::Registries => "add blocks and items to your worlds",
         }''',
