@@ -486,10 +486,8 @@ public final class ResourceManagerActivity extends Activity {
             int blocks = result.optInt("blocks_declared", 0);
             int items = result.optInt("items_declared", 0);
             JSONObject report = result.optJSONObject("carry_report");
-            int outside = report == null ? 0 : report.optJSONArray("outside") == null
-                    ? 0 : report.optJSONArray("outside").length();
-            int unknownBlocks = report == null || report.optJSONObject("blocks_unknown") == null
-                    ? 0 : report.optJSONObject("blocks_unknown").length();
+            int outside = report == null ? 0 : report.optInt("outside", 0);
+            int unknownBlocks = report == null ? 0 : report.optInt("blocks_unknown", 0);
             StringBuilder summary = new StringBuilder()
                     .append("conteúdo convertido em mod Horizon ").append(installed.getName())
                     .append(" (").append(files).append(" arquivos, ")
@@ -935,16 +933,20 @@ public final class ResourceManagerActivity extends Activity {
                 FabricJarInfo info = inspectFabricJar(file);
                 boolean resourceConverted = info.assets > 0 && hasConvertedFabricPack(info, false);
                 boolean dataConverted = info.data > 0 && hasConvertedFabricPack(info, true);
+                boolean contentConverted = modIdExistsIn(bridgeModDir(), info.id);
                 boolean code = info.classes > 0 || info.hasEntrypoints || info.hasMixins || info.hasAccessWidener;
                 StringBuilder details = new StringBuilder("ID: ").append(info.id).append(" · versão ")
                         .append(info.version).append(" · ").append(info.classes).append(" classes · ")
                         .append(info.resources).append(" arquivos assets/data");
-                if (resourceConverted) details.append(" · assets convertidos para pack desativado");
-                if (dataConverted) details.append(" · data convertido para pack por mundo");
+                if (contentConverted) details.append(" · convertido em .hmod de conteúdo no perfil Bridge");
+                else {
+                    if (resourceConverted) details.append(" · assets convertidos para pack desativado");
+                    if (dataConverted) details.append(" · data convertido para pack por mundo");
+                }
                 if (info.hasMixins) details.append(" · Mixins");
                 if (info.hasAccessWidener) details.append(" · Access Widener");
-                if (code) details.append(" · código Java/entrypoints não convertido; o mod ainda não funciona completo");
-                else if (resourceConverted || dataConverted) details.append(" · conteúdo portátil convertido; validar no jogo");
+                if (code) details.append(" · código Java/entrypoints não convertido; a lógica do mod ainda não funciona completa");
+                else if (contentConverted || resourceConverted || dataConverted) details.append(" · conteúdo portátil convertido; validar no jogo");
                 else details.append(" · aguardando conversão nativa; não executado");
                 fabricJars.add(new ResourceItem(Kind.FABRIC_JAR, file.getName(), file,
                         info.id, false, details.toString()));
