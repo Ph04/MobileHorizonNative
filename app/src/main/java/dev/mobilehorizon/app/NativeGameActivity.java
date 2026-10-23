@@ -35,6 +35,7 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_PLAYER_NAME = "dev.mobilehorizon.app.EXTRA_PLAYER_NAME";
     static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
     static final String EXTRA_NATIVE_SMOKE_TEST = "dev.mobilehorizon.app.EXTRA_NATIVE_SMOKE_TEST";
+    static final String EXTRA_FABRIC_BRIDGE = "dev.mobilehorizon.app.EXTRA_FABRIC_BRIDGE";
     private NativeTouchControlsView touchControls;
     private PopupWindow touchControlsPopup;
     @Override
@@ -42,6 +43,16 @@ public final class NativeGameActivity extends NativeActivity {
         // Horizon resolves options, saves, logs and prepared resources from these paths.
         // Set them before NativeActivity loads the native game library.
         try {
+            // Every NativeActivity launch explicitly chooses a profile. Default is
+            // Vanilla, including smoke tests and older callers that omit the extra.
+            android.content.Intent launchIntent = getIntent();
+            boolean fabricBridgeEnabled = launchIntent != null
+                    && launchIntent.getBooleanExtra(EXTRA_FABRIC_BRIDGE, false);
+            android.system.Os.setenv(
+                    "HORIZON_MOD_PROFILE",
+                    fabricBridgeEnabled ? "fabric-bridge" : "vanilla",
+                    true);
+
             java.io.File gameRoot = getApplicationContext().getFilesDir();
             if (!gameRoot.isDirectory() && !gameRoot.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório privado do jogo.");
@@ -52,7 +63,6 @@ public final class NativeGameActivity extends NativeActivity {
             }
             // Use an explicit per-launch flag. The old marker file could survive a
             // previous smoke test and accidentally suppress diagnostics for the real game.
-            android.content.Intent launchIntent = getIntent();
             boolean smokeTest = launchIntent != null
                     && launchIntent.getBooleanExtra(EXTRA_NATIVE_SMOKE_TEST, false);
             if (smokeTest) {
