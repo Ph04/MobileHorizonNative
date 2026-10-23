@@ -23,6 +23,7 @@ import android.widget.TextView;
 
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -52,13 +53,14 @@ import java.util.zip.ZipFile;
 public final class ResourceManagerActivity extends Activity {
     private static final int REQUEST_IMPORT_FILES = 701;
     private static final int REQUEST_IMPORT_SHADER_FOLDER = 702;
+    private static final int REQUEST_IMPORT_FABRIC_JAR = 703;
     private static final long MAX_IMPORT_BYTES = 512L * 1024L * 1024L;
     private static final int MAX_FOLDER_ENTRIES = 20_000;
     private static final int MAX_FOLDER_DEPTH = 64;
     private static final int BUFFER_SIZE = 32 * 1024;
     private static final Pattern MOD_ID = Pattern.compile("(?m)^\\s*id\\s*=\\s*\"([A-Za-z0-9_.-]+)\"\\s*(?:#.*)?$");
 
-    private enum Kind { TEXTURE, MOD, SHADER }
+    private enum Kind { TEXTURE, MOD, SHADER, FABRIC_JAR }
     private enum ArchiveKind { TEXTURE, JAVA_SHADER, HORIZON_SHADER, UNKNOWN }
 
     private static final class ResourceItem {
@@ -74,21 +76,40 @@ public final class ResourceManagerActivity extends Activity {
         }
     }
 
+    private static final class FabricJarInfo {
+        final String id, name, version;
+        final int classes, resources;
+        final boolean hasMixins, hasAccessWidener;
+        FabricJarInfo(String id, String name, String version, int classes, int resources,
+                      boolean hasMixins, boolean hasAccessWidener) {
+            this.id = id; this.name = name; this.version = version;
+            this.classes = classes; this.resources = resources;
+            this.hasMixins = hasMixins; this.hasAccessWidener = hasAccessWidener;
+        }
+    }
+
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final java.util.concurrent.ExecutorService io =
             java.util.concurrent.Executors.newSingleThreadExecutor();
     private LinearLayout content;
     private TextView status;
     private ProgressBar progress;
-    private Button importFilesButton, importFolderButton;
+    private Button importFilesButton, importFolderButton, importFabricJarButton;
+    private CheckBox profileToggle;
     private boolean busy;
 
+    private boolean fabricBridgeEnabled() {
+        return getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE).getBoolean("enabled", false);
+    }
     private File home() { return new File(getFilesDir(), "horizon"); }
     private File textureDir() { return new File(home(), "resourcepacks"); }
-    private File modDir() { return new File(home(), "horizon-mods"); }
+    private File modDir() { return new File(home(), fabricBridgeEnabled()
+            ? "horizon-fabric-bridge-mods" : "horizon-mods"); }
+    private File fabricInboxDir() { return new File(home(), "horizon-fabric-bridge-inbox"); }
     private File shaderDir() { return new File(home(), "shaderpacks"); }
     private File optionsFile() { return new File(home(), "options.txt"); }
-    private File modListFile() { return new File(home(), "horizon-mods.txt"); }
+    private File modListFile() { return new File(home(), fabricBridgeEnabled()
+            ? "horizon-fabric-bridge-mods.txt" : "horizon-mods.txt"); }
     private File graphicsFile() { return new File(home(), "horizon-graphics.txt"); }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -124,12 +145,40 @@ public final class ResourceManagerActivity extends Activity {
         introParams.topMargin = dp(5);
         page.addView(intro, introParams);
 
+        LinearLayout profileCard = card();
+        LinearLayout.LayoutParams profileCardParams = params(-1, -2);
+        profileCardParams.topMargin = dp(12);
+        page.addView(profileCard, profileCardParams);
+        profileToggle = new CheckBox(this);
+        profileToggle.setText("Gerenciar perfil Fabric Bridge (experimental)");
+        profileToggle.setTextColor(0xff18213a);
+        profileToggle.setChecked(fabricBridgeEnabled());
+        profileToggle.setOnCheckedChangeListener((button, enabled) -> {
+            getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE).edit()
+                    .putBoolean("enabled", enabled).apply();
+            showStatus(enabled
+                    ? "Perfil Fabric Bridge selecionado. Mods .hmod serão guardados na pasta isolada desse perfil."
+                    : "Perfil Vanilla selecionado. Os mods Horizon serão guardados na pasta Vanilla, sem misturar os perfis.");
+            refreshResources();
+        });
+        profileCard.addView(profileToggle, params(-1, -2));
+        TextView profileHint = text(
+                "A seleção é compartilhada com a tela Jogar. Os mods .hmod ficam separados por perfil; JARs Fabric são apenas armazenados para análise/conversão e nunca são executados diretamente.",
+                12, 0xff68728a, false);
+        LinearLayout.LayoutParams profileHintParams = params(-1, -2);
+        profileHintParams.topMargin = dp(4);
+        profileCard.addView(profileHint, profileHintParams);
+
         LinearLayout actions = card();
         LinearLayout.LayoutParams actionsParams = params(-1, -2);
         actionsParams.topMargin = dp(14);
         page.addView(actions, actionsParams);
-        importFilesButton = button("Importar arquivo (.zip / .hmod)", true, v -> chooseFiles());
+        importFilesButton = button("Importar recurso que ainda não tenho (.zip / .hmod)", true, v -> chooseFiles());
         actions.addView(importFilesButton, params(-1, 48));
+        importFabricJarButton = button("Importar mod Fabric (.jar) para análise", false, v -> chooseFabricJars());
+        LinearLayout.LayoutParams fabricImportParams = params(-1, 46);
+        fabricImportParams.topMargin = dp(6);
+        actions.addView(importFabricJarButton, fabricImportParams);
         importFolderButton = button("Importar pasta de shader pack", false, v -> chooseShaderFolder());
         LinearLayout.LayoutParams folderParams = params(-1, 46);
         folderParams.topMargin = dp(6);
@@ -183,6 +232,18 @@ public final class ResourceManagerActivity extends Activity {
         catch (Exception error) { showStatus("Não foi possível abrir o seletor: " + message(error)); }
     }
 
+    private void chooseFabricJars() {
+        if (busy) return;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/java-archive");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES,
+                new String[]{"application/java-archive", "application/octet-stream", "*/*"});
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try { startActivityForResult(intent, REQUEST_IMPORT_FABRIC_JAR); }
+        catch (Exception error) { showStatus("Não foi possível abrir o seletor de JARs: " + message(error)); }
+    }
+
     private void chooseShaderFolder() {
         if (busy) return;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
@@ -194,7 +255,7 @@ public final class ResourceManagerActivity extends Activity {
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null) return;
-        if (requestCode == REQUEST_IMPORT_FILES) {
+        if (requestCode == REQUEST_IMPORT_FILES || requestCode == REQUEST_IMPORT_FABRIC_JAR) {
             List<Uri> uris = new ArrayList<>();
             if (data.getClipData() != null) {
                 for (int i = 0; i < data.getClipData().getItemCount(); i++) {
@@ -231,14 +292,21 @@ public final class ResourceManagerActivity extends Activity {
     private String importOne(Uri uri) throws Exception {
         String name = displayName(uri);
         String lower = name.toLowerCase(Locale.ROOT);
-        if (lower.endsWith(".jar")) {
-            throw new IllegalArgumentException("Mods Fabric/Forge/NeoForge .jar não rodam neste runtime. Importe um .hmod do Horizon.");
-        }
         File staging = File.createTempFile("mh-resource-", ".part", getCacheDir());
         try {
             try (InputStream input = getContentResolver().openInputStream(uri)) {
                 if (input == null) throw new IOException("O Android não conseguiu abrir o arquivo.");
                 copyLimited(input, staging, MAX_IMPORT_BYTES);
+            }
+            if (lower.endsWith(".jar")) {
+                FabricJarInfo info = inspectFabricJar(staging);
+                ensureDirs(fabricInboxDir());
+                if (fabricJarIdExists(info.id)) {
+                    throw new IllegalArgumentException("Já existe um JAR Fabric importado com ID '" + info.id + "'. Exclua a versão antiga antes de importar outra.");
+                }
+                File target = copyToTarget(staging, fabricInboxDir(), fileName(name, ".jar"));
+                return "mod Fabric " + info.name + " (" + info.id + " " + info.version
+                        + ") guardado para análise/conversão; não foi executado (" + target.getName() + ")";
             }
             if (lower.endsWith(".hmod")) {
                 String id = readModId(staging);
@@ -267,6 +335,58 @@ public final class ResourceManagerActivity extends Activity {
             }
             throw new IllegalArgumentException("ZIP não reconhecido. Pacotes de textura exigem pack.mcmeta e assets/; shader packs Java exigem shaders/.");
         } finally { staging.delete(); }
+    }
+
+    private FabricJarInfo inspectFabricJar(File file) throws Exception {
+        try (ZipFile zip = new ZipFile(file)) {
+            ZipEntry metadata = zip.getEntry("fabric.mod.json");
+            if (metadata == null || metadata.isDirectory()) {
+                throw new IllegalArgumentException("O JAR não contém fabric.mod.json; selecione um mod Fabric válido.");
+            }
+            JSONObject json;
+            try (InputStream input = zip.getInputStream(metadata)) {
+                json = new JSONObject(new String(readLimitedBytes(input, 1024 * 1024), StandardCharsets.UTF_8));
+            } catch (JSONException error) {
+                throw new IllegalArgumentException("fabric.mod.json inválido: " + message(error));
+            }
+            String id = json.optString("id", "").trim();
+            if (!id.matches("[A-Za-z0-9_.-]+")) {
+                throw new IllegalArgumentException("fabric.mod.json não contém um ID Fabric válido.");
+            }
+            String name = json.optString("name", id).trim();
+            if (name.isEmpty()) name = id;
+            String version = json.optString("version", "desconhecida").trim();
+            if (version.isEmpty()) version = "desconhecida";
+            int classes = 0, resources = 0;
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                String path = entry.getName().replace('\\', '/');
+                if (path.endsWith(".class")) classes++;
+                if (path.startsWith("assets/") || path.startsWith("data/")) resources++;
+            }
+            Object mixins = json.opt("mixins");
+            boolean hasMixins = mixins != null && mixins != JSONObject.NULL
+                    && (!(mixins instanceof JSONArray) || ((JSONArray) mixins).length() > 0);
+            boolean hasAccessWidener = !json.optString("accessWidener", "").trim().isEmpty();
+            return new FabricJarInfo(id, name, version, classes, resources, hasMixins, hasAccessWidener);
+        } catch (IOException error) {
+            throw new IllegalArgumentException("O arquivo não é um JAR/ZIP válido.");
+        } catch (JSONException error) {
+            throw new IllegalArgumentException("fabric.mod.json inválido: " + message(error));
+        }
+    }
+
+    private boolean fabricJarIdExists(String id) {
+        File[] files = fabricInboxDir().listFiles((dir, name) ->
+                name.toLowerCase(Locale.ROOT).endsWith(".jar"));
+        if (files == null) return false;
+        for (File file : files) {
+            try { if (id.equals(inspectFabricJar(file).id)) return true; }
+            catch (Exception ignored) {}
+        }
+        return false;
     }
 
     private ArchiveKind inspectZip(File file) throws Exception {
@@ -411,8 +531,9 @@ public final class ResourceManagerActivity extends Activity {
     private void refreshResources() {
         if (content == null) return;
         content.removeAllViews();
-        ensureUiDir(textureDir()); ensureUiDir(modDir()); ensureUiDir(shaderDir());
-        List<ResourceItem> textures = new ArrayList<>(), mods = new ArrayList<>(), shaders = new ArrayList<>();
+        ensureUiDir(textureDir()); ensureUiDir(modDir()); ensureUiDir(shaderDir()); ensureUiDir(fabricInboxDir());
+        List<ResourceItem> textures = new ArrayList<>(), mods = new ArrayList<>(),
+                shaders = new ArrayList<>(), fabricJars = new ArrayList<>();
 
         File[] items = textureDir().listFiles();
         if (items != null) for (File file : items) {
@@ -447,12 +568,34 @@ public final class ResourceManagerActivity extends Activity {
             }
         }
 
+        items = fabricInboxDir().listFiles();
+        if (items != null) for (File file : items) {
+            if (!file.isFile() || !file.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
+            try {
+                FabricJarInfo info = inspectFabricJar(file);
+                String details = "ID: " + info.id + " · versão " + info.version
+                        + " · " + info.classes + " classes · " + info.resources + " recursos"
+                        + (info.hasMixins ? " · Mixins" : "")
+                        + (info.hasAccessWidener ? " · Access Widener" : "")
+                        + " · pendente de conversão; não executado.";
+                fabricJars.add(new ResourceItem(Kind.FABRIC_JAR, file.getName(), file,
+                        info.id, false, details));
+            } catch (Exception error) {
+                fabricJars.add(new ResourceItem(Kind.FABRIC_JAR, file.getName(), file,
+                        "", false, "JAR importado, mas sua análise falhou: " + message(error)));
+            }
+        }
+
         Comparator<ResourceItem> byName = Comparator.comparing(item -> item.name.toLowerCase(Locale.ROOT));
-        Collections.sort(textures, byName); Collections.sort(mods, byName); Collections.sort(shaders, byName);
+        Collections.sort(textures, byName); Collections.sort(mods, byName);
+        Collections.sort(shaders, byName); Collections.sort(fabricJars, byName);
         addSection("Pacotes de textura", "ZIPs Java com pack.mcmeta e assets/.", textures);
-        addSection("Mods Horizon", "Arquivos .hmod; mods .jar de Fabric/Forge não são executados.", mods);
+        addSection(fabricBridgeEnabled() ? "Mods Horizon — perfil Fabric Bridge" : "Mods Horizon — perfil Vanilla",
+                "Arquivos .hmod separados por perfil; a ativação vale no próximo início.", mods);
+        addSection("Mods Fabric importados — aguardando conversão",
+                "JARs são inspecionados sem extração/execução. Ainda não são mods jogáveis no Horizon.", fabricJars);
         addSection("Shader packs", "Pastas pack.toml/shaders/ e shader ZIPs Java reconhecidos.", shaders);
-        if (textures.isEmpty() && mods.isEmpty() && shaders.isEmpty()) {
+        if (textures.isEmpty() && mods.isEmpty() && shaders.isEmpty() && fabricJars.isEmpty()) {
             TextView empty = text("Nenhum recurso compatível instalado. Importe um arquivo ou uma pasta de shader pack.", 14, 0xff68728a, false);
             LinearLayout.LayoutParams p = params(-1, -2); p.topMargin = dp(8); content.addView(empty, p);
         }
@@ -496,10 +639,12 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams actionsParams = params(-1, -2); actionsParams.topMargin = dp(4);
         row.addView(actions, actionsParams);
         CheckBox active = new CheckBox(this);
-        active.setText(item.active ? "Ativo" : "Desativado");
+        active.setText(item.kind == Kind.FABRIC_JAR ? "Aguardando conversão"
+                : item.active ? "Ativo" : "Desativado");
         active.setTextColor(0xff283550);
-        active.setChecked(item.active);
-        active.setEnabled(item.kind != Kind.MOD || !item.id.isEmpty());
+        active.setChecked(item.kind != Kind.FABRIC_JAR && item.active);
+        active.setEnabled(item.kind != Kind.FABRIC_JAR
+                && (item.kind != Kind.MOD || !item.id.isEmpty()));
         active.setOnCheckedChangeListener((button, checked) -> {
             try {
                 setActive(item, checked);
@@ -522,6 +667,9 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     private void setActive(ResourceItem item, boolean enabled) throws Exception {
+        if (item.kind == Kind.FABRIC_JAR) {
+            throw new IllegalArgumentException("JARs Fabric aguardam conversão e não podem ser ativados diretamente.");
+        }
         if (item.kind == Kind.MOD) {
             if (item.id.isEmpty()) throw new IllegalArgumentException("O manifesto deste mod é inválido.");
             TreeSet<String> ids = readEnabledModIds();
@@ -546,7 +694,7 @@ public final class ResourceManagerActivity extends Activity {
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Excluir", (dialog, which) -> {
                     try {
-                        setActive(item, false);
+                        if (item.kind != Kind.FABRIC_JAR) setActive(item, false);
                         deleteRecursively(item.path);
                         if (item.kind == Kind.SHADER) new File(shaderDir(), item.name + ".txt").delete();
                         refreshResources();
@@ -761,7 +909,9 @@ public final class ResourceManagerActivity extends Activity {
 
     private void setBusyUi(boolean value) {
         importFilesButton.setEnabled(!value);
+        importFabricJarButton.setEnabled(!value);
         importFolderButton.setEnabled(!value);
+        profileToggle.setEnabled(!value);
         progress.setVisibility(value ? View.VISIBLE : View.GONE);
         progress.setIndeterminate(value);
     }
