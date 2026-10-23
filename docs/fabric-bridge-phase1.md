@@ -1,5 +1,7 @@
 # Horizon Fabric Bridge — Phase 1
 
+> Matriz detalhada dos módulos Fabric API 26.3, estado atual do Horizon e plano de adaptação: [fabric-api-compatibility-map.md](fabric-api-compatibility-map.md).
+
 Status: implementation groundwork; not a Fabric runtime or automatic bytecode converter yet.
 
 ## Goals of this phase
