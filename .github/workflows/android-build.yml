@@ -405,7 +405,7 @@ jobs:
           if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
             grep -F "name='dev.mobilehorizon.app.offline1' versionCode='19' versionName='0.0.1-offline1'" "$RUNNER_TEMP/apk-badging.txt"
           else
-            grep -F "name='dev.mobilehorizon.app.offline1.test.v19' versionCode='18' versionName='0.0.1-offline1-test-v19'" "$RUNNER_TEMP/apk-badging.txt"
+            grep -F "name='dev.mobilehorizon.app.offline1.test.v19' versionCode='19' versionName='0.0.1-offline1-test-v19'" "$RUNNER_TEMP/apk-badging.txt"
           fi
           sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
           CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
