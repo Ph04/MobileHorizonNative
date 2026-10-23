@@ -373,8 +373,6 @@ public final class ResourceManagerActivity extends Activity {
             return new FabricJarInfo(id, name, version, classes, resources, hasMixins, hasAccessWidener);
         } catch (IOException error) {
             throw new IllegalArgumentException("O arquivo não é um JAR/ZIP válido.");
-        } catch (JSONException error) {
-            throw new IllegalArgumentException("fabric.mod.json inválido: " + message(error));
         }
     }
 
