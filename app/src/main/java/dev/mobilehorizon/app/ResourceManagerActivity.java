@@ -54,13 +54,14 @@ public final class ResourceManagerActivity extends Activity {
     private static final int REQUEST_IMPORT_FILES = 701;
     private static final int REQUEST_IMPORT_SHADER_FOLDER = 702;
     private static final int REQUEST_IMPORT_FABRIC_JAR = 703;
+    private static final int REQUEST_INSTALL_DATA_PACK = 704;
     private static final long MAX_IMPORT_BYTES = 512L * 1024L * 1024L;
     private static final int MAX_FOLDER_ENTRIES = 20_000;
     private static final int MAX_FOLDER_DEPTH = 64;
     private static final int BUFFER_SIZE = 32 * 1024;
     private static final Pattern MOD_ID = Pattern.compile("(?m)^\\s*id\\s*=\\s*\"([A-Za-z0-9_.-]+)\"\\s*(?:#.*)?$");
 
-    private enum Kind { TEXTURE, MOD, SHADER, FABRIC_JAR }
+    private enum Kind { TEXTURE, MOD, SHADER, FABRIC_JAR, DATA_PACK }
     private enum ArchiveKind { TEXTURE, JAVA_SHADER, HORIZON_SHADER, UNKNOWN }
 
     private static final class ResourceItem {
@@ -78,13 +79,15 @@ public final class ResourceManagerActivity extends Activity {
 
     private static final class FabricJarInfo {
         final String id, name, version;
-        final int classes, resources;
-        final boolean hasMixins, hasAccessWidener;
+        final int classes, resources, assets, data;
+        final boolean hasMixins, hasAccessWidener, hasEntrypoints;
         FabricJarInfo(String id, String name, String version, int classes, int resources,
-                      boolean hasMixins, boolean hasAccessWidener) {
+                      int assets, int data, boolean hasMixins, boolean hasAccessWidener,
+                      boolean hasEntrypoints) {
             this.id = id; this.name = name; this.version = version;
-            this.classes = classes; this.resources = resources;
+            this.classes = classes; this.resources = resources; this.assets = assets; this.data = data;
             this.hasMixins = hasMixins; this.hasAccessWidener = hasAccessWidener;
+            this.hasEntrypoints = hasEntrypoints;
         }
     }
 
@@ -96,6 +99,7 @@ public final class ResourceManagerActivity extends Activity {
     private ProgressBar progress;
     private Button importFilesButton, importFolderButton, importFabricJarButton;
     private CheckBox profileToggle;
+    private File pendingDataPackInstall;
     private boolean busy;
 
     private boolean fabricBridgeEnabled() {
@@ -106,6 +110,7 @@ public final class ResourceManagerActivity extends Activity {
     private File modDir() { return new File(home(), fabricBridgeEnabled()
             ? "horizon-fabric-bridge-mods" : "horizon-mods"); }
     private File fabricInboxDir() { return new File(home(), "horizon-fabric-bridge-inbox"); }
+    private File convertedDataPackDir() { return new File(home(), "horizon-fabric-bridge-datapacks"); }
     private File shaderDir() { return new File(home(), "shaderpacks"); }
     private File optionsFile() { return new File(home(), "options.txt"); }
     private File modListFile() { return new File(home(), fabricBridgeEnabled()
@@ -266,6 +271,10 @@ public final class ResourceManagerActivity extends Activity {
             if (!uris.isEmpty()) importPickedFiles(uris);
         } else if (requestCode == REQUEST_IMPORT_SHADER_FOLDER && data.getData() != null) {
             importShaderFolder(data.getData());
+        } else if (requestCode == REQUEST_INSTALL_DATA_PACK && data.getData() != null) {
+            File pack = pendingDataPackInstall;
+            pendingDataPackInstall = null;
+            if (pack != null) installDataPackIntoWorld(data.getData(), pack);
         }
     }
 
@@ -357,20 +366,32 @@ public final class ResourceManagerActivity extends Activity {
             if (name.isEmpty()) name = id;
             String version = json.optString("version", "desconhecida").trim();
             if (version.isEmpty()) version = "desconhecida";
-            int classes = 0, resources = 0;
+            int classes = 0, resources = 0, assets = 0, data = 0;
+            boolean mixinFile = false, accessWidenerFile = false;
             java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 if (entry.isDirectory()) continue;
                 String path = entry.getName().replace('\\', '/');
                 if (path.endsWith(".class")) classes++;
-                if (path.startsWith("assets/") || path.startsWith("data/")) resources++;
+                if (path.startsWith("assets/")) { assets++; resources++; }
+                if (path.startsWith("data/")) { data++; resources++; }
+                String pathLower = path.toLowerCase(Locale.ROOT);
+                if (pathLower.endsWith(".mixins.json") || pathLower.endsWith(".mixin.json")
+                        || (pathLower.endsWith(".json") && pathLower.contains("mixin"))) mixinFile = true;
+                if (pathLower.endsWith(".accesswidener") || pathLower.endsWith(".access_widener")
+                        || pathLower.endsWith(".aw")) accessWidenerFile = true;
             }
             Object mixins = json.opt("mixins");
-            boolean hasMixins = mixins != null && mixins != JSONObject.NULL
-                    && (!(mixins instanceof JSONArray) || ((JSONArray) mixins).length() > 0);
-            boolean hasAccessWidener = !json.optString("accessWidener", "").trim().isEmpty();
-            return new FabricJarInfo(id, name, version, classes, resources, hasMixins, hasAccessWidener);
+            boolean hasMixins = mixinFile || (mixins instanceof JSONArray && ((JSONArray) mixins).length() > 0)
+                    || (mixins instanceof String && !((String) mixins).trim().isEmpty())
+                    || (mixins instanceof JSONObject && ((JSONObject) mixins).length() > 0);
+            boolean hasAccessWidener = accessWidenerFile
+                    || !json.optString("accessWidener", "").trim().isEmpty();
+            JSONObject entrypoints = json.optJSONObject("entrypoints");
+            boolean hasEntrypoints = entrypoints != null && entrypoints.length() > 0;
+            return new FabricJarInfo(id, name, version, classes, resources, assets, data,
+                    hasMixins, hasAccessWidener, hasEntrypoints);
         } catch (IOException error) {
             throw new IllegalArgumentException("O arquivo não é um JAR/ZIP válido.");
         }
