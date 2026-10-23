@@ -90,6 +90,8 @@ public final class MainActivity extends Activity {
     private Button offlineNameButton;
     private Button offlinePlayButton;
     private Button touchControlsButton;
+    private CheckBox fabricBridgeToggle;
+    private boolean syncingFabricBridgeToggle;
     private boolean busy;
     private boolean conversionBusy;
     private boolean downloadBusy;
@@ -192,6 +194,12 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (fabricBridgeToggle != null) {
+            syncingFabricBridgeToggle = true;
+            fabricBridgeToggle.setChecked(getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE)
+                    .getBoolean("enabled", false));
+            syncingFabricBridgeToggle = false;
+        }
         if (sessionEnvSet) {
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
@@ -309,12 +317,13 @@ public final class MainActivity extends Activity {
         touchControlsButton = button("Customizar layout dos botões", true, v -> openTouchControlsEditor());
         addSpaced(playCard, touchControlsButton, 48, 6);
 
-        CheckBox fabricBridgeToggle = new CheckBox(this);
+        fabricBridgeToggle = new CheckBox(this);
         fabricBridgeToggle.setText("Ativar compatibilidade Fabric (experimental)");
         fabricBridgeToggle.setTextColor(0xff18213a);
         fabricBridgeToggle.setChecked(getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE)
                 .getBoolean("enabled", false));
         fabricBridgeToggle.setOnCheckedChangeListener((button, enabled) -> {
+            if (syncingFabricBridgeToggle) return;
             getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE).edit()
                     .putBoolean("enabled", enabled).apply();
             setStatus(
