@@ -322,6 +322,7 @@ public final class ResourceManagerActivity extends Activity {
                 if (modIdExistsIn(bridgeModDir(), info.id)) {
                     throw new IllegalArgumentException("O perfil Fabric Bridge já contém um mod com ID '" + info.id + "'. Remova-o antes de importar outra versão.");
                 }
+                File target = copyToTarget(staging, fabricInboxDir(), fileName(name, ".jar"));
                 String conversion;
                 try {
                     conversion = convertFabricJarNative(staging, info);
@@ -329,7 +330,6 @@ public final class ResourceManagerActivity extends Activity {
                     conversion = "O conversor Horizon não conseguiu gerar um mod de conteúdo completo: "
                             + message(conversionError) + ". O JAR original foi mantido na fila para análise.";
                 }
-                File target = copyToTarget(staging, fabricInboxDir(), fileName(name, ".jar"));
                 return "JAR Fabric " + info.name + " (" + info.id + " " + info.version + ") importado; "
                         + conversion + " Original: " + target.getName()
                         + ". A saída de conteúdo fica apenas no perfil Fabric Bridge; classes Java/Mixins não são executadas.";
