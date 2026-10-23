@@ -60,6 +60,7 @@ steps = [
     "09_fabric_jar_carry.py",
     "10_fabric_bridge_api_p1.py",
     "11_fabric_bridge_p1_runtime.py",
+    "12_fabric_bridge_input_dispatch.py",
 ]
 context = dict(globals())
 for step in steps:
