@@ -2,7 +2,7 @@
 
 ## Objetivo e escopo
 
-Este documento transforma a API publicada do Fabric para Minecraft 26.3 em uma lista de trabalho para adaptar funcionalidades ao sistema de mods nativo do Horizon. O inventário de módulos é baseado no arquivo oficial de inclusão de projetos do ramo 26.3 de FabricMC/fabric-api: https://github.com/FabricMC/fabric-api/blob/26.3/settings.gradle. Não é uma promessa de que todos os mods Java poderão ser executados.
+Este documento transforma a API publicada do Fabric para Minecraft 26.3 em uma lista de trabalho para adaptar funcionalidades ao sistema de mods nativo do Horizon. O inventário de módulos é baseado no arquivo oficial de inclusão de projetos do ramo 26.3 de FabricMC/fabric-api: https://github.com/FabricMC/fabric-api/blob/26.3/settings.gradle. Não é uma promessa de que todos os mods Java poderão ser executados. Os artefatos fabric-api-bom e fabric-api-catalog são usados para dependências/catálogo e não são módulos de API em si; por isso ficam fora da tabela.
 
 **Regra de arquitetura:** o Horizon é uma reimplementação em Rust. O runtime de mods do Horizon recebe componentes WebAssembly (.hmod); ele não fornece a JVM nem as classes Java de Minecraft contra as quais um mod Fabric foi compilado. Portanto, o alvo realista é implementar APIs nativas equivalentes no SDK Horizon e portar o comportamento do mod para elas. Copiar arquivos assets/data de um JAR é conversão de conteúdo, não tradução do código Java.
 
