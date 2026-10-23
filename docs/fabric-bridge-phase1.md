@@ -110,8 +110,7 @@ The overlay now carries a compile-tested kernel for deterministic typed events (
 
 The new `horizon:fabric-bridge@0.1.0` WIT world is kept in a separate WIT directory so existing `horizon:mods` 0.1 components remain unchanged. CI compiles the generated P1 bindings to validate the WIT contract.
 
-**Integration boundary:** the kernel and WIT bindings are groundwork, not yet a loadable P1 `.hmod` API. The runtime still needs the P1 component loader/instance, capability manifest checks for the new imports, guest callback registration and dispatch, and game/UI input hooks. Until those pieces are connected and tested, do not mark any Fabric JAR code as working merely because this kernel compiles. The callback wall-time meter is accounting, not preemption; Wasmtime fuel remains the actual guard against an infinite loop.
-
+**Updated runtime boundary:** the overlay now loads the separate P1 WASM component world, checks imported interfaces against manifest capabilities, calls the guest init export, and dispatches tick, received-chat, typed-command and HUD/config operations. The input adapter now dispatches non-repeating keyboard press/release events after Horizon's rebinding layer using stable USB HID usage IDs. World join/leave, outgoing-chat cancellation, mouse and named-touch callback dispatch still need their game hooks; registration in WIT alone does not make those callbacks active. The callback wall-time meter is accounting, not preemption; Wasmtime fuel remains the actual guard against an infinite loop.
 
 ## v0.4 coverage audit — contracts versus working runtime
 
@@ -124,7 +123,7 @@ The attached v0.4 bridge source is useful as a typed API design, but the presenc
 | Loot | Table/roll contract | Call it from the authoritative loot/drop path, not only from a client-side helper |
 | Attachments | Typed in-memory data model | Stable serialization, save/load lifecycle, ownership and client/server synchronization |
 | Particles / sounds | Declarative effect values | Dispatch to particle and sound engines, validate resource IDs and enforce per-tick limits |
-| HUD | P1 declarative widget state exists | Add the actual renderer hook for text, bars and item icons; connect input focus and item lookups |
+| HUD | P1 text/bar/item-label widgets are adapted to Horizon's existing text-panel renderer | True item icon rendering, layout offsets, input focus and interactive UI still need hooks |
 | Networking | Limited channel/message contracts | Register channels against real packet dispatch, validate direction/size/rate, and enforce permissions on both sides |
 | Transfers | Item-storage move contract | Transaction/rollback integration with inventories; fluid storage and complex transactions remain unsupported |
 | Dimensions | Limited dimension metadata/registration | World/session integration and a server-side custom-generator API |
@@ -134,9 +133,21 @@ The attached v0.4 bridge source is useful as a typed API design, but the presenc
 
 ### Required integration order
 
-1. **Client runtime first:** load the experimental P1 component separately from legacy horizon:mods, validate its import capabilities before instantiation, and dispatch a minimal tick/chat test mod end-to-end.
-2. **Visible client features:** connect key input, typed command registration, persisted config/attachments, and render the declarative HUD through the real frame renderer.
-3. **Content/gameplay hooks:** connect recipes and loot only where the host owns the authoritative execution path. Client-side declarations alone cannot change a multiplayer server's crafting, drops, or world generation.
-4. **Server features last:** biome modifiers, custom dimension generators, block/game-rule mutations, networking authority and synchronized attachments require server-side hooks/runtime support. If this project remains a client-only Horizon port, these stay explicitly unsupported rather than being simulated locally.
+1. **End-to-end client fixture:** create and load a tiny P1 .hmod that registers init, tick, received-chat, keybinding and command callbacks; verify callback order and visible output in a real game session.
+2. **Input/lifecycle completion:** wire world join/leave, outgoing-chat cancellation, mouse and named-touch callbacks to actual game entry points; registration alone is not enough.
+3. **Visible client features:** verify config persistence and HUD updates in-game, then add real item-icon rendering/layout and structured UI interactions.
+4. **Content/gameplay hooks:** connect recipes and loot only where Horizon owns authoritative execution. Biome modifiers, custom dimensions, gameplay mutations, networking authority and synced attachments need server-side support; do not simulate these client-side.
 
 The Rust kernels and WIT worlds remain experimental groundwork until the corresponding host hook and a real .hmod integration test pass. In particular, the v0.4 API map does not claim automatic conversion of JAR bytecode, Mixins, Access Wideners, Java model callbacks or arbitrary Minecraft internals.
+
+## Native equivalents for Fabric entrypoints, Mixins and Access Wideners
+
+These features need native equivalents, not a pretend Java bytecode loader. Horizon runs its game logic in Rust and loads Horizon mods as WebAssembly components. A Fabric JAR's Java classes therefore cannot be invoked just by reading fabric.mod.json.
+
+**Entrypoints.** A converted native mod's init export is the Horizon-side lifecycle entrypoint. A port must move ModInitializer or ClientModInitializer setup logic into that export and register P1 callbacks. Original Java entrypoint class names remain triage metadata; the converter never calls those classes.
+
+**Mixin hooks.** Common, well-understood patterns can be manually mapped to explicit native hook IDs (client tick, keyboard, chat, world lifecycle, rendering/UI) with defined order and cancellation rules. An @Inject may be representable by an event if its target and semantics are supported. @Redirect, @Overwrite, arbitrary @Modify* operations, and injections into private implementation details cannot be generically translated; they need a native Horizon API/patch or an explicit source port. The audit tool identifies configurations and references; it does not apply injections.
+
+**Access Wideners.** Inventory accessible, extendable and mutable declarations, then map each to an existing snapshot/getter/setter or a new bounded capability where semantics are clear. Do not expose Rust internals just because a Java member was widened. Unsupported declarations must be reported as requiring a manual port.
+
+The practical goal is a Fabric-to-Horizon adapter profile: inspect each JAR, produce an actionable entrypoint/Mixin/access-widener inventory, and implement common behavior through stable native hooks. This improves support for mods whose behavior can be ported; it is not binary compatibility with arbitrary Java Fabric mods. Server-only gameplay changes also require server-authoritative hooks.
