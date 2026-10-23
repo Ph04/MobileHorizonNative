@@ -144,6 +144,7 @@ def convert_jar(jar_path: Path, output_dir: Path, *, minecraft_version: str = "2
                 "error": "fabric.mod.json must contain a lowercase, valid mod ID"}
     version = str(metadata.get("version", "unknown")).strip() or "unknown"
     display_name = str(metadata.get("name", mod_id)).strip() or mod_id
+    made_outputs: list[Path] = []
     try:
         with zipfile.ZipFile(jar_path, "r") as source:
             entries = source.infolist()
@@ -152,6 +153,7 @@ def convert_jar(jar_path: Path, output_dir: Path, *, minecraft_version: str = "2
             # Validate every asset/data path before writing anything, even if only
             # one of the pack types is ultimately emitted.
             selected: list[zipfile.ZipInfo] = []
+            seen_paths: set[str] = set()
             assets = data = 0
             for info in entries:
                 if info.is_dir():
@@ -159,6 +161,9 @@ def convert_jar(jar_path: Path, output_dir: Path, *, minecraft_version: str = "2
                 name = info.filename
                 if name.startswith(("assets/", "data/")):
                     safe = _safe_relative_entry(name)
+                    if safe in seen_paths:
+                        raise ConversionError(f"duplicate resource path: {safe}")
+                    seen_paths.add(safe)
                     if info.file_size < 0 or info.file_size > MAX_ENTRY_BYTES:
                         raise ConversionError(f"entry exceeds size limit: {safe}")
                     selected.append(info)
@@ -180,6 +185,7 @@ def convert_jar(jar_path: Path, output_dir: Path, *, minecraft_version: str = "2
                     description=f"{display_name} resources extracted from Fabric JAR; Java code is not included",
                     pack_format=formats["resource"],
                 )
+                made_outputs.append(target)
                 outputs.append({"type": "resource_pack", "path": str(target),
                                 "files": assets, "uncompressed_bytes": byte_count})
             if data:
@@ -190,9 +196,12 @@ def convert_jar(jar_path: Path, output_dir: Path, *, minecraft_version: str = "2
                     description=f"{display_name} data extracted from Fabric JAR; Java code is not included",
                     pack_format=formats["data"],
                 )
+                made_outputs.append(target)
                 outputs.append({"type": "data_pack", "path": str(target),
                                 "files": data, "uncompressed_bytes": byte_count})
     except (OSError, zipfile.BadZipFile, RuntimeError, ConversionError) as error:
+        for output in made_outputs:
+            output.unlink(missing_ok=True)
         return {"path": str(jar_path), "status": "error", "error": str(error)}
 
     entrypoints = metadata.get("entrypoints", {})
