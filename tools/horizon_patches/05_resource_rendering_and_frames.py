@@ -72,9 +72,9 @@ pack_patch("crates/horizon-client/src/game.rs", '''        // `ItemEntityRendere
         self.remote_display_geometry(camera, &mut out);''', "submit remote display model geometry")
 
 pack_patch("crates/horizon-client/src/game/packs.rs", '''        let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
-        let mut atlas = HudAtlas::build(root)?;''', '''        let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
+        let mut atlas = HudAtlas::build_over(root, &self.vanilla_root())?;''', '''        let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
         let loaded_sprite_layers = render.sprite_layers.len();
-        let mut atlas = HudAtlas::build(root)?;''', "capture loaded sprite-layer count")
+        let mut atlas = HudAtlas::build_over(root, &self.vanilla_root())?;''', "capture loaded sprite-layer count")
 
 pack_patch("crates/horizon-client/src/game/packs.rs", '''            self.pack.context.light.clone(),
         )?;
