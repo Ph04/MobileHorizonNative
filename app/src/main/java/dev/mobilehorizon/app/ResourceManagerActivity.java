@@ -744,13 +744,33 @@ public final class ResourceManagerActivity extends Activity {
     private String readModId(File file) throws Exception {
         try (ZipFile zip = new ZipFile(file)) {
             ZipEntry manifest = zip.getEntry("horizon-mod.toml");
-            ZipEntry wasm = zip.getEntry("mod.wasm");
-            if (manifest == null || wasm == null || wasm.isDirectory()) return null;
+            if (manifest == null || manifest.isDirectory()) return null;
+            String manifestText;
             try (InputStream input = zip.getInputStream(manifest)) {
-                String text = new String(readLimitedBytes(input, 64 * 1024), StandardCharsets.UTF_8);
-                Matcher matcher = MOD_ID.matcher(text);
-                return matcher.find() ? matcher.group(1) : null;
+                manifestText = new String(readLimitedBytes(input, 64 * 1024), StandardCharsets.UTF_8);
             }
+            Matcher matcher = MOD_ID.matcher(manifestText);
+            if (!matcher.find()) return null;
+            ZipEntry wasm = zip.getEntry("mod.wasm");
+            if (wasm != null && !wasm.isDirectory()) return matcher.group(1);
+
+            // Horizon API 0.2 allows content-only .hmod archives with no wasm,
+            // but only when the manifest grants registries and data/assets exist.
+            if (!Pattern.compile("(?m)^\\s*api\\s*=\\s*\\"0\\.2\\"\\s*$").matcher(manifestText).find()
+                    || !Pattern.compile("(?s)capabilities\\s*=\\s*\\[[^\\]]*\\"registries\\"").matcher(manifestText).find()) {
+                return null;
+            }
+            boolean hasContent = false;
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                String name = entry.getName();
+                if (!entry.isDirectory() && (name.startsWith("assets/") || name.startsWith("data/"))) {
+                    hasContent = true;
+                    break;
+                }
+            }
+            return hasContent ? matcher.group(1) : null;
         } catch (IOException error) { return null; }
     }
 
