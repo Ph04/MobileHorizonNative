@@ -52,6 +52,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
 /** Manages only resource formats supported by the bundled Horizon runtime. */
 public final class ResourceManagerActivity extends Activity {
