@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.system.Os;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.view.Gravity;
@@ -26,6 +27,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -33,6 +35,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -44,6 +47,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -107,8 +111,9 @@ public final class ResourceManagerActivity extends Activity {
     }
     private File home() { return new File(getFilesDir(), "horizon"); }
     private File textureDir() { return new File(home(), "resourcepacks"); }
-    private File modDir() { return new File(home(), fabricBridgeEnabled()
-            ? "horizon-fabric-bridge-mods" : "horizon-mods"); }
+    private File vanillaModDir() { return new File(home(), "horizon-mods"); }
+    private File bridgeModDir() { return new File(home(), "horizon-fabric-bridge-mods"); }
+    private File modDir() { return fabricBridgeEnabled() ? bridgeModDir() : vanillaModDir(); }
     private File fabricInboxDir() { return new File(home(), "horizon-fabric-bridge-inbox"); }
     private File convertedDataPackDir() { return new File(home(), "horizon-fabric-bridge-datapacks"); }
     private File shaderDir() { return new File(home(), "shaderpacks"); }
