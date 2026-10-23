@@ -299,12 +299,47 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''        for (position, 
             let at = glam::DVec3::new(position[0], position[1], position[2]);''', '''        for (entity_id, position, text, line_width, background, opacity, flags, transform) in self.remote_text_displays() {
             let at = glam::DVec3::new(position[0], position[1], position[2]);''', "retain text display entity IDs in renderer")
 
-pack_patch("crates/horizon-client/src/game/names.rs", '''                see_through: false,
+pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(NameTag {
+                at: p,
+                lines,
+                light: l,
+                discrete,
+                background_color: 0x3F000000,
+                text_opacity: 255,
+                see_through: false,
                 display_transform: None,
-            });''', '''                see_through: false,
+            });''', '''            tags.push(NameTag {
+                at: p,
+                lines,
+                light: l,
+                discrete,
+                background_color: 0x3F000000,
+                text_opacity: 255,
+                see_through: false,
                 display_transform: None,
                 source_entity_id: None,
-            });''', "mark normal name tags as non-display text")
+            });''', "mark mob name tags as non-display text")
+
+pack_patch("crates/horizon-client/src/game/names.rs", '''            tags.push(NameTag {
+                at: glam::DVec3::new(a.position.x, a.position.y + height + 0.5, a.position.z),
+                lines,
+                light: l,
+                discrete: false,
+                background_color: 0x3F000000,
+                text_opacity: 255,
+                see_through: false,
+                display_transform: None,
+            });''', '''            tags.push(NameTag {
+                at: glam::DVec3::new(a.position.x, a.position.y + height + 0.5, a.position.z),
+                lines,
+                light: l,
+                discrete: false,
+                background_color: 0x3F000000,
+                text_opacity: 255,
+                see_through: false,
+                display_transform: None,
+                source_entity_id: None,
+            });''', "mark armor stand name tags as non-display text")
 
 pack_patch("crates/horizon-client/src/game/names.rs", '''                see_through: flags & 0x02 != 0,
                 display_transform: Some(transform),
