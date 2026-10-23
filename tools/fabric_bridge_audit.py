@@ -209,6 +209,176 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _inspect_mixin_configs(
+    archive: zipfile.ZipFile,
+    names: set[str],
+    paths: list[str],
+    declared: Any,
+    warnings: list[str],
+) -> list[dict[str, Any]]:
+    """Summarize declared Mixin configs without loading or applying their classes."""
+    candidates = set(paths)
+    if isinstance(declared, str):
+        declared = [declared]
+    if isinstance(declared, list):
+        for item in declared:
+            if isinstance(item, str):
+                candidates.add(item)
+            elif isinstance(item, dict) and isinstance(item.get("config"), str):
+                candidates.add(item["config"])
+
+    out: list[dict[str, Any]] = []
+    for path in sorted(candidates):
+        if path not in names:
+            warnings.append(f"declared Mixin config is missing from JAR: {path}")
+            out.append({"path": path, "loaded": False, "error": "file missing"})
+            continue
+        info = archive.getinfo(path)
+        if info.file_size > MAX_METADATA_BYTES:
+            warnings.append(f"Mixin config exceeds the metadata size limit: {path}")
+            out.append({"path": path, "loaded": False, "error": "file too large"})
+            continue
+        try:
+            value = json.loads(archive.read(path).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, OSError, zipfile.BadZipFile) as exc:
+            warnings.append(f"could not parse Mixin config {path}: {exc}")
+            out.append({"path": path, "loaded": False, "error": "invalid JSON"})
+            continue
+        if not isinstance(value, dict):
+            warnings.append(f"Mixin config is not a JSON object: {path}")
+            out.append({"path": path, "loaded": False, "error": "not an object"})
+            continue
+
+        def class_list(key: str) -> list[str]:
+            raw = value.get(key, [])
+            if not isinstance(raw, list):
+                warnings.append(f"Mixin config {path} has a non-list {key} field")
+                return []
+            return [entry for entry in raw if isinstance(entry, str)][:MAX_SAMPLES]
+
+        injectors = value.get("injectors", {})
+        out.append({
+            "path": path,
+            "loaded": True,
+            "required": value.get("required"),
+            "min_version": value.get("minVersion"),
+            "package": value.get("package"),
+            "plugin": value.get("plugin"),
+            "common_mixins": class_list("mixins"),
+            "client_mixins": class_list("client"),
+            "server_mixins": class_list("server"),
+            "default_require": injectors.get("defaultRequire")
+                if isinstance(injectors, dict) else None,
+            "java_class_transform_applied": False,
+        })
+    return out
+
+
+def _inspect_access_wideners(
+    archive: zipfile.ZipFile,
+    names: set[str],
+    paths: list[str],
+    warnings: list[str],
+) -> list[dict[str, Any]]:
+    """Inventory AW directives and suggest native API mappings; never mutates code."""
+    out: list[dict[str, Any]] = []
+    supported_ops = {
+        "accessible", "extendable", "mutable",
+        "transitive-accessible", "transitive-extendable", "transitive-mutable",
+    }
+    for path in sorted(set(paths)):
+        if path not in names:
+            warnings.append(f"declared Access Widener is missing from JAR: {path}")
+            out.append({"path": path, "loaded": False, "error": "file missing", "entries": []})
+            continue
+        info = archive.getinfo(path)
+        if info.file_size > MAX_METADATA_BYTES:
+            warnings.append(f"Access Widener exceeds the metadata size limit: {path}")
+            out.append({"path": path, "loaded": False, "error": "file too large", "entries": []})
+            continue
+        try:
+            source = archive.read(path).decode("utf-8")
+        except (UnicodeDecodeError, OSError, zipfile.BadZipFile) as exc:
+            warnings.append(f"could not read Access Widener {path}: {exc}")
+            out.append({"path": path, "loaded": False, "error": "not UTF-8", "entries": []})
+            continue
+
+        lines = source.splitlines()
+        header = next((line.strip() for line in lines if line.strip()), "")
+        header_parts = header.split()
+        header_valid = len(header_parts) == 3 and header_parts[0] == "accessWidener" \
+            and header_parts[1] in ("v1", "v2") and header_parts[2] in ("named", "intermediary", "official")
+        if not header_valid:
+            warnings.append(f"Access Widener has an invalid or missing header: {path}")
+        entries: list[dict[str, Any]] = []
+        malformed = 0
+        for line_number, original in enumerate(lines, 1):
+            line = original.split("#", 1)[0].strip()
+            if not line or line.startswith("accessWidener "):
+                continue
+            parts = line.split()
+            if len(parts) < 3 or parts[0] not in supported_ops or parts[1] not in ("class", "field", "method"):
+                malformed += 1
+                continue
+            operation, target_type, owner = parts[:3]
+            if target_type == "class":
+                if len(parts) != 3:
+                    malformed += 1
+                    continue
+                member = None
+                descriptor = None
+            else:
+                if len(parts) != 5:
+                    malformed += 1
+                    continue
+                member, descriptor = parts[3], parts[4]
+            if operation.endswith("accessible"):
+                mapping = "replace with an explicit public read/query API where needed"
+            elif operation.endswith("mutable"):
+                mapping = "add a validated setter only if Horizon owns that state"
+            else:
+                mapping = "port the extension point to a native trait/callback; visibility alone is insufficient"
+            entries.append({
+                "line": line_number,
+                "operation": operation,
+                "target_type": target_type,
+                "owner": owner,
+                "member": member,
+                "descriptor": descriptor,
+                "native_migration_hint": mapping,
+            })
+            if len(entries) >= 2000:
+                warnings.append(f"Access Widener directive report capped at 2000 entries: {path}")
+                break
+        if malformed:
+            warnings.append(f"Access Widener {path} has {malformed} unparsed declaration line(s)")
+        out.append({
+            "path": path,
+            "loaded": True,
+            "header": header,
+            "header_valid": header_valid,
+            "entry_count": len(entries),
+            "entries": entries,
+            "visibility_changes_applied": False,
+        })
+    return out
+
+
+def _entrypoint_migration_inventory(entrypoints: dict[str, Any]) -> list[dict[str, Any]]:
+    """Describe Fabric entrypoint declarations and their native port boundary."""
+    out: list[dict[str, Any]] = []
+    for kind, declarations in sorted(entrypoints.items()):
+        classes = _flatten(declarations)[:MAX_SAMPLES]
+        out.append({
+            "kind": str(kind),
+            "declared": classes,
+            "native_target": "P1 guest init plus explicit event/key/command hooks",
+            "status": "manual-port-required",
+            "java_class_invoked": False,
+        })
+    return out
+
+
 def audit_jar(path: Path) -> dict[str, Any]:
     warnings: list[str] = []
     if not path.is_file():
@@ -329,6 +499,14 @@ def audit_jar(path: Path) -> dict[str, Any]:
             str(key): _flatten(value)[:MAX_SAMPLES] for key, value in entrypoints.items()
         }
 
+        entrypoint_migration = _entrypoint_migration_inventory(entrypoints)
+        mixin_inventory = _inspect_mixin_configs(
+            archive, names, mixin_paths, metadata.get("mixins", []), warnings
+        )
+        access_widener_inventory = _inspect_access_wideners(
+            archive, names, sorted(set(access_wideners)), warnings
+        )
+
         if len(classes) == 0:
             assessment = (
                 "resource-only candidate; every data/ and assets/ format still needs "
@@ -395,6 +573,13 @@ def audit_jar(path: Path) -> dict[str, Any]:
                 "mixin_classes": mixin_refs[:MAX_SAMPLES],
                 "mixin_reference_count": len(mixin_refs),
                 "feature_evidence_class_counts": dict(sorted(feature_classes.items())),
+            },
+            "fabric_compatibility": {
+                "entrypoints": entrypoint_migration,
+                "mixin_configs": mixin_inventory,
+                "access_wideners": access_widener_inventory,
+                "java_code_invoked": False,
+                "bytecode_transformations_applied": False,
             },
             "assessment": assessment,
             "warnings": warnings,

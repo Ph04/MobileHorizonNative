@@ -77,8 +77,8 @@ class FabricBridgeAuditTests(unittest.TestCase):
                 "accessWidener": "sample_mod.accesswidener",
             },
             entries={
-                "sample_mod.mixins.json": b'{"required":true}',
-                "sample_mod.accesswidener": b"accessWidener v2 named",
+                "sample_mod.mixins.json": b'{"required":true,"package":"sample.mixin","mixins":["CommonMixin"],"client":["ClientMixin"],"injectors":{"defaultRequire":1}}',
+                "sample_mod.accesswidener": b"accessWidener v2 named\\naccessible class net/minecraft/client/Minecraft\\nmutable field net/minecraft/client/Minecraft field_1 Ljava/lang/String;\\n",
                 "assets/sample_mod/textures/item/icon.png": b"not-a-real-png",
                 "data/sample_mod/recipes/example.json": b"{}",
             },
@@ -97,6 +97,13 @@ class FabricBridgeAuditTests(unittest.TestCase):
         self.assertTrue(report["archive"]["mixin_config_paths"])
         self.assertTrue(report["archive"]["access_widener_paths"])
         self.assertTrue(any("Mixin metadata" in warning for warning in report["warnings"]))
+        compat = report["fabric_compatibility"]
+        self.assertFalse(compat["java_code_invoked"])
+        self.assertFalse(compat["bytecode_transformations_applied"])
+        self.assertEqual(compat["entrypoints"][0]["status"], "manual-port-required")
+        self.assertEqual(compat["mixin_configs"][0]["package"], "sample.mixin")
+        self.assertEqual(len(compat["access_wideners"][0]["entries"]), 2)
+        self.assertEqual(compat["access_wideners"][0]["entries"][0]["operation"], "accessible")
 
     def test_data_only_jar_is_only_a_candidate_not_declared_compatible(self) -> None:
         path = self._make_jar(
