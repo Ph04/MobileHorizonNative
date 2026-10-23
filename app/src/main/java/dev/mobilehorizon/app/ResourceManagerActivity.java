@@ -821,6 +821,116 @@ public final class ResourceManagerActivity extends Activity {
         }
     }
 
+    private void chooseWorldForDataPack(File pack) {
+        if (busy) return;
+        pendingDataPackInstall = pack;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_INSTALL_DATA_PACK);
+        } catch (Exception error) {
+            pendingDataPackInstall = null;
+            showStatus("Não foi possível abrir o seletor do mundo: " + message(error));
+        }
+    }
+
+    private void installDataPackIntoWorld(Uri treeUri, File pack) {
+        busy = true;
+        setBusyUi(true);
+        showStatus("Instalando pacote de dados no mundo selecionado…");
+        io.execute(() -> {
+            Uri createdFile = null;
+            String outcome;
+            try {
+                if (pack == null || !pack.isFile() || !isConvertedDataPack(pack)) {
+                    throw new IOException("O pacote convertido não existe ou não é válido.");
+                }
+                String rootId = DocumentsContract.getTreeDocumentId(treeUri);
+                Uri worldUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId);
+                if (findChildDocumentUri(treeUri, rootId, "level.dat") == null) {
+                    throw new IllegalArgumentException(
+                            "Selecione a pasta raiz de um mundo salvo (aquela que contém level.dat), não a pasta datapacks.");
+                }
+
+                Uri datapacksUri = findChildDocumentUri(treeUri, rootId, "datapacks");
+                if (datapacksUri == null) {
+                    datapacksUri = DocumentsContract.createDocument(getContentResolver(), worldUri,
+                            DocumentsContract.Document.MIME_TYPE_DIR, "datapacks");
+                }
+                if (datapacksUri == null) throw new IOException("O Android não conseguiu criar a pasta datapacks do mundo.");
+
+                String outputName = uniqueDocumentName(treeUri,
+                        DocumentsContract.getDocumentId(datapacksUri), safeName(pack.getName()));
+                createdFile = DocumentsContract.createDocument(getContentResolver(), datapacksUri,
+                        "application/zip", outputName);
+                if (createdFile == null) throw new IOException("O Android não conseguiu criar o arquivo do pacote no mundo.");
+
+                try (InputStream input = new BufferedInputStream(new FileInputStream(pack));
+                     OutputStream output = getContentResolver().openOutputStream(createdFile, "w")) {
+                    if (output == null) throw new IOException("Não foi possível gravar no armazenamento escolhido.");
+                    copyStream(input, output, MAX_IMPORT_BYTES);
+                    output.flush();
+                }
+                outcome = "Pacote de dados instalado em datapacks/" + outputName
+                        + ". Feche e reabra o mundo para validar o conteúdo.";
+            } catch (Exception error) {
+                if (createdFile != null) {
+                    try { DocumentsContract.deleteDocument(getContentResolver(), createdFile); }
+                    catch (Exception ignored) {}
+                }
+                outcome = "Não foi possível instalar o pacote no mundo: " + message(error);
+            }
+            final String result = outcome;
+            mainHandler.post(() -> {
+                busy = false;
+                setBusyUi(false);
+                showStatus(result);
+                refreshResources();
+            });
+        });
+    }
+
+    private Uri findChildDocumentUri(Uri treeUri, String parentDocumentId, String wantedName)
+            throws IOException {
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId);
+        try (Cursor cursor = getContentResolver().query(children,
+                new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME},
+                null, null, null)) {
+            if (cursor == null) throw new IOException("Não foi possível listar a pasta escolhida.");
+            int idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+            int nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+            while (cursor.moveToNext()) {
+                String name = cursor.getString(nameColumn);
+                if (wantedName.equals(name)) {
+                    return DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(idColumn));
+                }
+            }
+        } catch (IllegalArgumentException error) {
+            throw new IOException("O provedor de arquivos não oferece acesso à pasta escolhida.", error);
+        }
+        return null;
+    }
+
+    private String uniqueDocumentName(Uri treeUri, String parentDocumentId, String wantedName)
+            throws IOException {
+        String safe = safeName(wantedName);
+        String extension = "";
+        int dot = safe.lastIndexOf('.');
+        if (dot > 0) {
+            extension = safe.substring(dot);
+            safe = safe.substring(0, dot);
+        }
+        String candidate = safe + extension;
+        int index = 2;
+        while (findChildDocumentUri(treeUri, parentDocumentId, candidate) != null) {
+            candidate = safe + "_" + index++ + extension;
+        }
+        return candidate;
+    }
+
     private boolean hasConvertedFabricPack(FabricJarInfo info, boolean dataPack) {
         File directory = dataPack ? convertedDataPackDir() : textureDir();
         String stem = convertedPackName(info, dataPack);
