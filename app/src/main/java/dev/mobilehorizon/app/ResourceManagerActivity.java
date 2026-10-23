@@ -756,8 +756,8 @@ public final class ResourceManagerActivity extends Activity {
 
             // Horizon API 0.2 allows content-only .hmod archives with no wasm,
             // but only when the manifest grants registries and data/assets exist.
-            if (!Pattern.compile("(?m)^\\s*api\\s*=\\s*\\"0\\.2\\"\\s*$").matcher(manifestText).find()
-                    || !Pattern.compile("(?s)capabilities\\s*=\\s*\\[[^\\]]*\\"registries\\"").matcher(manifestText).find()) {
+            if (!Pattern.compile("(?m)^\\s*api\\s*=\\s*\"0\\.2\"\\s*$").matcher(manifestText).find()
+                    || !manifestText.contains("\"registries\"")) {
                 return null;
             }
             boolean hasContent = false;
