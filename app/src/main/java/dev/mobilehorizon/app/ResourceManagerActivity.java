@@ -1100,8 +1100,9 @@ public final class ResourceManagerActivity extends Activity {
         File directory = dataPack ? convertedDataPackDir() : textureDir();
         String stem = convertedPackName(info, dataPack);
         if (stem.endsWith(".zip")) stem = stem.substring(0, stem.length() - 4);
+        final String fileStem = stem;
         File[] files = directory.listFiles((dir, name) ->
-                name.startsWith(stem) && name.toLowerCase(Locale.ROOT).endsWith(".zip"));
+                name.startsWith(fileStem) && name.toLowerCase(Locale.ROOT).endsWith(".zip"));
         if (files == null) return false;
         for (File file : files) {
             try (ZipFile zip = new ZipFile(file)) {
