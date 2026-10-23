@@ -10,6 +10,7 @@ for path in (runtime, manifest):
 replace_once(manifest,
     'pub const APIS: [&str; 2] = [API, "0.2"];',
     'pub const FABRIC_BRIDGE_API: &str = "p1";\npub const APIS: [&str; 3] = [API, "0.2", FABRIC_BRIDGE_API];')
+replace_once(manifest, 'pub const ALL: [Capability; 5] = [', 'pub const ALL: [Capability; 9] = [')
 replace_once(manifest,
 '''    Registries,
 }''',
@@ -238,6 +239,8 @@ impl P1State {
             else { Some(Panel { corner: corner.unwrap_or(Corner::TopLeft), lines }) };
     }
 }
+
+impl fabric_bridge_p1_bindings::horizon::fabric_bridge::types::Host for P1State {}
 
 impl fabric_bridge_p1_bindings::horizon::fabric_bridge::events::Host for P1State {
     fn register(&mut self, event: String, phase: P1Phase) -> Result<(), String> {
@@ -654,7 +657,7 @@ rr('''    pub fn chat(&mut self, text: &str) {
         );
         let message = P1ChatMessage { text: text.to_owned(), sender: None, system: false };
         self.each_p1("chat_received", FUEL_EVENT, |m, s| {
-            m.horizon_fabric_bridge_guest().call_on_chat_received(s, message.clone()).map(|_| ())
+            m.horizon_fabric_bridge_guest().call_on_chat_received(s, &message).map(|_| ())
         });
     }''', "chat dispatch")
 rr('''    fn command_owner(&self, name: &str) -> Option<usize> {
@@ -692,7 +695,7 @@ new_command = '''        if self.entries[i].p1_run.is_some() {
                 }
             };
             match self.call_p1(i, FUEL_EVENT, |m, s| {
-                m.horizon_fabric_bridge_guest().call_on_command(s, name, parsed)
+                m.horizon_fabric_bridge_guest().call_on_command(s, name, &parsed)
             }) {
                 Some(Ok(())) => {}
                 Some(Err(text)) => self.out.push(Output::Feedback { text, error: true }),
