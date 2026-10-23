@@ -792,19 +792,71 @@ public final class ResourceManagerActivity extends Activity {
             }
         }
 
+        items = convertedDataPackDir().listFiles();
+        if (items != null) for (File file : items) {
+            if (!file.isFile() || !file.getName().toLowerCase(Locale.ROOT).endsWith(".zip")) continue;
+            if (isConvertedDataPack(file)) {
+                convertedDataPacks.add(new ResourceItem(Kind.DATA_PACK, file.getName(), file,
+                        file.getName(), false,
+                        "Pacote de dados extraído automaticamente de um JAR Fabric. Precisa ser instalado dentro de um mundo."));
+            }
+        }
+
         Comparator<ResourceItem> byName = Comparator.comparing(item -> item.name.toLowerCase(Locale.ROOT));
         Collections.sort(textures, byName); Collections.sort(mods, byName);
         Collections.sort(shaders, byName); Collections.sort(fabricJars, byName);
+        Collections.sort(convertedDataPacks, byName);
         addSection("Pacotes de textura", "ZIPs Java com pack.mcmeta e assets/.", textures);
         addSection(fabricBridgeEnabled() ? "Mods Horizon — perfil Fabric Bridge" : "Mods Horizon — perfil Vanilla",
                 "Arquivos .hmod separados por perfil; a ativação vale no próximo início.", mods);
-        addSection("Mods Fabric importados — aguardando conversão",
-                "JARs são inspecionados sem extração/execução. Ainda não são mods jogáveis no Horizon.", fabricJars);
+        addSection("JARs Fabric importados — conversão automática de conteúdo",
+                "Assets/data podem ser extraídos; classes Java, entrypoints e Mixins ainda exigem adaptação para Horizon.", fabricJars);
+        addSection("Pacotes de dados convertidos — instalação por mundo",
+                "Selecione a pasta de um mundo salvo para copiar o pack para datapacks/.", convertedDataPacks);
         addSection("Shader packs", "Pastas pack.toml/shaders/ e shader ZIPs Java reconhecidos.", shaders);
-        if (textures.isEmpty() && mods.isEmpty() && shaders.isEmpty() && fabricJars.isEmpty()) {
+        if (textures.isEmpty() && mods.isEmpty() && shaders.isEmpty()
+                && fabricJars.isEmpty() && convertedDataPacks.isEmpty()) {
             TextView empty = text("Nenhum recurso compatível instalado. Importe um arquivo ou uma pasta de shader pack.", 14, 0xff68728a, false);
             LinearLayout.LayoutParams p = params(-1, -2); p.topMargin = dp(8); content.addView(empty, p);
         }
+    }
+
+    private boolean hasConvertedFabricPack(FabricJarInfo info, boolean dataPack) {
+        File directory = dataPack ? convertedDataPackDir() : textureDir();
+        String stem = convertedPackName(info, dataPack);
+        if (stem.endsWith(".zip")) stem = stem.substring(0, stem.length() - 4);
+        File[] files = directory.listFiles((dir, name) ->
+                name.startsWith(stem) && name.toLowerCase(Locale.ROOT).endsWith(".zip"));
+        if (files == null) return false;
+        for (File file : files) {
+            try (ZipFile zip = new ZipFile(file)) {
+                ZipEntry metadata = zip.getEntry("pack.mcmeta");
+                if (metadata == null) continue;
+                try (InputStream input = zip.getInputStream(metadata)) {
+                    String value = new String(readLimitedBytes(input, 64 * 1024), StandardCharsets.UTF_8);
+                    if (!value.contains("recursos extraídos de JAR Fabric")) continue;
+                }
+                java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+                while (entries.hasMoreElements()) {
+                    String name = entries.nextElement().getName();
+                    if (dataPack && name.startsWith("data/")) return true;
+                    if (!dataPack && name.startsWith("assets/")) return true;
+                }
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
+    private boolean isConvertedDataPack(File file) {
+        try (ZipFile zip = new ZipFile(file)) {
+            if (zip.getEntry("pack.mcmeta") == null) return false;
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (!entry.isDirectory() && entry.getName().startsWith("data/")) return true;
+            }
+        } catch (IOException ignored) {}
+        return false;
     }
 
     private boolean isJavaShaderZip(File file) {
