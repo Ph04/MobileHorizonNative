@@ -332,7 +332,7 @@ replace_once(remote,
                         r.skin_textures.remove(&u);""")
 
 replace_once(remote,
-    """    fn store_skin(&mut self, location: String, rgba: Vec<u8>) {
+    """    pub(super) fn store_skin(&mut self, location: String, rgba: Vec<u8>) {
         use horizon_client::hud::SKIN_SLOTS;""",
     """    pub(super) fn store_skin(&mut self, location: String, rgba: Vec<u8>) {
         log::info!(
