@@ -346,8 +346,11 @@ pub fn android_gui_metrics() -> [i32; 5] {
     ]
 }''')
 
-replace_once(hud,
-    '''        Self {
+# Horizon v0.2.27 extends HudBatch with EndPortalFill and blur_at.
+# Accept both the previous constructor layout and the current release layout.
+hud_batch_initializers = [
+    (
+        '''        Self {
             vertices: Vec::new(),
             scale: scale as f32,
             width: (window[0] as f32 / scale as f32).ceil(),
@@ -355,19 +358,57 @@ replace_once(hud,
             patches: Vec::new(),
             blends: Vec::new(),
         }''',
-    '''        let gui_width = (window[0] as f32 / scale as f32).ceil() as u32;
-        let gui_height = (window[1] as f32 / scale as f32).ceil() as u32;
-        for (index, value) in [scale, gui_width, gui_height, window[0], window[1]].into_iter().enumerate() {
-            ANDROID_GUI_METRICS[index].store(value, std::sync::atomic::Ordering::Relaxed);
-        }
-        Self {
+        '''        Self {
             vertices: Vec::new(),
             scale: scale as f32,
             width: gui_width as f32,
             height: gui_height as f32,
             patches: Vec::new(),
             blends: Vec::new(),
-        }''')
+        }''',
+    ),
+    (
+        '''        Self {
+            vertices: Vec::new(),
+            scale: scale as f32,
+            width: (window[0] as f32 / scale as f32).ceil(),
+            height: (window[1] as f32 / scale as f32).ceil(),
+            patches: Vec::new(),
+            blends: Vec::new(),
+            end_portal: EndPortalFill::default(),
+            blur_at: 0,
+        }''',
+        '''        Self {
+            vertices: Vec::new(),
+            scale: scale as f32,
+            width: gui_width as f32,
+            height: gui_height as f32,
+            patches: Vec::new(),
+            blends: Vec::new(),
+            end_portal: EndPortalFill::default(),
+            blur_at: 0,
+        }''',
+    ),
+]
+hud_content = hud.read_text(encoding="utf-8")
+matched_initializers = [
+    pair for pair in hud_batch_initializers
+    if hud_content.count(pair[0]) == 1
+]
+if len(matched_initializers) != 1:
+    raise SystemExit(
+        f"{hud}: expected exactly one known HudBatch::new initializer layout, "
+        f"found {len(matched_initializers)}"
+    )
+old_initializer, new_initializer = matched_initializers[0]
+new_constructor_prefix = '''        let gui_width = (window[0] as f32 / scale as f32).ceil() as u32;
+        let gui_height = (window[1] as f32 / scale as f32).ceil() as u32;
+        for (index, value) in [scale, gui_width, gui_height, window[0], window[1]].into_iter().enumerate() {
+            ANDROID_GUI_METRICS[index].store(value, std::sync::atomic::Ordering::Relaxed);
+        }
+'''
+replace_once(hud, old_initializer, new_constructor_prefix + new_initializer)
+
 
 # NativeGameActivity sets the private data root to filesDir/horizon, whereas the
 # launcher imports/exports the actual prepared resource tree under filesDir/.local.
