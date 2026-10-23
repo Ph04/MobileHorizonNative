@@ -90,14 +90,21 @@ struct RemoteItemDisplay {''', '''fn apply_display_transform(transform: &mut Rem
 #[derive(Clone, Default)]
 struct RemoteItemDisplay {''', "decode common display transform metadata")
 
+# Horizon v0.2.27 also clears stepped-entity interpolation and pending item
+# updates on dimension changes. Preserve these upstream clears and clear the new
+# display metadata introduced by this overlay.
 pack_patch("crates/horizon-client/src/game/remote.rs", '''                r.entities.clear();
                 r.lerps.clear();
-                r.head_lerps.clear();''', '''                r.entities.clear();
+                r.stepped.clear();
+                r.head_lerps.clear();
+                r.pending_items.clear();''', '''                r.entities.clear();
                 r.text_displays.clear();
                 r.item_displays.clear();
                 r.block_displays.clear();
                 r.lerps.clear();
-                r.head_lerps.clear();''', "clear display metadata on remote dimension reset")
+                r.stepped.clear();
+                r.head_lerps.clear();
+                r.pending_items.clear();''', "clear display metadata on remote dimension reset")
 
 pack_patch("crates/horizon-client/src/game/remote.rs", '''    entities: HashMap<i32, Tracked>,
     lerps: HashMap<i32, Lerp>,''', '''    entities: HashMap<i32, Tracked>,
