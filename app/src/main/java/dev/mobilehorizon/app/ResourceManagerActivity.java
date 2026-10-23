@@ -313,9 +313,16 @@ public final class ResourceManagerActivity extends Activity {
                 if (fabricJarIdExists(info.id)) {
                     throw new IllegalArgumentException("Já existe um JAR Fabric importado com ID '" + info.id + "'. Exclua a versão antiga antes de importar outra.");
                 }
+                String conversion;
+                try {
+                    conversion = convertFabricPayload(staging, info);
+                } catch (Exception conversionError) {
+                    conversion = "Conversão automática de recursos recusada: " + message(conversionError)
+                            + ". O JAR original será mantido para análise.";
+                }
                 File target = copyToTarget(staging, fabricInboxDir(), fileName(name, ".jar"));
-                return "mod Fabric " + info.name + " (" + info.id + " " + info.version
-                        + ") guardado para análise/conversão; não foi executado (" + target.getName() + ")";
+                return "JAR Fabric " + info.name + " (" + info.id + " " + info.version + ") importado; "
+                        + conversion + " Original: " + target.getName() + ". Código Java nunca foi executado.";
             }
             if (lower.endsWith(".hmod")) {
                 String id = readModId(staging);
@@ -394,6 +401,176 @@ public final class ResourceManagerActivity extends Activity {
                     hasMixins, hasAccessWidener, hasEntrypoints);
         } catch (IOException error) {
             throw new IllegalArgumentException("O arquivo não é um JAR/ZIP válido.");
+        }
+    }
+
+    private String convertFabricPayload(File source, FabricJarInfo info) throws Exception {
+        List<ZipEntry> assetEntries = new ArrayList<>();
+        List<ZipEntry> dataEntries = new ArrayList<>();
+        Set<String> seen = new java.util.HashSet<>();
+        long expectedBytes = 0;
+        try (ZipFile zip = new ZipFile(source)) {
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            int entryCount = 0;
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                String name = entry.getName();
+                if (!name.startsWith("assets/") && !name.startsWith("data/")) continue;
+                if (++entryCount > MAX_FOLDER_ENTRIES) {
+                    throw new IllegalArgumentException("O JAR contém itens demais para conversão segura.");
+                }
+                validatePackEntry(name);
+                if (!seen.add(name)) {
+                    throw new IllegalArgumentException("O JAR contém caminhos de recurso duplicados: " + name);
+                }
+                long size = entry.getSize();
+                if (size < 0 || size > MAX_IMPORT_BYTES) {
+                    throw new IllegalArgumentException("Tamanho de recurso inválido ou excessivo: " + name);
+                }
+                expectedBytes += size;
+                if (expectedBytes > MAX_IMPORT_BYTES) {
+                    throw new IllegalArgumentException("Os recursos descompactados ultrapassam o limite de 512 MiB.");
+                }
+                if (name.startsWith("assets/")) assetEntries.add(entry);
+                else dataEntries.add(entry);
+            }
+            if (assetEntries.isEmpty() && dataEntries.isEmpty()) {
+                return "nenhum arquivo em assets/ ou data/ foi encontrado; o mod completo ainda exige adaptação nativa.";
+            }
+
+            File resourceTarget = null, dataTarget = null, resourcePart = null, dataPart = null;
+            boolean resourceCommitted = false;
+            try {
+                if (!assetEntries.isEmpty()) {
+                    ensureDirs(textureDir());
+                    resourceTarget = uniqueFile(textureDir(), convertedPackName(info, false));
+                    resourcePart = temporaryPackFile(resourceTarget);
+                    writeConvertedPack(zip, assetEntries, resourcePart, info, false);
+                }
+                if (!dataEntries.isEmpty()) {
+                    ensureDirs(convertedDataPackDir());
+                    dataTarget = uniqueFile(convertedDataPackDir(), convertedPackName(info, true));
+                    dataPart = temporaryPackFile(dataTarget);
+                    writeConvertedPack(zip, dataEntries, dataPart, info, true);
+                }
+                if (resourcePart != null) {
+                    if (!resourcePart.renameTo(resourceTarget)) {
+                        throw new IOException("Não foi possível finalizar o pacote de recursos convertido.");
+                    }
+                    resourceCommitted = true;
+                }
+                if (dataPart != null && !dataPart.renameTo(dataTarget)) {
+                    throw new IOException("Não foi possível finalizar o pacote de dados convertido.");
+                }
+            } catch (Exception error) {
+                if (resourceCommitted && resourceTarget != null) resourceTarget.delete();
+                if (dataTarget != null && dataTarget.exists() && dataPart != null && dataPart.exists()) dataTarget.delete();
+                throw error;
+            } finally {
+                if (resourcePart != null) resourcePart.delete();
+                if (dataPart != null) dataPart.delete();
+            }
+        }
+
+        boolean code = info.classes > 0 || info.hasEntrypoints || info.hasMixins || info.hasAccessWidener;
+        StringBuilder result = new StringBuilder();
+        if (!assetEntries.isEmpty()) {
+            result.append("assets/ convertidos para pack de recursos desativado");
+        }
+        if (!dataEntries.isEmpty()) {
+            if (result.length() > 0) result.append("; ");
+            result.append("data/ convertido para pacote de dados, aguardando instalação em um mundo");
+        }
+        if (code) {
+            result.append(". Conversão parcial: ").append(info.classes)
+                    .append(" classes Java, entrypoints/Mixins/AW não foram convertidos; a lógica do mod ainda não funcionará");
+        } else {
+            result.append(". Nenhuma lógica Java foi detectada, mas confira identificadores e formatos dentro do jogo");
+        }
+        return result.toString();
+    }
+
+    private String convertedPackName(FabricJarInfo info, boolean dataPack) {
+        return fileName("fabric-" + info.id + "-" + info.version
+                + (dataPack ? "-datapack" : "-resources"), ".zip");
+    }
+
+    private File temporaryPackFile(File target) {
+        return new File(target.getParentFile(),
+                "." + target.getName() + ".importing-" + UUID.randomUUID());
+    }
+
+    private void validatePackEntry(String name) {
+        if (name == null || name.isEmpty() || name.startsWith("/")
+                || name.indexOf('\\') >= 0 || name.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("Caminho inseguro no JAR: " + name);
+        }
+        String[] parts = name.split("/", -1);
+        for (String part : parts) {
+            if (part.isEmpty() || ".".equals(part) || "..".equals(part)) {
+                throw new IllegalArgumentException("Caminho inseguro no JAR: " + name);
+            }
+        }
+        if (!name.startsWith("assets/") && !name.startsWith("data/")) {
+            throw new IllegalArgumentException("Caminho inesperado durante a conversão: " + name);
+        }
+    }
+
+    private byte[] convertedPackMetadata(FabricJarInfo info, boolean dataPack) throws JSONException {
+        JSONArray format = new JSONArray();
+        format.put(dataPack ? 121 : 97);
+        format.put(dataPack ? 0 : 1);
+        JSONObject metadata = new JSONObject();
+        metadata.put("description", info.name + " — recursos extraídos de JAR Fabric; código Java não incluído");
+        metadata.put("min_format", new JSONArray(format.toString()));
+        metadata.put("max_format", new JSONArray(format.toString()));
+        JSONObject root = new JSONObject();
+        root.put("pack", metadata);
+        return (root.toString(2) + "\n").getBytes(StandardCharsets.UTF_8);
+    }
+
+    private void writeConvertedPack(ZipFile source, List<ZipEntry> entries, File destination,
+                                    FabricJarInfo info, boolean dataPack) throws Exception {
+        ensureDirs(destination.getParentFile());
+        byte[] metadata = convertedPackMetadata(info, dataPack);
+        long totalBytes = 0;
+        int fileCount = 0;
+        try (ZipOutputStream output = new ZipOutputStream(
+                    new BufferedOutputStream(new FileOutputStream(destination)))) {
+            output.putNextEntry(new ZipEntry("pack.mcmeta"));
+            output.write(metadata);
+            output.closeEntry();
+            byte[] buffer = new byte[BUFFER_SIZE];
+            for (ZipEntry entry : entries) {
+                if (++fileCount > MAX_FOLDER_ENTRIES) {
+                    throw new IOException("O pack convertido contém arquivos demais.");
+                }
+                if (entry.getSize() > MAX_IMPORT_BYTES) {
+                    throw new IOException("Arquivo grande demais no pack convertido: " + entry.getName());
+                }
+                output.putNextEntry(new ZipEntry(entry.getName()));
+                long entryBytes = 0;
+                try (InputStream input = source.getInputStream(entry)) {
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        entryBytes += count;
+                        totalBytes += count;
+                        if (entryBytes > MAX_IMPORT_BYTES || totalBytes > MAX_IMPORT_BYTES) {
+                            throw new IOException("Os recursos descompactados ultrapassam o limite de 512 MiB.");
+                        }
+                        output.write(buffer, 0, count);
+                    }
+                }
+                if (entry.getSize() >= 0 && entryBytes != entry.getSize()) {
+                    throw new IOException("Tamanho divergente ao ler " + entry.getName());
+                }
+                output.closeEntry();
+            }
+            output.finish();
+        } catch (Exception error) {
+            destination.delete();
+            throw error;
         }
     }
 
