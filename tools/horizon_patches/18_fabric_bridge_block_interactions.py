@@ -13,11 +13,17 @@ def rr(path, old, new, label):
 
 rr(
     runtime,
-'''        types::{ChatMessage as P1ChatMessage, EventResult as P1EventResult, WorldInfo as P1WorldInfo},''',
+'''        types::{
+            ChatMessage as P1ChatMessage,
+            EventResult as P1EventResult,
+            ItemStack as P1ItemStack,
+            WorldInfo as P1WorldInfo,
+        },''',
 '''        types::{
             BlockPos as P1BlockPos,
             ChatMessage as P1ChatMessage,
             EventResult as P1EventResult,
+            ItemStack as P1ItemStack,
             WorldInfo as P1WorldInfo,
         },''',
     "P1 block position import",
