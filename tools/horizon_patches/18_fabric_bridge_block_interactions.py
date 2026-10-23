@@ -56,7 +56,7 @@ rr(
         for (_, index) in order {
             let result = self.call_p1(index, FUEL_EVENT, |mod_exports, store| {
                 mod_exports.horizon_fabric_bridge_guest()
-                    .call_on_block_break(store, &position, state)
+                    .call_on_block_break(store, position, state)
             });
             if matches!(result, Some(P1EventResult::Cancel)) {
                 return true;
@@ -85,7 +85,7 @@ rr(
         for (_, index) in order {
             let result = self.call_p1(index, FUEL_EVENT, |mod_exports, store| {
                 mod_exports.horizon_fabric_bridge_guest()
-                    .call_on_block_interact(store, &position, state, &face, offhand)
+                    .call_on_block_interact(store, position, state, face, offhand)
             });
             if matches!(result, Some(P1EventResult::Cancel)) {
                 return true;
