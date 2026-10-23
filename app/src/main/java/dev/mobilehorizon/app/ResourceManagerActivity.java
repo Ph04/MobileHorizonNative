@@ -727,9 +727,11 @@ public final class ResourceManagerActivity extends Activity {
     private void refreshResources() {
         if (content == null) return;
         content.removeAllViews();
-        ensureUiDir(textureDir()); ensureUiDir(modDir()); ensureUiDir(shaderDir()); ensureUiDir(fabricInboxDir());
+        ensureUiDir(textureDir()); ensureUiDir(modDir()); ensureUiDir(shaderDir());
+        ensureUiDir(fabricInboxDir()); ensureUiDir(convertedDataPackDir());
         List<ResourceItem> textures = new ArrayList<>(), mods = new ArrayList<>(),
-                shaders = new ArrayList<>(), fabricJars = new ArrayList<>();
+                shaders = new ArrayList<>(), fabricJars = new ArrayList<>(),
+                convertedDataPacks = new ArrayList<>();
 
         File[] items = textureDir().listFiles();
         if (items != null) for (File file : items) {
@@ -769,13 +771,21 @@ public final class ResourceManagerActivity extends Activity {
             if (!file.isFile() || !file.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
             try {
                 FabricJarInfo info = inspectFabricJar(file);
-                String details = "ID: " + info.id + " · versão " + info.version
-                        + " · " + info.classes + " classes · " + info.resources + " recursos"
-                        + (info.hasMixins ? " · Mixins" : "")
-                        + (info.hasAccessWidener ? " · Access Widener" : "")
-                        + " · pendente de conversão; não executado.";
+                boolean resourceConverted = info.assets > 0 && hasConvertedFabricPack(info, false);
+                boolean dataConverted = info.data > 0 && hasConvertedFabricPack(info, true);
+                boolean code = info.classes > 0 || info.hasEntrypoints || info.hasMixins || info.hasAccessWidener;
+                StringBuilder details = new StringBuilder("ID: ").append(info.id).append(" · versão ")
+                        .append(info.version).append(" · ").append(info.classes).append(" classes · ")
+                        .append(info.resources).append(" arquivos assets/data");
+                if (resourceConverted) details.append(" · assets convertidos para pack desativado");
+                if (dataConverted) details.append(" · data convertido para pack por mundo");
+                if (info.hasMixins) details.append(" · Mixins");
+                if (info.hasAccessWidener) details.append(" · Access Widener");
+                if (code) details.append(" · código Java/entrypoints não convertido; o mod ainda não funciona completo");
+                else if (resourceConverted || dataConverted) details.append(" · conteúdo portátil convertido; validar no jogo");
+                else details.append(" · aguardando conversão nativa; não executado");
                 fabricJars.add(new ResourceItem(Kind.FABRIC_JAR, file.getName(), file,
-                        info.id, false, details));
+                        info.id, false, details.toString()));
             } catch (Exception error) {
                 fabricJars.add(new ResourceItem(Kind.FABRIC_JAR, file.getName(), file,
                         "", false, "JAR importado, mas sua análise falhou: " + message(error)));
