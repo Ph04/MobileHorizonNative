@@ -13,6 +13,7 @@ on:
       - "android-native/**"
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
+      - "tools/horizon_fabric_carry.rs"
       - "tools/fabric_bridge_audit.py"
       - "tools/fabric_jar_converter.py"
       - "tools/tests/**"
