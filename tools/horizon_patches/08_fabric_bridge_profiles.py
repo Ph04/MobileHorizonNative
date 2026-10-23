@@ -51,7 +51,7 @@ pub fn active_file() -> &'static str {
 replace_once(mod_list, "fs::read_to_string(dir.join(FILE))",
              "fs::read_to_string(dir.join(active_file()))")
 replace_once(mod_list, "let path = dir.join(FILE);",
-             "let path = dir.join(active_file())")
+             "let path = dir.join(active_file());")
 
 replace_once(game_mods,
     "let mut paths = horizon_mods::find(&here.join(mod_list::DIR));",
