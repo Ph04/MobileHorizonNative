@@ -20,6 +20,13 @@ interface types {
     game-time: u64,
     day-time: u64,
   }
+  record item-stack {
+    id: id,
+    count: u32,
+    damage: option<u32>,
+    max-damage: option<u32>,
+    components: list<tuple<string, string>>,
+  }
 }
 
 interface events {
@@ -70,6 +77,15 @@ interface game {
   get-clock: func() -> option<clock>;
 }
 
+/// Read-only view of the local player's slots. Component values are a safe,
+/// documented subset; unsupported complex data remains unavailable.
+interface inventory {
+  use types.{item-stack};
+  get-player: func() -> list<tuple<u32, option<item-stack>>>;
+  get-selected: func() -> option<item-stack>;
+  get-offhand: func() -> option<item-stack>;
+}
+
 /// The host calls init once; the mod registers its requested callbacks/capabilities through imports.
 interface guest {
   use types.{chat-message, event-result, world-info};
@@ -87,6 +103,7 @@ interface guest {
 
 world mod-p1 {
   import game;
+  import inventory;
   import events;
   import keys;
   import commands;
