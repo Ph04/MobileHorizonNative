@@ -51,133 +51,6 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
 
 # MapItemData was not in the clientbound packet enum. This decoder follows the
 # Java 26.3 layout: map id, scale, locked, optional decorations, optional color patch.
-pack_patch("crates/horizon-protocol/src/packets/play.rs", '''packet_enum!(Clientbound, crate::ids::play::clientbound {''', '''#[derive(Clone, Debug, PartialEq)]
-pub struct MapDecorationData {
-    pub kind: i32,
-    pub x: i8,
-    pub y: i8,
-    pub rotation: i8,
-    pub name: Option<Tag>,
-}
-#[derive(Clone, Debug, PartialEq)]
-pub struct MapColorPatch {
-    pub width: u8,
-    pub height: u8,
-    pub start_x: u8,
-    pub start_y: u8,
-    pub colors: Vec<u8>,
-}
-#[derive(Clone, Debug, PartialEq)]
-pub struct MapItemData {
-    pub map_id: i32,
-    pub scale: i8,
-    pub locked: bool,
-    pub decorations: Option<Vec<MapDecorationData>>,
-    pub patch: Option<MapColorPatch>,
-}
-impl Codec<MapItemData> for MapItemData {
-    fn read(r: &mut Reader) -> Result<Self> {
-        let map_id = r.varint()?;
-        let scale = r.i8()?;
-        let locked = r.bool()?;
-        let decorations = if r.bool()? {
-            let count = r.count(4096)?;
-            let mut values = Vec::with_capacity(count);
-            for _ in 0..count {
-                let kind = r.varint()?;
-                let x = r.i8()?;
-                let y = r.i8()?;
-                let rotation = r.i8()?;
-                let name = if r.bool()? { Some(r.nbt()?) } else { None };
-                values.push(MapDecorationData { kind, x, y, rotation, name });
-            }
-            Some(values)
-        } else { None };
-        let width = r.u8()?;
-        let patch = if width == 0 {
-            None
-        } else {
-            if width > 128 {
-                return Err(Error::new(format!("map color patch width {width} exceeds 128")));
-            }
-            let height = r.u8()?;
-            let start_x = r.u8()?;
-            let start_y = r.u8()?;
-            if height == 0 || height > 128
-                || u16::from(start_x) + u16::from(width) > 128
-                || u16::from(start_y) + u16::from(height) > 128
-            {
-                return Err(Error::new("map color patch rectangle is outside the 128x128 map"));
-            }
-            let colors = r.byte_array(128 * 128)?;
-            let expected = usize::from(width) * usize::from(height);
-            if colors.len() != expected {
-                return Err(Error::new(format!(
-                    "map color patch has {} colors, expected {expected}", colors.len()
-                )));
-            }
-            Some(MapColorPatch { width, height, start_x, start_y, colors })
-        };
-        Ok(Self { map_id, scale, locked, decorations, patch })
-    }
-    fn write(v: &Self, w: &mut Writer) {
-        w.varint(v.map_id);
-        w.i8(v.scale);
-        w.bool(v.locked);
-        w.bool(v.decorations.is_some());
-        if let Some(decorations) = &v.decorations {
-            w.varint(decorations.len() as i32);
-            for d in decorations {
-                w.varint(d.kind);
-                w.i8(d.x);
-                w.i8(d.y);
-                w.i8(d.rotation);
-                w.bool(d.name.is_some());
-                if let Some(name) = &d.name { w.nbt(name); }
-            }
-        }
-        if let Some(patch) = &v.patch {
-            w.u8(patch.width);
-            w.u8(patch.height);
-            w.u8(patch.start_x);
-            w.u8(patch.start_y);
-            w.byte_array(&patch.colors);
-        } else {
-            w.u8(0);
-        }
-    }
-}
-#[cfg(test)]
-mod map_item_data_tests {
-    use super::*;
-    #[test]
-    fn map_item_data_partial_color_patch_round_trips() {
-        let packet = MapItemData {
-            map_id: 517, scale: 2, locked: true,
-            decorations: Some(vec![MapDecorationData {
-                kind: 3, x: -15, y: 21, rotation: 7, name: None,
-            }]),
-            patch: Some(MapColorPatch {
-                width: 2, height: 2, start_x: 10, start_y: 20,
-                colors: vec![1, 5, 9, 13],
-            }),
-        };
-        let mut writer = Writer::new();
-        <MapItemData as Codec<MapItemData>>::write(&packet, &mut writer);
-        let mut reader = Reader::new(&writer.data);
-        let decoded = <MapItemData as Codec<MapItemData>>::read(&mut reader).unwrap();
-        assert_eq!(decoded, packet);
-        assert_eq!(reader.remaining(), 0);
-    }
-}
-
-packet_enum!(Clientbound, crate::ids::play::clientbound {''', "decode and test Minecraft map_item_data packets")
-
-pack_patch("crates/horizon-protocol/src/packets/play.rs", '''    MerchantOffers(MerchantOffers) = MERCHANT_OFFERS,''', '''    MapItemData(MapItemData) = MAP_ITEM_DATA,
-    MerchantOffers(MerchantOffers) = MERCHANT_OFFERS,''', "register map_item_data in the clientbound packet enum")
-
-
-
 pack_patch("crates/horizon-client/src/net.rs", '''        if packet_name == "set_entity_data" {
             static SET_ENTITY_DATA_PACKET_DIAGNOSTICS: std::sync::atomic::AtomicUsize =
                 std::sync::atomic::AtomicUsize::new(0);
@@ -220,7 +93,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''        if packet_name == "set
         }
         let packet = match play::Clientbound::decode(id, &payload) {''', "record incoming map and block-entity data packets")
 
-pack_patch("crates/horizon-client/src/hud.rs", '''pub const MAP_SLOTS: usize = 16;''', '''pub const MAP_SLOTS: usize = 640;''', "reserve map textures for large server map walls")
+pack_patch("crates/horizon-client/src/hud.rs", '''pub const MAP_SLOTS: usize = 256;''', '''pub const MAP_SLOTS: usize = 640;''', "reserve map textures for large server map walls")
 
 pack_patch("crates/horizon-client/src/game/maps.rs", '''    pub(super) fn map_texture(&mut self, id: i32) -> Option<Rect> {''', '''    /// Apply the server's MapItemData packet. Keep remote map pixels separate
     /// from files in the local saves folder and retain many IDs for large map walls.
