@@ -414,6 +414,134 @@ public final class ResourceManagerActivity extends Activity {
         }
     }
 
+    private String convertFabricJarNative(File source, FabricJarInfo info) throws Exception {
+        File candidate = new File(getCacheDir(),
+                "horizon-fabric-" + info.id + "-" + UUID.randomUUID() + ".hmod");
+        Process process = null;
+        StringBuffer captured = new StringBuffer();
+        Thread logReader = null;
+        try {
+            File converter = installFabricCarryTool();
+            File resourceRoot = new File(getFilesDir(),
+                    ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+            ProcessBuilder builder = new ProcessBuilder(
+                    "/system/bin/sh",
+                    "-c",
+                    "exec /system/bin/linker64 \"$@\"",
+                    "linker64",
+                    converter.getAbsolutePath(),
+                    source.getAbsolutePath(),
+                    candidate.getAbsolutePath(),
+                    resourceRoot.getAbsolutePath());
+            builder.directory(getCacheDir());
+            builder.redirectErrorStream(true);
+            process = builder.start();
+            final Process running = process;
+            logReader = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(running.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        synchronized (captured) {
+                            if (captured.length() < 128 * 1024) {
+                                captured.append(line).append('\n');
+                            }
+                        }
+                    }
+                } catch (IOException ignored) {}
+            }, "horizon-fabric-carry-log");
+            logReader.setDaemon(true);
+            logReader.start();
+
+            if (!process.waitFor(5, TimeUnit.MINUTES)) {
+                process.destroyForcibly();
+                throw new IOException("A conversão nativa do conteúdo ultrapassou cinco minutos.");
+            }
+            logReader.join(5000);
+            String log;
+            synchronized (captured) { log = captured.toString(); }
+            if (process.exitValue() != 0) {
+                throw new IOException("Conversor Horizon encerrou com código " + process.exitValue()
+                        + (log.trim().isEmpty() ? "" : ": " + log.trim()));
+            }
+            if (!candidate.isFile() || candidate.length() == 0) {
+                throw new IOException("O conversor terminou sem gerar um .hmod.");
+            }
+            String lastLine = "";
+            for (String line : log.split("\n")) {
+                if (!line.trim().isEmpty()) lastLine = line.trim();
+            }
+            JSONObject result = new JSONObject(lastLine);
+            if (!"ok".equals(result.optString("status"))
+                    || !info.id.equals(result.optString("id"))) {
+                throw new IOException("O conversor retornou um relatório sem confirmação do ID do mod.");
+            }
+            String generatedId = readModId(candidate);
+            if (!info.id.equals(generatedId)) {
+                throw new IOException("O .hmod gerado não passou na validação do manifesto de conteúdo.");
+            }
+
+            File installed = copyToTarget(candidate, bridgeModDir(), fileName(info.id, ".hmod"));
+            int files = result.optInt("content_files", 0);
+            int blocks = result.optInt("blocks_declared", 0);
+            int items = result.optInt("items_declared", 0);
+            JSONObject report = result.optJSONObject("carry_report");
+            int outside = report == null ? 0 : report.optJSONArray("outside") == null
+                    ? 0 : report.optJSONArray("outside").length();
+            int unknownBlocks = report == null || report.optJSONObject("blocks_unknown") == null
+                    ? 0 : report.optJSONObject("blocks_unknown").length();
+            StringBuilder summary = new StringBuilder()
+                    .append("conteúdo convertido em mod Horizon ").append(installed.getName())
+                    .append(" (").append(files).append(" arquivos, ")
+                    .append(blocks).append(" blocos e ").append(items).append(" itens declarados)")
+                    .append(" e guardado no perfil Fabric Bridge");
+            if (outside > 0) summary.append("; ").append(outside).append(" arquivos foram separados para revisão");
+            if (unknownBlocks > 0) summary.append("; ").append(unknownBlocks).append(" blocos não puderam ser declarados automaticamente");
+            if (info.classes > 0 || info.hasEntrypoints || info.hasMixins || info.hasAccessWidener) {
+                summary.append(". Conversão parcial: o JAR contém código Java/entrypoints/Mixins/AW, que não foram convertidos; os recursos podem funcionar, mas a lógica Java do mod não");
+            } else {
+                summary.append(". O conteúdo gerado foi validado pelo leitor do Horizon; teste-o no jogo");
+            }
+            return summary.toString();
+        } finally {
+            if (process != null && process.isAlive()) process.destroyForcibly();
+            if (logReader != null && logReader.isAlive()) {
+                try { logReader.join(1000); } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            candidate.delete();
+        }
+    }
+
+    private File installFabricCarryTool() throws Exception {
+        File target = new File(getFilesDir(), ".local/horizon-fabric-carry-arm64");
+        ensureDirs(target.getParentFile());
+        File partial = new File(target.getParentFile(),
+                ".horizon-fabric-carry-arm64-" + UUID.randomUUID() + ".part");
+        try (InputStream input = getAssets().open("horizon-fabric-carry-arm64");
+             OutputStream output = new BufferedOutputStream(new FileOutputStream(partial))) {
+            copyStream(input, output, MAX_IMPORT_BYTES);
+        } catch (IOException error) {
+            partial.delete();
+            throw new IOException("Este APK não inclui o conversor ARM64 horizon-fabric-carry; instale uma build nova.", error);
+        }
+        if (!partial.renameTo(target)) {
+            try (InputStream input = new BufferedInputStream(new FileInputStream(partial));
+                 OutputStream output = new BufferedOutputStream(new FileOutputStream(target))) {
+                copyStream(input, output, MAX_IMPORT_BYTES);
+            } finally {
+                partial.delete();
+            }
+        }
+        Os.chmod(target.getAbsolutePath(), 0700);
+        File linker = new File("/system/bin/linker64");
+        if (!linker.isFile() || !linker.canExecute()) {
+            throw new IOException("O dispositivo não disponibiliza o linker64 necessário para o conversor nativo.");
+        }
+        return target;
+    }
+
     private String convertFabricPayload(File source, FabricJarInfo info) throws Exception {
         List<ZipEntry> assetEntries = new ArrayList<>();
         List<ZipEntry> dataEntries = new ArrayList<>();
