@@ -688,10 +688,9 @@ new_command = '''        if self.entries[i].p1_run.is_some() {
             match self.call_p1(i, FUEL_EVENT, |m, s| {
                 m.horizon_fabric_bridge_guest().call_on_command(s, name, parsed)
             }) {
-                Some(Ok(Ok(()))) => {}
-                Some(Ok(Err(text))) => self.out.push(Output::Feedback { text, error: true }),
-                None => {}
-                Some(Err(error)) => self.out.push(Output::Feedback { text: error.to_string(), error: true }),
+                Some(Ok(())) => {}
+                Some(Err(text)) => self.out.push(Output::Feedback { text, error: true }),
+                None => {},
             }
             return true;
         }
