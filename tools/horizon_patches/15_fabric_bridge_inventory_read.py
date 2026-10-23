@@ -13,7 +13,8 @@ def rr(path, old, new, label):
 
 rr(
  runtime,
-'''pub struct Snapshot {
+'''#[derive(Clone, Debug, Default)]
+pub struct Snapshot {
     pub player: Option<Player>,
     pub clock: Option<Clock>,
     /// Whether the current snapshot belongs to a local single-player/LAN world.
@@ -133,10 +134,14 @@ rr(
 rr(
  manifest,
 '''            Capability::Config => "config",
-        }''',
+        }
+    }
+    /// What the player reads before turning the mod on: "May <this>".''',
 '''            Capability::Config => "config",
             Capability::Inventory => "inventory",
-        }''',
+        }
+    }
+    /// What the player reads before turning the mod on: "May <this>".''',
 "manifest inventory interface mapping",
 )
 
