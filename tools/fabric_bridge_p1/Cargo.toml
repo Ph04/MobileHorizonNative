@@ -1,0 +1,10 @@
+[package]
+name = "horizon-fabric-bridge-p1"
+version = "0.1.0"
+edition = "2021"
+description = "Fabric Bridge P1 kernel and tests for Horizon's native mod adapter"
+
+[dependencies]
+thiserror = "1"
+
+[workspace]

@@ -102,3 +102,12 @@ Use reports from representative JARs, along with the pinned Horizon source, to p
 4. Server callbacks, registries, block entities, menus, transfers and controlled networking.
 
 Do not create a new API just because Fabric has a module with a similar name. First check whether Horizon already has the capability internally or can expose it through its existing Rust/WIT mod SDK. Features that change server state require a server-side implementation and explicit multiplayer compatibility rules.
+
+
+## P1 native API kernel
+
+The overlay now carries a compile-tested kernel for deterministic typed events (Early/Default/Late), cancelable chat events, tick/world lifecycle events, keybindings (keyboard/mouse/touch), a bounded typed command parser, declarative text/bar/item HUD widgets, per-mod schema-validated config, and callback-quota accounting. Unit tests run both against the standalone source under `tools/fabric_bridge_p1/` and the pinned Horizon `horizon-mods` crate after the overlay is applied.
+
+The new `horizon:fabric-bridge@0.1.0` WIT world is kept in a separate WIT directory so existing `horizon:mods` 0.1 components remain unchanged. CI compiles the generated P1 bindings to validate the WIT contract.
+
+**Integration boundary:** the kernel and WIT bindings are groundwork, not yet a loadable P1 `.hmod` API. The runtime still needs the P1 component loader/instance, capability manifest checks for the new imports, guest callback registration and dispatch, and game/UI input hooks. Until those pieces are connected and tested, do not mark any Fabric JAR code as working merely because this kernel compiles. The callback wall-time meter is accounting, not preemption; Wasmtime fuel remains the actual guard against an infinite loop.

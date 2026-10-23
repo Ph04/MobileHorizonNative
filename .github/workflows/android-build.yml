@@ -16,6 +16,7 @@ on:
       - "tools/horizon_fabric_carry.rs"
       - "tools/fabric_bridge_audit.py"
       - "tools/fabric_jar_converter.py"
+      - "tools/fabric_bridge_p1/**"
       - "tools/tests/**"
       - "docs/fabric-bridge-phase1.md"
       - "tools/horizon_server_packs.rs"
@@ -33,6 +34,7 @@ on:
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
       - "tools/fabric_bridge_audit.py"
+      - "tools/fabric_bridge_p1/**"
       - "tools/tests/**"
       - "docs/fabric-bridge-phase1.md"
       - "tools/horizon_server_packs.rs"
@@ -137,6 +139,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
+
+      - name: Test Fabric Bridge P1 kernel
+        run: cargo test --manifest-path tools/fabric_bridge_p1/Cargo.toml
 
       - name: Preflight pinned Horizon overlay before expensive builds
         shell: bash
@@ -348,6 +353,7 @@ jobs:
           test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
           python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
+          cargo test --manifest-path "$SOURCE/Cargo.toml" -p horizon-mods --lib --no-default-features
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
           test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
