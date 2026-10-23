@@ -4,9 +4,9 @@
 # the original bytes after safely consuming the schema so metadata packets do
 # not get discarded just because the renderer doesn't yet interpret the patterns.
 pack_patch("crates/horizon-protocol/src/item.rs", '''    pub const PROFILE: i32 = 72;
-}''', '''    pub const PROFILE: i32 = 72;
+    pub const DYED_COLOR: i32 = 47;''', '''    pub const PROFILE: i32 = 72;
     pub const BANNER_PATTERNS: i32 = 74;
-}''', "register banner_patterns component ID")
+    pub const DYED_COLOR: i32 = 47;''', "register banner_patterns component ID")
 
 pack_patch("crates/horizon-protocol/src/item.rs", '''fn skip_raw_component(kind: i32, r: &mut Reader) -> Result<()> {''', '''fn skip_banner_patterns(r: &mut Reader) -> Result<()> {
     let count = r.count(4096)?;
