@@ -45,16 +45,15 @@ The standard import action accepts Horizon `.hmod` mods and recognized resource/
 
 **Important limitation:** the inbox is an intake/triage queue, not a Fabric runtime. Imported JARs are not enabled or loaded by Horizon. Conversion from a Java mod into a compatible `.hmod`, Fabric API emulation, and missing native SDK capabilities remain future work. Selecting Fabric Bridge does not alter vanilla network handshakes or make unsupported mods compatible with servers.
 
-## Automatic resource/data extraction from Fabric JARs
+## Automatic JAR carry-over
 
-The Resource Manager and `tools/fabric_jar_converter.py` can convert the portable portion of a Fabric JAR into ordinary Minecraft 26.3 packs without executing the JAR:
+The Android Resource Manager now calls a bundled ARM64 entry point around Horizon's existing `horizon-port-pack` carry-over implementation. It reads the JAR, upgrades supported 1.21.1-era data to Minecraft 26.3 formats, carries assets/data, generates vanilla-template declarations for compatible blocks/items, and validates the result using Horizon's own `Package` and `Content` readers.
 
-- `assets/**` becomes an inactive resource-pack ZIP in the managed resource-pack folder. The user can review and activate it from the Resource Manager.
-- `data/**` becomes a separate data-pack ZIP. The manager can install it into the `datapacks/` folder of a selected save; data packs are world-specific.
-- Generated metadata targets resource-pack format `97.1` and data-pack format `121.0` for Minecraft Java 26.3.
-- Imports are size-limited and resource paths are checked before writing. The original JAR remains available in the Bridge inbox.
+A successful carry-over is installed as a **content-only `.hmod`** in `horizon-fabric-bridge-mods/`. It may include textures, models, languages, recipes, loot tables, tags, item definitions, and declarations based on the data that the converter understands. The original Fabric JAR remains in `horizon-fabric-bridge-inbox/`; details from the carry report identify files or block/item declarations that require review.
 
-This is **automatic content extraction**, not automatic execution or semantic conversion of arbitrary Java code. JARs with classes, entrypoints, Mixins, or access wideners are reported as partial conversions: the extracted packs can still reference registries, items, blocks, or entities that only the Java code would register. Such code must still be ported to Horizon's native mod API; the tool never pretends to generate a functioning `.hmod` from bytecode it cannot translate.
+The standalone `tools/fabric_jar_converter.py` remains a small utility for extracting portable `assets/` and `data/` into ordinary Minecraft 26.3 resource/data packs. The app uses the richer Horizon carry-over converter instead of relying only on that simple extraction.
+
+**This is not full Fabric Java runtime compatibility.** Java classes, entrypoints, Mixin injections, access wideners, custom registries, and behavior implemented in code are not transformed into Rust/WASM by this step. Such JARs become partial content mods: their converted assets/data may work, but their code-driven behavior will not. The converter reports partial results and never executes the imported JAR.
 
 ## JAR audit tool
 
