@@ -23,3 +23,5 @@ The Fabric Bridge profile is an experimental opt-in. Without HORIZON_MOD_PROFILE
 When adopting a newer upstream commit, inspect the release/commit diff first. Then run the Android workflow against the new revision on a separate branch. Each failed anchor indicates a patch that needs to be adapted to upstream source; do not make the build pass by deleting a patch without replacing its functionality or documenting why it is no longer needed.
 
 10. 17_fabric_bridge_received_chat.py — dispatches server chat to registered P1 listeners before presentation and honors cancellation.
+
+11. 18_fabric_bridge_block_interactions.py — adds cancellable P1 callbacks before local/remote block breaking and block-use, with a latch so a cancelled multiplayer break does not resume while the button remains held.

@@ -6,6 +6,8 @@ interface types {
   variant event-result { pass, cancel }
   record chat-message { text: string, sender: option<string>, system: bool }
   record world-info { dimension: id, singleplayer: bool }
+  /// Immutable location in the active client world.
+  record block-pos { x: s32, y: s32, z: s32 }
   record player {
     x: f64,
     y: f64,
@@ -31,7 +33,8 @@ interface types {
 
 interface events {
   enum phase { early, normal, late }
-  /// The host allow-lists event names: client_tick, world_join, world_leave, chat_received, chat_send.
+  /// The host allow-lists event names: client_tick, world_join, world_leave,
+  /// chat_received, chat_send, block_break, block_interact.
   register: func(event: string, phase: phase) -> result<_, string>;
 }
 
@@ -88,7 +91,7 @@ interface inventory {
 
 /// The host calls init once; the mod registers its requested callbacks/capabilities through imports.
 interface guest {
-  use types.{chat-message, event-result, world-info};
+  use types.{block-pos, chat-message, event-result, world-info};
   use keys.{key-state};
   use commands.{arg-value};
   init: func() -> result<_, string>;
@@ -97,6 +100,10 @@ interface guest {
   on-world-leave: func(info: world-info);
   on-chat-received: func(msg: chat-message) -> event-result;
   on-chat-send: func(text: string) -> event-result;
+  /// Cancel prevents the pending block break from mutating the world.
+  on-block-break: func(pos: block-pos, state: string) -> event-result;
+  /// Cancel suppresses the block-use action for this hand.
+  on-block-interact: func(pos: block-pos, state: string, face: block-pos, offhand: bool) -> event-result;
   on-key: func(id: string, state: key-state);
   on-command: func(name: string, args: list<tuple<string, arg-value>>) -> result<_, string>;
 }
