@@ -601,10 +601,48 @@ pack_patch("crates/horizon-client/src/game/remote.rs", '''            C::SetEnti
                 }
                 let item_display_item_update = p.values.iter().find_map(|(index, serializer, value)| {''', "apply server item frame contents and rotation")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''    fn remove_entity(&mut self, id: i32) {
-        self.mobs.retain(|m| m.id != id as u32);''', '''    fn remove_entity(&mut self, id: i32) {
+# Horizon v0.2.27 clears the riding vehicle before removing the entity.
+# Keep that behavior and remove item-frame state in either source layout.
+remove_entity_anchors = [
+    (
+        '''    fn remove_entity(&mut self, id: i32) {
+        self.mobs.retain(|m| m.id != id as u32);''',
+        '''    fn remove_entity(&mut self, id: i32) {
         self.item_frames.retain(|frame| frame.id != id as u32);
-        self.mobs.retain(|m| m.id != id as u32);''', "remove server item frames when their entities despawn")
+        self.mobs.retain(|m| m.id != id as u32);''',
+    ),
+    (
+        '''    fn remove_entity(&mut self, id: i32) {
+        // The vehicle the player rode is gone (Entity.removeVehicle).
+        if self.riding == Some(id as u32) {
+            self.riding = None;
+        }
+        self.mobs.retain(|m| m.id != id as u32);''',
+        '''    fn remove_entity(&mut self, id: i32) {
+        // The vehicle the player rode is gone (Entity.removeVehicle).
+        if self.riding == Some(id as u32) {
+            self.riding = None;
+        }
+        self.item_frames.retain(|frame| frame.id != id as u32);
+        self.mobs.retain(|m| m.id != id as u32);''',
+    ),
+]
+remote_text = remote.read_text(encoding="utf-8")
+matching_remove_entity = [
+    pair for pair in remove_entity_anchors if remote_text.count(pair[0]) == 1
+]
+if len(matching_remove_entity) != 1:
+    raise SystemExit(
+        f"{remote}: expected exactly one known remove_entity source layout, "
+        f"found {len(matching_remove_entity)}"
+    )
+old_remove_entity, new_remove_entity = matching_remove_entity[0]
+pack_patch(
+    "crates/horizon-client/src/game/remote.rs",
+    old_remove_entity,
+    new_remove_entity,
+    "remove server item frames when their entities despawn",
+)
 
 # Resource packs can override item-frame models too. The four baked models were
 # loaded only once at startup, so re-bake them when the active root changes.
