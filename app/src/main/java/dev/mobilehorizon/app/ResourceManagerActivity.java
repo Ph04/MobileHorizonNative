@@ -897,11 +897,12 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams actionsParams = params(-1, -2); actionsParams.topMargin = dp(4);
         row.addView(actions, actionsParams);
         CheckBox active = new CheckBox(this);
-        active.setText(item.kind == Kind.FABRIC_JAR ? "Aguardando conversão"
+        active.setText(item.kind == Kind.FABRIC_JAR ? "Conteúdo convertido / pendente"
+                : item.kind == Kind.DATA_PACK ? "Instalação por mundo"
                 : item.active ? "Ativo" : "Desativado");
         active.setTextColor(0xff283550);
-        active.setChecked(item.kind != Kind.FABRIC_JAR && item.active);
-        active.setEnabled(item.kind != Kind.FABRIC_JAR
+        active.setChecked(item.kind != Kind.FABRIC_JAR && item.kind != Kind.DATA_PACK && item.active);
+        active.setEnabled(item.kind != Kind.FABRIC_JAR && item.kind != Kind.DATA_PACK
                 && (item.kind != Kind.MOD || !item.id.isEmpty()));
         active.setOnCheckedChangeListener((button, checked) -> {
             try {
@@ -920,13 +921,17 @@ public final class ResourceManagerActivity extends Activity {
             }
         });
         actions.addView(active, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        if (item.kind == Kind.DATA_PACK) {
+            actions.addView(button("Instalar no mundo", true, v -> chooseWorldForDataPack(item.path)),
+                    new LinearLayout.LayoutParams(-2, dp(42)));
+        }
         actions.addView(button("Excluir", false, v -> confirmDelete(item)),
                 new LinearLayout.LayoutParams(-2, dp(42)));
     }
 
     private void setActive(ResourceItem item, boolean enabled) throws Exception {
-        if (item.kind == Kind.FABRIC_JAR) {
-            throw new IllegalArgumentException("JARs Fabric aguardam conversão e não podem ser ativados diretamente.");
+        if (item.kind == Kind.FABRIC_JAR || item.kind == Kind.DATA_PACK) {
+            throw new IllegalArgumentException("Este recurso não pode ser ativado globalmente.");
         }
         if (item.kind == Kind.MOD) {
             if (item.id.isEmpty()) throw new IllegalArgumentException("O manifesto deste mod é inválido.");
@@ -952,7 +957,7 @@ public final class ResourceManagerActivity extends Activity {
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Excluir", (dialog, which) -> {
                     try {
-                        if (item.kind != Kind.FABRIC_JAR) setActive(item, false);
+                        if (item.kind != Kind.FABRIC_JAR && item.kind != Kind.DATA_PACK) setActive(item, false);
                         deleteRecursively(item.path);
                         if (item.kind == Kind.SHADER) new File(shaderDir(), item.name + ".txt").delete();
                         refreshResources();
