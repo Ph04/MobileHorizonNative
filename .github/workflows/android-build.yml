@@ -374,6 +374,32 @@ jobs:
           echo "Built and staged the patched NativeActivity client with Android touch translated to mouse input."
           sha256sum app/src/main/jniLibs/arm64-v8a/libhorizon_android.so | tee "$RUNNER_TEMP/horizon-android-sha256.txt"
 
+      - name: Build ARM64 Fabric JAR carry converter
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/horizon-native-upstream"
+          test -s "$SOURCE/crates/horizon-port-pack/src/bin/horizon-fabric-carry.rs"
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          cargo build --locked --release --no-default-features \
+            --manifest-path "$SOURCE/Cargo.toml" \
+            --package horizon-port-pack --bin horizon-fabric-carry \
+            --target aarch64-linux-android
+          BIN="$SOURCE/target/aarch64-linux-android/release/horizon-fabric-carry"
+          test -s "$BIN"
+          "$TOOLCHAIN/llvm-readelf" -h "$BIN" > "$RUNNER_TEMP/horizon-fabric-carry-elf-header.txt"
+          grep -Fq "AArch64" "$RUNNER_TEMP/horizon-fabric-carry-elf-header.txt"
+          mkdir -p app/src/main/assets
+          cp "$BIN" app/src/main/assets/horizon-fabric-carry-arm64
+          sha256sum app/src/main/assets/horizon-fabric-carry-arm64
+          echo "Built and bundled Horizon's validated data/asset carry converter for Fabric JAR intake."
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
