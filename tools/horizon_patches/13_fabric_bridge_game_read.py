@@ -10,6 +10,9 @@ for path in (runtime, manifest):
 def rr(old, new, label):
     replace_once(runtime, old, new)
 
+def rm(old, new, label):
+    replace_once(manifest, old, new)
+
 rr(
 '''        hud::{Anchor as P1Anchor, Element as P1Element, Widget as P1Widget},
         keys::{KeyState as P1KeyState, Trigger as P1Trigger},
@@ -99,7 +102,7 @@ impl fabric_bridge_p1_bindings::horizon::fabric_bridge::events::Host for P1State
 "P1 game-read host implementation",
 )
 
-rr(
+rm(
 '''            ("horizon:fabric-bridge", "events") => Capability::Events,
             ("horizon:fabric-bridge", "keys") => Capability::Keys,''',
 '''            ("horizon:fabric-bridge", "game") => Capability::GameRead,
