@@ -315,19 +315,24 @@ public final class ResourceManagerActivity extends Activity {
             if (lower.endsWith(".jar")) {
                 FabricJarInfo info = inspectFabricJar(staging);
                 ensureDirs(fabricInboxDir());
+                ensureDirs(bridgeModDir());
                 if (fabricJarIdExists(info.id)) {
                     throw new IllegalArgumentException("Já existe um JAR Fabric importado com ID '" + info.id + "'. Exclua a versão antiga antes de importar outra.");
                 }
+                if (modIdExistsIn(bridgeModDir(), info.id)) {
+                    throw new IllegalArgumentException("O perfil Fabric Bridge já contém um mod com ID '" + info.id + "'. Remova-o antes de importar outra versão.");
+                }
                 String conversion;
                 try {
-                    conversion = convertFabricPayload(staging, info);
+                    conversion = convertFabricJarNative(staging, info);
                 } catch (Exception conversionError) {
-                    conversion = "Conversão automática de recursos recusada: " + message(conversionError)
-                            + ". O JAR original será mantido para análise.";
+                    conversion = "O conversor Horizon não conseguiu gerar um mod de conteúdo completo: "
+                            + message(conversionError) + ". O JAR original foi mantido na fila para análise.";
                 }
                 File target = copyToTarget(staging, fabricInboxDir(), fileName(name, ".jar"));
                 return "JAR Fabric " + info.name + " (" + info.id + " " + info.version + ") importado; "
-                        + conversion + " Original: " + target.getName() + ". Código Java nunca foi executado.";
+                        + conversion + " Original: " + target.getName()
+                        + ". A saída de conteúdo fica apenas no perfil Fabric Bridge; classes Java/Mixins não são executadas.";
             }
             if (lower.endsWith(".hmod")) {
                 String id = readModId(staging);
