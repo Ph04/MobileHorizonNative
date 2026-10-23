@@ -337,6 +337,13 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
     }
 
     #[test]
+    fn unknown_components_are_errors() {
+        // No schema is known for component 99: fail closed rather than desynchronizing a slot.
+        let bytes = [1, 5, 1, 0, 99];
+        assert!(Slot::read(&mut Reader::new(&bytes)).is_err());
+    }
+
+    #[test]
     fn nonempty_attribute_modifiers_are_consumed_and_round_trip() {
         let mut writer = Writer::new();
         writer.varint(1);
