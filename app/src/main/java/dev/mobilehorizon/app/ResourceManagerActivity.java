@@ -202,7 +202,7 @@ public final class ResourceManagerActivity extends Activity {
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "As alterações são aplicadas ao abrir o Minecraft novamente. Mods Fabric/Forge/NeoForge em .jar não são compatíveis: use .hmod do Horizon. Pacotes de textura precisam de ZIP Java com pack.mcmeta e assets/; shader packs compatíveis podem ser ZIPs com shaders/ ou pastas com pack.toml/shaders/.",
+                "As alterações são aplicadas ao abrir o Minecraft novamente. Mods Horizon executáveis usam .hmod. JARs Fabric podem ser importados para triagem e ficam pendentes de conversão; não são executados. Pacotes de textura precisam de ZIP Java com pack.mcmeta e assets/; shader packs compatíveis podem ser ZIPs com shaders/ ou pastas com pack.toml/shaders/.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(12);
