@@ -14,6 +14,7 @@ on:
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
       - "tools/fabric_bridge_audit.py"
+      - "tools/fabric_jar_converter.py"
       - "tools/tests/**"
       - "docs/fabric-bridge-phase1.md"
       - "tools/horizon_server_packs.rs"
