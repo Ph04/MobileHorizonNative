@@ -6,6 +6,20 @@ interface types {
   variant event-result { pass, cancel }
   record chat-message { text: string, sender: option<string>, system: bool }
   record world-info { dimension: id, singleplayer: bool }
+  record player {
+    x: f64,
+    y: f64,
+    z: f64,
+    yaw: f32,
+    pitch: f32,
+    health: f32,
+    food: u32,
+    dimension: string,
+  }
+  record clock {
+    game-time: u64,
+    day-time: u64,
+  }
 }
 
 interface events {
@@ -47,6 +61,15 @@ interface config {
   set: func(key: string, v: value) -> result<_, string>;
 }
 
+/// Capability game-read: immutable view of the current Horizon snapshot.
+interface game {
+  use types.{player, clock};
+  /// None while no local player is available.
+  get-player: func() -> option<player>;
+  /// None until a local world clock is available.
+  get-clock: func() -> option<clock>;
+}
+
 /// The host calls init once; the mod registers its requested callbacks/capabilities through imports.
 interface guest {
   use types.{chat-message, event-result, world-info};
@@ -63,6 +86,7 @@ interface guest {
 }
 
 world mod-p1 {
+  import game;
   import events;
   import keys;
   import commands;

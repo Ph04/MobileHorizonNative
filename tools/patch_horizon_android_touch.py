@@ -61,6 +61,7 @@ steps = [
     "10_fabric_bridge_api_p1.py",
     "11_fabric_bridge_p1_runtime.py",
     "12_fabric_bridge_input_dispatch.py",
+    "13_fabric_bridge_game_read.py",
 ]
 context = dict(globals())
 for step in steps:

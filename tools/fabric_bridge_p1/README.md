@@ -6,6 +6,7 @@ P1 is the experimental Horizon-side runtime for ported WebAssembly components, n
 
 - Init as the native lifecycle entrypoint for a ported mod.
 - Client tick and received-chat callbacks.
+- Read-only player and world-clock snapshots through the opt-in `game-read` capability.
 - Typed command registration, validation and dispatch.
 - Declarative text/bar/item-label HUD adapted to Horizon's text-panel renderer.
 - Typed per-mod config with persisted values.
