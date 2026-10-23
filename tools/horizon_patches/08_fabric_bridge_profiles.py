@@ -30,6 +30,12 @@ pub fn fabric_bridge_enabled() -> bool {
         .is_ok_and(|profile| profile == "fabric-bridge")
 }
 
+/// Developer-only direct mod paths must not bypass Android's explicit profile choice.
+/// Keep the established desktop --dev-mod workflow unchanged.
+pub fn dev_mods_allowed() -> bool {
+    !cfg!(target_os = "android") || fabric_bridge_enabled()
+}
+
 /// Active mod directory. This is read during startup/mod-list operations, not per frame.
 pub fn active_dir() -> &'static str {
     if fabric_bridge_enabled() {
@@ -54,8 +60,14 @@ replace_once(mod_list, "let path = dir.join(FILE);",
              "let path = dir.join(active_file());")
 
 replace_once(game_mods,
-    "let mut paths = horizon_mods::find(&here.join(mod_list::DIR));",
-    "let mut paths = horizon_mods::find(&here.join(mod_list::active_dir()));")
+    '''let mut paths = horizon_mods::find(&here.join(mod_list::DIR));
+    paths.retain(|p| !dev.contains(p));
+    paths.extend(dev.iter().cloned());''',
+    '''let mut paths = horizon_mods::find(&here.join(mod_list::active_dir()));
+    if mod_list::dev_mods_allowed() {
+        paths.retain(|p| !dev.contains(p));
+        paths.extend(dev.iter().cloned());
+    }''')
 replace_once(game_mods,
     "let dir = Self::options_path().with_file_name(mod_list::DIR);",
     '''let dir = Self::options_path().with_file_name(mod_list::active_dir());
@@ -63,6 +75,32 @@ replace_once(game_mods,
             "Horizon: mod profile = {}",
             if mod_list::fabric_bridge_enabled() { "fabric-bridge" } else { "vanilla" }
         );''')
+replace_once(game_mods,
+    '''let mut paths = horizon_mods::find(&dir);
+        paths.retain(|p| !dev.contains(p));
+        paths.extend(dev.iter().cloned());''',
+    '''let mut paths = horizon_mods::find(&dir);
+        if mod_list::dev_mods_allowed() {
+            paths.retain(|p| !dev.contains(p));
+            paths.extend(dev.iter().cloned());
+        }''')
+replace_once(game_mods,
+    '''let dev_ids: Vec<String> = dev
+            .iter()
+            .filter_map(|p| horizon_mods::Package::read(p).ok())
+            .map(|p| p.manifest.id)
+            .collect();''',
+    '''let dev_ids: Vec<String> = if mod_list::dev_mods_allowed() {
+            dev.iter()
+                .filter_map(|p| horizon_mods::Package::read(p).ok())
+                .map(|p| p.manifest.id)
+                .collect()
+        } else {
+            Vec::new()
+        };''')
+replace_once(game_mods,
+    "if !self.mods.dev.is_empty()",
+    "if mod_list::dev_mods_allowed() && !self.mods.dev.is_empty()")
 replace_once(game_options,
     "Self::options_path().with_file_name(horizon_client::mod_list::DIR)",
     "Self::options_path().with_file_name(horizon_client::mod_list::active_dir())")
