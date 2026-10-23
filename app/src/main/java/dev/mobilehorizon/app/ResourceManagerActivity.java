@@ -627,7 +627,11 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     private boolean modIdExists(String id) {
-        File[] files = modDir().listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".hmod"));
+        return modIdExistsIn(modDir(), id);
+    }
+
+    private boolean modIdExistsIn(File directory, String id) {
+        File[] files = directory.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".hmod"));
         if (files == null) return false;
         for (File file : files) {
             try { if (id.equals(readModId(file))) return true; }
