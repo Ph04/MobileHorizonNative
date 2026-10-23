@@ -184,19 +184,19 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams actionsParams = params(-1, -2);
         actionsParams.topMargin = dp(14);
         page.addView(actions, actionsParams);
-        importFilesButton = button("Importar recurso que ainda não tenho (.zip / .hmod)", true, v -> chooseFiles());
-        actions.addView(importFilesButton, params(-1, 48));
+        importFilesButton = button("Importar recursos (.zip / .hmod)", true, v -> chooseFiles());
+        actions.addView(importFilesButton, params(-1, dp(60)));
         importFabricJarButton = button("Importar e converter mod Fabric (.jar)", false, v -> chooseFabricJars());
-        LinearLayout.LayoutParams fabricImportParams = params(-1, 46);
-        fabricImportParams.topMargin = dp(6);
+        LinearLayout.LayoutParams fabricImportParams = params(-1, dp(60));
+        fabricImportParams.topMargin = dp(8);
         actions.addView(importFabricJarButton, fabricImportParams);
         importFolderButton = button("Importar pasta de shader pack", false, v -> chooseShaderFolder());
-        LinearLayout.LayoutParams folderParams = params(-1, 46);
-        folderParams.topMargin = dp(6);
+        LinearLayout.LayoutParams folderParams = params(-1, dp(60));
+        folderParams.topMargin = dp(8);
         actions.addView(importFolderButton, folderParams);
-        Button refresh = button("Atualizar lista", false, v -> refreshResources());
-        LinearLayout.LayoutParams refreshParams = params(-1, 44);
-        refreshParams.topMargin = dp(6);
+        Button refresh = button("Atualizar lista de recursos", false, v -> refreshResources());
+        LinearLayout.LayoutParams refreshParams = params(-1, dp(56));
+        refreshParams.topMargin = dp(8);
         actions.addView(refresh, refreshParams);
 
         LinearLayout statusCard = card();
@@ -225,7 +225,7 @@ public final class ResourceManagerActivity extends Activity {
         contentParams.topMargin = dp(8);
         page.addView(content, contentParams);
         Button back = button("Voltar", false, v -> finish());
-        LinearLayout.LayoutParams backParams = params(-1, 46);
+        LinearLayout.LayoutParams backParams = params(-1, dp(56));
         backParams.topMargin = dp(14);
         page.addView(back, backParams);
     }
@@ -1478,7 +1478,14 @@ public final class ResourceManagerActivity extends Activity {
 
     private Button button(String label, boolean primary, View.OnClickListener listener) {
         Button view = new Button(this);
-        view.setText(label); view.setTextSize(14); view.setAllCaps(false);
+        view.setText(label);
+        view.setTextSize(14);
+        view.setAllCaps(false);
+        view.setSingleLine(false);
+        view.setMaxLines(2);
+        view.setGravity(Gravity.CENTER);
+        view.setPadding(dp(12), dp(8), dp(12), dp(8));
+        view.setMinHeight(dp(56));
         view.setTextColor(primary ? Color.WHITE : 0xff26324d);
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(primary ? 0xff5363bd : 0xffe9edf6); bg.setCornerRadius(dp(10));

@@ -111,3 +111,32 @@ The overlay now carries a compile-tested kernel for deterministic typed events (
 The new `horizon:fabric-bridge@0.1.0` WIT world is kept in a separate WIT directory so existing `horizon:mods` 0.1 components remain unchanged. CI compiles the generated P1 bindings to validate the WIT contract.
 
 **Integration boundary:** the kernel and WIT bindings are groundwork, not yet a loadable P1 `.hmod` API. The runtime still needs the P1 component loader/instance, capability manifest checks for the new imports, guest callback registration and dispatch, and game/UI input hooks. Until those pieces are connected and tested, do not mark any Fabric JAR code as working merely because this kernel compiles. The callback wall-time meter is accounting, not preemption; Wasmtime fuel remains the actual guard against an infinite loop.
+
+
+## v0.4 coverage audit — contracts versus working runtime
+
+The attached v0.4 bridge source is useful as a typed API design, but the presence of a Rust module or WIT declaration is **not** proof that the game invokes it. The distinction below is intentional so we do not advertise unfinished APIs as working:
+
+| Area | Current truthful status | Missing host work |
+|---|---|---|
+| Biome modifiers / world generation | Declarative contract only | Worldgen hook and a server-authoritative generator that consumes modifiers; a client-only renderer cannot generate server chunks |
+| Recipes / crafting | Recipe declarations and lookup contract | Wire recipe matching into the crafting-result path and keep server validation authoritative |
+| Loot | Table/roll contract | Call it from the authoritative loot/drop path, not only from a client-side helper |
+| Attachments | Typed in-memory data model | Stable serialization, save/load lifecycle, ownership and client/server synchronization |
+| Particles / sounds | Declarative effect values | Dispatch to particle and sound engines, validate resource IDs and enforce per-tick limits |
+| HUD | P1 declarative widget state exists | Add the actual renderer hook for text, bars and item icons; connect input focus and item lookups |
+| Networking | Limited channel/message contracts | Register channels against real packet dispatch, validate direction/size/rate, and enforce permissions on both sides |
+| Transfers | Item-storage move contract | Transaction/rollback integration with inventories; fluid storage and complex transactions remain unsupported |
+| Dimensions | Limited dimension metadata/registration | World/session integration and a server-side custom-generator API |
+| Mixins / access wideners | Not converted | Manual source adaptation; they are Java bytecode transformation features |
+| Low-level renderer / Indigo / Java model callbacks | Not converted | Manual renderer/model port to Horizon's Rust rendering interfaces |
+| Direct Minecraft internals | Not converted | Replace internal-class assumptions with explicit Horizon snapshots, events and capabilities |
+
+### Required integration order
+
+1. **Client runtime first:** load the experimental P1 component separately from legacy horizon:mods, validate its import capabilities before instantiation, and dispatch a minimal tick/chat test mod end-to-end.
+2. **Visible client features:** connect key input, typed command registration, persisted config/attachments, and render the declarative HUD through the real frame renderer.
+3. **Content/gameplay hooks:** connect recipes and loot only where the host owns the authoritative execution path. Client-side declarations alone cannot change a multiplayer server's crafting, drops, or world generation.
+4. **Server features last:** biome modifiers, custom dimension generators, block/game-rule mutations, networking authority and synchronized attachments require server-side hooks/runtime support. If this project remains a client-only Horizon port, these stay explicitly unsupported rather than being simulated locally.
+
+The Rust kernels and WIT worlds remain experimental groundwork until the corresponding host hook and a real .hmod integration test pass. In particular, the v0.4 API map does not claim automatic conversion of JAR bytecode, Mixins, Access Wideners, Java model callbacks or arbitrary Minecraft internals.
