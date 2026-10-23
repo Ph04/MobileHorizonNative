@@ -32,8 +32,18 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''        ATTRIBUTE_MODIFIERS
         BANNER_PATTERNS => skip_banner_patterns(r)?,
         other => return Err(Error::new(format!("unsupported item component {other} (no safe wire codec)"))),''', "preserve raw banner patterns in item stacks")
 
-pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
-    fn unknown_components_are_errors() {''', '''    #[test]
+pack_patch("crates/horizon-protocol/src/item.rs", '''        assert_eq!(stack.added.len(), 5);
+        assert!(stack.added.iter().all(|(_, value)| matches!(value, Component::Raw(_))));
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn unknown_components_are_errors() {''', '''        assert_eq!(stack.added.len(), 5);
+        assert!(stack.added.iter().all(|(_, value)| matches!(value, Component::Raw(_))));
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
     fn banner_patterns_component_is_preserved_without_dropping_slot() {
         // One BannerPattern layer: registered pattern ID (holder id + 1), then dye color.
         let bytes = [1, 5, 1, 0, 74, 1, 3, 2];
