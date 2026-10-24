@@ -64,6 +64,21 @@ fn supported_game_query(path: &str) -> bool {
         | "fabric.networking.capabilities")
 }
 
+/// Stable coarse-grained marker for the native handler servicing a bridge query.
+/// This identifies the integration point, not a Java method invocation.
+pub fn marker_for_query(path: &str) -> &'static str {
+    match path {
+        "fabric.biome.catalog" | "fabric.biome.sample" | "fabric.biome.search" | "fabric.registry.biomes" => {
+            "HZN-FABRIC-BIOME-001"
+        }
+        "fabric.resources.capabilities" => "HZN-FABRIC-RESOURCES-001",
+        "fabric.mixins.capabilities" => "HZN-FABRIC-MIXIN-001",
+        "fabric.render.capabilities" => "HZN-FABRIC-RENDER-001",
+        "fabric.networking.capabilities" => "HZN-FABRIC-NETWORK-001",
+        _ => "HZN-FABRIC-BRIDGE-001",
+    }
+}
+
 pub fn capability_report() -> Value {
     capabilities::report()
 }
@@ -103,5 +118,8 @@ mod tests {
         assert!(markers.iter().any(|row| row["id"] == "HZN-FABRIC-BIOME-001"));
         assert!(markers.iter().any(|row| row["id"] == "HZN-FABRIC-MIXIN-001"));
         assert!(markers.iter().all(|row| row["id"].as_str().unwrap_or("").starts_with("HZN-FABRIC-")));
+        assert_eq!(marker_for_query("fabric.biome.search"), "HZN-FABRIC-BIOME-001");
+        assert_eq!(marker_for_query("fabric.networking.capabilities"), "HZN-FABRIC-NETWORK-001");
+        assert_eq!(marker_for_query("unsupported.path"), "HZN-FABRIC-BRIDGE-001");
     }
 }
