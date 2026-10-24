@@ -423,6 +423,9 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Package standalone Fabric Java host for future runtime integration
+        run: bash tools/fabric_java_compat/build-host.sh app/src/main/assets/fabric-java-host.jar
+
       - name: Run compatibility tests and build debug APK
         shell: bash
         env:
