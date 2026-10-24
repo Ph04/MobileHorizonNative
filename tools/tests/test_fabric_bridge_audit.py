@@ -139,6 +139,12 @@ class FabricBridgeAuditTests(unittest.TestCase):
         self.assertTrue(any("could not be scanned" in warning for warning in report["warnings"]))
 
 
+    def test_android_asset_catalog_matches_cli_source_of_truth(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+        source = json.loads((repo_root / "tools/fabric_api_26_3_catalog.json").read_text(encoding="utf-8"))
+        asset = json.loads((repo_root / "app/src/main/assets/fabric-api-26.3-catalog.json").read_text(encoding="utf-8"))
+        self.assertEqual(asset, source)
+
     def test_official_26_3_catalog_maps_correct_public_packages(self) -> None:
         catalog = _load_fabric_api_catalog()
         self.assertEqual(catalog["minecraft_version"], "26.3")
