@@ -479,8 +479,27 @@ jobs:
             "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-provider.jar "$DEST/deps"
           echo "Bundled official Loader 0.19.5 and smoke-tested the isolated Horizon GameProvider; this does not launch game mods."
 
-      - name: Package standalone Fabric Java host for future runtime integration
-        run: bash tools/fabric_java_compat/build-host.sh app/src/main/assets/fabric-java-host.jar
+      - name: Package standalone Fabric Java host and lock its bridge protocol payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/fabric_java_compat/build-host.sh app/src/main/assets/fabric-java-host.jar
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          jar = Path("app/src/main/assets/fabric-java-host.jar")
+          manifest = {
+              "schema_version": 1,
+              "artifact": "MobileHorizonNative/fabric-java-host",
+              "main_class": "dev.mobilehorizon.fabric.FabricJavaCompatHost",
+              "protocol_version": 1,
+              "sha256": hashlib.sha256(jar.read_bytes()).hexdigest(),
+              "size_bytes": jar.stat().st_size,
+          }
+          Path("app/src/main/assets/fabric-java-host-runtime.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print("Locked Fabric Java bridge host SHA-256: " + manifest["sha256"])
+          PY
 
       - name: Run compatibility tests and build debug APK
         shell: bash
@@ -515,6 +534,7 @@ jobs:
           grep -Fq 'assets/horizon-prepare/horizon-prepare-arm64' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-java-host.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-java-host-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-api-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-bridge/fabric-api-0.165.0+26.3.jar' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-loader-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"

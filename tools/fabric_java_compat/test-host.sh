@@ -35,4 +35,43 @@ set -e
 if [[ "$status" -ne 3 ]]; then echo "Expected Mixin fail-closed status 3, got $status" >&2; cat "$TMP/mixin.jsonl" >&2; exit 1; fi
 grep -Fq '"event":"mod_execution_blocked"' "$TMP/mixin.jsonl"
 grep -Fq 'mixin_transformations_not_supported' "$TMP/mixin.jsonl"
-echo "Fabric Java compatibility host tests passed."
+python3 - "$HOST" <<'PY'
+import json, os, subprocess, sys
+host = sys.argv[1]
+env = os.environ.copy()
+env["HORIZON_FABRIC_BRIDGE_TOKEN"] = "test-session-token"
+process = subprocess.Popen(
+    ["java", "-jar", host, "--bridge-stdio"],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    text=True, encoding="utf-8", env=env, bufsize=1,
+)
+def send(frame):
+    process.stdin.write(json.dumps(frame, separators=(",", ":")) + "\n")
+    process.stdin.flush()
+def receive():
+    line = process.stdout.readline()
+    if not line:
+        raise AssertionError("bridge host closed stdout: " + process.stderr.read())
+    return json.loads(line)
+send({"protocol_version": 1, "kind": "hello", "request_id": "hello-1",
+      "session_token": "test-session-token"})
+hello = receive()
+assert hello.get("ok") is True and hello.get("runtime_status") == "bridge_control_plane_only", hello
+send({"kind": "event", "request_id": "snapshot-1", "event": "world_snapshot",
+      "payload": {"world_loaded": True, "dimension": "minecraft:overworld", "singleplayer": True}})
+snapshot_ack = receive()
+assert snapshot_ack.get("ok") is True and snapshot_ack.get("world_revision") == 1, snapshot_ack
+send({"kind": "query_probe", "request_id": "query-1", "payload": {"path": "world.snapshot"}})
+query = receive()
+assert query.get("kind") == "query" and query.get("path") == "world.snapshot", query
+send({"kind": "response", "request_id": query["request_id"], "ok": True,
+      "result": {"world_loaded": True, "dimension": "minecraft:overworld", "singleplayer": True}})
+query_result = receive()
+assert query_result.get("request_id") == "query-1" and query_result.get("ok") is True, query_result
+assert query_result.get("query_result", {}).get("dimension") == "minecraft:overworld", query_result
+send({"kind": "shutdown", "request_id": "shutdown-1"})
+assert receive().get("ok") is True
+process.wait(timeout=5)
+assert process.returncode == 0, process.stderr.read()
+PY
+echo "Fabric Java compatibility host and bidirectional JSONL bridge tests passed."
