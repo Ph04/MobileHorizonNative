@@ -462,7 +462,7 @@ jobs:
             echo "::error::Official Fabric Loader Maven SHA-256 sidecar has an unexpected format."
             exit 1
           fi
-          printf '%s  %s\\n' "$EXPECTED_SHA256" "$DEST/$ARTIFACT" | sha256sum --check -
+          printf '%s  %s\n' "$EXPECTED_SHA256" "$DEST/$ARTIFACT" | sha256sum --check -
           python3 tools/fabric_java_compat/verify_fabric_loader_bundle.py \
             "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-runtime.json \
             --upstream-sha256 "$EXPECTED_SHA256"
