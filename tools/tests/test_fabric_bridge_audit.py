@@ -150,7 +150,7 @@ class FabricBridgeAuditTests(unittest.TestCase):
         self.assertEqual(catalog["minecraft_version"], "26.3")
         self.assertEqual(catalog["fabric_api_version"], "0.165.0")
         self.assertGreaterEqual(catalog["declared_modules_count"], 40)
-        self.assertGreaterEqual(catalog["public_api_class_count"], 400)
+        self.assertEqual(catalog["public_api_class_count"], 401)
         cases = {
             "net/fabricmc/fabric/api/client/event/lifecycle/v1/ClientTickEvents":
                 "fabric-lifecycle-events-v1",
@@ -162,6 +162,8 @@ class FabricBridgeAuditTests(unittest.TestCase):
                 "fabric-model-loading-api-v1",
             "net/fabricmc/fabric/api/creativetab/v1/FabricCreativeModeTab":
                 "fabric-creative-tab-api-v1",
+            "net/fabricmc/fabric/api/resource/ResourceManagerHelper":
+                "fabric-resource-loader-v0",
         }
         for reference, expected in cases.items():
             with self.subTest(reference=reference):
