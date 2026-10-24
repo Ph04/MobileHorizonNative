@@ -51,6 +51,7 @@ import java.util.LinkedHashMap;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -125,6 +126,8 @@ public final class ResourceManagerActivity extends Activity {
     private TextView status;
     private ProgressBar progress;
     private Button importFilesButton, importFolderButton, importFabricJarButton;
+    private Button validateFabricButton;
+    private final AtomicBoolean preflightCancelled = new AtomicBoolean(false);
     private CheckBox profileToggle;
     private File pendingDataPackInstall;
     private boolean busy;
@@ -224,6 +227,10 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams refreshParams = params(-1, dp(56));
         refreshParams.topMargin = dp(8);
         actions.addView(refresh, refreshParams);
+        validateFabricButton = button("Verificar dependências Fabric (sem executar mods)", false, v -> confirmFabricPreflight());
+        LinearLayout.LayoutParams validateFabricParams = params(-1, dp(56));
+        validateFabricParams.topMargin = dp(8);
+        actions.addView(validateFabricButton, validateFabricParams);
 
         LinearLayout statusCard = card();
         LinearLayout.LayoutParams statusParams = params(-1, -2);
@@ -254,6 +261,52 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams backParams = params(-1, dp(56));
         backParams.topMargin = dp(14);
         page.addView(back, backParams);
+    }
+
+    private void confirmFabricPreflight() {
+        if (busy) return;
+        if (!fabricBridgeEnabled()) {
+            showStatus("Ative o perfil Fabric Bridge para verificar suas dependências. O perfil Vanilla não será alterado.");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Verificar dependências Fabric")
+                .setMessage("O Loader oficial analisará cópias temporárias dos JARs com bytecode, entrypoints, Mixins, access wideners e serviços removidos. Nenhum código original de mod será executado. Na primeira execução, poderá ser necessário instalar/baixar o Java 25. O resultado valida metadados e dependências, não o funcionamento em jogo.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Verificar", (dialog, which) -> runFabricPreflight())
+                .show();
+    }
+
+    private void runFabricPreflight() {
+        if (busy) return;
+        busy = true;
+        preflightCancelled.set(false);
+        setBusyUi(true);
+        progress.setIndeterminate(true);
+        showStatus("Preparando o perfil Fabric para verificação…");
+        File activeMods = fabricJavaModDir();
+        io.execute(() -> {
+            try {
+                FabricMetadataPreflight.Result result = FabricMetadataPreflight.run(
+                        getApplicationContext(), activeMods, preflightCancelled,
+                        (stage, detail) -> mainHandler.post(() -> {
+                            if (status != null) showStatus(stage + ": " + detail);
+                        }));
+                mainHandler.post(() -> {
+                    busy = false;
+                    setBusyUi(false);
+                    refreshResources();
+                    showStatus(result.summary());
+                });
+            } catch (Exception error) {
+                String failure = "Falha na pré-verificação Fabric: " + message(error);
+                mainHandler.post(() -> {
+                    busy = false;
+                    setBusyUi(false);
+                    showStatus(failure);
+                });
+            }
+        });
     }
 
     private void chooseFiles() {
@@ -1903,6 +1956,7 @@ public final class ResourceManagerActivity extends Activity {
         importFilesButton.setEnabled(!value);
         importFabricJarButton.setEnabled(!value);
         importFolderButton.setEnabled(!value);
+        if (validateFabricButton != null) validateFabricButton.setEnabled(!value);
         profileToggle.setEnabled(!value);
         progress.setVisibility(value ? View.VISIBLE : View.GONE);
         progress.setIndeterminate(value);
@@ -1954,6 +2008,7 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        preflightCancelled.set(true);
         io.shutdownNow();
         super.onDestroy();
     }
