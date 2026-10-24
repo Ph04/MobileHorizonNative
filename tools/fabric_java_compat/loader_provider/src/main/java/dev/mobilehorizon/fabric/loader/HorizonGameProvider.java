@@ -3,6 +3,7 @@ package dev.mobilehorizon.fabric.loader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -10,6 +11,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.loader.api.EntrypointContainer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.metadata.ModMetadata;
@@ -48,7 +52,8 @@ public final class HorizonGameProvider implements GameProvider {
     @Override
     public boolean isEnabled() {
         return Boolean.getBoolean("horizon.fabric.provider.enabled")
-                && Boolean.getBoolean("horizon.fabric.preflight");
+                && (Boolean.getBoolean("horizon.fabric.preflight")
+                    || Boolean.getBoolean("horizon.fabric.live"));
     }
 
     @Override
@@ -65,7 +70,19 @@ public final class HorizonGameProvider implements GameProvider {
 
     @Override public void initialize(FabricLauncher launcher) { launcher.setValidParentClassPath(launcher.getClassPath()); }
     @Override public GameTransformer getEntrypointTransformer() { return transformer; }
-    @Override public void unlockClassPath(FabricLauncher launcher) { }
+    @Override
+    public void unlockClassPath(FabricLauncher launcher) {
+        // The dependency audit never adds original code to the class path.
+        // Explicit live-entrypoint mode is used only by the dedicated smoke test today.
+        if (!Boolean.getBoolean("horizon.fabric.live")) return;
+        for (ModContainer container : FabricLoader.getInstance().getAllMods()) {
+            String id = container.getMetadata().getId();
+            if ("minecraft".equals(id) || "fabricloader".equals(id) || "java".equals(id)) continue;
+            for (Path root : container.getRootPaths()) {
+                launcher.addToClassPath(root, id);
+            }
+        }
+    }
     @Override public Arguments getArguments() { return arguments; }
     @Override public String[] getLaunchArguments(boolean sanitize) { return arguments.toArray(); }
     @Override public String getRuntimeNamespace(String defaultNs) { return "official"; }
@@ -89,12 +106,27 @@ public final class HorizonGameProvider implements GameProvider {
 
     @Override
     public void launch(ClassLoader loader) {
+        boolean live = Boolean.getBoolean("horizon.fabric.live");
+        int mainEntrypoints = 0;
+        int clientEntrypoints = 0;
+        if (live) {
+            for (EntrypointContainer<ModInitializer> container :
+                    FabricLoader.getInstance().getEntrypointContainers("main", ModInitializer.class)) {
+                container.getEntrypoint().onInitialize();
+                mainEntrypoints++;
+            }
+            for (EntrypointContainer<ClientModInitializer> container :
+                    FabricLoader.getInstance().getEntrypointContainers("client", ClientModInitializer.class)) {
+                container.getEntrypoint().onInitializeClient();
+                clientEntrypoints++;
+            }
+        }
         Collection<ModContainer> discovered = FabricLoader.getInstance().getAllMods();
         List<ModContainer> mods = new ArrayList<>(discovered);
         mods.sort((left, right) -> left.getMetadata().getId().compareTo(right.getMetadata().getId()));
         StringBuilder json = new StringBuilder();
-        json.append("{\"ok\":true,\"mode\":\"metadata_preflight_only\",\"game_version\":\"")
-                .append(GAME_VERSION).append("\",\"loader_version\":\"")
+        json.append("{\"ok\":true,\"mode\":\"").append(live ? "entrypoints_smoke" : "metadata_preflight_only")
+                .append("\",\"game_version\":\"").append(GAME_VERSION).append("\",\"loader_version\":\"")
                 .append(escape(FabricLoader.getInstance().getModContainer("fabricloader")
                         .map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown")))
                 .append("\",\"mods\":[");
@@ -107,7 +139,8 @@ public final class HorizonGameProvider implements GameProvider {
                     .append("\",\"version\":\"")
                     .append(escape(metadata.getVersion().getFriendlyString())).append("\"}");
         }
-        json.append("]}");
+        json.append("],\"entrypoints\":{\"main\":").append(mainEntrypoints)
+                .append(",\"client\":").append(clientEntrypoints).append("}}");
         String report = json.toString();
         try {
             String reportPath = System.getProperty("horizon.fabric.report", "").trim();
