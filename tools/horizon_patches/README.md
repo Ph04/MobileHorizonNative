@@ -11,9 +11,17 @@ These files are ordered patch steps, not reusable .hmod gameplay mods. They patc
 5. 05_resource_rendering_and_frames.py — custom item models, item frames and resource reload/render hooks.
 6. 06_resource_diagnostics.py — bounded logging for received packets, pack application and rendered output.
 7. 07_protocol_maps_and_signs.py — 26.3 packet/component compatibility, map images and sign text components.
+8. 08_fabric_bridge_profiles.py — opt-in separate mod directory and enable-list; does not change the handshake or packet flow.
+9. 09_fabric_jar_carry.py — builds a direct-JAR command around Horizon's existing content carry-over pipeline; validates its output and never executes Java bytecode.
 
 The upstream runtime and preparation revisions are centralized in tools/horizon-revisions.env; the workflow reads that file for both source checkouts. The order is explicit in tools/patch_horizon_android_touch.py. These steps share an execution namespace because later edits depend on helpers or paths created by earlier steps. Keep each change in the appropriate step and preserve fail-fast exact-anchor checks. Do not change the pinned Horizon revision in the production workflow as part of this refactor.
+
+The Fabric Bridge profile is an experimental opt-in. Without HORIZON_MOD_PROFILE=fabric-bridge, Horizon keeps using horizon-mods/ and horizon-mods.txt. When enabled, the selected profile uses horizon-fabric-bridge-mods/ and horizon-fabric-bridge-mods.txt, beside the shared options.txt. The profile isolates native Horizon packages intended for the Bridge path. JAR imports use the ARM64 carry-over helper to create content-only .hmod files in the Bridge folder; Java behavior/Mixins remain unconverted and unexecuted.
 
 ## Updating Horizon
 
 When adopting a newer upstream commit, inspect the release/commit diff first. Then run the Android workflow against the new revision on a separate branch. Each failed anchor indicates a patch that needs to be adapted to upstream source; do not make the build pass by deleting a patch without replacing its functionality or documenting why it is no longer needed.
+
+10. 17_fabric_bridge_received_chat.py — dispatches server chat to registered P1 listeners before presentation and honors cancellation.
+
+11. 18_fabric_bridge_block_interactions.py — adds cancellable P1 callbacks before local/remote block breaking and block-use, with a latch so a cancelled multiplayer break does not resume while the button remains held.

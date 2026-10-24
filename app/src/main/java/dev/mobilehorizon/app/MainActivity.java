@@ -90,6 +90,8 @@ public final class MainActivity extends Activity {
     private Button offlineNameButton;
     private Button offlinePlayButton;
     private Button touchControlsButton;
+    private CheckBox fabricBridgeToggle;
+    private boolean syncingFabricBridgeToggle;
     private boolean busy;
     private boolean conversionBusy;
     private boolean downloadBusy;
@@ -192,6 +194,12 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (fabricBridgeToggle != null) {
+            syncingFabricBridgeToggle = true;
+            fabricBridgeToggle.setChecked(getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE)
+                    .getBoolean("enabled", false));
+            syncingFabricBridgeToggle = false;
+        }
         if (sessionEnvSet) {
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
@@ -308,6 +316,29 @@ public final class MainActivity extends Activity {
         addSpaced(playCard, offlineNameButton, 46, 6);
         touchControlsButton = button("Customizar layout dos botões", true, v -> openTouchControlsEditor());
         addSpaced(playCard, touchControlsButton, 48, 6);
+
+        fabricBridgeToggle = new CheckBox(this);
+        fabricBridgeToggle.setText("Selecionar perfil Fabric Bridge (experimental)");
+        fabricBridgeToggle.setTextColor(0xff18213a);
+        fabricBridgeToggle.setChecked(getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE)
+                .getBoolean("enabled", false));
+        fabricBridgeToggle.setOnCheckedChangeListener((button, enabled) -> {
+            if (syncingFabricBridgeToggle) return;
+            getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE).edit()
+                    .putBoolean("enabled", enabled).apply();
+            setStatus(
+                    enabled ? "Perfil Fabric Bridge selecionado" : "Perfil Vanilla selecionado",
+                    enabled
+                            ? "A próxima sessão usará a pasta separada de mods Fabric Bridge. O cliente não executa JARs Fabric diretamente."
+                            : "A próxima sessão usará a pasta normal de mods do Horizon, sem carregar os mods do perfil Fabric Bridge.");
+        });
+        LinearLayout.LayoutParams fabricBridgeParams = params(-1, -2);
+        fabricBridgeParams.topMargin = dp(6);
+        playCard.addView(fabricBridgeToggle, fabricBridgeParams);
+        TextView fabricBridgeHint = text(
+                "Desativado por padrão. A seleção vale ao iniciar o jogo; mundos e options.txt continuam compartilhados.",
+                12, 0xff68728a, false);
+        addSpaced(playCard, fabricBridgeHint, -2, 6);
         Button resourcesManagerButton = button("Gerenciador de recursos", false,
                 v -> startActivity(new Intent(this, ResourceManagerActivity.class)));
         addSpaced(playCard, resourcesManagerButton, 48, 6);
@@ -1093,6 +1124,9 @@ public final class MainActivity extends Activity {
             Intent intent = new Intent(this, NativeGameActivity.class);
             intent.putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true);
             intent.putExtra(NativeGameActivity.EXTRA_PLAYER_NAME, playerName);
+            intent.putExtra(NativeGameActivity.EXTRA_FABRIC_BRIDGE,
+                    getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE)
+                            .getBoolean("enabled", false));
             startActivity(intent);
             setStatus("Iniciando cliente em modo offline",
                     "Perfil local: " + playerName + "\n" + resourceSummary
@@ -1413,7 +1447,10 @@ public final class MainActivity extends Activity {
                         sessionEnvSet = true;
                         startActivity(new Intent(this, NativeGameActivity.class)
                                 .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true)
-                                .putExtra(NativeGameActivity.EXTRA_SESSION_FILE, sessionFile.getAbsolutePath()));
+                                .putExtra(NativeGameActivity.EXTRA_SESSION_FILE, sessionFile.getAbsolutePath())
+                                .putExtra(NativeGameActivity.EXTRA_FABRIC_BRIDGE,
+                                        getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE)
+                                                .getBoolean("enabled", false)));
                         setStatus("Iniciando cliente Horizon",
                                 "A sessão oficial foi verificada. A inicialização ainda depende de recursos derivados completos e validação real de gameplay.");
                     } catch (Exception error) {

@@ -56,6 +56,17 @@ steps = [
     "05_resource_rendering_and_frames.py",
     "06_resource_diagnostics.py",
     "07_protocol_maps_and_signs.py",
+    "08_fabric_bridge_profiles.py",
+    "09_fabric_jar_carry.py",
+    "10_fabric_bridge_api_p1.py",
+    "11_fabric_bridge_p1_runtime.py",
+    "12_fabric_bridge_input_dispatch.py",
+    "13_fabric_bridge_game_read.py",
+    "14_fabric_bridge_lifecycle_chat.py",
+    "15_fabric_bridge_inventory_read.py",
+    "16_fabric_bridge_runtime_fixes.py",
+    "17_fabric_bridge_received_chat.py",
+    "18_fabric_bridge_block_interactions.py",
 ]
 context = dict(globals())
 for step in steps:

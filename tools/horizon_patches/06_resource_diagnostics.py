@@ -424,11 +424,16 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''    packs::resource_roo
     Ok(root)
 }''', "trace overlay construction result")
 
-pack_patch("crates/horizon-client/src/game/packs.rs", '''    fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {
+# Horizon v0.2.27 builds the resource atlas over the vanilla root so missing
+# server-pack assets still fall back to base textures. Keep both supported layouts.
+atlas_reload_layouts = [
+    (
+        '''    fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {
         let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
         let loaded_sprite_layers = render.sprite_layers.len();
         let mut atlas = HudAtlas::build(root)?;
-        atlas.font.uniform = self.settings.force_unicode;''', '''    fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {
+        atlas.font.uniform = self.settings.force_unicode;''',
+        '''    fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {
         log::info!("HorizonDiag: resource_reload_stage=assets_reload status=begin");
         let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
         let loaded_sprite_layers = render.sprite_layers.len();
@@ -442,7 +447,48 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''    fn reload_resources
             "HorizonDiag: resource_reload_stage=hud_atlas_build status=success atlas_sprites={} font_uniform_before={}",
             atlas.sprites.len(), atlas.font.uniform
         );
-        atlas.font.uniform = self.settings.force_unicode;''', "trace asset and atlas reload stages")
+        atlas.font.uniform = self.settings.force_unicode;''',
+    ),
+    (
+        '''    fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {
+        let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
+        let loaded_sprite_layers = render.sprite_layers.len();
+        let mut atlas = HudAtlas::build_over(root, &self.vanilla_root())?;
+        atlas.font.uniform = self.settings.force_unicode;''',
+        '''    fn reload_resources(&mut self, root: &Path) -> horizon_client::Result<()> {
+        log::info!("HorizonDiag: resource_reload_stage=assets_reload status=begin");
+        let render = std::sync::Arc::new(self.pack.assets.reload(root)?);
+        let loaded_sprite_layers = render.sprite_layers.len();
+        log::info!(
+            "HorizonDiag: resource_reload_stage=assets_reload status=success sprite_layers={}",
+            loaded_sprite_layers
+        );
+        log::info!("HorizonDiag: resource_reload_stage=hud_atlas_build status=begin");
+        let mut atlas = HudAtlas::build_over(root, &self.vanilla_root())?;
+        log::info!(
+            "HorizonDiag: resource_reload_stage=hud_atlas_build status=success atlas_sprites={} font_uniform_before={}",
+            atlas.sprites.len(), atlas.font.uniform
+        );
+        atlas.font.uniform = self.settings.force_unicode;''',
+    ),
+]
+packs_path = root / "crates/horizon-client/src/game/packs.rs"
+packs_content = packs_path.read_text(encoding="utf-8")
+matched_atlas_layouts = [
+    pair for pair in atlas_reload_layouts if packs_content.count(pair[0]) == 1
+]
+if len(matched_atlas_layouts) != 1:
+    raise SystemExit(
+        f"{packs_path}: expected exactly one known atlas reload layout, "
+        f"found {len(matched_atlas_layouts)}"
+    )
+old_atlas_layout, new_atlas_layout = matched_atlas_layouts[0]
+pack_patch(
+    "crates/horizon-client/src/game/packs.rs",
+    old_atlas_layout,
+    new_atlas_layout,
+    "trace asset and atlas reload stages",
+)
 
 pack_patch("crates/horizon-client/src/game/packs.rs", '''        let pack = super::PackResources::load(
             root,

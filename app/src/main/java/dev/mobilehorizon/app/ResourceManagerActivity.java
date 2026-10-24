@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.system.Os;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.view.Gravity;
@@ -23,8 +24,10 @@ import android.widget.TextView;
 
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -32,6 +35,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -43,22 +47,26 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
 /** Manages only resource formats supported by the bundled Horizon runtime. */
 public final class ResourceManagerActivity extends Activity {
     private static final int REQUEST_IMPORT_FILES = 701;
     private static final int REQUEST_IMPORT_SHADER_FOLDER = 702;
+    private static final int REQUEST_IMPORT_FABRIC_JAR = 703;
+    private static final int REQUEST_INSTALL_DATA_PACK = 704;
     private static final long MAX_IMPORT_BYTES = 512L * 1024L * 1024L;
     private static final int MAX_FOLDER_ENTRIES = 20_000;
     private static final int MAX_FOLDER_DEPTH = 64;
     private static final int BUFFER_SIZE = 32 * 1024;
     private static final Pattern MOD_ID = Pattern.compile("(?m)^\\s*id\\s*=\\s*\"([A-Za-z0-9_.-]+)\"\\s*(?:#.*)?$");
 
-    private enum Kind { TEXTURE, MOD, SHADER }
+    private enum Kind { TEXTURE, MOD, SHADER, FABRIC_JAR, DATA_PACK }
     private enum ArchiveKind { TEXTURE, JAVA_SHADER, HORIZON_SHADER, UNKNOWN }
 
     private static final class ResourceItem {
@@ -74,21 +82,45 @@ public final class ResourceManagerActivity extends Activity {
         }
     }
 
+    private static final class FabricJarInfo {
+        final String id, name, version;
+        final int classes, resources, assets, data;
+        final boolean hasMixins, hasAccessWidener, hasEntrypoints;
+        FabricJarInfo(String id, String name, String version, int classes, int resources,
+                      int assets, int data, boolean hasMixins, boolean hasAccessWidener,
+                      boolean hasEntrypoints) {
+            this.id = id; this.name = name; this.version = version;
+            this.classes = classes; this.resources = resources; this.assets = assets; this.data = data;
+            this.hasMixins = hasMixins; this.hasAccessWidener = hasAccessWidener;
+            this.hasEntrypoints = hasEntrypoints;
+        }
+    }
+
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final java.util.concurrent.ExecutorService io =
             java.util.concurrent.Executors.newSingleThreadExecutor();
     private LinearLayout content;
     private TextView status;
     private ProgressBar progress;
-    private Button importFilesButton, importFolderButton;
+    private Button importFilesButton, importFolderButton, importFabricJarButton;
+    private CheckBox profileToggle;
+    private File pendingDataPackInstall;
     private boolean busy;
 
+    private boolean fabricBridgeEnabled() {
+        return getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE).getBoolean("enabled", false);
+    }
     private File home() { return new File(getFilesDir(), "horizon"); }
     private File textureDir() { return new File(home(), "resourcepacks"); }
-    private File modDir() { return new File(home(), "horizon-mods"); }
+    private File vanillaModDir() { return new File(home(), "horizon-mods"); }
+    private File bridgeModDir() { return new File(home(), "horizon-fabric-bridge-mods"); }
+    private File modDir() { return fabricBridgeEnabled() ? bridgeModDir() : vanillaModDir(); }
+    private File fabricInboxDir() { return new File(home(), "horizon-fabric-bridge-inbox"); }
+    private File convertedDataPackDir() { return new File(home(), "horizon-fabric-bridge-datapacks"); }
     private File shaderDir() { return new File(home(), "shaderpacks"); }
     private File optionsFile() { return new File(home(), "options.txt"); }
-    private File modListFile() { return new File(home(), "horizon-mods.txt"); }
+    private File modListFile() { return new File(home(), fabricBridgeEnabled()
+            ? "horizon-fabric-bridge-mods.txt" : "horizon-mods.txt"); }
     private File graphicsFile() { return new File(home(), "horizon-graphics.txt"); }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -124,19 +156,47 @@ public final class ResourceManagerActivity extends Activity {
         introParams.topMargin = dp(5);
         page.addView(intro, introParams);
 
+        LinearLayout profileCard = card();
+        LinearLayout.LayoutParams profileCardParams = params(-1, -2);
+        profileCardParams.topMargin = dp(12);
+        page.addView(profileCard, profileCardParams);
+        profileToggle = new CheckBox(this);
+        profileToggle.setText("Gerenciar perfil Fabric Bridge (experimental)");
+        profileToggle.setTextColor(0xff18213a);
+        profileToggle.setChecked(fabricBridgeEnabled());
+        profileToggle.setOnCheckedChangeListener((button, enabled) -> {
+            getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE).edit()
+                    .putBoolean("enabled", enabled).apply();
+            showStatus(enabled
+                    ? "Perfil Fabric Bridge selecionado. Mods .hmod serão guardados na pasta isolada desse perfil."
+                    : "Perfil Vanilla selecionado. Os mods Horizon serão guardados na pasta Vanilla, sem misturar os perfis.");
+            refreshResources();
+        });
+        profileCard.addView(profileToggle, params(-1, -2));
+        TextView profileHint = text(
+                "A seleção é compartilhada com a tela Jogar. Os mods .hmod ficam separados por perfil; JARs Fabric são apenas armazenados para análise/conversão e nunca são executados diretamente.",
+                12, 0xff68728a, false);
+        LinearLayout.LayoutParams profileHintParams = params(-1, -2);
+        profileHintParams.topMargin = dp(4);
+        profileCard.addView(profileHint, profileHintParams);
+
         LinearLayout actions = card();
         LinearLayout.LayoutParams actionsParams = params(-1, -2);
         actionsParams.topMargin = dp(14);
         page.addView(actions, actionsParams);
-        importFilesButton = button("Importar arquivo (.zip / .hmod)", true, v -> chooseFiles());
-        actions.addView(importFilesButton, params(-1, 48));
+        importFilesButton = button("Importar recursos (.zip / .hmod)", true, v -> chooseFiles());
+        actions.addView(importFilesButton, params(-1, dp(60)));
+        importFabricJarButton = button("Importar e converter mod Fabric (.jar)", false, v -> chooseFabricJars());
+        LinearLayout.LayoutParams fabricImportParams = params(-1, dp(60));
+        fabricImportParams.topMargin = dp(8);
+        actions.addView(importFabricJarButton, fabricImportParams);
         importFolderButton = button("Importar pasta de shader pack", false, v -> chooseShaderFolder());
-        LinearLayout.LayoutParams folderParams = params(-1, 46);
-        folderParams.topMargin = dp(6);
+        LinearLayout.LayoutParams folderParams = params(-1, dp(60));
+        folderParams.topMargin = dp(8);
         actions.addView(importFolderButton, folderParams);
-        Button refresh = button("Atualizar lista", false, v -> refreshResources());
-        LinearLayout.LayoutParams refreshParams = params(-1, 44);
-        refreshParams.topMargin = dp(6);
+        Button refresh = button("Atualizar lista de recursos", false, v -> refreshResources());
+        LinearLayout.LayoutParams refreshParams = params(-1, dp(56));
+        refreshParams.topMargin = dp(8);
         actions.addView(refresh, refreshParams);
 
         LinearLayout statusCard = card();
@@ -153,7 +213,7 @@ public final class ResourceManagerActivity extends Activity {
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "As alterações são aplicadas ao abrir o Minecraft novamente. Mods Fabric/Forge/NeoForge em .jar não são compatíveis: use .hmod do Horizon. Pacotes de textura precisam de ZIP Java com pack.mcmeta e assets/; shader packs compatíveis podem ser ZIPs com shaders/ ou pastas com pack.toml/shaders/.",
+                "As alterações são aplicadas ao abrir o Minecraft novamente. O conversor Horizon cria .hmod de conteúdo a partir de assets/data que entende e declara alguns blocos/itens. A lógica Java, entrypoints, Mixins e access wideners não são convertidos nem executados. Packs de textura usam ZIP com pack.mcmeta e assets/; shader packs aceitam ZIPs shaders/ ou pastas pack.toml/shaders/.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(12);
@@ -165,7 +225,7 @@ public final class ResourceManagerActivity extends Activity {
         contentParams.topMargin = dp(8);
         page.addView(content, contentParams);
         Button back = button("Voltar", false, v -> finish());
-        LinearLayout.LayoutParams backParams = params(-1, 46);
+        LinearLayout.LayoutParams backParams = params(-1, dp(56));
         backParams.topMargin = dp(14);
         page.addView(back, backParams);
     }
@@ -183,6 +243,18 @@ public final class ResourceManagerActivity extends Activity {
         catch (Exception error) { showStatus("Não foi possível abrir o seletor: " + message(error)); }
     }
 
+    private void chooseFabricJars() {
+        if (busy) return;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/java-archive");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES,
+                new String[]{"application/java-archive", "application/octet-stream", "*/*"});
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try { startActivityForResult(intent, REQUEST_IMPORT_FABRIC_JAR); }
+        catch (Exception error) { showStatus("Não foi possível abrir o seletor de JARs: " + message(error)); }
+    }
+
     private void chooseShaderFolder() {
         if (busy) return;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
@@ -194,7 +266,7 @@ public final class ResourceManagerActivity extends Activity {
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null) return;
-        if (requestCode == REQUEST_IMPORT_FILES) {
+        if (requestCode == REQUEST_IMPORT_FILES || requestCode == REQUEST_IMPORT_FABRIC_JAR) {
             List<Uri> uris = new ArrayList<>();
             if (data.getClipData() != null) {
                 for (int i = 0; i < data.getClipData().getItemCount(); i++) {
@@ -205,6 +277,10 @@ public final class ResourceManagerActivity extends Activity {
             if (!uris.isEmpty()) importPickedFiles(uris);
         } else if (requestCode == REQUEST_IMPORT_SHADER_FOLDER && data.getData() != null) {
             importShaderFolder(data.getData());
+        } else if (requestCode == REQUEST_INSTALL_DATA_PACK && data.getData() != null) {
+            File pack = pendingDataPackInstall;
+            pendingDataPackInstall = null;
+            if (pack != null) installDataPackIntoWorld(data.getData(), pack);
         }
     }
 
@@ -231,14 +307,33 @@ public final class ResourceManagerActivity extends Activity {
     private String importOne(Uri uri) throws Exception {
         String name = displayName(uri);
         String lower = name.toLowerCase(Locale.ROOT);
-        if (lower.endsWith(".jar")) {
-            throw new IllegalArgumentException("Mods Fabric/Forge/NeoForge .jar não rodam neste runtime. Importe um .hmod do Horizon.");
-        }
         File staging = File.createTempFile("mh-resource-", ".part", getCacheDir());
         try {
             try (InputStream input = getContentResolver().openInputStream(uri)) {
                 if (input == null) throw new IOException("O Android não conseguiu abrir o arquivo.");
                 copyLimited(input, staging, MAX_IMPORT_BYTES);
+            }
+            if (lower.endsWith(".jar")) {
+                FabricJarInfo info = inspectFabricJar(staging);
+                ensureDirs(fabricInboxDir());
+                ensureDirs(bridgeModDir());
+                if (fabricJarIdExists(info.id)) {
+                    throw new IllegalArgumentException("Já existe um JAR Fabric importado com ID '" + info.id + "'. Exclua a versão antiga antes de importar outra.");
+                }
+                if (modIdExistsIn(bridgeModDir(), info.id)) {
+                    throw new IllegalArgumentException("O perfil Fabric Bridge já contém um mod com ID '" + info.id + "'. Remova-o antes de importar outra versão.");
+                }
+                File target = copyToTarget(staging, fabricInboxDir(), fileName(name, ".jar"));
+                String conversion;
+                try {
+                    conversion = convertFabricJarNative(staging, info);
+                } catch (Exception conversionError) {
+                    conversion = "O conversor Horizon não conseguiu gerar um mod de conteúdo completo: "
+                            + message(conversionError) + ". O JAR original foi mantido na fila para análise.";
+                }
+                return "JAR Fabric " + info.name + " (" + info.id + " " + info.version + ") importado; "
+                        + conversion + " Original: " + target.getName()
+                        + ". A saída de conteúdo fica apenas no perfil Fabric Bridge; classes Java/Mixins não são executadas.";
             }
             if (lower.endsWith(".hmod")) {
                 String id = readModId(staging);
@@ -269,6 +364,364 @@ public final class ResourceManagerActivity extends Activity {
         } finally { staging.delete(); }
     }
 
+    private FabricJarInfo inspectFabricJar(File file) throws Exception {
+        try (ZipFile zip = new ZipFile(file)) {
+            ZipEntry metadata = zip.getEntry("fabric.mod.json");
+            if (metadata == null || metadata.isDirectory()) {
+                throw new IllegalArgumentException("O JAR não contém fabric.mod.json; selecione um mod Fabric válido.");
+            }
+            JSONObject json;
+            try (InputStream input = zip.getInputStream(metadata)) {
+                json = new JSONObject(new String(readLimitedBytes(input, 1024 * 1024), StandardCharsets.UTF_8));
+            } catch (JSONException error) {
+                throw new IllegalArgumentException("fabric.mod.json inválido: " + message(error));
+            }
+            String id = json.optString("id", "").trim();
+            if (!id.matches("[A-Za-z0-9_.-]+")) {
+                throw new IllegalArgumentException("fabric.mod.json não contém um ID Fabric válido.");
+            }
+            String name = json.optString("name", id).trim();
+            if (name.isEmpty()) name = id;
+            String version = json.optString("version", "desconhecida").trim();
+            if (version.isEmpty()) version = "desconhecida";
+            int classes = 0, resources = 0, assets = 0, data = 0;
+            boolean mixinFile = false, accessWidenerFile = false;
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                String path = entry.getName().replace('\\', '/');
+                if (path.endsWith(".class")) classes++;
+                if (path.startsWith("assets/")) { assets++; resources++; }
+                if (path.startsWith("data/")) { data++; resources++; }
+                String pathLower = path.toLowerCase(Locale.ROOT);
+                if (pathLower.endsWith(".mixins.json") || pathLower.endsWith(".mixin.json")
+                        || (pathLower.endsWith(".json") && pathLower.contains("mixin"))) mixinFile = true;
+                if (pathLower.endsWith(".accesswidener") || pathLower.endsWith(".access_widener")
+                        || pathLower.endsWith(".aw")) accessWidenerFile = true;
+            }
+            Object mixins = json.opt("mixins");
+            boolean hasMixins = mixinFile || (mixins instanceof JSONArray && ((JSONArray) mixins).length() > 0)
+                    || (mixins instanceof String && !((String) mixins).trim().isEmpty())
+                    || (mixins instanceof JSONObject && ((JSONObject) mixins).length() > 0);
+            boolean hasAccessWidener = accessWidenerFile
+                    || !json.optString("accessWidener", "").trim().isEmpty();
+            JSONObject entrypoints = json.optJSONObject("entrypoints");
+            boolean hasEntrypoints = entrypoints != null && entrypoints.length() > 0;
+            return new FabricJarInfo(id, name, version, classes, resources, assets, data,
+                    hasMixins, hasAccessWidener, hasEntrypoints);
+        } catch (IOException error) {
+            throw new IllegalArgumentException("O arquivo não é um JAR/ZIP válido.");
+        }
+    }
+
+    private String convertFabricJarNative(File source, FabricJarInfo info) throws Exception {
+        File candidate = new File(getCacheDir(),
+                "horizon-fabric-" + info.id + "-" + UUID.randomUUID() + ".hmod");
+        Process process = null;
+        StringBuffer captured = new StringBuffer();
+        Thread logReader = null;
+        try {
+            File converter = installFabricCarryTool();
+            File resourceRoot = new File(getFilesDir(),
+                    ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+            ProcessBuilder builder = new ProcessBuilder(
+                    "/system/bin/sh",
+                    "-c",
+                    "exec /system/bin/linker64 \"$@\"",
+                    "linker64",
+                    converter.getAbsolutePath(),
+                    source.getAbsolutePath(),
+                    candidate.getAbsolutePath(),
+                    resourceRoot.getAbsolutePath());
+            builder.directory(getCacheDir());
+            builder.redirectErrorStream(true);
+            process = builder.start();
+            final Process running = process;
+            logReader = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(running.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        synchronized (captured) {
+                            if (captured.length() < 128 * 1024) {
+                                captured.append(line).append('\n');
+                            }
+                        }
+                    }
+                } catch (IOException ignored) {}
+            }, "horizon-fabric-carry-log");
+            logReader.setDaemon(true);
+            logReader.start();
+
+            if (!process.waitFor(5, TimeUnit.MINUTES)) {
+                process.destroyForcibly();
+                throw new IOException("A conversão nativa do conteúdo ultrapassou cinco minutos.");
+            }
+            logReader.join(5000);
+            String log;
+            synchronized (captured) { log = captured.toString(); }
+            if (process.exitValue() != 0) {
+                throw new IOException("Conversor Horizon encerrou com código " + process.exitValue()
+                        + (log.trim().isEmpty() ? "" : ": " + log.trim()));
+            }
+            if (!candidate.isFile() || candidate.length() == 0) {
+                throw new IOException("O conversor terminou sem gerar um .hmod.");
+            }
+            String lastLine = "";
+            for (String line : log.split("\n")) {
+                if (!line.trim().isEmpty()) lastLine = line.trim();
+            }
+            JSONObject result = new JSONObject(lastLine);
+            if (!"ok".equals(result.optString("status"))
+                    || !info.id.equals(result.optString("id"))) {
+                throw new IOException("O conversor retornou um relatório sem confirmação do ID do mod.");
+            }
+            String generatedId = readModId(candidate);
+            if (!info.id.equals(generatedId)) {
+                throw new IOException("O .hmod gerado não passou na validação do manifesto de conteúdo.");
+            }
+
+            File installed = copyToTarget(candidate, bridgeModDir(), fileName(info.id, ".hmod"));
+            int files = result.optInt("content_files", 0);
+            int blocks = result.optInt("blocks_declared", 0);
+            int items = result.optInt("items_declared", 0);
+            JSONObject report = result.optJSONObject("carry_report");
+            int outside = report == null ? 0 : report.optInt("outside", 0);
+            int unknownBlocks = report == null ? 0 : report.optInt("blocks_unknown", 0);
+            StringBuilder summary = new StringBuilder()
+                    .append("conteúdo convertido em mod Horizon ").append(installed.getName())
+                    .append(" (").append(files).append(" arquivos, ")
+                    .append(blocks).append(" blocos e ").append(items).append(" itens declarados)")
+                    .append(" e guardado no perfil Fabric Bridge");
+            if (outside > 0) summary.append("; ").append(outside).append(" arquivos foram separados para revisão");
+            if (unknownBlocks > 0) summary.append("; ").append(unknownBlocks).append(" blocos não puderam ser declarados automaticamente");
+            if (info.classes > 0 || info.hasEntrypoints || info.hasMixins || info.hasAccessWidener) {
+                summary.append(". Conversão parcial: o JAR contém código Java/entrypoints/Mixins/AW, que não foram convertidos; os recursos podem funcionar, mas a lógica Java do mod não");
+            } else {
+                summary.append(". O conteúdo gerado foi validado pelo leitor do Horizon; teste-o no jogo");
+            }
+            return summary.toString();
+        } finally {
+            if (process != null && process.isAlive()) process.destroyForcibly();
+            if (logReader != null && logReader.isAlive()) {
+                try { logReader.join(1000); } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            candidate.delete();
+        }
+    }
+
+    private File installFabricCarryTool() throws Exception {
+        File target = new File(getFilesDir(), ".local/horizon-fabric-carry-arm64");
+        ensureDirs(target.getParentFile());
+        File partial = new File(target.getParentFile(),
+                ".horizon-fabric-carry-arm64-" + UUID.randomUUID() + ".part");
+        try (InputStream input = getAssets().open("horizon-fabric-carry-arm64");
+             OutputStream output = new BufferedOutputStream(new FileOutputStream(partial))) {
+            copyStream(input, output, MAX_IMPORT_BYTES);
+        } catch (IOException error) {
+            partial.delete();
+            throw new IOException("Este APK não inclui o conversor ARM64 horizon-fabric-carry; instale uma build nova.", error);
+        }
+        if (!partial.renameTo(target)) {
+            try (InputStream input = new BufferedInputStream(new FileInputStream(partial));
+                 OutputStream output = new BufferedOutputStream(new FileOutputStream(target))) {
+                copyStream(input, output, MAX_IMPORT_BYTES);
+            } finally {
+                partial.delete();
+            }
+        }
+        Os.chmod(target.getAbsolutePath(), 0700);
+        File linker = new File("/system/bin/linker64");
+        if (!linker.isFile() || !linker.canExecute()) {
+            throw new IOException("O dispositivo não disponibiliza o linker64 necessário para o conversor nativo.");
+        }
+        return target;
+    }
+
+    private String convertFabricPayload(File source, FabricJarInfo info) throws Exception {
+        List<ZipEntry> assetEntries = new ArrayList<>();
+        List<ZipEntry> dataEntries = new ArrayList<>();
+        Set<String> seen = new java.util.HashSet<>();
+        long expectedBytes = 0;
+        try (ZipFile zip = new ZipFile(source)) {
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            int entryCount = 0;
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                String name = entry.getName();
+                if (!name.startsWith("assets/") && !name.startsWith("data/")) continue;
+                if (++entryCount > MAX_FOLDER_ENTRIES) {
+                    throw new IllegalArgumentException("O JAR contém itens demais para conversão segura.");
+                }
+                validatePackEntry(name);
+                if (!seen.add(name)) {
+                    throw new IllegalArgumentException("O JAR contém caminhos de recurso duplicados: " + name);
+                }
+                long size = entry.getSize();
+                if (size < 0 || size > MAX_IMPORT_BYTES) {
+                    throw new IllegalArgumentException("Tamanho de recurso inválido ou excessivo: " + name);
+                }
+                expectedBytes += size;
+                if (expectedBytes > MAX_IMPORT_BYTES) {
+                    throw new IllegalArgumentException("Os recursos descompactados ultrapassam o limite de 512 MiB.");
+                }
+                if (name.startsWith("assets/")) assetEntries.add(entry);
+                else dataEntries.add(entry);
+            }
+            if (assetEntries.isEmpty() && dataEntries.isEmpty()) {
+                return "nenhum arquivo em assets/ ou data/ foi encontrado; o mod completo ainda exige adaptação nativa.";
+            }
+
+            File resourceTarget = null, dataTarget = null, resourcePart = null, dataPart = null;
+            boolean resourceCommitted = false;
+            try {
+                if (!assetEntries.isEmpty()) {
+                    ensureDirs(textureDir());
+                    resourceTarget = uniqueFile(textureDir(), convertedPackName(info, false));
+                    resourcePart = temporaryPackFile(resourceTarget);
+                    writeConvertedPack(zip, assetEntries, resourcePart, info, false);
+                }
+                if (!dataEntries.isEmpty()) {
+                    ensureDirs(convertedDataPackDir());
+                    dataTarget = uniqueFile(convertedDataPackDir(), convertedPackName(info, true));
+                    dataPart = temporaryPackFile(dataTarget);
+                    writeConvertedPack(zip, dataEntries, dataPart, info, true);
+                }
+                if (resourcePart != null) {
+                    if (!resourcePart.renameTo(resourceTarget)) {
+                        throw new IOException("Não foi possível finalizar o pacote de recursos convertido.");
+                    }
+                    resourceCommitted = true;
+                }
+                if (dataPart != null && !dataPart.renameTo(dataTarget)) {
+                    throw new IOException("Não foi possível finalizar o pacote de dados convertido.");
+                }
+            } catch (Exception error) {
+                if (resourceCommitted && resourceTarget != null) resourceTarget.delete();
+                if (dataTarget != null && dataTarget.exists() && dataPart != null && dataPart.exists()) dataTarget.delete();
+                throw error;
+            } finally {
+                if (resourcePart != null) resourcePart.delete();
+                if (dataPart != null) dataPart.delete();
+            }
+        }
+
+        boolean code = info.classes > 0 || info.hasEntrypoints || info.hasMixins || info.hasAccessWidener;
+        StringBuilder result = new StringBuilder();
+        if (!assetEntries.isEmpty()) {
+            result.append("assets/ convertidos para pack de recursos desativado");
+        }
+        if (!dataEntries.isEmpty()) {
+            if (result.length() > 0) result.append("; ");
+            result.append("data/ convertido para pacote de dados, aguardando instalação em um mundo");
+        }
+        if (code) {
+            result.append(". Conversão parcial: ").append(info.classes)
+                    .append(" classes Java, entrypoints/Mixins/AW não foram convertidos; a lógica do mod ainda não funcionará");
+        } else {
+            result.append(". Nenhuma lógica Java foi detectada, mas confira identificadores e formatos dentro do jogo");
+        }
+        return result.toString();
+    }
+
+    private String convertedPackName(FabricJarInfo info, boolean dataPack) {
+        return fileName("fabric-" + info.id + "-" + info.version
+                + (dataPack ? "-datapack" : "-resources"), ".zip");
+    }
+
+    private File temporaryPackFile(File target) {
+        return new File(target.getParentFile(),
+                "." + target.getName() + ".importing-" + UUID.randomUUID());
+    }
+
+    private void validatePackEntry(String name) {
+        if (name == null || name.isEmpty() || name.startsWith("/")
+                || name.indexOf('\\') >= 0 || name.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("Caminho inseguro no JAR: " + name);
+        }
+        String[] parts = name.split("/", -1);
+        for (String part : parts) {
+            if (part.isEmpty() || ".".equals(part) || "..".equals(part)) {
+                throw new IllegalArgumentException("Caminho inseguro no JAR: " + name);
+            }
+        }
+        if (!name.startsWith("assets/") && !name.startsWith("data/")) {
+            throw new IllegalArgumentException("Caminho inesperado durante a conversão: " + name);
+        }
+    }
+
+    private byte[] convertedPackMetadata(FabricJarInfo info, boolean dataPack) throws JSONException {
+        JSONArray format = new JSONArray();
+        format.put(dataPack ? 121 : 97);
+        format.put(dataPack ? 0 : 1);
+        JSONObject metadata = new JSONObject();
+        metadata.put("description", info.name + " — recursos extraídos de JAR Fabric; código Java não incluído");
+        metadata.put("min_format", new JSONArray(format.toString()));
+        metadata.put("max_format", new JSONArray(format.toString()));
+        JSONObject root = new JSONObject();
+        root.put("pack", metadata);
+        return (root.toString(2) + "\n").getBytes(StandardCharsets.UTF_8);
+    }
+
+    private void writeConvertedPack(ZipFile source, List<ZipEntry> entries, File destination,
+                                    FabricJarInfo info, boolean dataPack) throws Exception {
+        ensureDirs(destination.getParentFile());
+        byte[] metadata = convertedPackMetadata(info, dataPack);
+        long totalBytes = 0;
+        int fileCount = 0;
+        try (ZipOutputStream output = new ZipOutputStream(
+                    new BufferedOutputStream(new FileOutputStream(destination)))) {
+            output.putNextEntry(new ZipEntry("pack.mcmeta"));
+            output.write(metadata);
+            output.closeEntry();
+            byte[] buffer = new byte[BUFFER_SIZE];
+            for (ZipEntry entry : entries) {
+                if (++fileCount > MAX_FOLDER_ENTRIES) {
+                    throw new IOException("O pack convertido contém arquivos demais.");
+                }
+                if (entry.getSize() > MAX_IMPORT_BYTES) {
+                    throw new IOException("Arquivo grande demais no pack convertido: " + entry.getName());
+                }
+                output.putNextEntry(new ZipEntry(entry.getName()));
+                long entryBytes = 0;
+                try (InputStream input = source.getInputStream(entry)) {
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        entryBytes += count;
+                        totalBytes += count;
+                        if (entryBytes > MAX_IMPORT_BYTES || totalBytes > MAX_IMPORT_BYTES) {
+                            throw new IOException("Os recursos descompactados ultrapassam o limite de 512 MiB.");
+                        }
+                        output.write(buffer, 0, count);
+                    }
+                }
+                if (entry.getSize() >= 0 && entryBytes != entry.getSize()) {
+                    throw new IOException("Tamanho divergente ao ler " + entry.getName());
+                }
+                output.closeEntry();
+            }
+            output.finish();
+        } catch (Exception error) {
+            destination.delete();
+            throw error;
+        }
+    }
+
+    private boolean fabricJarIdExists(String id) {
+        File[] files = fabricInboxDir().listFiles((dir, name) ->
+                name.toLowerCase(Locale.ROOT).endsWith(".jar"));
+        if (files == null) return false;
+        for (File file : files) {
+            try { if (id.equals(inspectFabricJar(file).id)) return true; }
+            catch (Exception ignored) {}
+        }
+        return false;
+    }
+
     private ArchiveKind inspectZip(File file) throws Exception {
         boolean packMeta = false, assets = false, shaders = false, horizonToml = false;
         try (ZipFile zip = new ZipFile(file)) {
@@ -290,18 +743,42 @@ public final class ResourceManagerActivity extends Activity {
     private String readModId(File file) throws Exception {
         try (ZipFile zip = new ZipFile(file)) {
             ZipEntry manifest = zip.getEntry("horizon-mod.toml");
-            ZipEntry wasm = zip.getEntry("mod.wasm");
-            if (manifest == null || wasm == null || wasm.isDirectory()) return null;
+            if (manifest == null || manifest.isDirectory()) return null;
+            String manifestText;
             try (InputStream input = zip.getInputStream(manifest)) {
-                String text = new String(readLimitedBytes(input, 64 * 1024), StandardCharsets.UTF_8);
-                Matcher matcher = MOD_ID.matcher(text);
-                return matcher.find() ? matcher.group(1) : null;
+                manifestText = new String(readLimitedBytes(input, 64 * 1024), StandardCharsets.UTF_8);
             }
+            Matcher matcher = MOD_ID.matcher(manifestText);
+            if (!matcher.find()) return null;
+            ZipEntry wasm = zip.getEntry("mod.wasm");
+            if (wasm != null && !wasm.isDirectory()) return matcher.group(1);
+
+            // Horizon API 0.2 allows content-only .hmod archives with no wasm,
+            // but only when the manifest grants registries and data/assets exist.
+            if (!Pattern.compile("(?m)^\\s*api\\s*=\\s*\"0\\.2\"\\s*$").matcher(manifestText).find()
+                    || !manifestText.contains("\"registries\"")) {
+                return null;
+            }
+            boolean hasContent = false;
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                String name = entry.getName();
+                if (!entry.isDirectory() && (name.startsWith("assets/") || name.startsWith("data/"))) {
+                    hasContent = true;
+                    break;
+                }
+            }
+            return hasContent ? matcher.group(1) : null;
         } catch (IOException error) { return null; }
     }
 
     private boolean modIdExists(String id) {
-        File[] files = modDir().listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".hmod"));
+        return modIdExistsIn(modDir(), id);
+    }
+
+    private boolean modIdExistsIn(File directory, String id) {
+        File[] files = directory.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".hmod"));
         if (files == null) return false;
         for (File file : files) {
             try { if (id.equals(readModId(file))) return true; }
@@ -412,7 +889,10 @@ public final class ResourceManagerActivity extends Activity {
         if (content == null) return;
         content.removeAllViews();
         ensureUiDir(textureDir()); ensureUiDir(modDir()); ensureUiDir(shaderDir());
-        List<ResourceItem> textures = new ArrayList<>(), mods = new ArrayList<>(), shaders = new ArrayList<>();
+        ensureUiDir(fabricInboxDir()); ensureUiDir(convertedDataPackDir());
+        List<ResourceItem> textures = new ArrayList<>(), mods = new ArrayList<>(),
+                shaders = new ArrayList<>(), fabricJars = new ArrayList<>(),
+                convertedDataPacks = new ArrayList<>();
 
         File[] items = textureDir().listFiles();
         if (items != null) for (File file : items) {
@@ -447,15 +927,212 @@ public final class ResourceManagerActivity extends Activity {
             }
         }
 
+        items = fabricInboxDir().listFiles();
+        if (items != null) for (File file : items) {
+            if (!file.isFile() || !file.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
+            try {
+                FabricJarInfo info = inspectFabricJar(file);
+                boolean resourceConverted = info.assets > 0 && hasConvertedFabricPack(info, false);
+                boolean dataConverted = info.data > 0 && hasConvertedFabricPack(info, true);
+                boolean contentConverted = modIdExistsIn(bridgeModDir(), info.id);
+                boolean code = info.classes > 0 || info.hasEntrypoints || info.hasMixins || info.hasAccessWidener;
+                StringBuilder details = new StringBuilder("ID: ").append(info.id).append(" · versão ")
+                        .append(info.version).append(" · ").append(info.classes).append(" classes · ")
+                        .append(info.resources).append(" arquivos assets/data");
+                if (contentConverted) details.append(" · convertido em .hmod de conteúdo no perfil Bridge");
+                else {
+                    if (resourceConverted) details.append(" · assets convertidos para pack desativado");
+                    if (dataConverted) details.append(" · data convertido para pack por mundo");
+                }
+                if (info.hasMixins) details.append(" · Mixins");
+                if (info.hasAccessWidener) details.append(" · Access Widener");
+                if (code) details.append(" · código Java/entrypoints não convertido; a lógica do mod ainda não funciona completa");
+                else if (contentConverted || resourceConverted || dataConverted) details.append(" · conteúdo portátil convertido; validar no jogo");
+                else details.append(" · aguardando conversão nativa; não executado");
+                fabricJars.add(new ResourceItem(Kind.FABRIC_JAR, file.getName(), file,
+                        info.id, false, details.toString()));
+            } catch (Exception error) {
+                fabricJars.add(new ResourceItem(Kind.FABRIC_JAR, file.getName(), file,
+                        "", false, "JAR importado, mas sua análise falhou: " + message(error)));
+            }
+        }
+
+        items = convertedDataPackDir().listFiles();
+        if (items != null) for (File file : items) {
+            if (!file.isFile() || !file.getName().toLowerCase(Locale.ROOT).endsWith(".zip")) continue;
+            if (isConvertedDataPack(file)) {
+                convertedDataPacks.add(new ResourceItem(Kind.DATA_PACK, file.getName(), file,
+                        file.getName(), false,
+                        "Pacote de dados extraído automaticamente de um JAR Fabric. Precisa ser instalado dentro de um mundo."));
+            }
+        }
+
         Comparator<ResourceItem> byName = Comparator.comparing(item -> item.name.toLowerCase(Locale.ROOT));
-        Collections.sort(textures, byName); Collections.sort(mods, byName); Collections.sort(shaders, byName);
+        Collections.sort(textures, byName); Collections.sort(mods, byName);
+        Collections.sort(shaders, byName); Collections.sort(fabricJars, byName);
+        Collections.sort(convertedDataPacks, byName);
         addSection("Pacotes de textura", "ZIPs Java com pack.mcmeta e assets/.", textures);
-        addSection("Mods Horizon", "Arquivos .hmod; mods .jar de Fabric/Forge não são executados.", mods);
+        addSection(fabricBridgeEnabled() ? "Mods Horizon — perfil Fabric Bridge" : "Mods Horizon — perfil Vanilla",
+                "Arquivos .hmod separados por perfil; a ativação vale no próximo início.", mods);
+        addSection("JARs Fabric importados — conversão automática de conteúdo",
+                "Assets/data podem ser extraídos; classes Java, entrypoints e Mixins ainda exigem adaptação para Horizon.", fabricJars);
+        addSection("Pacotes de dados convertidos — instalação por mundo",
+                "Selecione a pasta de um mundo salvo para copiar o pack para datapacks/.", convertedDataPacks);
         addSection("Shader packs", "Pastas pack.toml/shaders/ e shader ZIPs Java reconhecidos.", shaders);
-        if (textures.isEmpty() && mods.isEmpty() && shaders.isEmpty()) {
+        if (textures.isEmpty() && mods.isEmpty() && shaders.isEmpty()
+                && fabricJars.isEmpty() && convertedDataPacks.isEmpty()) {
             TextView empty = text("Nenhum recurso compatível instalado. Importe um arquivo ou uma pasta de shader pack.", 14, 0xff68728a, false);
             LinearLayout.LayoutParams p = params(-1, -2); p.topMargin = dp(8); content.addView(empty, p);
         }
+    }
+
+    private void chooseWorldForDataPack(File pack) {
+        if (busy) return;
+        pendingDataPackInstall = pack;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_INSTALL_DATA_PACK);
+        } catch (Exception error) {
+            pendingDataPackInstall = null;
+            showStatus("Não foi possível abrir o seletor do mundo: " + message(error));
+        }
+    }
+
+    private void installDataPackIntoWorld(Uri treeUri, File pack) {
+        busy = true;
+        setBusyUi(true);
+        showStatus("Instalando pacote de dados no mundo selecionado…");
+        io.execute(() -> {
+            Uri createdFile = null;
+            String outcome;
+            try {
+                if (pack == null || !pack.isFile() || !isConvertedDataPack(pack)) {
+                    throw new IOException("O pacote convertido não existe ou não é válido.");
+                }
+                String rootId = DocumentsContract.getTreeDocumentId(treeUri);
+                Uri worldUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId);
+                if (findChildDocumentUri(treeUri, rootId, "level.dat") == null) {
+                    throw new IllegalArgumentException(
+                            "Selecione a pasta raiz de um mundo salvo (aquela que contém level.dat), não a pasta datapacks.");
+                }
+
+                Uri datapacksUri = findChildDocumentUri(treeUri, rootId, "datapacks");
+                if (datapacksUri == null) {
+                    datapacksUri = DocumentsContract.createDocument(getContentResolver(), worldUri,
+                            DocumentsContract.Document.MIME_TYPE_DIR, "datapacks");
+                }
+                if (datapacksUri == null) throw new IOException("O Android não conseguiu criar a pasta datapacks do mundo.");
+
+                String outputName = uniqueDocumentName(treeUri,
+                        DocumentsContract.getDocumentId(datapacksUri), safeName(pack.getName()));
+                createdFile = DocumentsContract.createDocument(getContentResolver(), datapacksUri,
+                        "application/zip", outputName);
+                if (createdFile == null) throw new IOException("O Android não conseguiu criar o arquivo do pacote no mundo.");
+
+                try (InputStream input = new BufferedInputStream(new FileInputStream(pack));
+                     OutputStream output = getContentResolver().openOutputStream(createdFile, "w")) {
+                    if (output == null) throw new IOException("Não foi possível gravar no armazenamento escolhido.");
+                    copyStream(input, output, MAX_IMPORT_BYTES);
+                    output.flush();
+                }
+                outcome = "Pacote de dados instalado em datapacks/" + outputName
+                        + ". Feche e reabra o mundo para validar o conteúdo.";
+            } catch (Exception error) {
+                if (createdFile != null) {
+                    try { DocumentsContract.deleteDocument(getContentResolver(), createdFile); }
+                    catch (Exception ignored) {}
+                }
+                outcome = "Não foi possível instalar o pacote no mundo: " + message(error);
+            }
+            final String result = outcome;
+            mainHandler.post(() -> {
+                busy = false;
+                setBusyUi(false);
+                showStatus(result);
+                refreshResources();
+            });
+        });
+    }
+
+    private Uri findChildDocumentUri(Uri treeUri, String parentDocumentId, String wantedName)
+            throws IOException {
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId);
+        try (Cursor cursor = getContentResolver().query(children,
+                new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME},
+                null, null, null)) {
+            if (cursor == null) throw new IOException("Não foi possível listar a pasta escolhida.");
+            int idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+            int nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+            while (cursor.moveToNext()) {
+                String name = cursor.getString(nameColumn);
+                if (wantedName.equals(name)) {
+                    return DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(idColumn));
+                }
+            }
+        } catch (IllegalArgumentException error) {
+            throw new IOException("O provedor de arquivos não oferece acesso à pasta escolhida.", error);
+        }
+        return null;
+    }
+
+    private String uniqueDocumentName(Uri treeUri, String parentDocumentId, String wantedName)
+            throws IOException {
+        String safe = safeName(wantedName);
+        String extension = "";
+        int dot = safe.lastIndexOf('.');
+        if (dot > 0) {
+            extension = safe.substring(dot);
+            safe = safe.substring(0, dot);
+        }
+        String candidate = safe + extension;
+        int index = 2;
+        while (findChildDocumentUri(treeUri, parentDocumentId, candidate) != null) {
+            candidate = safe + "_" + index++ + extension;
+        }
+        return candidate;
+    }
+
+    private boolean hasConvertedFabricPack(FabricJarInfo info, boolean dataPack) {
+        File directory = dataPack ? convertedDataPackDir() : textureDir();
+        String stem = convertedPackName(info, dataPack);
+        if (stem.endsWith(".zip")) stem = stem.substring(0, stem.length() - 4);
+        final String fileStem = stem;
+        File[] files = directory.listFiles((dir, name) ->
+                name.startsWith(fileStem) && name.toLowerCase(Locale.ROOT).endsWith(".zip"));
+        if (files == null) return false;
+        for (File file : files) {
+            try (ZipFile zip = new ZipFile(file)) {
+                ZipEntry metadata = zip.getEntry("pack.mcmeta");
+                if (metadata == null) continue;
+                try (InputStream input = zip.getInputStream(metadata)) {
+                    String value = new String(readLimitedBytes(input, 64 * 1024), StandardCharsets.UTF_8);
+                    if (!value.contains("recursos extraídos de JAR Fabric")) continue;
+                }
+                java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+                while (entries.hasMoreElements()) {
+                    String name = entries.nextElement().getName();
+                    if (dataPack && name.startsWith("data/")) return true;
+                    if (!dataPack && name.startsWith("assets/")) return true;
+                }
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
+    private boolean isConvertedDataPack(File file) {
+        try (ZipFile zip = new ZipFile(file)) {
+            if (zip.getEntry("pack.mcmeta") == null) return false;
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (!entry.isDirectory() && entry.getName().startsWith("data/")) return true;
+            }
+        } catch (IOException ignored) {}
+        return false;
     }
 
     private boolean isJavaShaderZip(File file) {
@@ -496,10 +1173,13 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams actionsParams = params(-1, -2); actionsParams.topMargin = dp(4);
         row.addView(actions, actionsParams);
         CheckBox active = new CheckBox(this);
-        active.setText(item.active ? "Ativo" : "Desativado");
+        active.setText(item.kind == Kind.FABRIC_JAR ? "Conteúdo convertido / pendente"
+                : item.kind == Kind.DATA_PACK ? "Instalação por mundo"
+                : item.active ? "Ativo" : "Desativado");
         active.setTextColor(0xff283550);
-        active.setChecked(item.active);
-        active.setEnabled(item.kind != Kind.MOD || !item.id.isEmpty());
+        active.setChecked(item.kind != Kind.FABRIC_JAR && item.kind != Kind.DATA_PACK && item.active);
+        active.setEnabled(item.kind != Kind.FABRIC_JAR && item.kind != Kind.DATA_PACK
+                && (item.kind != Kind.MOD || !item.id.isEmpty()));
         active.setOnCheckedChangeListener((button, checked) -> {
             try {
                 setActive(item, checked);
@@ -517,11 +1197,18 @@ public final class ResourceManagerActivity extends Activity {
             }
         });
         actions.addView(active, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        if (item.kind == Kind.DATA_PACK) {
+            actions.addView(button("Instalar no mundo", true, v -> chooseWorldForDataPack(item.path)),
+                    new LinearLayout.LayoutParams(-2, dp(42)));
+        }
         actions.addView(button("Excluir", false, v -> confirmDelete(item)),
                 new LinearLayout.LayoutParams(-2, dp(42)));
     }
 
     private void setActive(ResourceItem item, boolean enabled) throws Exception {
+        if (item.kind == Kind.FABRIC_JAR || item.kind == Kind.DATA_PACK) {
+            throw new IllegalArgumentException("Este recurso não pode ser ativado globalmente.");
+        }
         if (item.kind == Kind.MOD) {
             if (item.id.isEmpty()) throw new IllegalArgumentException("O manifesto deste mod é inválido.");
             TreeSet<String> ids = readEnabledModIds();
@@ -546,7 +1233,7 @@ public final class ResourceManagerActivity extends Activity {
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Excluir", (dialog, which) -> {
                     try {
-                        setActive(item, false);
+                        if (item.kind != Kind.FABRIC_JAR && item.kind != Kind.DATA_PACK) setActive(item, false);
                         deleteRecursively(item.path);
                         if (item.kind == Kind.SHADER) new File(shaderDir(), item.name + ".txt").delete();
                         refreshResources();
@@ -761,7 +1448,9 @@ public final class ResourceManagerActivity extends Activity {
 
     private void setBusyUi(boolean value) {
         importFilesButton.setEnabled(!value);
+        importFabricJarButton.setEnabled(!value);
         importFolderButton.setEnabled(!value);
+        profileToggle.setEnabled(!value);
         progress.setVisibility(value ? View.VISIBLE : View.GONE);
         progress.setIndeterminate(value);
     }
@@ -789,7 +1478,14 @@ public final class ResourceManagerActivity extends Activity {
 
     private Button button(String label, boolean primary, View.OnClickListener listener) {
         Button view = new Button(this);
-        view.setText(label); view.setTextSize(14); view.setAllCaps(false);
+        view.setText(label);
+        view.setTextSize(14);
+        view.setAllCaps(false);
+        view.setSingleLine(false);
+        view.setMaxLines(2);
+        view.setGravity(Gravity.CENTER);
+        view.setPadding(dp(12), dp(8), dp(12), dp(8));
+        view.setMinHeight(dp(56));
         view.setTextColor(primary ? Color.WHITE : 0xff26324d);
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(primary ? 0xff5363bd : 0xffe9edf6); bg.setCornerRadius(dp(10));

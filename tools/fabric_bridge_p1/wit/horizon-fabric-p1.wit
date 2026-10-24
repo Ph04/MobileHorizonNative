@@ -1,0 +1,120 @@
+package horizon:fabric-bridge@0.1.0;
+
+/// Separate world so P1 imports do not break existing horizon:mods 0.1 components.
+interface types {
+  type id = string;
+  variant event-result { pass, cancel }
+  record chat-message { text: string, sender: option<string>, system: bool }
+  record world-info { dimension: id, singleplayer: bool }
+  /// Immutable location in the active client world.
+  record block-pos { x: s32, y: s32, z: s32 }
+  record player {
+    x: f64,
+    y: f64,
+    z: f64,
+    yaw: f32,
+    pitch: f32,
+    health: f32,
+    food: u32,
+    dimension: string,
+  }
+  record clock {
+    game-time: u64,
+    day-time: u64,
+  }
+  record item-stack {
+    id: id,
+    count: u32,
+    damage: option<u32>,
+    max-damage: option<u32>,
+    components: list<tuple<string, string>>,
+  }
+}
+
+interface events {
+  enum phase { early, normal, late }
+  /// The host allow-lists event names: client_tick, world_join, world_leave,
+  /// chat_received, chat_send, block_break, block_interact.
+  register: func(event: string, phase: phase) -> result<_, string>;
+}
+
+interface keys {
+  variant trigger { key(u32), mouse(u8), touch(string), unbound }
+  enum key-state { pressed, released }
+  register: func(id: string, category: string, default: trigger) -> result<_, string>;
+}
+
+interface commands {
+  variant arg-type { %bool, int(tuple<s64, s64>), %float, word, greedy, choice(list<string>) }
+  record arg { name: string, ty: arg-type, optional: bool }
+  variant arg-value { %bool(bool), int(s64), %float(f64), text(string) }
+  register: func(name: string, args: list<arg>) -> result<_, string>;
+}
+
+interface hud {
+  enum anchor { top-left, top-right, bottom-left, bottom-right, top-center, bottom-center }
+  variant element {
+    text(tuple<string, u32, bool>),
+    bar(tuple<f32, f32, u32, u16>),
+    item-icon(tuple<string, option<u32>>)
+  }
+  record widget { anchor: anchor, offset-x: s16, offset-y: s16, visible: bool, rows: list<element> }
+  set-widget: func(key: string, w: widget) -> result<_, string>;
+  remove-widget: func(key: string);
+}
+
+interface config {
+  variant value { %bool(bool), int(s64), %float(f64), text(string) }
+  record field { default: value, min: option<f64>, max: option<f64> }
+  declare: func(key: string, f: field) -> result<_, string>;
+  get: func(key: string) -> option<value>;
+  set: func(key: string, v: value) -> result<_, string>;
+}
+
+/// Capability game-read: immutable view of the current Horizon snapshot.
+interface game {
+  use types.{player, clock};
+  /// None while no local player is available.
+  get-player: func() -> option<player>;
+  /// None until a local world clock is available.
+  get-clock: func() -> option<clock>;
+}
+
+/// Read-only view of the local player's slots. Component values are a safe,
+/// documented subset; unsupported complex data remains unavailable.
+interface inventory {
+  use types.{item-stack};
+  get-player: func() -> list<tuple<u32, option<item-stack>>>;
+  get-selected: func() -> option<item-stack>;
+  get-offhand: func() -> option<item-stack>;
+}
+
+/// The host calls init once; the mod registers its requested callbacks/capabilities through imports.
+interface guest {
+  use types.{block-pos, chat-message, event-result, world-info};
+  use keys.{key-state};
+  use commands.{arg-value};
+  init: func() -> result<_, string>;
+  on-tick: func(tick: u64);
+  on-world-join: func(info: world-info);
+  on-world-leave: func(info: world-info);
+  on-chat-received: func(msg: chat-message) -> event-result;
+  on-chat-send: func(text: string) -> event-result;
+  /// Cancel prevents the pending block break from mutating the world.
+  on-block-break: func(pos: block-pos, state: string) -> event-result;
+  /// Cancel suppresses the block-use action for this hand.
+  on-block-interact: func(pos: block-pos, state: string, face: block-pos, offhand: bool) -> event-result;
+  on-key: func(id: string, state: key-state);
+  on-command: func(name: string, args: list<tuple<string, arg-value>>) -> result<_, string>;
+}
+
+world mod-p1 {
+  import game;
+  import inventory;
+  import events;
+  import keys;
+  import commands;
+  import hud;
+  import config;
+  export guest;
+}
