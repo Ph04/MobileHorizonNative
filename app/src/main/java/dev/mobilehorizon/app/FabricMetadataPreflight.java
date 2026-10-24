@@ -168,7 +168,16 @@ final class FabricMetadataPreflight {
             builder.environment().putAll(java.processEnvironment(temp));
             Process process = builder.start();
             long deadline = System.currentTimeMillis() + TIMEOUT_MS;
-            while (!process.waitFor(250, TimeUnit.MILLISECONDS)) {
+            while (true) {
+                boolean finished;
+                try {
+                    finished = process.waitFor(250, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException interrupted) {
+                    process.destroyForcibly();
+                    Thread.currentThread().interrupt();
+                    throw interrupted;
+                }
+                if (finished) break;
                 if (cancelled != null && cancelled.get()) {
                     process.destroyForcibly();
                     throw new IOException("A pré-verificação foi cancelada.");
