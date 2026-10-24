@@ -256,7 +256,7 @@ pub mod resources {
     pub struct Manager { packs: BTreeMap<Id, Pack>, revision: u64 }
     impl Manager {
         pub fn insert(&mut self, pack: Pack) -> Result<(), String> {
-            if pack.entries.keys().any(|path| path.is_empty() || path.starts_with('/') || path.contains('\\\\') || path.split('/').any(|p| p == ".." || p == "." || p.is_empty())) {
+            if pack.entries.keys().any(|path| path.is_empty() || path.starts_with('/') || path.contains('\\') || path.split('/').any(|p| p == ".." || p == "." || p.is_empty())) {
                 return Err("resource path is absolute or traverses its pack root".into());
             }
             self.packs.insert(pack.owner.clone(), pack); self.revision = self.revision.wrapping_add(1); Ok(())
@@ -560,7 +560,7 @@ mod tests {
         assert_eq!(manager.reload().shadowed_entries, 1);
         assert!(manager.insert(resources::Pack { owner:id("m:bad"), priority:0, entries:BTreeMap::from([("../escape".into(),vec![])]) }).is_err());
         assert!(manager.insert(resources::Pack { owner:id("m:dot"), priority:0, entries:BTreeMap::from([("assets/./escape".into(),vec![])]) }).is_err());
-        assert!(manager.insert(resources::Pack { owner:id("m:windows"), priority:0, entries:BTreeMap::from([("assets\\\\..\\\\escape".into(),vec![])]) }).is_err());
+        assert!(manager.insert(resources::Pack { owner:id("m:windows"), priority:0, entries:BTreeMap::from([("assets\\..\\escape".into(),vec![])]) }).is_err());
     }
 }
 
