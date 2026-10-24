@@ -54,7 +54,7 @@ rr(
         }).collect();
         order.sort_by_key(|(rank, index)| (*rank, *index));
         for (_, index) in order {
-            let result = self.call_p1(index, FUEL_EVENT, |mod_exports, store| {
+            let result = self.call_p1(index, "block_break", FUEL_EVENT, |mod_exports, store| {
                 mod_exports.horizon_fabric_bridge_guest()
                     .call_on_block_break(store, position, state)
             });
@@ -83,7 +83,7 @@ rr(
         }).collect();
         order.sort_by_key(|(rank, index)| (*rank, *index));
         for (_, index) in order {
-            let result = self.call_p1(index, FUEL_EVENT, |mod_exports, store| {
+            let result = self.call_p1(index, "block_interact", FUEL_EVENT, |mod_exports, store| {
                 mod_exports.horizon_fabric_bridge_guest()
                     .call_on_block_interact(store, position, state, face, offhand)
             });
