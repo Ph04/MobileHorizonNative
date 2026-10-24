@@ -31,7 +31,7 @@ pub mod skins;''', "register server resource-pack module")
 
 pack_patch("crates/horizon-client/src/net.rs",
     '''pub const NOT_SIGNED_IN: &str = "This server is in online mode. Sign in with your Microsoft account in the Horizon launcher to join it.";''',
-    '''pub const NOT_SIGNED_IN: &str = "This server requires Microsoft/Minecraft online authentication. Sign in with a verified account to join this server; servers configured for offline mode still accept an offline nickname.";''',
+    '''pub const NOT_SIGNED_IN: &str = "This server is in online mode and requires Microsoft/Minecraft online authentication. Sign in with a verified account to join this server; servers configured for offline mode still accept an offline nickname.";''',
     "explain account requirement only for this server")
 
 pack_patch("crates/horizon-client/src/net.rs",
