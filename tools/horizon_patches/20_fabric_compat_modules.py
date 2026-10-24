@@ -160,7 +160,7 @@ rr(game_mods, """    /// What mods read this tick.
                 let spec = horizon_mods::parse_native_biome_search(payload, fallback)?;
                 let allowed = |name: &str| name == spec.biome_id;
                 let search = horizon_world::worldgen::generator::BiomeSearch {
-                    allowed: &allowed, origin: spec.origin.unwrap_or(fallback), radius: spec.radius,
+                    allowed: &allowed, origin: spec.origin, radius: spec.radius,
                     horizontal: spec.horizontal_step, vertical: spec.vertical_step,
                     min_y: crate::chunk::MIN_Y,
                     max_y: crate::chunk::MIN_Y + crate::chunk::HEIGHT - 1,
