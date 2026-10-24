@@ -24,7 +24,9 @@ def _safe_archive_path(value: str) -> bool:
 
 def parse_class_api(data: bytes, module_id: str) -> dict[str, Any]:
     """Parse a Java class header, its names, and public/protected member descriptors."""
-    if len(data) < 10 or len(data) > MAX_CLASS_BYTES:
+    if len(data) < 10:
+        raise ValueError("truncated class file header")
+    if len(data) > MAX_CLASS_BYTES:
         raise ValueError("class file size is outside the accepted range")
     cursor = 0
     def take(size: int) -> bytes:
