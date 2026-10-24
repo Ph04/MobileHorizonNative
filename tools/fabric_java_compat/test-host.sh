@@ -79,6 +79,7 @@ assert snapshot_ack.get("ok") is True and snapshot_ack.get("world_revision") == 
 send({"kind": "query_probe", "request_id": "query-1", "payload": {"path": "player.snapshot"}})
 query = receive()
 assert query.get("kind") == "query" and query.get("path") == "player.snapshot", query
+assert query.get("timeout_ms") == 10000, query
 send({"kind": "response", "request_id": query["request_id"], "ok": True,
       "result": full_snapshot["player"]})
 query_result = receive()
@@ -97,4 +98,46 @@ assert receive().get("ok") is True
 process.wait(timeout=5)
 assert process.returncode == 0, process.stderr.read()
 PY
-echo "Fabric Java compatibility host and bidirectional JSONL bridge tests passed."
+cat > "$TMP/src/test/NativeBiomeApiFixture.java" <<'JAVA'
+package test;
+import dev.mobilehorizon.fabric.compat.NativeBiomeApi;
+import dev.mobilehorizon.fabric.compat.NativeBridgeClient;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+public final class NativeBiomeApiFixture {
+  public static void main(String[] args) {
+    AtomicLong seenTimeout = new AtomicLong();
+    NativeBridgeClient.Transport transport = (path, payload, timeoutMillis) -> {
+      seenTimeout.set(timeoutMillis);
+      return switch (path) {
+        case "fabric.biome.catalog" -> Map.of("biomes", List.of(Map.of(
+          "numeric_id", 1, "id", "minecraft:forest", "temperature", 0.7,
+          "downfall", 0.8, "precipitation", true)));
+        case "fabric.biome.sample" -> Map.of("samples", List.of(Map.of(
+          "block_position", List.of(-1, 64, -5), "quart_position", List.of(-1, 16, -2),
+          "biome_id", "minecraft:forest")));
+        case "fabric.biome.search" -> Map.of("found", true, "biome_id", "minecraft:forest",
+          "position", List.of(10, 64, 10), "distance_blocks", 11);
+        default -> throw new IllegalArgumentException("unexpected native API path " + path);
+      };
+    };
+    NativeBridgeClient.install(transport);
+    try {
+      var catalog = NativeBiomeApi.catalog();
+      if (catalog.size() != 1 || !catalog.get(0).id().equals("minecraft:forest")) throw new AssertionError(catalog);
+      var samples = NativeBiomeApi.sample(List.of(new NativeBiomeApi.BlockPos(-1, 64, -5)));
+      if (samples.size() != 1 || samples.get(0).quartPosition().x() != -1) throw new AssertionError(samples);
+      var search = NativeBiomeApi.findClosest("minecraft:forest",
+          new NativeBiomeApi.BlockPos(0, 64, 0), 6400, 32, 64);
+      if (!search.found() || search.distanceBlocks().orElse(-1) != 11) throw new AssertionError(search);
+      if (seenTimeout.get() != 10000L) throw new AssertionError("Timeout wasn't forwarded: " + seenTimeout.get());
+    } finally {
+      NativeBridgeClient.clear(transport);
+    }
+  }
+}
+JAVA
+javac --release 17 -cp "$HOST" -d "$TMP/fixture-classes" "$TMP/src/test/NativeBiomeApiFixture.java"
+java -ea -cp "$HOST:$TMP/fixture-classes" test.NativeBiomeApiFixture
+echo "Fabric Java host, typed native biome API and bounded JSONL bridge tests passed."
