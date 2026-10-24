@@ -98,5 +98,10 @@ mod tests {
         let report = capability_report();
         assert_eq!(report["minecraft_java_classes"], "blocked");
         assert_eq!(report["world_biome_backend"], "native-backend-only");
+        let markers = report["target_markers"].as_array().expect("target marker registry");
+        assert_eq!(markers.len(), 9);
+        assert!(markers.iter().any(|row| row["id"] == "HZN-FABRIC-BIOME-001"));
+        assert!(markers.iter().any(|row| row["id"] == "HZN-FABRIC-MIXIN-001"));
+        assert!(markers.iter().all(|row| row["id"].as_str().unwrap_or("").starts_with("HZN-FABRIC-")));
     }
 }
