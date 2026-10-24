@@ -420,7 +420,7 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         let mut reader = Reader::new(&bytes);
         let stack = Slot::read(&mut reader).unwrap().unwrap();
         assert_eq!(stack.added.len(), 3);
-        assert!(stack.added.iter().all(|(_, value)| matches!(value, Component::Raw(_))));
+        // Known codecs may produce typed values; verify consumption and exact re-encoding below.
         assert_eq!(reader.remaining(), 0);
         let mut encoded = Writer::new();
         Slot::write(&Some(stack), &mut encoded);
@@ -428,7 +428,7 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
     }
 
     #[test]
-    fn common_unrendered_component_values_are_preserved() {
+    fn common_26_3_component_values_are_consumed_and_round_trip() {
         // minimum_attack_charge (f32), rarity (VarInt), glider (unit),
         // intangible_projectile (unit), enchantable (VarInt).
         let mut writer = Writer::new();
@@ -444,11 +444,14 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         writer.varint(34);
         writer.varint(31);
         writer.varint(3);
-        let mut reader = Reader::new(&writer.data);
+        let bytes = writer.data.clone();
+        let mut reader = Reader::new(&bytes);
         let stack = Slot::read(&mut reader).unwrap().unwrap();
         assert_eq!(stack.added.len(), 5);
-        assert!(stack.added.iter().all(|(_, value)| matches!(value, Component::Raw(_))));
         assert_eq!(reader.remaining(), 0);
+        let mut encoded = Writer::new();
+        Slot::write(&Some(stack), &mut encoded);
+        assert_eq!(encoded.data, bytes);
     }''', "test complex and scalar component preservation") 
 
 
