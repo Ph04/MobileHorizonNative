@@ -449,12 +449,6 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
         assert_eq!(stack.added.len(), 5);
         assert!(stack.added.iter().all(|(_, value)| matches!(value, Component::Raw(_))));
         assert_eq!(reader.remaining(), 0);
-    }
-
-    #[test]
-    fn unknown_components_are_errors() {
-        let bytes = [1, 5, 1, 0, 99];
-        assert!(Slot::read(&mut Reader::new(&bytes)).is_err());
     }''', "test complex and scalar component preservation") 
 
 
