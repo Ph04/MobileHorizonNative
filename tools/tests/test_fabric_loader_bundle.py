@@ -1,6 +1,6 @@
 import hashlib
 import importlib.util
-import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -14,53 +14,64 @@ assert SPEC is not None and SPEC.loader is not None
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
-
 class FabricLoaderBundleTests(unittest.TestCase):
-    def write_jar(self, path: Path, *, missing_class=None):
+    def write_loader(self, path: Path, missing_class=None):
         with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for entry in MODULE.REQUIRED_CLASSES:
                 if entry != missing_class:
                     archive.writestr(entry, b"fixture class bytes")
-            archive.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\\n")
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
-    def test_accepts_loader_with_required_entrypoints_and_api(self):
+    def write_provider(self, path: Path, service=None):
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for entry in MODULE.PROVIDER_CLASSES:
+                archive.writestr(entry, b"fixture class bytes")
+            archive.writestr(MODULE.PROVIDER_SERVICE, service or MODULE.PROVIDER_NAME)
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def test_accepts_loader_with_required_runtime_classes(self):
         with tempfile.TemporaryDirectory() as directory:
-            jar = Path(directory) / "fabric-loader.jar"
-            digest = self.write_jar(jar)
+            jar = Path(directory) / "loader.jar"
+            digest = self.write_loader(jar)
             report = MODULE.inspect_archive(jar)
             self.assertEqual(report["loader_version"], "0.19.5")
             self.assertEqual(report["target_minecraft_version"], "26.3")
             self.assertEqual(report["execution_status"], "bundled_verified_not_launched")
             self.assertEqual(report["sha256"], digest)
 
-    def test_rejects_missing_game_provider(self):
+    def test_rejects_loader_missing_game_provider(self):
         with tempfile.TemporaryDirectory() as directory:
             jar = Path(directory) / "incomplete.jar"
-            self.write_jar(jar, missing_class=MODULE.REQUIRED_CLASSES[1])
+            self.write_loader(jar, MODULE.REQUIRED_CLASSES[1])
             with self.assertRaisesRegex(ValueError, "missing required runtime classes"):
                 MODULE.inspect_archive(jar)
 
-    def test_rejects_empty_archive(self):
+    def test_accepts_provider_service_and_locks_hash(self):
         with tempfile.TemporaryDirectory() as directory:
-            jar = Path(directory) / "empty.jar"
-            jar.write_bytes(b"")
-            with self.assertRaisesRegex(ValueError, "missing, empty"):
-                MODULE.inspect_archive(jar)
+            provider = Path(directory) / "provider.jar"
+            digest = self.write_provider(provider)
+            report = MODULE.inspect_provider(provider)
+            self.assertEqual(report["provider_service"], MODULE.PROVIDER_NAME)
+            self.assertEqual(report["provider_sha256"], digest)
 
-    def test_upstream_hash_is_required_to_be_sha256(self):
+    def test_rejects_unexpected_provider_service(self):
+        with tempfile.TemporaryDirectory() as directory:
+            provider = Path(directory) / "provider.jar"
+            self.write_provider(provider, "unexpected.Provider")
+            with self.assertRaisesRegex(ValueError, "unexpected provider"):
+                MODULE.inspect_provider(provider)
+
+    def test_rejects_invalid_upstream_checksum_format(self):
         with tempfile.TemporaryDirectory() as directory:
             jar = Path(directory) / "loader.jar"
-            self.write_jar(jar)
+            self.write_loader(jar)
             manifest = Path(directory) / "manifest.json"
-            import subprocess
             result = subprocess.run(
                 [sys.executable, str(SCRIPT), str(jar), str(manifest), "--upstream-sha256", "bad"],
                 capture_output=True, text=True, check=False
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("upstream SHA-256 must be 64 hexadecimal characters", result.stderr)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -200,7 +200,7 @@ public final class ResourceManagerActivity extends Activity {
         });
         profileCard.addView(profileToggle, params(-1, -2));
         TextView profileHint = text(
-                "A seleção é compartilhada com a tela Jogar. Mods .hmod ficam isolados por perfil. JARs Fabric originais são preservados inteiros e podem ser habilitados individualmente na pasta mods/ ou desabilitados movendo-os para fora dela. A Fabric API oficial entra como um único JAR verificado; ativar um JAR prepara o diretório do Loader, mas não garante compatibilidade com as APIs nativas do Horizon.",
+                "A seleção é compartilhada com a tela Jogar. Mods .hmod ficam isolados por perfil. JARs Fabric originais são preservados inteiros e podem ser habilitados individualmente na pasta mods/ ou desabilitados movendo-os para fora dela. A Fabric API oficial e o Loader 0.19.5 são verificados e preparados separadamente dos mods. O GameProvider está em integração; isso ainda não significa que os mods funcionem dentro do jogo.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams profileHintParams = params(-1, -2);
         profileHintParams.topMargin = dp(4);

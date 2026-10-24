@@ -463,10 +463,18 @@ jobs:
             exit 1
           fi
           printf '%s  %s\\n' "$EXPECTED_SHA256" "$DEST/$ARTIFACT" | sha256sum --check -
-          python3 tools/fabric_java_compat/verify_fabric_loader_bundle.py \\
-            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-runtime.json \\
+          python3 tools/fabric_java_compat/verify_fabric_loader_bundle.py \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-runtime.json \
             --upstream-sha256 "$EXPECTED_SHA256"
-          echo "Bundled official Fabric Loader $VERSION separately from the mods/ directory."
+          bash tools/fabric_java_compat/build-loader-provider.sh \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-provider.jar
+          python3 tools/fabric_java_compat/verify_fabric_loader_bundle.py \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-runtime.json \
+            --upstream-sha256 "$EXPECTED_SHA256" \
+            --provider-jar app/src/main/assets/fabric-loader-provider.jar
+          bash tools/fabric_java_compat/test-loader-provider.sh \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-provider.jar
+          echo "Bundled official Loader 0.19.5 and smoke-tested the isolated Horizon GameProvider; this does not launch game mods."
 
       - name: Package standalone Fabric Java host for future runtime integration
         run: bash tools/fabric_java_compat/build-host.sh app/src/main/assets/fabric-java-host.jar
@@ -508,6 +516,7 @@ jobs:
           grep -Fq 'assets/fabric-bridge/fabric-api-0.165.0+26.3.jar' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-loader-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-loader/fabric-loader-0.19.5.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader-provider.jar' "$RUNNER_TEMP/apk-file-list.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
           if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
             grep -F "name='dev.mobilehorizon.app.offline1' versionCode='19' versionName='0.0.1-offline1'" "$RUNNER_TEMP/apk-badging.txt"

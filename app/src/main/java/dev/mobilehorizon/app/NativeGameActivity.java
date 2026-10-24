@@ -52,12 +52,15 @@ public final class NativeGameActivity extends NativeActivity {
                 try {
                     java.io.File fabricApiJar = FabricApiRuntimeInstaller.ensureInstalled(getApplicationContext());
                     java.io.File fabricLoaderJar = FabricLoaderRuntimeInstaller.ensureInstalled(getApplicationContext());
+                    java.io.File fabricLoaderProviderJar = FabricLoaderRuntimeInstaller.providerPath(getApplicationContext());
                     android.system.Os.setenv("HORIZON_FABRIC_JAVA_MODS",
                             fabricApiJar.getParentFile().getAbsolutePath(), true);
                     android.system.Os.setenv("HORIZON_FABRIC_API_JAR",
                             fabricApiJar.getAbsolutePath(), true);
                     android.system.Os.setenv("HORIZON_FABRIC_LOADER_JAR",
                             fabricLoaderJar.getAbsolutePath(), true);
+                    android.system.Os.setenv("HORIZON_FABRIC_PROVIDER_JAR",
+                            fabricLoaderProviderJar.getAbsolutePath(), true);
                     android.system.Os.setenv("HORIZON_FABRIC_LOADER_VERSION",
                             FabricLoaderRuntimeInstaller.VERSION, true);
                     android.util.Log.i("MobileHorizon",
@@ -68,6 +71,7 @@ public final class NativeGameActivity extends NativeActivity {
                     android.system.Os.unsetenv("HORIZON_FABRIC_JAVA_MODS");
                     android.system.Os.unsetenv("HORIZON_FABRIC_API_JAR");
                     android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_JAR");
+                    android.system.Os.unsetenv("HORIZON_FABRIC_PROVIDER_JAR");
                     android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_VERSION");
                     android.util.Log.e("MobileHorizon",
                             "Fabric Bridge disabled because its official Fabric Loader/API payload failed verification.", fabricRuntimeError);
@@ -76,6 +80,7 @@ public final class NativeGameActivity extends NativeActivity {
                 android.system.Os.unsetenv("HORIZON_FABRIC_JAVA_MODS");
                 android.system.Os.unsetenv("HORIZON_FABRIC_API_JAR");
                 android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_JAR");
+                android.system.Os.unsetenv("HORIZON_FABRIC_PROVIDER_JAR");
                 android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_VERSION");
             }
             android.system.Os.setenv(
