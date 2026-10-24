@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "target_minecraft": "26.3",
+  "marker_namespace": "HZN-FABRIC",
+  "infrastructure_marker_ids": [
+    "HZN-FABRIC-BRIDGE-001",
+    "HZN-FABRIC-DIAG-001"
+  ],
+  "targets": [
+    {
+      "id": "HZN-FABRIC-BRIDGE-001",
+      "module_id": "bridge-protocol",
+      "marker_kind": "infrastructure",
+      "fabric_module_tokens": [],
+      "match_source_features": [],
+      "repository_source_path": "tools/fabric_java_compat/native_overlay/fabric_compat/mod.rs",
+      "horizon_path": "crates/horizon-mods/src/runtime/fabric_compat/mod.rs",
+      "description": "Bounded JSONL/native-query transport. Transport availability does not imply Java API compatibility."
+    },
+    {
+      "id": "HZN-FABRIC-EVENTS-001",
+      "module_id": "api-events",
+      "marker_kind": "module_candidate",
+      "fabric_module_tokens": [
+        "fabric-api-base",
+        "fabric-lifecycle-events",
+        "fabric-command-api",
+        "fabric-game-rule-api",
+        "fabric-entity-events",
+        "fabric-events"
+      ],
+      "match_source_features": [],
+      "repository_source_path": "tools/fabric_java_compat/native_overlay/fabric_compat/events.rs",
+      "horizon_path": "crates/horizon-mods/src/runtime/fabric_compat/events.rs",
+      "description": "Event contract and lifecycle-related candidate surface; callbacks and Fabric ordering remain incomplete."
+    },
+    {
+      "id": "HZN-FABRIC-BIOME-001",
+      "module_id": "world-biomes",
+      "marker_kind": "module_candidate",
+      "fabric_module_tokens": [
+        "fabric-biome-api",
+        "fabric-worldgen"
+      ],
+      "match_source_features": [],
+      "repository_source_path": "tools/fabric_java_compat/native_overlay/fabric_compat/biome.rs",
+      "horizon_path": "crates/horizon-mods/src/runtime.rs (BiomeSearch dispatch) + crates/horizon-mods/src/runtime/fabric_compat/biome.rs",
+      "description": "Native worldgen biome backend; not a Java Level/Biome/Registry facade."
+    },
+    {
+      "id": "HZN-FABRIC-REGISTRY-001",
+      "module_id": "registries-components",
+      "marker_kind": "module_candidate",
+      "fabric_module_tokens": [
+        "fabric-registry",
+        "fabric-item-api",
+        "fabric-block-api",
+        "fabric-object-builder",
+        "fabric-item-group",
+        "fabric-transfer",
+        "fabric-recipe-api",
+        "fabric-data-generation"
+      ],
+      "match_source_features": [],
+      "repository_source_path": "tools/fabric_java_compat/native_overlay/fabric_compat/registry.rs",
+      "horizon_path": "crates/horizon-mods/src/runtime/fabric_compat/registry.rs",
+      "description": "Registration transaction contract; live item, block and component registration is not implemented."
+    },
+    {
+      "id": "HZN-FABRIC-NETWORK-001",
+      "module_id": "play-networking",
+      "marker_kind": "module_candidate",
+      "fabric_module_tokens": [
+        "fabric-networking",
+        "fabric-message-api"
+      ],
+      "match_source_features": [],
+      "repository_source_path": "tools/fabric_java_compat/native_overlay/fabric_compat/networking.rs",
+      "horizon_path": "crates/horizon-mods/src/runtime/fabric_compat/networking.rs",
+      "description": "Custom payload contract; not wired into live packet dispatch."
+    },
+    {
+      "id": "HZN-FABRIC-MIXIN-001",
+      "module_id": "mixin-adapters",
+      "marker_kind": "module_candidate",
+      "fabric_module_tokens": [],
+      "match_source_features": [
+        "mixin",
+        "access_widener"
+      ],
+      "repository_source_path": "tools/fabric_java_compat/native_overlay/fabric_compat/mixin.rs",
+      "horizon_path": "crates/horizon-mods/src/runtime/fabric_compat/mixin.rs",
+      "description": "Mixin and access-widener targets are inventoried, but transformations are currently blocked."
+    },
+    {
+      "id": "HZN-FABRIC-RENDER-001",
+      "module_id": "client-ui-render",
+      "marker_kind": "module_candidate",
+      "fabric_module_tokens": [
+        "fabric-rendering",
+        "fabric-screen",
+        "fabric-key-binding",
+        "fabric-particles",
+        "fabric-client"
+      ],
+      "match_source_features": [],
+      "repository_source_path": "tools/fabric_java_compat/native_overlay/fabric_compat/rendering.rs",
+      "horizon_path": "crates/horizon-mods/src/runtime/fabric_compat/rendering.rs",
+      "description": "UI/render contract; not connected to live Minecraft Java GUI/render objects."
+    },
+    {
+      "id": "HZN-FABRIC-RESOURCES-001",
+      "module_id": "resources-reload",
+      "marker_kind": "module_candidate",
+      "fabric_module_tokens": [
+        "fabric-resource",
+        "fabric-model-loading",
+        "fabric-convention-tags",
+        "fabric-loot",
+        "fabric-sound"
+      ],
+      "match_source_features": [],
+      "repository_source_path": "tools/fabric_java_compat/native_overlay/fabric_compat/resources.rs",
+      "horizon_path": "crates/horizon-mods/src/runtime/fabric_compat/resources.rs",
+      "description": "Resource reload contract; Java ResourceManager reload semantics are not implemented."
+    },
+    {
+      "id": "HZN-FABRIC-DIAG-001",
+      "module_id": "diagnostics",
+      "marker_kind": "infrastructure",
+      "fabric_module_tokens": [],
+      "match_source_features": [],
+      "repository_source_path": "tools/fabric_java_compat/native_overlay/fabric_compat/capabilities.rs",
+      "horizon_path": "crates/horizon-mods/src/runtime/fabric_compat/capabilities.rs",
+      "description": "Static capability report and marker registry; these IDs are not per-call execution traces."
+    }
+  ]
+}
