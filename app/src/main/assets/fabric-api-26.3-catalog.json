@@ -8,10 +8,11 @@
   "generated_from": [
     "settings.gradle",
     "gradle.properties",
-    "recursive git tree; public net/fabricmc/fabric/api Java sources"
+    "recursive Git tree; Java source files under net/fabricmc/fabric/api",
+    "package-info.java excluded from API class count; deprecated/fabric-resource-loader-v0 source path included"
   ],
   "declared_modules_count": 46,
-  "public_api_class_count": 415,
+  "public_api_class_count": 401,
   "modules": [
     {
       "name": "fabric-api-base",
@@ -22,13 +23,13 @@
     {
       "name": "fabric-advancement-api-v1",
       "version": "1.0.1",
-      "api_class_count": 4,
+      "api_class_count": 3,
       "category": "api-or-runtime-support"
     },
     {
       "name": "fabric-api-lookup-api-v1",
       "version": "2.0.24",
-      "api_class_count": 7,
+      "api_class_count": 6,
       "category": "api-or-runtime-support"
     },
     {
@@ -52,19 +53,19 @@
     {
       "name": "fabric-client-gametest-api-v1",
       "version": "6.0.11",
-      "api_class_count": 18,
+      "api_class_count": 14,
       "category": "dev-test"
     },
     {
       "name": "fabric-command-api-v2",
       "version": "3.1.2",
-      "api_class_count": 8,
+      "api_class_count": 7,
       "category": "api-or-runtime-support"
     },
     {
       "name": "fabric-content-registries-v0",
       "version": "15.0.6",
-      "api_class_count": 11,
+      "api_class_count": 10,
       "category": "api-or-runtime-support"
     },
     {
@@ -94,7 +95,7 @@
     {
       "name": "fabric-data-generation-api-v1",
       "version": "27.4.2",
-      "api_class_count": 26,
+      "api_class_count": 24,
       "category": "dev-test"
     },
     {
@@ -130,7 +131,7 @@
     {
       "name": "fabric-gametest-api-v1",
       "version": "4.0.35",
-      "api_class_count": 3,
+      "api_class_count": 2,
       "category": "dev-test"
     },
     {
@@ -154,13 +155,13 @@
     {
       "name": "fabric-loot-api-v3",
       "version": "4.0.9",
-      "api_class_count": 5,
+      "api_class_count": 4,
       "category": "api-or-runtime-support"
     },
     {
       "name": "fabric-menu-api-v1",
       "version": "2.0.30",
-      "api_class_count": 4,
+      "api_class_count": 3,
       "category": "api-or-runtime-support"
     },
     {
@@ -178,7 +179,7 @@
     {
       "name": "fabric-networking-api-v1",
       "version": "6.4.0",
-      "api_class_count": 27,
+      "api_class_count": 25,
       "category": "api-or-runtime-support"
     },
     {
@@ -196,7 +197,7 @@
     {
       "name": "fabric-permission-api-v1",
       "version": "1.0.8",
-      "api_class_count": 7,
+      "api_class_count": 6,
       "category": "api-or-runtime-support"
     },
     {
@@ -238,19 +239,19 @@
     {
       "name": "fabric-resource-conditions-api-v1",
       "version": "6.2.0",
-      "api_class_count": 5,
+      "api_class_count": 4,
       "category": "api-or-runtime-support"
     },
     {
       "name": "fabric-resource-loader-v1",
       "version": "3.1.0",
-      "api_class_count": 9,
+      "api_class_count": 8,
       "category": "api-or-runtime-support"
     },
     {
       "name": "fabric-screen-api-v1",
       "version": "5.2.4",
-      "api_class_count": 5,
+      "api_class_count": 4,
       "category": "api-or-runtime-support"
     },
     {
@@ -268,13 +269,13 @@
     {
       "name": "fabric-tag-api-v1",
       "version": "2.1.11",
-      "api_class_count": 3,
+      "api_class_count": 2,
       "category": "api-or-runtime-support"
     },
     {
       "name": "fabric-transfer-api-v1",
       "version": "8.0.25",
-      "api_class_count": 40,
+      "api_class_count": 39,
       "category": "api-or-runtime-support"
     },
     {
@@ -286,15 +287,21 @@
     {
       "name": "fabric-resource-loader-v0",
       "version": "3.3.27",
-      "api_class_count": 0,
+      "api_class_count": 7,
       "category": "deprecated"
     }
   ],
   "api_class_to_module": {
+    "api/resource/IdentifiableResourceReloadListener": "fabric-resource-loader-v0",
+    "api/resource/ModResourcePack": "fabric-resource-loader-v0",
+    "api/resource/ResourceManagerHelper": "fabric-resource-loader-v0",
+    "api/resource/ResourcePackActivationType": "fabric-resource-loader-v0",
+    "api/resource/ResourceReloadListenerKeys": "fabric-resource-loader-v0",
+    "api/resource/SimpleResourceReloadListener": "fabric-resource-loader-v0",
+    "api/resource/SimpleSynchronousResourceReloadListener": "fabric-resource-loader-v0",
     "api/advancement/v1/AdvancementEvents": "fabric-advancement-api-v1",
     "api/advancement/v1/AdvancementSource": "fabric-advancement-api-v1",
     "api/advancement/v1/FabricAdvancementBuilder": "fabric-advancement-api-v1",
-    "api/advancement/v1/package-info": "fabric-advancement-api-v1",
     "api/event/AutoInvokingEvent": "fabric-api-base",
     "api/event/Event": "fabric-api-base",
     "api/event/EventFactory": "fabric-api-base",
@@ -308,7 +315,6 @@
     "api/lookup/v1/custom/ApiProviderMap": "fabric-api-lookup-api-v1",
     "api/lookup/v1/entity/EntityApiLookup": "fabric-api-lookup-api-v1",
     "api/lookup/v1/item/ItemApiLookup": "fabric-api-lookup-api-v1",
-    "api/lookup/v1/package-info": "fabric-api-lookup-api-v1",
     "api/biome/v1/BiomeModification": "fabric-biome-api-v1",
     "api/biome/v1/BiomeModificationContext": "fabric-biome-api-v1",
     "api/biome/v1/BiomeModifications": "fabric-biome-api-v1",
@@ -331,20 +337,15 @@
     "api/client/gametest/v1/context/TestServerConnection": "fabric-client-gametest-api-v1",
     "api/client/gametest/v1/context/TestServerContext": "fabric-client-gametest-api-v1",
     "api/client/gametest/v1/context/TestSingleplayerContext": "fabric-client-gametest-api-v1",
-    "api/client/gametest/v1/context/package-info": "fabric-client-gametest-api-v1",
-    "api/client/gametest/v1/package-info": "fabric-client-gametest-api-v1",
     "api/client/gametest/v1/screenshot/TestScreenshotCommonOptions": "fabric-client-gametest-api-v1",
     "api/client/gametest/v1/screenshot/TestScreenshotComparisonAlgorithm": "fabric-client-gametest-api-v1",
     "api/client/gametest/v1/screenshot/TestScreenshotComparisonOptions": "fabric-client-gametest-api-v1",
     "api/client/gametest/v1/screenshot/TestScreenshotOptions": "fabric-client-gametest-api-v1",
-    "api/client/gametest/v1/screenshot/package-info": "fabric-client-gametest-api-v1",
     "api/client/gametest/v1/world/TestWorldBuilder": "fabric-client-gametest-api-v1",
     "api/client/gametest/v1/world/TestWorldSave": "fabric-client-gametest-api-v1",
-    "api/client/gametest/v1/world/package-info": "fabric-client-gametest-api-v1",
     "api/client/command/v2/ClientCommandRegistrationCallback": "fabric-command-api-v2",
     "api/client/command/v2/ClientCommands": "fabric-command-api-v2",
     "api/client/command/v2/FabricClientCommandSource": "fabric-command-api-v2",
-    "api/client/command/v2/package-info": "fabric-command-api-v2",
     "api/command/v2/ArgumentTypeRegistry": "fabric-command-api-v2",
     "api/command/v2/CommandRegistrationCallback": "fabric-command-api-v2",
     "api/command/v2/EntitySelectorOptionRegistry": "fabric-command-api-v2",
@@ -357,7 +358,6 @@
     "api/registry/fluid/EntityFluidExtension": "fabric-content-registries-v0",
     "api/registry/fluid/EntityFluidInteractionRegistry": "fabric-content-registries-v0",
     "api/registry/fluid/FluidBehavior": "fabric-content-registries-v0",
-    "api/registry/package-info": "fabric-content-registries-v0",
     "api/util/Block2ObjectMap": "fabric-content-registries-v0",
     "api/util/Item2ObjectMap": "fabric-content-registries-v0",
     "api/tag/FabricTagKey": "fabric-convention-tags-v2",
@@ -389,10 +389,8 @@
     "api/datagen/v1/FabricPackOutput": "fabric-data-generation-api-v1",
     "api/datagen/v1/JsonKeySortOrderCallback": "fabric-data-generation-api-v1",
     "api/datagen/v1/advancement/FabricAdvancementBuilder": "fabric-data-generation-api-v1",
-    "api/datagen/v1/advancement/package-info": "fabric-data-generation-api-v1",
     "api/datagen/v1/loot/FabricBlockLootSubProvider": "fabric-data-generation-api-v1",
     "api/datagen/v1/loot/FabricEntityLootSubProvider": "fabric-data-generation-api-v1",
-    "api/datagen/v1/package-info": "fabric-data-generation-api-v1",
     "api/datagen/v1/provider/FabricAdvancementProvider": "fabric-data-generation-api-v1",
     "api/datagen/v1/provider/FabricBlockLootSubProvider": "fabric-data-generation-api-v1",
     "api/datagen/v1/provider/FabricBrewingProvider": "fabric-data-generation-api-v1",
@@ -441,7 +439,6 @@
     "api/gamerule/v1/GameRuleEvents": "fabric-game-rule-api-v1",
     "api/gametest/v1/CustomTestMethodInvoker": "fabric-gametest-api-v1",
     "api/gametest/v1/GameTest": "fabric-gametest-api-v1",
-    "api/gametest/v1/package-info": "fabric-gametest-api-v1",
     "api/client/item/v1/ItemTooltipCallback": "fabric-item-api-v1",
     "api/item/v1/BlockTransformerEvents": "fabric-item-api-v1",
     "api/item/v1/BlockTransformerHelper": "fabric-item-api-v1",
@@ -477,11 +474,9 @@
     "api/loot/v3/FabricLootTableBuilder": "fabric-loot-api-v3",
     "api/loot/v3/LootTableEvents": "fabric-loot-api-v3",
     "api/loot/v3/LootTableSource": "fabric-loot-api-v3",
-    "api/loot/v3/package-info": "fabric-loot-api-v3",
     "api/menu/v1/ExtendedMenuProvider": "fabric-menu-api-v1",
     "api/menu/v1/ExtendedMenuType": "fabric-menu-api-v1",
     "api/menu/v1/FabricMenuProvider": "fabric-menu-api-v1",
-    "api/menu/v1/package-info": "fabric-menu-api-v1",
     "api/client/message/v1/ClientReceiveMessageEvents": "fabric-message-api-v1",
     "api/client/message/v1/ClientSendMessageEvents": "fabric-message-api-v1",
     "api/message/v1/ServerMessageDecoratorEvent": "fabric-message-api-v1",
@@ -510,7 +505,6 @@
     "api/client/networking/v1/ClientPlayNetworking": "fabric-networking-api-v1",
     "api/client/networking/v1/ServerboundConfigurationChannelEvents": "fabric-networking-api-v1",
     "api/client/networking/v1/ServerboundPlayChannelEvents": "fabric-networking-api-v1",
-    "api/client/networking/v1/package-info": "fabric-networking-api-v1",
     "api/networking/v1/ClientboundConfigurationChannelEvents": "fabric-networking-api-v1",
     "api/networking/v1/ClientboundPlayChannelEvents": "fabric-networking-api-v1",
     "api/networking/v1/EntityTrackingEvents": "fabric-networking-api-v1",
@@ -528,7 +522,6 @@
     "api/networking/v1/ServerPlayNetworking": "fabric-networking-api-v1",
     "api/networking/v1/context/PacketContext": "fabric-networking-api-v1",
     "api/networking/v1/context/PacketContextProvider": "fabric-networking-api-v1",
-    "api/networking/v1/package-info": "fabric-networking-api-v1",
     "api/object/builder/v1/block/entity/FabricBlockEntityType": "fabric-object-builder-api-v1",
     "api/object/builder/v1/block/entity/FabricBlockEntityTypeBuilder": "fabric-object-builder-api-v1",
     "api/object/builder/v1/block/type/BlockSetTypeBuilder": "fabric-object-builder-api-v1",
@@ -551,7 +544,6 @@
     "api/permission/v1/PermissionEvents": "fabric-permission-api-v1",
     "api/permission/v1/PermissionNode": "fabric-permission-api-v1",
     "api/permission/v1/PermissionPredicates": "fabric-permission-api-v1",
-    "api/permission/v1/package-info": "fabric-permission-api-v1",
     "api/client/recipe/v1/sync/ClientRecipeSynchronizedEvent": "fabric-recipe-api-v1",
     "api/recipe/v1/FabricRecipeAccess": "fabric-recipe-api-v1",
     "api/recipe/v1/FabricRecipeManager": "fabric-recipe-api-v1",
@@ -644,28 +636,24 @@
     "api/resource/conditions/v1/ResourceCondition": "fabric-resource-conditions-api-v1",
     "api/resource/conditions/v1/ResourceConditionType": "fabric-resource-conditions-api-v1",
     "api/resource/conditions/v1/ResourceConditions": "fabric-resource-conditions-api-v1",
-    "api/resource/conditions/v1/package-info": "fabric-resource-conditions-api-v1",
     "api/resource/v1/DataResourceLoader": "fabric-resource-loader-v1",
     "api/resource/v1/DataResourceStore": "fabric-resource-loader-v1",
     "api/resource/v1/FabricResource": "fabric-resource-loader-v1",
     "api/resource/v1/ResourceLoader": "fabric-resource-loader-v1",
     "api/resource/v1/pack/ModPackResources": "fabric-resource-loader-v1",
     "api/resource/v1/pack/PackActivationType": "fabric-resource-loader-v1",
-    "api/resource/v1/package-info": "fabric-resource-loader-v1",
     "api/resource/v1/reloader/ResourceReloaderKeys": "fabric-resource-loader-v1",
     "api/resource/v1/reloader/SimpleReloadListener": "fabric-resource-loader-v1",
     "api/client/screen/v1/ScreenEvents": "fabric-screen-api-v1",
     "api/client/screen/v1/ScreenKeyboardEvents": "fabric-screen-api-v1",
     "api/client/screen/v1/ScreenMouseEvents": "fabric-screen-api-v1",
     "api/client/screen/v1/Screens": "fabric-screen-api-v1",
-    "api/client/screen/v1/package-info": "fabric-screen-api-v1",
     "api/serialization/v1/MoreCodecs": "fabric-serialization-api-v1",
     "api/serialization/v1/value/FabricValueInput": "fabric-serialization-api-v1",
     "api/serialization/v1/value/FabricValueOutput": "fabric-serialization-api-v1",
     "api/client/sound/v1/FabricSoundInstance": "fabric-sound-api-v1",
     "api/tag/client/v1/ClientTags": "fabric-tag-api-v1",
     "api/tag/v1/FabricTagFile": "fabric-tag-api-v1",
-    "api/tag/v1/package-info": "fabric-tag-api-v1",
     "api/transfer/v1/client/fluid/FluidVariantRenderHandler": "fabric-transfer-api-v1",
     "api/transfer/v1/client/fluid/FluidVariantRendering": "fabric-transfer-api-v1",
     "api/transfer/v1/context/ContainerItemContext": "fabric-transfer-api-v1",
@@ -685,7 +673,6 @@
     "api/transfer/v1/item/PlayerInventoryStorage": "fabric-transfer-api-v1",
     "api/transfer/v1/item/base/SingleItemStorage": "fabric-transfer-api-v1",
     "api/transfer/v1/item/base/SingleStackStorage": "fabric-transfer-api-v1",
-    "api/transfer/v1/package-info": "fabric-transfer-api-v1",
     "api/transfer/v1/storage/SlottedStorage": "fabric-transfer-api-v1",
     "api/transfer/v1/storage/Storage": "fabric-transfer-api-v1",
     "api/transfer/v1/storage/StoragePreconditions": "fabric-transfer-api-v1",
