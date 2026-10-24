@@ -32,13 +32,48 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''        ATTRIBUTE_MODIFIERS
         BANNER_PATTERNS => skip_banner_patterns(r)?,
         other => return Err(Error::new(format!("unsupported item component {other} (no safe wire codec)"))),''', "preserve raw banner patterns in item stacks")
 
-pack_patch("crates/horizon-protocol/src/item.rs", '''        assert_eq!(stack.added.len(), 5);
+pack_patch("crates/horizon-protocol/src/item.rs", '''    #[test]
+    fn common_unrendered_component_values_are_preserved() {
+        // minimum_attack_charge (f32), rarity (VarInt), glider (unit),
+        // intangible_projectile (unit), enchantable (VarInt).
+        let mut writer = Writer::new();
+        writer.varint(1);
+        writer.varint(5);
+        writer.varint(5);
+        writer.varint(0);
+        writer.varint(7);
+        writer.f32(0.5);
+        writer.varint(12);
+        writer.varint(2);
+        writer.varint(22);
+        writer.varint(34);
+        writer.varint(31);
+        writer.varint(3);
+        let mut reader = Reader::new(&writer.data);
+        let stack = Slot::read(&mut reader).unwrap().unwrap();
+        assert_eq!(stack.added.len(), 5);
         assert!(stack.added.iter().all(|(_, value)| matches!(value, Component::Raw(_))));
         assert_eq!(reader.remaining(), 0);
-    }
-
-    #[test]
-    fn unknown_components_are_errors() {''', '''        assert_eq!(stack.added.len(), 5);
+    }''', '''    #[test]
+    fn common_unrendered_component_values_are_preserved() {
+        // minimum_attack_charge (f32), rarity (VarInt), glider (unit),
+        // intangible_projectile (unit), enchantable (VarInt).
+        let mut writer = Writer::new();
+        writer.varint(1);
+        writer.varint(5);
+        writer.varint(5);
+        writer.varint(0);
+        writer.varint(7);
+        writer.f32(0.5);
+        writer.varint(12);
+        writer.varint(2);
+        writer.varint(22);
+        writer.varint(34);
+        writer.varint(31);
+        writer.varint(3);
+        let mut reader = Reader::new(&writer.data);
+        let stack = Slot::read(&mut reader).unwrap().unwrap();
+        assert_eq!(stack.added.len(), 5);
         assert!(stack.added.iter().all(|(_, value)| matches!(value, Component::Raw(_))));
         assert_eq!(reader.remaining(), 0);
     }
@@ -54,10 +89,7 @@ pack_patch("crates/horizon-protocol/src/item.rs", '''        assert_eq!(stack.ad
         let mut encoded = Writer::new();
         Slot::write(&Some(stack), &mut encoded);
         assert_eq!(encoded.data, bytes);
-    }
-
-    #[test]
-    fn unknown_components_are_errors() {''', "test banner-pattern stack round-trip")
+    }''', "test banner-pattern stack round-trip")
 
 # MapItemData was not in the clientbound packet enum. This decoder follows the
 # Java 26.3 layout: map id, scale, locked, optional decorations, optional color patch.
