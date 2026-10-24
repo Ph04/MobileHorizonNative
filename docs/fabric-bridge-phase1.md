@@ -11,6 +11,8 @@ Status: implementation groundwork; not a Fabric runtime or automatic bytecode co
 3. Make the selected profile explicit at every Android NativeActivity launch.
 4. Add a static JAR triage report to guide which native Horizon APIs should be implemented next.
 5. Run focused analyzer tests in CI before the full Android build proceeds.
+6. Use the official Fabric API 26.3 class catalog and inspect declared nested JARs only within explicit resource limits.
+7. Show the audit summary in the Android import flow and save a JSON report; never describe resource carry-over as Java behavior conversion.
 
 ## Profile isolation
 
@@ -48,6 +50,8 @@ The standard import action accepts Horizon `.hmod` mods and recognized resource/
 **Important limitation:** the inbox is an intake/triage queue, not a Fabric runtime. Imported JARs are not enabled or loaded by Horizon. Conversion from a Java mod into a compatible `.hmod`, Fabric API emulation, and missing native SDK capabilities remain future work. Selecting Fabric Bridge does not alter vanilla network handshakes or make unsupported mods compatible with servers.
 
 ## Automatic JAR carry-over
+
+The Android Resource Manager now audits public Fabric API 26.3 class references against `app/src/main/assets/fabric-api-26.3-catalog.json`, reports detected modules and Java class-file versions, and inspects only nested JARs declared in `fabric.mod.json` with bounded size/entry budgets. It saves an audit JSON report in the app-private `filesDir/horizon/fabric-bridge-audits/` directory. The CLI `tools/fabric_bridge_audit.py` adds detailed static module evidence and a Markdown report. These are triage reports, not proof of compatibility.
 
 The Android Resource Manager now calls a bundled ARM64 entry point around Horizon's existing `horizon-port-pack` carry-over implementation. It reads the JAR, upgrades supported 1.21.1-era data to Minecraft 26.3 formats, carries assets/data, generates vanilla-template declarations for compatible blocks/items, and validates the result using Horizon's own `Package` and `Content` readers.
 
