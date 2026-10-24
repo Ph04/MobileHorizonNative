@@ -36,6 +36,8 @@ on:
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
       - "tools/fabric_bridge_audit.py"
+      - "tools/fabric_api_26_3_catalog.json"
+      - "app/src/main/assets/fabric-api-26.3-catalog.json"
       - "tools/fabric_bridge_p1/**"
       - "tools/tests/**"
       - "docs/fabric-bridge-phase1.md"
