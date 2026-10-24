@@ -144,6 +144,7 @@ def convert_jar(jar_path: Path, output_dir: Path, *, minecraft_version: str = "2
                 "error": "fabric.mod.json must contain a lowercase, valid mod ID"}
     version = str(metadata.get("version", "unknown")).strip() or "unknown"
     display_name = str(metadata.get("name", mod_id)).strip() or mod_id
+    emit("metadata_validated", mod_id=mod_id, mod_version=version, display_name=display_name)
     made_outputs: list[Path] = []
     try:
         with zipfile.ZipFile(jar_path, "r") as source:
