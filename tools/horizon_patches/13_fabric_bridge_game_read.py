@@ -50,6 +50,7 @@ rr(
 '''    fn call_p1<R>(
         &mut self,
         index: usize,
+        operation: &str,
         fuel: u64,
         call: impl FnOnce(&ModP1, &mut Store<P1State>) -> wasmtime::Result<R>,
     ) -> Option<R> {
@@ -58,6 +59,7 @@ rr(
 '''    fn call_p1<R>(
         &mut self,
         index: usize,
+        operation: &str,
         fuel: u64,
         call: impl FnOnce(&ModP1, &mut Store<P1State>) -> wasmtime::Result<R>,
     ) -> Option<R> {
