@@ -463,17 +463,20 @@ jobs:
             exit 1
           fi
           printf '%s  %s\n' "$EXPECTED_SHA256" "$DEST/$ARTIFACT" | sha256sum --check -
+          bash tools/fabric_java_compat/download-loader-dependencies.sh "$DEST/deps"
           python3 tools/fabric_java_compat/verify_fabric_loader_bundle.py \
             "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-runtime.json \
-            --upstream-sha256 "$EXPECTED_SHA256"
+            --upstream-sha256 "$EXPECTED_SHA256" \
+            --dependencies-dir "$DEST/deps"
           bash tools/fabric_java_compat/build-loader-provider.sh \
             "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-provider.jar
           python3 tools/fabric_java_compat/verify_fabric_loader_bundle.py \
             "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-runtime.json \
             --upstream-sha256 "$EXPECTED_SHA256" \
-            --provider-jar app/src/main/assets/fabric-loader-provider.jar
+            --provider-jar app/src/main/assets/fabric-loader-provider.jar \
+            --dependencies-dir "$DEST/deps"
           bash tools/fabric_java_compat/test-loader-provider.sh \
-            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-provider.jar
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-provider.jar "$DEST/deps"
           echo "Bundled official Loader 0.19.5 and smoke-tested the isolated Horizon GameProvider; this does not launch game mods."
 
       - name: Package standalone Fabric Java host for future runtime integration
@@ -517,6 +520,12 @@ jobs:
           grep -Fq 'assets/fabric-loader-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-loader/fabric-loader-0.19.5.jar' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-loader-provider.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/asm-9.10.1.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/asm-analysis-9.10.1.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/asm-commons-9.10.1.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/asm-tree-9.10.1.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/asm-util-9.10.1.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/sponge-mixin-0.17.4+mixin.0.8.7.jar' "$RUNNER_TEMP/apk-file-list.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
           if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
             grep -F "name='dev.mobilehorizon.app.offline1' versionCode='19' versionName='0.0.1-offline1'" "$RUNNER_TEMP/apk-badging.txt"
@@ -531,7 +540,7 @@ jobs:
             echo "::warning::APK is test-only and uses a separate application ID because stable signing secrets are missing. It will not overwrite the installed app or share its data."
             echo "Version-isolated test APK published under dev.mobilehorizon.app.offline1.test.v19; the previous test package and its data remain installed separately. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "APK is valid, package/version match, and Horizon ARM64, Java 25, Fabric host scaffold, official Fabric Loader 0.19.5, and intact Fabric API 26.3 payloads are included. Loader presence is not proof of in-game mod execution."
+          echo "APK is valid, package/version match, and Horizon ARM64, Java 25, Fabric host scaffold, official Fabric Loader 0.19.5, its checksum-verified ASM/Mixin dependencies, and intact Fabric API 26.3 payloads are included. Loader presence is not proof of in-game mod execution."
 
       - name: Upload update-safe APK
         if: success() && steps.signing.outputs.enabled == 'true'

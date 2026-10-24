@@ -1,11 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$#" -ne 2 ]]; then
-  echo "usage: $0 <official-fabric-loader.jar> <horizon-provider.jar>" >&2
+if [[ "$#" -ne 3 ]]; then
+  echo "usage: $0 <official-fabric-loader.jar> <horizon-provider.jar> <dependency-directory>" >&2
   exit 2
 fi
 LOADER_JAR="$(realpath "$1")"
 PROVIDER_JAR="$(realpath "$2")"
+DEPENDENCY_DIR="$(realpath "$3")"
+test -d "$DEPENDENCY_DIR"
+CLASSPATH="$LOADER_JAR:$PROVIDER_JAR"
+for dependency in \
+  asm-9.10.1.jar \
+  asm-analysis-9.10.1.jar \
+  asm-commons-9.10.1.jar \
+  asm-tree-9.10.1.jar \
+  asm-util-9.10.1.jar \
+  'sponge-mixin-0.17.4+mixin.0.8.7.jar'; do
+  test -s "$DEPENDENCY_DIR/$dependency" || {
+    echo "Missing verified Fabric Loader runtime dependency: $DEPENDENCY_DIR/$dependency" >&2
+    exit 1
+  }
+  CLASSPATH="$CLASSPATH:$DEPENDENCY_DIR/$dependency"
+done
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/mods" "$WORK/game"
@@ -20,7 +36,7 @@ java \
   -Dhorizon.fabric.preflight=true \
   -Dhorizon.fabric.auditRoot="$WORK/game" \
   -Dhorizon.fabric.report="$WORK/report.json" \
-  -cp "$LOADER_JAR:$PROVIDER_JAR" \
+  -cp "$CLASSPATH" \
   net.fabricmc.loader.impl.launch.knot.KnotClient >"$WORK/loader.log" 2>&1
 STATUS=$?
 set -e
@@ -92,7 +108,7 @@ java \
   -Dhorizon.fabric.auditRoot="$WORK/live-game" \
   -Dhorizon.fabric.report="$WORK/live-report.json" \
   -Dhorizon.fabric.smoke.marker="$WORK/live-marker.txt" \
-  -cp "$LOADER_JAR:$PROVIDER_JAR" \
+  -cp "$CLASSPATH" \
   net.fabricmc.loader.impl.launch.knot.KnotClient >"$WORK/live-loader.log" 2>&1
 STATUS=$?
 set -e

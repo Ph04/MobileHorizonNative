@@ -61,6 +61,43 @@ class FabricLoaderBundleTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unexpected provider"):
                 MODULE.inspect_provider(provider)
 
+    def write_dependencies(self, directory: Path, missing_class=None):
+        directory.mkdir(parents=True, exist_ok=True)
+        for _, filename, required_class in MODULE.DEPENDENCIES:
+            with zipfile.ZipFile(directory / filename, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                if required_class != missing_class:
+                    archive.writestr(required_class, b"fixture class bytes")
+
+    def test_locks_all_six_official_loader_dependencies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            loader = root / "loader.jar"
+            self.write_loader(loader)
+            dependencies = root / "deps"
+            self.write_dependencies(dependencies)
+            report = MODULE.inspect_archive(loader, dependency_dir=dependencies)
+            self.assertEqual(len(report["dependencies"]), 6)
+            self.assertEqual(
+                [item["file"] for item in report["dependencies"]],
+                [item[1] for item in MODULE.DEPENDENCIES],
+            )
+            self.assertEqual(report["dependency_execution_status"], "official_runtime_dependencies_bundled")
+
+    def test_rejects_loader_dependency_missing_required_class(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dependencies = Path(directory) / "deps"
+            self.write_dependencies(dependencies, missing_class=MODULE.DEPENDENCIES[0][2])
+            with self.assertRaisesRegex(ValueError, "lacks"):
+                MODULE.inspect_dependencies(dependencies)
+
+    def test_rejects_incomplete_dependency_set(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dependencies = Path(directory) / "deps"
+            self.write_dependencies(dependencies)
+            (dependencies / MODULE.DEPENDENCIES[0][1]).unlink()
+            with self.assertRaisesRegex(ValueError, "incomplete"):
+                MODULE.inspect_dependencies(dependencies)
+
     def test_rejects_invalid_upstream_checksum_format(self):
         with tempfile.TemporaryDirectory() as directory:
             jar = Path(directory) / "loader.jar"

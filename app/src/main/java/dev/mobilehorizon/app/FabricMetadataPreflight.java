@@ -158,7 +158,7 @@ final class FabricMetadataPreflight {
             command.add("-Dhorizon.fabric.auditRoot=" + gameDir.getAbsolutePath());
             command.add("-Dhorizon.fabric.report=" + outputReport.getAbsolutePath());
             command.add("-cp");
-            command.add(loader.getAbsolutePath() + File.pathSeparator + provider.getAbsolutePath());
+            command.add(FabricLoaderRuntimeInstaller.runtimeClasspath(context, loader, provider));
             command.add("net.fabricmc.loader.impl.launch.knot.KnotClient");
 
             notify(listener, "Resolvendo dependências", "Fabric Loader 0.19.5; entrypoints e bytecode removidos.");
