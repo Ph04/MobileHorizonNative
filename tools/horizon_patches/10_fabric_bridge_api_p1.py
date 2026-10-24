@@ -13,7 +13,7 @@ mods_lib = root / "crates/horizon-mods/src/lib.rs"
 mods_cargo = root / "crates/horizon-mods/Cargo.toml"
 lock_file = root / "Cargo.lock"
 
-module_files = ("lib.rs", "commands.rs", "config.rs", "events.rs", "hud.rs", "keys.rs", "quota.rs")
+module_files = ("lib.rs", "commands.rs", "config.rs", "events.rs", "hud.rs", "keys.rs", "quota.rs", "api_v06.rs")
 for name in module_files:
     path = source_lib / name
     if not path.is_file():
@@ -90,4 +90,4 @@ if not any(line.strip().startswith('"thiserror ') or line.strip() == '"thiserror
     lock_text = lock_text[:match.start()] + replacement + lock_text[match.end():]
     lock_file.write_text(lock_text, encoding="utf-8")
 
-print("Installed and exposed the Fabric Bridge P1 kernel; WIT is compile-checked, not yet active for .hmod loading.")
+print("Installed the Fabric Bridge kernel and v0.6 native API foundation; WIT/runtime hooks remain separately capability-gated.")
