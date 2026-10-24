@@ -595,7 +595,7 @@ public final class ResourceManagerActivity extends Activity {
             Map<String, String> catalog, Set<String> modules, Set<String> unknown,
             int[] maxClassMajor, long[] classBytesScanned, int[] nestedClassCount,
             int[] nestedJarCount, long[] nestedArchiveBytes, long[] nestedUncompressedBytes,
-            List<String> warnings) {
+            List<String> warnings) throws Exception {
         JSONArray declarations = metadata.optJSONArray("jars");
         if (declarations == null || declarations.length() == 0) return;
         if (declarations.length() > MAX_NESTED_JARS) {
