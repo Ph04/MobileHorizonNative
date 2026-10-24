@@ -10,7 +10,7 @@
     "gradle.properties",
     "recursive git tree; public net/fabricmc/fabric/api Java sources"
   ],
-  "declared_modules_count": 45,
+  "declared_modules_count": 46,
   "public_api_class_count": 415,
   "modules": [
     {
@@ -282,6 +282,12 @@
       "version": "8.1.17",
       "api_class_count": 0,
       "category": "implementation-or-build-tool"
+    },
+    {
+      "name": "fabric-resource-loader-v0",
+      "version": "3.3.27",
+      "api_class_count": 0,
+      "category": "deprecated"
     }
   ],
   "api_class_to_module": {
