@@ -146,7 +146,7 @@ class FabricTargetMapTests(unittest.TestCase):
             report = build_target_map(jar, minecraft_abi, fabric_abi, module_manifest, shim, targets)
             self.assertFalse(report["bytecode_executed"])
             self.assertGreaterEqual(report["summary"]["mixin_config_count"], 1)
-            self.assertGreaterEqual(report["summary"]["access_widener_reference_count"], 2)
+            self.assertGreaterEqual(report["summary"]["access_widener_file_reference_count"], 2)
             biome_refs = [row for row in report["references"]
                           if row["target_class_internal"] == "net/minecraft/world/level/Level"
                           and row["target_member"] == "getBiome"]
