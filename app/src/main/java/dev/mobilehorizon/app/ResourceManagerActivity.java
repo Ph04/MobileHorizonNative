@@ -126,8 +126,9 @@ public final class ResourceManagerActivity extends Activity {
     private TextView status;
     private ProgressBar progress;
     private Button importFilesButton, importFolderButton, importFabricJarButton;
-    private Button validateFabricButton;
+    private Button validateFabricButton, compatibilityTestButton;
     private final AtomicBoolean preflightCancelled = new AtomicBoolean(false);
+    private final AtomicBoolean compatibilityTestCancelled = new AtomicBoolean(false);
     private CheckBox profileToggle;
     private File pendingDataPackInstall;
     private boolean busy;
@@ -231,6 +232,12 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams validateFabricParams = params(-1, dp(56));
         validateFabricParams.topMargin = dp(8);
         actions.addView(validateFabricButton, validateFabricParams);
+        compatibilityTestButton = button(
+                "Testar execução real dos mods Fabric (experimental)", false,
+                v -> confirmFabricCompatibilityTest());
+        LinearLayout.LayoutParams compatibilityTestParams = params(-1, dp(56));
+        compatibilityTestParams.topMargin = dp(8);
+        actions.addView(compatibilityTestButton, compatibilityTestParams);
 
         LinearLayout statusCard = card();
         LinearLayout.LayoutParams statusParams = params(-1, -2);
@@ -261,6 +268,60 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams backParams = params(-1, dp(56));
         backParams.topMargin = dp(14);
         page.addView(back, backParams);
+    }
+
+    private void confirmFabricCompatibilityTest() {
+        if (busy) return;
+        if (!fabricBridgeEnabled()) {
+            showStatus("Ative primeiro o perfil Fabric Bridge. O perfil Vanilla continuará isolado.");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Teste real do Fabric Loader")
+                .setMessage("Este teste inicia o Loader oficial em outro processo Java usando os JARs originais que estão ativos no perfil Fabric. O código dos mods será executado e NÃO está isolado por sandbox: ele pode ler ou alterar arquivos privados acessíveis ao aplicativo. Execute somente mods em que você confia.\n\nO processo de teste não tem as classes Java originais do Minecraft nem os adaptadores completos do Horizon; portanto, o relatório serve para localizar o primeiro bloqueio, não para afirmar que o mod funciona em jogo. O teste não muda o perfil Vanilla.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Executar teste", (dialog, which) -> runFabricCompatibilityTest())
+                .show();
+    }
+
+    private void runFabricCompatibilityTest() {
+        if (busy) return;
+        busy = true;
+        compatibilityTestCancelled.set(false);
+        setBusyUi(true);
+        progress.setIndeterminate(true);
+        showStatus("Preparando teste do Loader real. O jogo deve permanecer fechado durante este diagnóstico.");
+        File activeMods = fabricJavaModDir();
+        io.execute(() -> {
+            try {
+                FabricCompatibilityTestRunner.Result result = FabricCompatibilityTestRunner.run(
+                        getApplicationContext(), activeMods, compatibilityTestCancelled,
+                        (stage, detail) -> mainHandler.post(() ->
+                                showStatus(stage + ": " + detail)));
+                mainHandler.post(() -> {
+                    busy = false;
+                    setBusyUi(false);
+                    showStatus(result.summary);
+                    new AlertDialog.Builder(ResourceManagerActivity.this)
+                            .setTitle("Resultado do teste de compatibilidade")
+                            .setMessage(result.summary)
+                            .setPositiveButton("Fechar", null)
+                            .show();
+                });
+            } catch (Exception error) {
+                String detail = message(error);
+                mainHandler.post(() -> {
+                    busy = false;
+                    setBusyUi(false);
+                    showStatus("O teste não pôde ser concluído: " + detail);
+                    new AlertDialog.Builder(ResourceManagerActivity.this)
+                            .setTitle("Teste não concluído")
+                            .setMessage(detail)
+                            .setPositiveButton("Fechar", null)
+                            .show();
+                });
+            }
+        });
     }
 
     private void confirmFabricPreflight() {
@@ -1957,6 +2018,7 @@ public final class ResourceManagerActivity extends Activity {
         importFabricJarButton.setEnabled(!value);
         importFolderButton.setEnabled(!value);
         if (validateFabricButton != null) validateFabricButton.setEnabled(!value);
+        if (compatibilityTestButton != null) compatibilityTestButton.setEnabled(!value);
         profileToggle.setEnabled(!value);
         progress.setVisibility(value ? View.VISIBLE : View.GONE);
         progress.setIndeterminate(value);
