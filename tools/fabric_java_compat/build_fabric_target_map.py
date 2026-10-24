@@ -650,7 +650,7 @@ def write_markdown_summary(report: dict[str, Any], path: Path) -> None:
         f"- Fabric API public ABI: {s['fabric_api_public_class_count']} classes, {s['fabric_api_public_member_count']} members, {s['fabric_api_public_module_count']} modules",
         f"- Fabric implementation classes statically scanned: {s['fabric_api_implementation_class_count_scanned']}",
         f"- Minecraft target records: {s['minecraft_class_reference_records']} classes, {s['minecraft_member_reference_records']} members",
-        f"- Mixin configs: {s['mixin_config_count']}; access widener entries: {s['access_widener_file_reference_count']}",
+        f"- Mixin configs: {s['mixin_config_count']}; access widener entries: {s['access_widener_entry_count']}",
         f"- References with native-module candidates: {s['references_with_native_module_candidates']}",
         f"- References without native-module candidates: {s['references_without_native_module_candidates']}",
         "",
