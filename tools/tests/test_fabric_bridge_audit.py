@@ -1,3 +1,4 @@
+import io
 import json
 import struct
 import tempfile
@@ -5,7 +6,12 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from tools.fabric_bridge_audit import audit_jar, parse_class_constant_pool
+from tools.fabric_bridge_audit import (
+    _load_fabric_api_catalog,
+    _module_for_api_ref,
+    audit_jar,
+    parse_class_constant_pool,
+)
 
 
 def _utf8(value: str) -> bytes:
@@ -17,7 +23,7 @@ def _class(index: int) -> bytes:
     return b"\x07" + struct.pack(">H", index)
 
 
-def _minimal_class() -> bytes:
+def _minimal_class(major_version: int = 61) -> bytes:
     pool = b"".join([
         _utf8("net/minecraft/client/Minecraft"),
         _class(1),
@@ -27,7 +33,7 @@ def _minimal_class() -> bytes:
         _class(5),
         _utf8("(Lnet/minecraft/world/level/Level;)V"),
     ])
-    return struct.pack(">IHHH", 0xCAFEBABE, 0, 61, 8) + pool
+    return struct.pack(">IHHH", 0xCAFEBABE, 0, major_version, 8) + pool
 
 
 class FabricBridgeAuditTests(unittest.TestCase):
@@ -131,6 +137,91 @@ class FabricBridgeAuditTests(unittest.TestCase):
         self.assertEqual(report["archive"]["scanned_class_count"], 0)
         self.assertEqual(len(report["archive"]["class_scan_failures"]), 1)
         self.assertTrue(any("could not be scanned" in warning for warning in report["warnings"]))
+
+
+    def test_official_26_3_catalog_maps_correct_public_packages(self) -> None:
+        catalog = _load_fabric_api_catalog()
+        self.assertEqual(catalog["minecraft_version"], "26.3")
+        self.assertEqual(catalog["fabric_api_version"], "0.165.0")
+        self.assertGreaterEqual(catalog["declared_modules_count"], 40)
+        self.assertGreaterEqual(catalog["public_api_class_count"], 400)
+        cases = {
+            "net/fabricmc/fabric/api/client/event/lifecycle/v1/ClientTickEvents":
+                "fabric-lifecycle-events-v1",
+            "net/fabricmc/fabric/api/blockgetter/v2/FabricBlockGetter":
+                "fabric-block-getter-api-v2",
+            "net/fabricmc/fabric/api/client/renderer/v1/Renderer":
+                "fabric-renderer-api-v1",
+            "net/fabricmc/fabric/api/client/model/loading/v1/ModelLoadingPlugin":
+                "fabric-model-loading-api-v1",
+            "net/fabricmc/fabric/api/creativetab/v1/FabricCreativeModeTab":
+                "fabric-creative-tab-api-v1",
+        }
+        for reference, expected in cases.items():
+            with self.subTest(reference=reference):
+                self.assertEqual(_module_for_api_ref(reference, catalog), expected)
+
+    def test_report_classifies_api_reference_by_official_module(self) -> None:
+        path = self._make_jar(
+            self.root / "fabric-api-use.jar",
+            class_data=_minimal_class(),
+            metadata={"schemaVersion": 1, "id": "api_user", "version": "1.0.0"},
+        )
+        report = audit_jar(path)
+        coverage = report["code_references"]["fabric_api_catalog"]
+        self.assertEqual(coverage["fabric_api_version"], "0.165.0")
+        self.assertIn(
+            "fabric-lifecycle-events-v1",
+            coverage["detected_modules_by_reference_count"],
+        )
+        self.assertEqual(report["schema_version"], 2)
+
+    def test_declared_nested_jar_is_inspected_without_extraction(self) -> None:
+        nested_buffer = io.BytesIO()
+        with zipfile.ZipFile(nested_buffer, "w", compression=zipfile.ZIP_DEFLATED) as nested:
+            nested.writestr("lib/Dependency.class", _minimal_class())
+        nested_jar = nested_buffer.getvalue()
+        path = self._make_jar(
+            self.root / "nested-parent.jar",
+            metadata={
+                "schemaVersion": 1, "id": "nested_parent", "version": "1.0.0",
+                "jars": [{"file": "META-INF/jars/dependency.jar"}],
+            },
+            entries={"META-INF/jars/dependency.jar": nested_jar},
+        )
+        report = audit_jar(path)
+        nested = report["archive"]["nested_jars"]
+        self.assertEqual(nested["declared_count"], 1)
+        self.assertEqual(nested["inspected_count"], 1)
+        self.assertEqual(nested["class_count"], 1)
+        self.assertEqual(nested["entries"][0]["status"], "inspected")
+        self.assertIn("fabric-lifecycle-events-v1", nested["entries"][0]["fabric_api_modules"])
+        self.assertFalse(nested["java_code_invoked"])
+        self.assertNotIn("resource-only candidate", report["assessment"])
+
+    def test_future_bytecode_version_is_flagged_against_java_25_target(self) -> None:
+        path = self._make_jar(
+            self.root / "future-java.jar",
+            class_data=_minimal_class(major_version=70),
+            metadata={"schemaVersion": 1, "id": "future_java", "version": "1.0.0"},
+        )
+        report = audit_jar(path)
+        compatibility = report["archive"]["java_version_compatibility"]
+        self.assertEqual(compatibility["max_class_major"], 70)
+        self.assertFalse(compatibility["compatible_with_target"])
+        self.assertTrue(any("exceeds Java 25" in warning for warning in report["warnings"]))
+
+    def test_unsafe_nested_jar_declaration_is_reported(self) -> None:
+        path = self._make_jar(
+            self.root / "unsafe-nested.jar",
+            metadata={
+                "schemaVersion": 1, "id": "unsafe_nested", "version": "1.0.0",
+                "jars": [{"file": "../outside.jar"}],
+            },
+        )
+        report = audit_jar(path)
+        self.assertEqual(report["archive"]["nested_jars"]["entries"][0]["status"], "unsafe-path")
+        self.assertTrue(any("unsafe nested JAR path" in warning for warning in report["warnings"]))
 
     def test_non_jar_returns_a_structured_error(self) -> None:
         path = self.root / "invalid.jar"
