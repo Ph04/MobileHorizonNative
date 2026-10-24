@@ -43,3 +43,11 @@ OpenJDK 25 is already part of resource preparation, but the host is not yet conn
 ## Current status
 
 The repository has a Fabric auditor, content-only JAR carry-over, an isolated WASM P1 profile and a pinned OpenJDK 25 installer. The standalone host introduced alongside this document is J0 groundwork: it implements only base entrypoint interfaces in a fixture harness. It does not implement the full Fabric API, provide Minecraft classes, apply Mixins or dispatch events to Horizon. It is not yet launched by the game.
+
+## Full Fabric API artifact (bundled intact)
+
+The Android workflow downloads the complete official Maven artifact `net.fabricmc.fabric-api:fabric-api:0.165.0+26.3` as one JAR, verifies the upstream SHA-256 sidecar, checks `fabric.mod.json` plus every declared nested module JAR, and writes a local lock manifest. The APK contains the original aggregate artifact without exploding or hand-selecting its modules.
+
+When Fabric Bridge is requested, `FabricApiRuntimeInstaller` verifies the bundled hash and metadata again, then stages that same single JAR in `filesDir/horizon/fabric-bridge-runtime/mods/`. User-imported original Fabric JARs are mirrored into that isolated Java-mods directory; removal from the Resource Manager removes the matching staged copy. The directory is exposed to the future host via `HORIZON_FABRIC_JAVA_MODS`.
+
+This is the correct dependency packaging shape, but it does **not** yet mean that Fabric API works in-game. Its nested modules still need Loader-style discovery, and their calls to Minecraft/Fabric classes need the Java compatibility surface and Rust hooks. The present host does not execute this bundle; startup falls back to Vanilla if the packaged aggregate cannot be verified. No Fabric Java host or mod bytecode is run by this staging step.

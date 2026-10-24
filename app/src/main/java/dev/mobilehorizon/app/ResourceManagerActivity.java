@@ -139,6 +139,7 @@ public final class ResourceManagerActivity extends Activity {
     private File bridgeModDir() { return new File(home(), "horizon-fabric-bridge-mods"); }
     private File modDir() { return fabricBridgeEnabled() ? bridgeModDir() : vanillaModDir(); }
     private File fabricInboxDir() { return new File(home(), "horizon-fabric-bridge-inbox"); }
+    private File fabricJavaModDir() { return new File(home(), "fabric-bridge-runtime/mods"); }
     private File convertedDataPackDir() { return new File(home(), "horizon-fabric-bridge-datapacks"); }
     private File shaderDir() { return new File(home(), "shaderpacks"); }
     private File optionsFile() { return new File(home(), "options.txt"); }
@@ -197,7 +198,7 @@ public final class ResourceManagerActivity extends Activity {
         });
         profileCard.addView(profileToggle, params(-1, -2));
         TextView profileHint = text(
-                "A seleção é compartilhada com a tela Jogar. Os mods .hmod ficam separados por perfil; O JAR original fica preservado para a futura camada Java; esta build ainda não executa entrypoints, chamadas Fabric API ou Mixins.",
+                "A seleção é compartilhada com a tela Jogar. Os mods .hmod ficam separados por perfil. Os JARs Fabric originais são preservados na pasta isolada do runtime Java; o pacote completo oficial Fabric API também é instalado como um único JAR verificado, mas esta build ainda não executa os mods Java no jogo.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams profileHintParams = params(-1, -2);
         profileHintParams.topMargin = dp(4);
@@ -339,6 +340,7 @@ public final class ResourceManagerActivity extends Activity {
             if (lower.endsWith(".jar")) {
                 FabricJarInfo info = inspectFabricJar(staging);
                 ensureDirs(fabricInboxDir());
+                ensureDirs(fabricJavaModDir());
                 ensureDirs(bridgeModDir());
                 if (fabricJarIdExists(info.id)) {
                     throw new IllegalArgumentException("Já existe um JAR Fabric importado com ID '" + info.id + "'. Exclua a versão antiga antes de importar outra.");
@@ -347,6 +349,12 @@ public final class ResourceManagerActivity extends Activity {
                     throw new IllegalArgumentException("O perfil Fabric Bridge já contém um mod com ID '" + info.id + "'. Remova-o antes de importar outra versão.");
                 }
                 File target = copyToTarget(staging, fabricInboxDir(), fileName(name, ".jar"));
+                try {
+                    copyToTarget(staging, fabricJavaModDir(), fileName(info.id, ".jar"));
+                } catch (Exception javaCopyError) {
+                    target.delete();
+                    throw javaCopyError;
+                }
                 String conversion;
                 try {
                     conversion = convertFabricJarNative(staging, info);
@@ -1054,7 +1062,12 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     private boolean fabricJarIdExists(String id) {
-        File[] files = fabricInboxDir().listFiles((dir, name) ->
+        return fabricJarIdExistsIn(fabricInboxDir(), id)
+                || fabricJarIdExistsIn(fabricJavaModDir(), id);
+    }
+
+    private boolean fabricJarIdExistsIn(File directory, String id) {
+        File[] files = directory.listFiles((dir, name) ->
                 name.toLowerCase(Locale.ROOT).endsWith(".jar"));
         if (files == null) return false;
         for (File file : files) {
@@ -1062,6 +1075,25 @@ public final class ResourceManagerActivity extends Activity {
             catch (Exception ignored) {}
         }
         return false;
+    }
+
+    private void deleteRuntimeFabricJarCopy(String id) throws Exception {
+        if (id == null || id.isEmpty()) return;
+        File[] files = fabricJavaModDir().listFiles((dir, name) ->
+                name.toLowerCase(Locale.ROOT).endsWith(".jar"));
+        if (files == null) return;
+        for (File file : files) {
+            try {
+                FabricJarInfo info = inspectFabricJar(file);
+                if (id.equals(info.id)
+                        && !("fabric-api".equals(id)
+                        && file.getName().equals("fabric-api-" + FabricApiRuntimeInstaller.VERSION + ".jar"))) {
+                    deleteRecursively(file);
+                }
+            } catch (Exception ignored) {
+                // Do not delete an unrecognized runtime JAR on the basis of a failed scan.
+            }
+        }
     }
 
     private ArchiveKind inspectZip(File file) throws Exception {
@@ -1231,7 +1263,7 @@ public final class ResourceManagerActivity extends Activity {
         if (content == null) return;
         content.removeAllViews();
         ensureUiDir(textureDir()); ensureUiDir(modDir()); ensureUiDir(shaderDir());
-        ensureUiDir(fabricInboxDir()); ensureUiDir(convertedDataPackDir());
+        ensureUiDir(fabricInboxDir()); ensureUiDir(fabricJavaModDir()); ensureUiDir(convertedDataPackDir());
         List<ResourceItem> textures = new ArrayList<>(), mods = new ArrayList<>(),
                 shaders = new ArrayList<>(), fabricJars = new ArrayList<>(),
                 convertedDataPacks = new ArrayList<>();
@@ -1577,6 +1609,7 @@ public final class ResourceManagerActivity extends Activity {
                     try {
                         if (item.kind != Kind.FABRIC_JAR && item.kind != Kind.DATA_PACK) setActive(item, false);
                         deleteRecursively(item.path);
+                        if (item.kind == Kind.FABRIC_JAR) deleteRuntimeFabricJarCopy(item.id);
                         if (item.kind == Kind.SHADER) new File(shaderDir(), item.name + ".txt").delete();
                         refreshResources();
                         showStatus(item.name + " excluído.");

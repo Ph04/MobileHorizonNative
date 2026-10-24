@@ -48,6 +48,26 @@ public final class NativeGameActivity extends NativeActivity {
             android.content.Intent launchIntent = getIntent();
             boolean fabricBridgeEnabled = launchIntent != null
                     && launchIntent.getBooleanExtra(EXTRA_FABRIC_BRIDGE, false);
+            if (fabricBridgeEnabled) {
+                try {
+                    java.io.File fabricApiJar = FabricApiRuntimeInstaller.ensureInstalled(getApplicationContext());
+                    android.system.Os.setenv("HORIZON_FABRIC_JAVA_MODS",
+                            fabricApiJar.getParentFile().getAbsolutePath(), true);
+                    android.system.Os.setenv("HORIZON_FABRIC_API_JAR",
+                            fabricApiJar.getAbsolutePath(), true);
+                    android.util.Log.i("MobileHorizon",
+                            "Fabric API original JAR verified and staged intact; Java host/game API bridge is not yet active.");
+                } catch (Exception fabricRuntimeError) {
+                    fabricBridgeEnabled = false;
+                    android.system.Os.unsetenv("HORIZON_FABRIC_JAVA_MODS");
+                    android.system.Os.unsetenv("HORIZON_FABRIC_API_JAR");
+                    android.util.Log.e("MobileHorizon",
+                            "Fabric Bridge disabled because the official Fabric API bundle failed verification.", fabricRuntimeError);
+                }
+            } else {
+                android.system.Os.unsetenv("HORIZON_FABRIC_JAVA_MODS");
+                android.system.Os.unsetenv("HORIZON_FABRIC_API_JAR");
+            }
             android.system.Os.setenv(
                     "HORIZON_MOD_PROFILE",
                     fabricBridgeEnabled ? "fabric-bridge" : "vanilla",
