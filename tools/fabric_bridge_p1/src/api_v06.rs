@@ -451,7 +451,7 @@ pub mod loot {
                     let mut count = 1u32;
                     for function in &entry.functions {
                         count = match function {
-                            Function::SetCount { min, max } => min + rng.below((*max - *min + 1) as u64) as u32,
+                            Function::SetCount { min, max } => *min + rng.below((*max - *min + 1) as u64) as u32,
                             Function::AddCount(add) => count.saturating_add(*add),
                             Function::MultiplyCount { numerator, denominator } => count.saturating_mul(*numerator) / *denominator,
                         }.clamp(1, entry.max_stack);
@@ -548,5 +548,67 @@ mod tests {
         assert_eq!(manager.reload().resources["assets/m/x.png"], vec![2]);
         assert_eq!(manager.reload().shadowed_entries, 1);
         assert!(manager.insert(resources::Pack { owner:id("m:bad"), priority:0, entries:BTreeMap::from([("../escape".into(),vec![])]) }).is_err());
+    }
+}
+
+
+#[cfg(test)]
+mod recipes_loot_tests {
+    use super::{loot, recipes};
+    use crate::Id;
+    use std::collections::{BTreeMap, BTreeSet};
+    fn id(s: &str) -> Id { Id::parse(s).unwrap() }
+
+    #[test]
+    fn shaped_recipe_matches_offset_and_mirror_and_rejects_extra_items() {
+        let recipe = recipes::Recipe::Shaped {
+            id: id("m:stone_pair"), width: 2, height: 1,
+            pattern: vec![
+                Some(recipes::Ingredient::Item(id("minecraft:stone"))),
+                Some(recipes::Ingredient::Item(id("minecraft:stone"))),
+            ],
+            result: recipes::ItemStack { id: id("m:stone_pair"), count: 1 },
+        };
+        let grid = vec![None, None, None, Some(id("minecraft:stone")), Some(id("minecraft:stone")), None, None, None, None];
+        assert!(recipe.matches(&grid, 3, 3, &BTreeMap::new()));
+        let mut extra = grid.clone();
+        extra[0] = Some(id("minecraft:dirt"));
+        assert!(!recipe.matches(&extra, 3, 3, &BTreeMap::new()));
+    }
+
+    #[test]
+    fn shapeless_tag_matching_handles_overlapping_candidates() {
+        let stone = id("minecraft:stone");
+        let granite = id("minecraft:granite");
+        let rock_tag = id("m:rock");
+        let stone_tag = id("m:stone_only");
+        let tags = BTreeMap::from([
+            (rock_tag.clone(), BTreeSet::from([stone.clone(), granite.clone()])),
+            (stone_tag.clone(), BTreeSet::from([stone.clone()])),
+        ]);
+        let recipe = recipes::Recipe::Shapeless {
+            id: id("m:mix"), ingredients: vec![
+                recipes::Ingredient::Tag(rock_tag),
+                recipes::Ingredient::Tag(stone_tag),
+            ],
+            result: recipes::ItemStack { id: id("m:mix"), count: 1 },
+        };
+        assert!(recipe.matches(&[Some(stone), Some(granite), None, None], 2, 2, &tags));
+    }
+
+    #[test]
+    fn loot_is_seed_deterministic_and_applies_bounded_functions() {
+        let table = loot::Table { pools: vec![loot::Pool { rolls: 4, entries: vec![
+            loot::Entry { item: id("m:gem"), weight: 3, conditions: vec![loot::Condition::Always],
+                functions: vec![loot::Function::SetCount { min: 2, max: 3 }, loot::Function::AddCount(1)], max_stack: 4 },
+            loot::Entry { item: id("m:rare"), weight: 1, conditions: vec![loot::Condition::ChanceBasisPoints(0)],
+                functions: vec![], max_stack: 1 },
+        ]}]};
+        let context = loot::Context::default();
+        let a = table.roll(1234, &context).unwrap();
+        let b = table.roll(1234, &context).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 4);
+        assert!(a.iter().all(|drop| drop.count >= 3 && drop.count <= 4));
     }
 }
