@@ -132,7 +132,11 @@ rr(game_mods, """    /// What mods read this tick.
     fn service_fabric_native_queries(&mut self) {
         let requests = self.mods.mods.drain_java_bridge_queries(8);
         for request in requests {
-            let result = self.handle_fabric_native_query(&request.path, &request.payload);
+            let result = if std::time::Instant::now() >= request.deadline {
+                Err("native_query_timeout".to_owned())
+            } else {
+                self.handle_fabric_native_query(&request.path, &request.payload)
+            };
             let _ = request.reply.send(result);
         }
     }

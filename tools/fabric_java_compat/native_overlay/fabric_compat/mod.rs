@@ -9,14 +9,14 @@ pub mod rendering;
 pub mod resources;
 
 use serde_json::Value;
-use std::{sync::mpsc::{SyncSender, TrySendError}, time::Duration};
+use std::{sync::mpsc::{SyncSender, TrySendError}, time::{Duration, Instant}};
 
 #[derive(Debug)]
 pub struct NativeQuery {
     pub request_id: String,
     pub path: String,
     pub payload: Value,
-    pub timeout_ms: u64,
+    pub deadline: Instant,
     pub reply: SyncSender<Result<Value, String>>,
 }
 
@@ -42,7 +42,7 @@ pub fn forward_query(
         request_id: request_id.into(),
         path: path.into(),
         payload,
-        timeout_ms,
+        deadline: Instant::now() + Duration::from_millis(timeout_ms),
         reply,
     };
     match sender.try_send(request) {
@@ -82,7 +82,7 @@ mod tests {
         let (reply, _reply_receiver) = std::sync::mpsc::sync_channel(1);
         sender.try_send(NativeQuery {
             request_id: "busy".into(), path: "fabric.biome.catalog".into(),
-            payload: json!({}), timeout_ms: 1000, reply,
+            payload: json!({}), deadline: Instant::now() + Duration::from_secs(1), reply,
         }).unwrap();
         assert_eq!(forward_query("fabric.biome.search", "q2", json!({}), 1000, &sender), Err("native_query_queue_full".into()));
     }
