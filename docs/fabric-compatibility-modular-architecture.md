@@ -24,3 +24,6 @@ Nature's Compass 26.3 requires main/client entrypoints, item/components and crea
 ## Build policy
 
 This change is source-only and is not compiled in this step. Automatic push builds are restricted to main; workflow_dispatch remains available for a future explicitly approved build.
+
+
+The Java-side NativeBiomeApi is a typed module client for catalog/sample/search responses. Its DTOs are explicitly not Minecraft Biome/BlockPos instances, so future facades can use it without exposing JSON parsing to higher-level adapters.
