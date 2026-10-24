@@ -556,6 +556,11 @@ jobs:
             --fabric-api-abi app/src/main/assets/fabric-api-26.3-abi.json \
             --shim-manifest tools/fabric_java_compat/minecraft-shim-surface.json \
             --output "$REPORT"
+          python3 tools/fabric_java_compat/scan_mod_jvm_abi.py \
+            --mod "$MOD" \
+            --minecraft-abi "$RUNNER_TEMP/minecraft-26.3-client-abi.json" \
+            --fabric-api-abi app/src/main/assets/fabric-api-26.3-abi.json \
+            --output "$RUNNER_TEMP/natures-compass-jvm-symbol-report.json"
           python3 - "$REPORT" "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys
           from pathlib import Path
@@ -689,6 +694,15 @@ jobs:
         with:
           name: natures-compass-compatibility-audit
           path: ${{ runner.temp }}/natures-compass-compatibility-report.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Nature's Compass JVM symbol inventory
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: natures-compass-jvm-symbol-inventory
+          path: ${{ runner.temp }}/natures-compass-jvm-symbol-report.json
           if-no-files-found: error
           retention-days: 14
 
