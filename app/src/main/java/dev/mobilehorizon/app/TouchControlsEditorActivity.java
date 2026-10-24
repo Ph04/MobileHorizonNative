@@ -37,6 +37,21 @@ public final class TouchControlsEditorActivity extends Activity {
         NativeTouchControlsView controls = new NativeTouchControlsView(this, true);
         root.addView(controls, new FrameLayout.LayoutParams(-1, -1));
 
+        TextView settingsButton = new TextView(this);
+        settingsButton.setText("⚙  Ajustes");
+        settingsButton.setTextColor(Color.WHITE);
+        settingsButton.setTextSize(12);
+        settingsButton.setGravity(Gravity.CENTER);
+        settingsButton.setPadding(dp(12), dp(5), dp(12), dp(5));
+        settingsButton.setBackground(makePill(0xD51A2434));
+        settingsButton.setClickable(true);
+        settingsButton.setFocusable(true);
+        settingsButton.setOnClickListener(v -> controls.showGlobalSettingsDialog());
+        FrameLayout.LayoutParams settingsParams = new FrameLayout.LayoutParams(
+                dp(108), dp(34), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        settingsParams.topMargin = dp(43);
+        root.addView(settingsButton, settingsParams);
+
         TextView hint = new TextView(this);
         hint.setText("Arraste os botões  ·  guias azuis alinham  ·  toque para editar  ·  ✓ salva");
         hint.setTextColor(Color.WHITE);
@@ -56,6 +71,14 @@ public final class TouchControlsEditorActivity extends Activity {
         root.addView(hint, hintParams);
 
         setContentView(root);
+    }
+
+    private GradientDrawable makePill(int color) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color);
+        background.setCornerRadius(dp(18));
+        background.setStroke(dp(1), 0x557F9ABF);
+        return background;
     }
 
     private int dp(float value) {

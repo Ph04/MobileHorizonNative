@@ -23,6 +23,7 @@ public final class NativeGameActivity extends NativeActivity {
     private static native void nativeInjectKeyboardText(String text, boolean submit);
     private static native boolean nativeIsGameplay();
     private static native boolean nativeHasLoadedWorld();
+    private static native int[] nativeGetGuiMetrics();
 
     static {
         // NativeActivity later opens the same bundled library for android_main; loading
@@ -41,6 +42,8 @@ public final class NativeGameActivity extends NativeActivity {
         // Horizon resolves options, saves, logs and prepared resources from these paths.
         // Set them before NativeActivity loads the native game library.
         try {
+            android.content.Intent launchIntent = getIntent();
+
             java.io.File gameRoot = getApplicationContext().getFilesDir();
             if (!gameRoot.isDirectory() && !gameRoot.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório privado do jogo.");
@@ -51,7 +54,6 @@ public final class NativeGameActivity extends NativeActivity {
             }
             // Use an explicit per-launch flag. The old marker file could survive a
             // previous smoke test and accidentally suppress diagnostics for the real game.
-            android.content.Intent launchIntent = getIntent();
             boolean smokeTest = launchIntent != null
                     && launchIntent.getBooleanExtra(EXTRA_NATIVE_SMOKE_TEST, false);
             if (smokeTest) {
@@ -174,6 +176,12 @@ public final class NativeGameActivity extends NativeActivity {
     boolean hasLoadedWorld() {
         try { return nativeHasLoadedWorld(); }
         catch (UnsatisfiedLinkError error) { return false; }
+    }
+
+    /** Current HUD viewport and GUI scale from the actual Horizon renderer. */
+    int[] getGuiMetrics() {
+        try { return nativeGetGuiMetrics(); }
+        catch (UnsatisfiedLinkError error) { return null; }
     }
 
     @Override

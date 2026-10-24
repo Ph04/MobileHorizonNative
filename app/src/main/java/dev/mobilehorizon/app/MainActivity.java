@@ -234,199 +234,207 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(Color.rgb(244, 246, 251));
+
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(20), dp(24), dp(20), dp(28));
+        page.setPadding(dp(16), dp(18), dp(16), dp(24));
         scroll.addView(page);
         setContentView(scroll);
 
-        TextView eyebrow = text("MOBILEHORIZON  /  NATIVO", 12, 0xff5363bd, true);
-        page.addView(eyebrow, params(-1, -2));
-
-        TextView title = text("Preparação no Android", 28, 0xff17213b, true);
+        page.addView(text("MOBILEHORIZON  /  ANDROID", 12, 0xff5363bd, true), params(-1, -2));
+        TextView title = text("Minecraft no celular", 27, 0xff17213b, true);
         LinearLayout.LayoutParams titleParams = params(-1, -2);
-        titleParams.topMargin = dp(8);
+        titleParams.topMargin = dp(6);
         page.addView(title, titleParams);
-
-        TextView intro = text("Importação local, validação inicial e compatibilidade explícita — sem exigir Termux para importar arquivos.", 15, 0xff59647b, false);
+        TextView intro = text(
+                "Jogue, prepare os recursos ou importe uma instalação que já está pronta.",
+                14, 0xff59647b, false);
         LinearLayout.LayoutParams introParams = params(-1, -2);
-        introParams.topMargin = dp(8);
+        introParams.topMargin = dp(5);
         page.addView(intro, introParams);
 
+        // Keep status and cancellation controls visible even while the detailed
+        // setup sections are collapsed.
         LinearLayout statusCard = card();
-        LinearLayout.LayoutParams cardParams = params(-1, -2);
-        cardParams.topMargin = dp(22);
-        page.addView(statusCard, cardParams);
-        statusTitle = text("Pronto para importar", 17, 0xff18213a, true);
-        statusCard.addView(statusTitle, params(-1, -2));
-        statusDetails = text("", 14, 0xff59647b, false);
-        LinearLayout.LayoutParams detailsParams = params(-1, -2);
-        detailsParams.topMargin = dp(8);
-        statusCard.addView(statusDetails, detailsParams);
+        LinearLayout.LayoutParams statusCardParams = params(-1, -2);
+        statusCardParams.topMargin = dp(16);
+        page.addView(statusCard, statusCardParams);
+        statusCard.addView(text("Estado", 13, 0xff5363bd, true), params(-1, -2));
+        statusTitle = text("Pronto", 18, 0xff18213a, true);
+        LinearLayout.LayoutParams statusTitleParams = params(-1, -2);
+        statusTitleParams.topMargin = dp(4);
+        statusCard.addView(statusTitle, statusTitleParams);
+        statusDetails = text("", 13, 0xff59647b, false);
+        LinearLayout.LayoutParams statusDetailsParams = params(-1, -2);
+        statusDetailsParams.topMargin = dp(6);
+        statusCard.addView(statusDetails, statusDetailsParams);
 
         progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(1000);
         progressBar.setVisibility(View.GONE);
-        LinearLayout.LayoutParams progressParams = params(-1, dp(8));
-        progressParams.topMargin = dp(18);
+        LinearLayout.LayoutParams progressParams = params(-1, 8);
+        progressParams.topMargin = dp(12);
         statusCard.addView(progressBar, progressParams);
-
-        progressDetails = text("", 13, 0xff59647b, false);
+        progressDetails = text("", 12, 0xff59647b, false);
         LinearLayout.LayoutParams progressTextParams = params(-1, -2);
-        progressTextParams.topMargin = dp(8);
+        progressTextParams.topMargin = dp(5);
         statusCard.addView(progressDetails, progressTextParams);
 
-        TextView downloadHeading = text("Minecraft Java 26.3", 18, 0xff18213a, true);
-        LinearLayout.LayoutParams downloadHeadingParams = params(-1, -2);
-        downloadHeadingParams.topMargin = dp(24);
-        page.addView(downloadHeading, downloadHeadingParams);
-
-        TextView downloadNote = text("Baixe os arquivos diretamente dos servidores oficiais. O app verifica os tamanhos e SHA-1 antes de ativar cada arquivo. Os assets completos são opcionais e podem ocupar centenas de MB.", 14, 0xff59647b, false);
-        LinearLayout.LayoutParams downloadNoteParams = params(-1, -2);
-        downloadNoteParams.topMargin = dp(6);
-        page.addView(downloadNote, downloadNoteParams);
-
-        downloadBaseButton = button("Baixar arquivos base oficiais", true, v -> startOfficialDownload(false));
-        LinearLayout.LayoutParams downloadBaseParams = params(-1, dp(52));
-        downloadBaseParams.topMargin = dp(14);
-        page.addView(downloadBaseButton, downloadBaseParams);
-
-        downloadAssetsButton = button("Baixar base + todos os assets", false, v -> confirmFullAssetDownload());
-        LinearLayout.LayoutParams downloadAssetsParams = params(-1, dp(52));
-        downloadAssetsParams.topMargin = dp(8);
-        page.addView(downloadAssetsButton, downloadAssetsParams);
-
-        cancelDownloadButton = button("Cancelar download", false, v -> cancelOfficialDownload());
-        LinearLayout.LayoutParams cancelDownloadParams = params(-1, dp(48));
-        cancelDownloadParams.topMargin = dp(8);
-        cancelDownloadButton.setVisibility(View.GONE);
-        page.addView(cancelDownloadButton, cancelDownloadParams);
-
-        prepareInputsButton = button("Preparar recursos vanilla para conversão", false, v -> prepareConversionInputs());
-        LinearLayout.LayoutParams prepareInputsParams = params(-1, dp(50));
-        prepareInputsParams.topMargin = dp(8);
-        page.addView(prepareInputsButton, prepareInputsParams);
-
-        fullConvertButton = button("Converter recursos completos (Java 25)", true, v -> prepareFullConversion());
-        LinearLayout.LayoutParams fullConvertParams = params(-1, dp(52));
-        fullConvertParams.topMargin = dp(8);
-        page.addView(fullConvertButton, fullConvertParams);
-
-        TextView offlineHeading = text("Conta offline", 18, 0xff18213a, true);
-        LinearLayout.LayoutParams offlineHeadingParams = params(-1, -2);
-        offlineHeadingParams.topMargin = dp(24);
-        page.addView(offlineHeading, offlineHeadingParams);
-        offlineStatusText = text("Nick offline: " + OfflineProfile.loadName(this), 14, 0xff59647b, false);
-        LinearLayout.LayoutParams offlineStatusParams = params(-1, -2);
-        offlineStatusParams.topMargin = dp(6);
-        page.addView(offlineStatusText, offlineStatusParams);
-        TextView offlineNote = text("Não precisa de login Microsoft. Serve para testar o cliente e mundos locais; servidores online podem exigir autenticação oficial.", 13, 0xff59647b, false);
-        LinearLayout.LayoutParams offlineNoteParams = params(-1, -2);
-        offlineNoteParams.topMargin = dp(4);
-        page.addView(offlineNote, offlineNoteParams);
-        offlineNameButton = button("Definir nick offline", false, v -> showOfflineNameDialog());
-        LinearLayout.LayoutParams offlineNameParams = params(-1, dp(48));
-        offlineNameParams.topMargin = dp(10);
-        page.addView(offlineNameButton, offlineNameParams);
-        offlinePlayButton = button("Iniciar com conta offline", true, v -> openOfflineClient());
-        LinearLayout.LayoutParams offlinePlayParams = params(-1, dp(50));
-        offlinePlayParams.topMargin = dp(8);
-        page.addView(offlinePlayButton, offlinePlayParams);
-
-        touchControlsButton = button("Customizar layout dos botões", true, v -> openTouchControlsEditor());
-        LinearLayout.LayoutParams touchControlsParams = params(-1, dp(48));
-        touchControlsParams.topMargin = dp(8);
-        page.addView(touchControlsButton, touchControlsParams);
-
-        Button touchSettingsButton = button("Ajustes gerais dos controles", false, v -> showTouchControlsDialog());
-        LinearLayout.LayoutParams touchSettingsParams = params(-1, dp(44));
-        touchSettingsParams.topMargin = dp(6);
-        page.addView(touchSettingsButton, touchSettingsParams);
-
-        TextView accountHeading = text("Conta Microsoft", 18, 0xff18213a, true);
-        LinearLayout.LayoutParams accountHeadingParams = params(-1, -2);
-        accountHeadingParams.topMargin = dp(24);
-        page.addView(accountHeading, accountHeadingParams);
-        accountStatusText = text("Nenhuma conta verificada neste dispositivo.", 14, 0xff59647b, false);
-        LinearLayout.LayoutParams accountStatusParams = params(-1, -2);
-        accountStatusParams.topMargin = dp(6);
-        page.addView(accountStatusText, accountStatusParams);
-        microsoftLoginButton = button("Entrar com Microsoft", true, v -> startMicrosoftSignIn());
-        LinearLayout.LayoutParams loginParams = params(-1, dp(50));
-        loginParams.topMargin = dp(10);
-        page.addView(microsoftLoginButton, loginParams);
-        microsoftSignOutButton = button("Remover conta salva", false, v -> signOutMicrosoft());
-        LinearLayout.LayoutParams signOutParams = params(-1, dp(46));
-        signOutParams.topMargin = dp(8);
-        microsoftSignOutButton.setVisibility(View.GONE);
-        page.addView(microsoftSignOutButton, signOutParams);
-
-        openEngineButton = button("Verificar requisitos do cliente Horizon", false, v -> openNativeClient());
-        LinearLayout.LayoutParams openEngineParams = params(-1, dp(50));
-        openEngineParams.topMargin = dp(8);
-        page.addView(openEngineButton, openEngineParams);
-
-        smokeTestButton = button("Testar renderer Vulkan", false, v -> openNativeSmokeTest());
-        LinearLayout.LayoutParams smokeParams = params(-1, dp(50));
-        smokeParams.topMargin = dp(8);
-        page.addView(smokeTestButton, smokeParams);
-
-        TextView diagnosticHeading = text("Diagnóstico multiplayer", 18, 0xff18213a, true);
-        LinearLayout.LayoutParams diagnosticHeadingParams = params(-1, -2);
-        diagnosticHeadingParams.topMargin = dp(24);
-        page.addView(diagnosticHeading, diagnosticHeadingParams);
-        TextView diagnosticNote = text(
-                "Reproduza o problema no servidor, volte para esta tela e exporte os registros. O ZIP inclui o log do Horizon, logs recentes arquivados e o relatório de falha mais recente, se houver. Revise antes de compartilhar: os logs podem conter nicknames, endereço do servidor e mensagens de chat; arquivos de sessão e tokens não são incluídos.",
-                13, 0xff59647b, false);
-        LinearLayout.LayoutParams diagnosticNoteParams = params(-1, -2);
-        diagnosticNoteParams.topMargin = dp(6);
-        page.addView(diagnosticNote, diagnosticNoteParams);
-        exportDiagnosticsButton = button(
-                "Exportar log e diagnóstico multiplayer", false, v -> exportDiagnostics());
-        LinearLayout.LayoutParams exportDiagnosticsParams = params(-1, dp(50));
-        exportDiagnosticsParams.topMargin = dp(10);
-        page.addView(exportDiagnosticsButton, exportDiagnosticsParams);
-
-        TextView actionsHeading = text("Importar saída já preparada", 18, 0xff18213a, true);
-        LinearLayout.LayoutParams actionsParams = params(-1, -2);
-        actionsParams.topMargin = dp(24);
-        page.addView(actionsHeading, actionsParams);
-
-        TextView actionsNote = text("Selecione a pasta final 26.3 que contém horizon-resources.json na raiz, ou um ZIP dessa mesma pasta. A importação verifica os arquivos exigidos pelo motor e instala a saída em .local/horizon-client/26.3.", 14, 0xff59647b, false);
-        LinearLayout.LayoutParams noteParams = params(-1, -2);
-        noteParams.topMargin = dp(6);
-        page.addView(actionsNote, noteParams);
-
-        importFolderButton = button("Selecionar pasta preparada", true, v -> chooseFolder());
-        LinearLayout.LayoutParams folderParams = params(-1, dp(52));
-        folderParams.topMargin = dp(16);
-        page.addView(importFolderButton, folderParams);
-
-        importZipButton = button("Selecionar arquivo ZIP", false, v -> chooseZip());
-        LinearLayout.LayoutParams zipParams = params(-1, dp(52));
-        zipParams.topMargin = dp(10);
-        page.addView(importZipButton, zipParams);
-
-        cancelButton = button("Cancelar importação", false, v -> cancelImport());
-        LinearLayout.LayoutParams cancelParams = params(-1, dp(48));
-        cancelParams.topMargin = dp(10);
+        cancelButton = button("Cancelar operação", false, v -> cancelImport());
+        LinearLayout.LayoutParams cancelParams = params(-1, 46);
+        cancelParams.topMargin = dp(8);
         cancelButton.setVisibility(View.GONE);
-        page.addView(cancelButton, cancelParams);
+        statusCard.addView(cancelButton, cancelParams);
+        cancelDownloadButton = button("Cancelar download", false, v -> cancelOfficialDownload());
+        LinearLayout.LayoutParams cancelDownloadParams = params(-1, 46);
+        cancelDownloadParams.topMargin = dp(6);
+        cancelDownloadButton.setVisibility(View.GONE);
+        statusCard.addView(cancelDownloadButton, cancelDownloadParams);
+
+        // The most common path is kept at the top instead of being buried
+        // beneath download, conversion and diagnostic controls.
+        LinearLayout playCard = card();
+        LinearLayout.LayoutParams playCardParams = params(-1, -2);
+        playCardParams.topMargin = dp(12);
+        page.addView(playCard, playCardParams);
+        playCard.addView(text("Jogar", 18, 0xff18213a, true), params(-1, -2));
+        offlineStatusText = text("Perfil offline: " + OfflineProfile.loadName(this), 14, 0xff59647b, false);
+        LinearLayout.LayoutParams offlineStatusParams = params(-1, -2);
+        offlineStatusParams.topMargin = dp(5);
+        playCard.addView(offlineStatusText, offlineStatusParams);
+        offlinePlayButton = button("Jogar com perfil offline", true, v -> openOfflineClient());
+        addSpaced(playCard, offlinePlayButton, 52, 10);
+        offlineNameButton = button("Alterar nick offline", false, v -> showOfflineNameDialog());
+        addSpaced(playCard, offlineNameButton, 46, 6);
+        touchControlsButton = button("Customizar layout dos botões", true, v -> openTouchControlsEditor());
+        addSpaced(playCard, touchControlsButton, 48, 6);
+
+        Button resourcesManagerButton = button("Gerenciador de recursos", false,
+                v -> startActivity(new Intent(this, ResourceManagerActivity.class)));
+        addSpaced(playCard, resourcesManagerButton, 48, 6);
+        TextView playHint = text(
+                "Se for a primeira vez, prepare os recursos na seção abaixo antes de iniciar.",
+                12, 0xff68728a, false);
+        addSpaced(playCard, playHint, -2, 7);
+
+        LinearLayout setup = collapsibleSection(page, "Preparar Minecraft 26.3",
+                "Downloads oficiais, validação e conversão dos recursos.", true);
+        setup.addView(text(
+                "Baixe os arquivos oficiais. O app confere tamanho e SHA-1; baixar todos os assets é opcional e pode ocupar centenas de MB.",
+                13, 0xff59647b, false), params(-1, -2));
+        downloadBaseButton = button("Baixar arquivos base oficiais", true, v -> startOfficialDownload(false));
+        addSpaced(setup, downloadBaseButton, 50, 10);
+        downloadAssetsButton = button("Baixar base + todos os assets", false, v -> confirmFullAssetDownload());
+        addSpaced(setup, downloadAssetsButton, 50, 6);
+
+        TextView conversionTitle = text("Conversão", 15, 0xff18213a, true);
+        addSpaced(setup, conversionTitle, -2, 16);
+        TextView conversionNote = text(
+                "A conversão completa precisa dos arquivos necessários e pode demorar. O app mostra o andamento e mantém a notificação enquanto trabalha.",
+                13, 0xff59647b, false);
+        addSpaced(setup, conversionNote, -2, 4);
+        prepareInputsButton = button("Preparar entradas para conversão", false, v -> prepareConversionInputs());
+        addSpaced(setup, prepareInputsButton, 48, 8);
+        fullConvertButton = button("Converter recursos completos", true, v -> prepareFullConversion());
+        addSpaced(setup, fullConvertButton, 50, 6);
+
+        LinearLayout importSection = collapsibleSection(page, "Importar recursos já preparados",
+                "Use uma pasta 26.3 ou um ZIP; não precisa de Termux.", false);
+        importSection.addView(text(
+                "Escolha a pasta final que contém horizon-resources.json na raiz, ou um ZIP dessa mesma pasta. O app verifica os arquivos e instala a saída no diretório privado do Horizon.",
+                13, 0xff59647b, false), params(-1, -2));
+        importFolderButton = button("Selecionar pasta preparada", true, v -> chooseFolder());
+        addSpaced(importSection, importFolderButton, 50, 10);
+        importZipButton = button("Selecionar arquivo ZIP", false, v -> chooseZip());
+        addSpaced(importSection, importZipButton, 48, 6);
+
+        LinearLayout accountSection = collapsibleSection(page, "Conta Microsoft",
+                "Opcional; necessário para servidores que exigem autenticação oficial.", false);
+        accountStatusText = text("Nenhuma conta verificada neste dispositivo.", 14, 0xff59647b, false);
+        accountSection.addView(accountStatusText, params(-1, -2));
+        TextView accountNote = text(
+                "O login é feito pelo fluxo oficial de código de dispositivo. A conta offline continua disponível para ambientes que aceitam esse tipo de perfil.",
+                12, 0xff68728a, false);
+        addSpaced(accountSection, accountNote, -2, 5);
+        microsoftLoginButton = button("Entrar com Microsoft", true, v -> startMicrosoftSignIn());
+        addSpaced(accountSection, microsoftLoginButton, 50, 8);
+        microsoftSignOutButton = button("Remover conta salva", false, v -> signOutMicrosoft());
+        microsoftSignOutButton.setVisibility(View.GONE);
+        addSpaced(accountSection, microsoftSignOutButton, 46, 6);
+
+        LinearLayout tools = collapsibleSection(page, "Ferramentas e diagnóstico",
+                "Testes gráficos, verificação do cliente e exportação de logs.", false);
+        openEngineButton = button("Verificar requisitos do cliente Horizon", false, v -> openNativeClient());
+        addSpaced(tools, openEngineButton, 48, 0);
+        smokeTestButton = button("Testar renderer Vulkan", false, v -> openNativeSmokeTest());
+        addSpaced(tools, smokeTestButton, 48, 6);
+
+        TextView diagnosticNote = text(
+                "Reproduza o problema no servidor, volte aqui e exporte o ZIP. Ele pode conter endereço do servidor, nicknames e mensagens de chat; revise antes de compartilhar. Tokens e arquivos de sessão não são incluídos.",
+                12, 0xff59647b, false);
+        addSpaced(tools, diagnosticNote, -2, 12);
+        exportDiagnosticsButton = button("Exportar diagnóstico multiplayer", true, v -> exportDiagnostics());
+        addSpaced(tools, exportDiagnosticsButton, 50, 6);
 
         LinearLayout compatibilityCard = card();
         LinearLayout.LayoutParams compatParams = params(-1, -2);
-        compatParams.topMargin = dp(22);
-        page.addView(compatibilityCard, compatParams);
-        compatibilityCard.addView(text("Camada de compatibilidade", 16, 0xff18213a, true), params(-1, -2));
-        compatibilityText = text("", 14, 0xff59647b, false);
+        compatParams.topMargin = dp(12);
+        tools.addView(compatibilityCard, compatParams);
+        compatibilityCard.addView(text("Compatibilidade do aparelho", 15, 0xff18213a, true), params(-1, -2));
+        compatibilityText = text("", 13, 0xff59647b, false);
         LinearLayout.LayoutParams compatTextParams = params(-1, -2);
-        compatTextParams.topMargin = dp(8);
+        compatTextParams.topMargin = dp(5);
         compatibilityCard.addView(compatibilityText, compatTextParams);
 
-        TextView footer = text("Use “Converter recursos completos (Java 25)” para instalar o runtime Android e executar os oráculos Horizon no próprio aparelho. A conversão exige todos os assets e bastante espaço livre. Depois, teste o cliente com conta offline. O smoke test Vulkan é apenas um teste gráfico e não comprova gameplay.", 12, 0xff68728a, false);
+        TextView footer = text(
+                "Dica: comece pelos arquivos base. Baixe todos os assets ou use a conversão completa só quando necessário.",
+                12, 0xff68728a, false);
         LinearLayout.LayoutParams footerParams = params(-1, -2);
-        footerParams.topMargin = dp(20);
+        footerParams.topMargin = dp(14);
         page.addView(footer, footerParams);
+    }
+
+    private LinearLayout collapsibleSection(LinearLayout parent, String title, String description, boolean expanded) {
+        LinearLayout shell = card();
+        LinearLayout.LayoutParams shellParams = params(-1, -2);
+        shellParams.topMargin = dp(10);
+        parent.addView(shell, shellParams);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setFocusable(true);
+        header.setClickable(true);
+        TextView heading = text((expanded ? "▾  " : "▸  ") + title, 16, 0xff18213a, true);
+        header.addView(heading, params(-1, -2));
+        TextView summary = text(description, 12, 0xff68728a, false);
+        LinearLayout.LayoutParams summaryParams = params(-1, -2);
+        summaryParams.topMargin = dp(4);
+        header.addView(summary, summaryParams);
+        shell.addView(header, params(-1, -2));
+
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        LinearLayout.LayoutParams bodyParams = params(-1, -2);
+        bodyParams.topMargin = dp(10);
+        shell.addView(body, bodyParams);
+        View.OnClickListener toggle = v -> {
+            boolean show = body.getVisibility() != View.VISIBLE;
+            body.setVisibility(show ? View.VISIBLE : View.GONE);
+            heading.setText((show ? "▾  " : "▸  ") + title);
+            header.setContentDescription((show ? "Recolher " : "Expandir ") + title);
+        };
+        header.setOnClickListener(toggle);
+        heading.setOnClickListener(toggle);
+        summary.setOnClickListener(toggle);
+        header.setContentDescription((expanded ? "Recolher " : "Expandir ") + title);
+        return body;
+    }
+
+    private void addSpaced(LinearLayout parent, View child, int height, int topMarginDp) {
+        LinearLayout.LayoutParams childParams = params(-1, height);
+        childParams.topMargin = dp(topMarginDp);
+        parent.addView(child, childParams);
     }
 
     private void updateCompatibility() {
@@ -1406,7 +1414,8 @@ public final class MainActivity extends Activity {
                         sessionEnvSet = true;
                         startActivity(new Intent(this, NativeGameActivity.class)
                                 .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true)
-                                .putExtra(NativeGameActivity.EXTRA_SESSION_FILE, sessionFile.getAbsolutePath()));
+                                .putExtra(NativeGameActivity.EXTRA_SESSION_FILE, sessionFile.getAbsolutePath())
+);
                         setStatus("Iniciando cliente Horizon",
                                 "A sessão oficial foi verificada. A inicialização ainda depende de recursos derivados completos e validação real de gameplay.");
                     } catch (Exception error) {

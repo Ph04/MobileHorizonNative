@@ -6,12 +6,16 @@ concurrency:
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
     paths:
       - "app/**"
       - "core/**"
       - "android-native/**"
       - "tools/patch_horizon_android_touch.py"
+      - "tools/horizon_patches/**"
+      - "tools/tests/**"
+      - "tools/horizon_server_packs.rs"
+      - "tools/horizon-revisions.env"
       - "tools/setup_android_signing_termux.sh"
       - "build.gradle"
       - "settings.gradle"
@@ -23,6 +27,10 @@ on:
       - "core/**"
       - "android-native/**"
       - "tools/patch_horizon_android_touch.py"
+      - "tools/horizon_patches/**"
+      - "tools/tests/**"
+      - "tools/horizon_server_packs.rs"
+      - "tools/horizon-revisions.env"
       - "tools/setup_android_signing_termux.sh"
       - "build.gradle"
       - "settings.gradle"
@@ -54,7 +62,26 @@ jobs:
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: "platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018"
+          packages: "platforms;android-35 build-tools;35.0.0"
+
+      - name: Install Android NDK with download retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          for attempt in 1 2 3 4; do
+            # Discard partial/corrupt SDK downloads before retrying the package.
+            rm -rf "$ANDROID_HOME/temp"
+            if "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "ndk;27.2.12479018"; then
+              break
+            fi
+            if [[ "$attempt" == 4 ]]; then
+              echo "::error::Android NDK installation failed after $attempt attempts."
+              exit 1
+            fi
+            echo "::warning::Android NDK download failed (attempt $attempt); retrying."
+          done
+          test -x "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang"
 
       # Reuse the previous repo's committed source bundle only as a source for the
       # native runtime. Both the archive and shared-library hashes are pinned below.
@@ -102,11 +129,27 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      - name: Preflight pinned Horizon overlay before expensive builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          source tools/horizon-revisions.env
+          SOURCE="$RUNNER_TEMP/horizon-overlay-preflight"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
+          git -C "$SOURCE" fetch --depth 1 origin "$HORIZON_RUNTIME_COMMIT"
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$HORIZON_RUNTIME_COMMIT"
+          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py
+          python3 tools/patch_horizon_android_touch.py "$SOURCE"
+          echo "All Horizon overlay anchors applied successfully to $HORIZON_RUNTIME_COMMIT."
+
       - name: Build and bundle full Horizon resource preparer
         shell: bash
         run: |
           set -euo pipefail
-          UPSTREAM_COMMIT="24bcef42beaf1382e48964b7efa7aef3f5f86792"
+          source tools/horizon-revisions.env
+          UPSTREAM_COMMIT="$HORIZON_PREPARE_COMMIT"
           SOURCE="$RUNNER_TEMP/horizon-upstream"
           git init "$SOURCE"
           git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
@@ -118,6 +161,11 @@ jobs:
           # cannot exec downloaded binaries from filesDir; java.rs must invoke the
           # system linker for both Java and javac rather than trying execve directly.
           python3 "$GITHUB_WORKSPACE/tools/patch_horizon_prepare_android_linker.py" "$SOURCE"
+          # Backport the asset-index republish fix without moving the pinned upstream revision.
+          python3 "$GITHUB_WORKSPACE/tools/patch_horizon_prepare_asset_index.py" "$SOURCE"
+          grep -Fq 'asset_index_accepted' "$SOURCE/crates/horizon-prepare/src/artifacts.rs"
+          grep -Fq 'accepted_asset_index_sha1' "$SOURCE/research-lock.json"
+          grep -Fq 'asset_index_accepted' "$SOURCE/crates/horizon-prepare/src/sounds.rs"
           grep -Fq 'exec /system/bin/linker64' "$SOURCE/crates/horizon-prepare/src/java.rs"
           grep -Fq 'command.arg(java);' "$SOURCE/crates/horizon-prepare/src/java.rs"
           grep -Fq 'exec /system/bin/linker64' "$GITHUB_WORKSPACE/app/src/main/java/dev/mobilehorizon/app/JdkRuntimeInstaller.java"
@@ -281,15 +329,17 @@ jobs:
           # Keep desktop controller/HID backends disabled on Android to avoid
           # libudev/hidapi dependencies. CPAL audio is enabled by android-native's
           # horizon-client feature selection and uses Android's native audio backend.
-          UPSTREAM_COMMIT="defaa7cd2ade6dc45bcac0b418bf10601f05a120"
+          source tools/horizon-revisions.env
+          UPSTREAM_COMMIT="$HORIZON_RUNTIME_COMMIT"
           SOURCE="$RUNNER_TEMP/horizon-native-upstream"
           git init "$SOURCE"
           git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
           git -C "$SOURCE" fetch --depth 1 origin "$UPSTREAM_COMMIT"
           git -C "$SOURCE" checkout --detach FETCH_HEAD
           test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
-          python3 -m py_compile tools/patch_horizon_android_touch.py
+          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
+          cargo test --manifest-path "$SOURCE/Cargo.toml" -p horizon-mods --lib --no-default-features
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
           test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
@@ -356,9 +406,9 @@ jobs:
           grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
           if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
-            grep -F "name='dev.mobilehorizon.app.offline1' versionCode='13' versionName='0.3.10-offline1'" "$RUNNER_TEMP/apk-badging.txt"
+            grep -F "name='dev.mobilehorizon.app.offline1' versionCode='14' versionName='0.3.11-offline1'" "$RUNNER_TEMP/apk-badging.txt"
           else
-            grep -F "name='dev.mobilehorizon.app.offline1.test.v13' versionCode='13' versionName='0.3.10-offline1-test-v13'" "$RUNNER_TEMP/apk-badging.txt"
+            grep -F "name='dev.mobilehorizon.app.offline1.test.v14' versionCode='14' versionName='0.3.11-offline1-test-v14'" "$RUNNER_TEMP/apk-badging.txt"
           fi
           sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
           CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
@@ -366,9 +416,9 @@ jobs:
           echo "APK signer certificate SHA-256: $CERT_SHA256" >> "$GITHUB_STEP_SUMMARY"
           if [[ "${{ steps.signing.outputs.enabled }}" != "true" ]]; then
             echo "::warning::APK is test-only and uses a separate application ID because stable signing secrets are missing. It will not overwrite the installed app or share its data."
-            echo "Version-isolated test APK published under dev.mobilehorizon.app.offline1.test.v13; the previous test package and its data remain installed separately. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
+            echo "Version-isolated test APK published under dev.mobilehorizon.app.offline1.test.v20; the previous test package and its data remain installed separately. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "APK is valid, package/version match, and Horizon ARM64 runtime plus Java 25 manifest payload are included."
+          echo "APK is valid, package/version match, and the pinned Horizon ARM64 runtime, Java 25 preparation runtime, official resource manifests, and launcher assets are included."
 
       - name: Upload update-safe APK
         if: success() && steps.signing.outputs.enabled == 'true'

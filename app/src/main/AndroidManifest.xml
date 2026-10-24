@@ -24,6 +24,12 @@
         </activity>
 
         <activity
+            android:name=".ResourceManagerActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="Gerenciador de recursos" />
+
+        <activity
             android:name=".TouchControlsEditorActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
