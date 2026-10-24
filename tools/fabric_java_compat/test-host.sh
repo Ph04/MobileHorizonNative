@@ -57,18 +57,38 @@ send({"protocol_version": 1, "kind": "hello", "request_id": "hello-1",
       "session_token": "test-session-token"})
 hello = receive()
 assert hello.get("ok") is True and hello.get("runtime_status") == "bridge_control_plane_only", hello
+full_snapshot = {
+    "world_loaded": True,
+    "dimension": "minecraft:overworld",
+    "singleplayer": True,
+    "player": {"x": 1.5, "y": 64.0, "z": -3.5, "yaw": 90.0, "pitch": 0.0,
+               "health": 20.0, "food": 20, "dimension": "minecraft:overworld"},
+    "clock": {"game_time": 240, "day_time": 1200},
+    "inventory": {"selected": 2, "selected_stack": {"id": "minecraft:diamond_pickaxe",
+                  "count": 1, "damage": 3, "max_damage": 1561, "components": []},
+                  "slots": [{"slot": 2, "stack": {"id": "minecraft:diamond_pickaxe", "count": 1}}],
+                  "offhand": None},
+}
 send({"kind": "event", "request_id": "snapshot-1", "event": "world_snapshot",
-      "payload": {"world_loaded": True, "dimension": "minecraft:overworld", "singleplayer": True}})
+      "payload": full_snapshot})
 snapshot_ack = receive()
 assert snapshot_ack.get("ok") is True and snapshot_ack.get("world_revision") == 1, snapshot_ack
-send({"kind": "query_probe", "request_id": "query-1", "payload": {"path": "world.snapshot"}})
+send({"kind": "query_probe", "request_id": "query-1", "payload": {"path": "player.snapshot"}})
 query = receive()
-assert query.get("kind") == "query" and query.get("path") == "world.snapshot", query
+assert query.get("kind") == "query" and query.get("path") == "player.snapshot", query
 send({"kind": "response", "request_id": query["request_id"], "ok": True,
-      "result": {"world_loaded": True, "dimension": "minecraft:overworld", "singleplayer": True}})
+      "result": full_snapshot["player"]})
 query_result = receive()
 assert query_result.get("request_id") == "query-1" and query_result.get("ok") is True, query_result
 assert query_result.get("query_result", {}).get("dimension") == "minecraft:overworld", query_result
+send({"kind": "query_probe", "request_id": "query-2", "payload": {"path": "inventory.snapshot"}})
+query = receive()
+assert query.get("kind") == "query" and query.get("path") == "inventory.snapshot", query
+send({"kind": "response", "request_id": query["request_id"], "ok": True,
+      "result": full_snapshot["inventory"]})
+query_result = receive()
+assert query_result.get("request_id") == "query-2" and query_result.get("ok") is True, query_result
+assert query_result.get("query_result", {}).get("selected") == 2, query_result
 send({"kind": "shutdown", "request_id": "shutdown-1"})
 assert receive().get("ok") is True
 process.wait(timeout=5)

@@ -134,7 +134,9 @@ public final class FabricJavaCompatHost {
             body.put("runtime_status", "bridge_control_plane_only");
             body.put("loader_version", "0.19.5");
             body.put("minecraft_version", "26.3");
-            body.put("capabilities", List.of("world.snapshot", "world.lifecycle", "client_tick", "chat.received"));
+            body.put("capabilities", List.of("world.snapshot", "player.snapshot", "clock.snapshot",
+                    "inventory.snapshot", "inventory.selected", "inventory.offhand",
+                    "world.lifecycle", "client_tick", "chat.received"));
             body.put("not_implemented", List.of("minecraft_java_classes", "fabric_api_entrypoints", "mixins",
                     "registries", "rendering", "resource_reload", "gameplay_mutation"));
             return response(requestId, true, body);
@@ -176,10 +178,21 @@ public final class FabricJavaCompatHost {
         Map<String,Object> payload = asMap(request.get("payload"));
         switch (event) {
             case "world_snapshot" -> {
-                Map<String,Object> next = new LinkedHashMap<>();
+                // Preserve the full native snapshot; do not drop player/clock/inventory fields.
+                Map<String,Object> next = new LinkedHashMap<>(payload);
                 next.put("world_loaded", Boolean.TRUE.equals(payload.get("world_loaded")));
                 next.put("dimension", payload.get("dimension") instanceof String ? payload.get("dimension") : "");
                 next.put("singleplayer", Boolean.TRUE.equals(payload.get("singleplayer")));
+                next.putIfAbsent("player", null);
+                next.putIfAbsent("clock", null);
+                if (!next.containsKey("inventory")) {
+                    Map<String,Object> emptyInventory = new LinkedHashMap<>();
+                    emptyInventory.put("selected", 0);
+                    emptyInventory.put("selected_stack", null);
+                    emptyInventory.put("slots", List.of());
+                    emptyInventory.put("offhand", null);
+                    next.put("inventory", emptyInventory);
+                }
                 if (!next.equals(state.world)) {
                     state.world = next;
                     state.revision++;

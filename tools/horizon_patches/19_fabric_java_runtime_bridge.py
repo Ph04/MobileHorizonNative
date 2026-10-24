@@ -41,6 +41,58 @@ struct JavaBridge {
     world_snapshot: Arc<Mutex<serde_json::Value>>,
 }
 
+fn java_bridge_item_json(item: &crate::InventoryItem) -> serde_json::Value {
+    serde_json::json!({
+        "id": item.id,
+        "count": item.count,
+        "damage": item.damage,
+        "max_damage": item.max_damage,
+        "components": item.components.iter().map(|(key, value)| {
+            serde_json::json!({"id": key, "value": value})
+        }).collect::<Vec<_>>()
+    })
+}
+
+/// Stable read-only snapshot for Java adapters; absent game state is JSON null/empty,
+/// never a writable reference into Horizon's world or inventory structures.
+fn java_bridge_snapshot_json(snapshot: &Snapshot) -> serde_json::Value {
+    let player = snapshot.player.as_ref().map(|player| serde_json::json!({
+        "x": player.x,
+        "y": player.y,
+        "z": player.z,
+        "yaw": player.yaw,
+        "pitch": player.pitch,
+        "health": player.health,
+        "food": player.food,
+        "dimension": player.dimension,
+    }));
+    let clock = snapshot.clock.as_ref().map(|clock| serde_json::json!({
+        "game_time": clock.game_time,
+        "day_time": clock.day_time,
+    }));
+    let slots = snapshot.inventory.iter().enumerate().map(|(slot, item)| {
+        serde_json::json!({
+            "slot": slot,
+            "stack": item.as_ref().map(java_bridge_item_json)
+        })
+    }).collect::<Vec<_>>();
+    let selected_stack = snapshot.inventory.get(snapshot.selected as usize)
+        .and_then(Option::as_ref).map(java_bridge_item_json);
+    serde_json::json!({
+        "world_loaded": snapshot.player.is_some(),
+        "dimension": snapshot.player.as_ref().map(|player| player.dimension.as_str()).unwrap_or(""),
+        "singleplayer": snapshot.singleplayer,
+        "player": player,
+        "clock": clock,
+        "inventory": {
+            "selected": snapshot.selected,
+            "selected_stack": selected_stack,
+            "slots": slots,
+            "offhand": snapshot.offhand.as_ref().map(java_bridge_item_json)
+        }
+    })
+}
+
 impl JavaBridge {
     fn from_environment() -> Option<Self> {
         if std::env::var("HORIZON_MOD_PROFILE").ok().as_deref() != Some("fabric-bridge") {
@@ -284,16 +336,31 @@ fn java_bridge_wait_response(
             let query_id = frame.get("request_id").and_then(serde_json::Value::as_str).unwrap_or("");
             let path = frame.get("path").and_then(serde_json::Value::as_str).unwrap_or("");
             let response = match path {
-                "world.snapshot" => {
-                    let value = world_snapshot.lock().map(|snapshot| snapshot.clone())
+                "world.snapshot" | "player.snapshot" | "clock.snapshot"
+                | "inventory.snapshot" | "inventory.selected" | "inventory.offhand" => {
+                    let snapshot = world_snapshot.lock().map(|snapshot| snapshot.clone())
                         .unwrap_or_else(|_| serde_json::json!({"world_loaded": false}));
+                    let result = match path {
+                        "world.snapshot" => snapshot,
+                        "player.snapshot" => snapshot.get("player").cloned().unwrap_or(serde_json::Value::Null),
+                        "clock.snapshot" => snapshot.get("clock").cloned().unwrap_or(serde_json::Value::Null),
+                        "inventory.snapshot" => snapshot.get("inventory").cloned().unwrap_or(serde_json::Value::Null),
+                        "inventory.selected" => snapshot.get("inventory")
+                            .and_then(|inventory| inventory.get("selected_stack"))
+                            .cloned().unwrap_or(serde_json::Value::Null),
+                        "inventory.offhand" => snapshot.get("inventory")
+                            .and_then(|inventory| inventory.get("offhand"))
+                            .cloned().unwrap_or(serde_json::Value::Null),
+                        _ => unreachable!(),
+                    };
                     serde_json::json!({"protocol_version":1,"kind":"response","request_id":query_id,
-                        "ok":true,"result":value})
+                        "ok":true,"result":result})
                 }
                 "bridge.capabilities" => serde_json::json!({
                     "protocol_version":1, "kind":"response", "request_id":query_id, "ok":true,
-                    "result":{"read_only":["world.snapshot"],"events":["world_snapshot","world_join",
-                        "world_leave","client_tick","chat_received"],
+                    "result":{"read_only":["world.snapshot","player.snapshot","clock.snapshot",
+                        "inventory.snapshot","inventory.selected","inventory.offhand"],
+                        "events":["world_snapshot","world_join","world_leave","client_tick","chat_received"],
                         "unavailable":["minecraft_java_classes","fabric_api_entrypoints","mixins",
                             "registries","rendering","resource_reload","gameplay_mutation"]}
                 }),
@@ -385,19 +452,7 @@ rr(
         });
         self.snapshot = Arc::new(snapshot);
 
-        let bridge_snapshot = if let Some(player) = self.snapshot.player.as_ref() {
-            serde_json::json!({
-                "world_loaded": true,
-                "dimension": player.dimension,
-                "singleplayer": self.snapshot.singleplayer
-            })
-        } else {
-            serde_json::json!({
-                "world_loaded": false,
-                "dimension": "",
-                "singleplayer": self.snapshot.singleplayer
-            })
-        };
+        let bridge_snapshot = java_bridge_snapshot_json(&self.snapshot);
         if let Some(bridge) = &self.bridge {
             bridge.update_world_snapshot(bridge_snapshot);
             match (previous.as_ref(), current.as_ref()) {
