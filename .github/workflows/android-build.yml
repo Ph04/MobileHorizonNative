@@ -503,6 +503,38 @@ jobs:
           PY
           echo "$ABI" > "$RUNNER_TEMP/minecraft-26.3-abi-path.txt"
 
+      - name: Generate Fabric API to Horizon target map
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/fabric_java_compat/build_fabric_target_map.py \
+            --fabric-api-jar "app/src/main/assets/fabric-bridge/fabric-api-0.165.0+26.3.jar" \
+            --minecraft-abi "$RUNNER_TEMP/minecraft-26.3-client-abi.json" \
+            --fabric-api-abi "app/src/main/assets/fabric-api-26.3-abi.json" \
+            --module-manifest "tools/fabric_java_compat/modules/module-manifest.json" \
+            --shim-surface "tools/fabric_java_compat/minecraft-shim-surface.json" \
+            --native-targets "tools/fabric_java_compat/native-targets.json" \
+            --capability-source "tools/fabric_java_compat/native_overlay/fabric_compat/capabilities.rs" \
+            --output "$RUNNER_TEMP/fabric-java-to-horizon-map.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
+          python3 - "$RUNNER_TEMP/fabric-java-to-horizon-map.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          summary = report["summary"]
+          assert report["target_minecraft"] == "26.3"
+          assert report["bytecode_executed"] is False
+          assert summary["fabric_api_implementation_class_count_scanned"] >= 100
+          assert summary["minecraft_class_reference_records"] > 0
+          assert summary["minecraft_member_reference_records"] > 0
+          assert report["native_targets"], "No native target markers were emitted"
+          print("Verified Fabric-to-Horizon target map: "
+                f"{summary['minecraft_class_reference_records']} class references, "
+                f"{summary['minecraft_member_reference_records']} member references, "
+                f"{summary['references_with_native_module_candidates']} native-module candidate links, "
+                f"{summary['references_without_native_module_candidates']} unmapped reference rows.")
+          PY
+
       - name: Download and verify official Fabric Loader for Minecraft 26.3
         shell: bash
         run: |
@@ -685,6 +717,15 @@ jobs:
         with:
           name: minecraft-26.3-abi-catalog
           path: ${{ runner.temp }}/minecraft-26.3-client-abi.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Fabric Java to Horizon target map
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabric-java-to-horizon-target-map
+          path: \${{ runner.temp }}/fabric-java-to-horizon-map.json
           if-no-files-found: error
           retention-days: 14
 
