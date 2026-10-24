@@ -444,7 +444,19 @@ jobs:
           python3 tools/fabric_java_compat/verify_fabric_api_bundle.py \
             "$DEST/$ARTIFACT" app/src/main/assets/fabric-api-runtime.json \
             --upstream-sha256 "$EXPECTED_SHA256"
-          echo "Bundled the full official Fabric API JAR intact (no manual module extraction)."
+          python3 tools/fabric_java_compat/generate_fabric_api_abi.py \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-api-26.3-abi.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          catalog = json.loads(Path("app/src/main/assets/fabric-api-26.3-abi.json").read_text(encoding="utf-8"))
+          assert catalog["target_minecraft"] == "26.3"
+          assert catalog["fabric_api_version"] == "0.165.0+26.3"
+          assert catalog["public_class_count"] >= 100
+          assert catalog["public_member_count"] >= 100
+          print(f"Verified ABI catalog: {catalog['public_class_count']} classes, {catalog['public_member_count']} members.")
+          PY
+          echo "Bundled the intact official Fabric API and catalogued its exact JVM ABI."
 
       - name: Download and verify official Fabric Loader for Minecraft 26.3
         shell: bash
@@ -536,6 +548,7 @@ jobs:
           grep -Fq 'assets/fabric-java-host.jar' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-java-host-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-api-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-api-26.3-abi.json' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-bridge/fabric-api-0.165.0+26.3.jar' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-loader-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-loader/fabric-loader-0.19.5.jar' "$RUNNER_TEMP/apk-file-list.txt"

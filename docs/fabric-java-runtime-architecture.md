@@ -73,3 +73,10 @@ The host protocol is line-delimited JSON with a 64 KiB frame limit, protocol ver
 The loopback bridge payload now carries the current player's position/rotation/health/food, dimension, game/day clocks, selected slot, a read-only inventory snapshot and offhand item, using Horizon's existing native snapshot. The Rust side serves explicit read-only query paths: `world.snapshot`, `player.snapshot`, `clock.snapshot`, `inventory.snapshot`, `inventory.selected` and `inventory.offhand`. The response remains data, not Java Minecraft object identity; inventory component data is intentionally a partial normalized projection.
 
 The host smoke test checks that larger state snapshots survive the JSONL protocol and that the player/inventory query exchange keeps request IDs aligned. This does not yet implement a `Minecraft`, `ClientLevel`, `Entity`, `ItemStack` or other original Minecraft class with exact 26.3 descriptors. That is a separate ABI-compatibility task; these query paths are only its safe data foundation.
+
+
+## J1.2 Official Fabric API ABI catalog
+
+Each CI build scans the intact official Fabric API 0.165.0+26.3 aggregate JAR and its declared nested module JARs without loading or executing Java bytecode. It generates \`fabric-api-26.3-abi.json\`, containing public class names, superclass/interface names, field and method JVM descriptors, generic signatures where present, module ownership and hashes. The generated ABI catalog is packaged into the APK and tied to the exact SHA-256 of the official aggregate JAR.
+
+This provides an evidence-based target for version-specific adapters and shims. It does not itself implement the missing \`net.minecraft.*\` runtime, load the official API into the game, apply Mixins or prove arbitrary-mod compatibility. A class-file parser regression test and minimum catalog-size checks make incomplete scans fail closed.
