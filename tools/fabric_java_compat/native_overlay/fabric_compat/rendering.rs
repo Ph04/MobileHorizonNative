@@ -1,0 +1,5 @@
+use serde_json::json;
+pub const MAX_RENDER_COMMANDS:usize=512;
+#[derive(Clone,Debug,PartialEq)]pub enum RenderCommand{Text{x:f32,y:f32,text:String,color:u32},Rect{x:f32,y:f32,width:f32,height:f32,color:u32}}
+#[derive(Default)]pub struct RenderCommandBuffer{commands:Vec<RenderCommand>}
+impl RenderCommandBuffer{pub fn push(&mut self,c:RenderCommand)->Result<(),String>{if self.commands.len()>=MAX_RENDER_COMMANDS{return Err("render_command_limit".into());}match &c{RenderCommand::Text{x,y,text,..}if !x.is_finite()||!y.is_finite()||text.len()>4096=>return Err("invalid_text_command".into()),RenderCommand::Rect{x,y,width,height,..}if !x.is_finite()||!y.is_finite()||!width.is_finite()||!height.is_finite()||*width<0.0||*height<0.0||*width>16384.0||*height>16384.0=>return Err("invalid_rect_command".into()),_=>{}}self.commands.push(c);Ok(())}pub fn report(&self)->serde_json::Value{json!({"mode":"render-command-contract-only","horizon_renderer_consumes_commands":false,"pending_commands":self.commands.len(),"maximum_commands":MAX_RENDER_COMMANDS})}}

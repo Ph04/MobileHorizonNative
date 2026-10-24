@@ -57,6 +57,9 @@ send({"protocol_version": 1, "kind": "hello", "request_id": "hello-1",
       "session_token": "test-session-token"})
 hello = receive()
 assert hello.get("ok") is True and hello.get("runtime_status") == "bridge_control_plane_only", hello
+modules = hello.get("compatibility_modules")
+assert isinstance(modules, list) and any(m.get("id") == "world-biomes" and m.get("status") == "native-backend-only" for m in modules), hello
+assert any(m.get("id") == "mixin-adapters" and m.get("status") == "blocked" for m in modules), hello
 full_snapshot = {
     "world_loaded": True,
     "dimension": "minecraft:overworld",

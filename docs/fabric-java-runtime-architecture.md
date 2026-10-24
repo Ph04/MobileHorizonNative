@@ -87,3 +87,12 @@ This provides an evidence-based target for version-specific adapters and shims. 
 CI downloads the version JSON for Minecraft 26.3 from Mojang's metadata host, verifies the metadata SHA-1, reads the official client URL and expected SHA-1 from that validated JSON, and verifies the 39.6 MB client JAR before inspecting it. The generator reads only public/protected class-file signatures under \`net.minecraft.*\`; it does not load the game or include the full client JAR in the APK. It verifies core types (\`Minecraft\`, \`ClientLevel\`, \`LocalPlayer\`, \`ItemStack\`, \`Level\`, \`BlockPos\`) and publishes the resulting descriptor catalog as a separate, short-lived CI artifact for adapter implementation.
 
 This is the accurate signature inventory needed for future shims, not a substitute for those shims. Fabric API calls that depend on renderer internals, world mutation, mixin target bodies or Java object identity remain unsupported until a matching adapter exists and is exercised against a real mod.
+
+
+## Modular compatibility overlay (source-only increment)
+
+Compatibility modules live under tools/fabric_java_compat/native_overlay/fabric_compat and are installed into the pinned checkout by the ordered 20_fabric_compat_modules.py overlay. A bounded JSONL query route connects the bridge worker to the game-thread broker. Biome catalog and worldgen sample/nearest-search operations call Horizon's existing local native backend; they do not create Minecraft Java objects.
+
+Registry/component, event, networking, Mixin, UI/render and resource-reload modules still report contract-only or blocked status. Nature's Compass remains BLOCKED until Java facades and live hooks are implemented and the in-game acceptance test passes. See the module manifest and naturescompass-26.3.json under tools/fabric_java_compat/modules.
+
+No build was started. Automatic push builds are restricted to main; workflow_dispatch remains for a future explicitly approved build.

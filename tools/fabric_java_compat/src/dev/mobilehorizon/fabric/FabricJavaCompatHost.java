@@ -83,6 +83,13 @@ public final class FabricJavaCompatHost {
         }
         BridgeState state = new BridgeState();
         BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+        Thread bridgeDispatcher = Thread.currentThread();
+        dev.mobilehorizon.fabric.compat.NativeBridgeClient.Transport transport =
+                (path, payload, timeoutMillis) -> {
+                    if (Thread.currentThread() != bridgeDispatcher) throw new IllegalStateException("Native queries must run on the serialized bridge dispatcher thread.");
+                    return queryStdio(input, path, payload, timeoutMillis);
+                };
+        dev.mobilehorizon.fabric.compat.NativeBridgeClient.install(transport);
         try {
             String line;
             while ((line = readBoundedLine(input)) != null) {
@@ -112,7 +119,28 @@ public final class FabricJavaCompatHost {
             System.err.println("Fabric bridge stdio terminated: " + error.getClass().getSimpleName()
                     + ": " + safeText(error.getMessage(), 1024));
             return 4;
+        } finally {
+            dev.mobilehorizon.fabric.compat.NativeBridgeClient.clear(transport);
         }
+    }
+
+    private static final java.util.concurrent.atomic.AtomicLong BRIDGE_QUERY_IDS = new java.util.concurrent.atomic.AtomicLong();
+
+    private static Map<String,Object> queryStdio(BufferedReader input, String path, Map<String,Object> payload, long timeoutMillis) throws Exception {
+        if (timeoutMillis < 1 || timeoutMillis > 30_000L) throw new IllegalArgumentException("invalid_query_timeout");
+        String queryId = "java-query-" + BRIDGE_QUERY_IDS.incrementAndGet();
+        Map<String,Object> query = new LinkedHashMap<>();
+        query.put("protocol_version", 1); query.put("kind", "query"); query.put("request_id", queryId);
+        query.put("path", path); query.put("payload", payload); emitBridgeFrame(query);
+        String line = readBoundedLine(input);
+        if (line == null) throw new IOException("native_query_reply_missing");
+        Object parsed = MiniJson.parse(line);
+        if (!(parsed instanceof Map<?,?>)) throw new IOException("native_query_reply_not_object");
+        Map<String,Object> reply = castMap(parsed);
+        if (!"response".equals(string(reply.get("kind"))) || !queryId.equals(string(reply.get("request_id"))) || !Boolean.TRUE.equals(reply.get("ok"))) throw new IllegalStateException(safeText(reply.get("error"), 512));
+        Object result = reply.get("result");
+        if (result instanceof Map<?,?>) return castMap(result);
+        Map<String,Object> wrapped = new LinkedHashMap<>(); wrapped.put("value", result); return wrapped;
     }
 
     private static Map<String,Object> handleBridgeFrame(
@@ -137,6 +165,7 @@ public final class FabricJavaCompatHost {
             body.put("capabilities", List.of("world.snapshot", "player.snapshot", "clock.snapshot",
                     "inventory.snapshot", "inventory.selected", "inventory.offhand",
                     "world.lifecycle", "client_tick", "chat.received"));
+            body.put("compatibility_modules", dev.mobilehorizon.fabric.compat.CompatibilityModuleRegistry.describe());
             body.put("not_implemented", List.of("minecraft_java_classes", "fabric_api_entrypoints", "mixins",
                     "registries", "rendering", "resource_reload", "gameplay_mutation"));
             return response(requestId, true, body);
