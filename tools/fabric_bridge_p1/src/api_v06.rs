@@ -675,8 +675,9 @@ pub mod networking {
             if channel.max_payload == 0 || channel.max_payload > 1_048_576 || channel.max_messages_per_window == 0 || channel.max_messages_per_window > 10_000 {
                 return Err("invalid network channel limits".into());
             }
+            if self.channels.contains_key(&id) { return Err(format!("duplicate network channel {}", id.as_str())); }
             if self.channels.len() >= 1024 { return Err("network channel registration limit reached".into()); }
-            if self.channels.insert(id.clone(), channel).is_some() { return Err(format!("duplicate network channel {}", id.as_str())); }
+            self.channels.insert(id, channel);
             Ok(())
         }
         pub fn validate_payload(&self, id: &Id, direction: Direction, size: usize) -> Result<(), String> {
@@ -908,5 +909,110 @@ mod recipes_loot_tests {
             loot::Entry { item: id("m:gem"), weight: 1, conditions: vec![loot::Condition::ChanceBasisPoints(10_001)], functions: vec![], max_stack: 1 }
         ]}]};
         assert!(invalid.roll(1, &context).is_err());
+    }
+}
+
+#[cfg(test)]
+mod api_v06_coverage_tests {
+    use super::{biomes, content_registries, debug, dimensions, effects, messages, networking, object_builder, render};
+    use crate::Id;
+    use std::collections::BTreeMap;
+    fn id(s: &str) -> Id { Id::parse(s).unwrap() }
+
+    #[test]
+    fn biome_modifiers_validate_and_produce_deterministic_host_patch() {
+        let biome = id("minecraft:plains");
+        let mut registry = biomes::Registry::default();
+        registry.add(biome.clone(), biomes::Modifier::SetTemperature(0.8)).unwrap();
+        registry.add(biome.clone(), biomes::Modifier::AddFeature { feature: id("m:tree"), step:"vegetal".into() }).unwrap();
+        let snapshot = registry.apply_to_snapshot(&biome, biomes::Snapshot::default());
+        assert_eq!(snapshot.temperature, Some(0.8));
+        assert_eq!(snapshot.features, vec![("vegetal".into(), id("m:tree"))]);
+        assert!(registry.add(biome, biomes::Modifier::SetTemperature(f32::NAN)).is_err());
+    }
+
+    #[test]
+    fn typed_registry_freezes_and_data_map_revisions_advance() {
+        let mut registry = content_registries::Registry::default();
+        registry.register(id("m:item"), 42u32).unwrap();
+        assert_eq!(registry.get(&id("m:item")), Some(&42));
+        registry.freeze();
+        assert!(registry.register(id("m:other"), 13).is_err());
+        let mut map = content_registries::DataMap::default();
+        assert_eq!(map.set(id("m:tag"), true), 1);
+        assert!(map.remove(&id("m:tag")));
+        assert_eq!(map.revision(), 2);
+    }
+
+    #[test]
+    fn object_builder_enforces_types_depth_and_node_budgets() {
+        let value = object_builder::Value::Object(BTreeMap::from([
+            ("count".into(), object_builder::Value::Integer(3)),
+        ]));
+        let schema = object_builder::Kind::Object {
+            fields: BTreeMap::from([("count".into(), object_builder::Kind::Integer { min:1, max:64 })]),
+            allow_unknown:false,
+        };
+        assert!(object_builder::validate(&value, &schema, 4, 16).is_ok());
+        assert!(object_builder::validate(&value, &schema, 0, 16).is_err());
+        assert!(object_builder::validate(&value, &schema, 4, 1).is_err());
+    }
+
+    #[test]
+    fn dimension_metadata_requires_safe_numeric_values_and_unique_ids() {
+        let mut registry = dimensions::Registry::default();
+        let definition = dimensions::Definition {
+            id:id("m:moon"), generator:id("m:moon"), effects:id("minecraft:the_end"),
+            has_ceiling:false, ambient_light:0.2, logical_height:256, coordinate_scale:1.0,
+        };
+        registry.register(definition.clone()).unwrap();
+        assert!(registry.register(definition.clone()).is_err());
+        let invalid = dimensions::Definition { id:id("m:bad"), ambient_light:f32::NAN, ..definition };
+        assert!(registry.register(invalid).is_err());
+    }
+
+    #[test]
+    fn modified_signed_chat_drops_signature_and_blocking_is_sticky() {
+        let message = messages::Message {
+            sender:Some("server".into()), text:"hello".into(),
+            signature:Some(messages::Signature { bytes:vec![1,2,3], algorithm:"test".into() }),
+            modified:false, blocked:false,
+        };
+        let modified = messages::apply_pipeline(message.clone(), [messages::Action::Modify("hi".into())], 100).unwrap();
+        assert_eq!(modified.text, "hi");
+        assert!(modified.signature.is_none() && modified.modified);
+        let blocked = messages::apply_pipeline(message, [messages::Action::Block, messages::Action::Modify("no".into())], 100).unwrap();
+        assert!(blocked.blocked);
+        assert_eq!(blocked.text, "hello");
+    }
+
+    #[test]
+    fn network_channels_enforce_direction_size_and_duplicate_ids() {
+        let mut registry = networking::Registry::default();
+        let channel = networking::Channel { direction:networking::Direction::ClientToServer, max_payload:128, max_messages_per_window:20 };
+        registry.register(id("m:channel"), channel.clone()).unwrap();
+        assert!(registry.register(id("m:channel"), channel).is_err());
+        assert!(registry.validate_payload(&id("m:channel"), networking::Direction::ClientToServer, 128).is_ok());
+        assert!(registry.validate_payload(&id("m:channel"), networking::Direction::ClientToServer, 129).is_err());
+        assert!(registry.validate_payload(&id("m:channel"), networking::Direction::ServerToClient, 1).is_err());
+    }
+
+    #[test]
+    fn render_and_effect_apis_reject_invalid_values_and_obey_budgets() {
+        let mesh = render::Mesh { vertices:vec![
+            render::Vertex { position:[0.0,0.0,0.0], normal:[0.0,1.0,0.0], uv:[0.0,0.0] },
+            render::Vertex { position:[1.0,0.0,0.0], normal:[0.0,1.0,0.0], uv:[1.0,0.0] },
+            render::Vertex { position:[0.0,1.0,0.0], normal:[0.0,1.0,0.0], uv:[0.0,1.0] },
+        ], indices:vec![0,1,2] };
+        assert!(mesh.validate(3,3).is_ok());
+        assert!(mesh.validate(2,3).is_err());
+        let mut budget=render::DrawBudget::new(2);
+        budget.consume(2).unwrap();
+        assert!(budget.consume(1).is_err());
+        assert!(effects::Particle { id:id("m:dust"), count:1, spread:[1.0,1.0,1.0], speed:1.0 }.validate().is_ok());
+        assert!(effects::Sound { id:id("m:bell"), volume:1.0, pitch:f32::NAN, category:"block".into() }.validate().is_err());
+        let mut overlay=debug::Overlay::default();
+        overlay.push(debug::Line { from:[0.0,0.0,0.0],to:[1.0,1.0,1.0],rgba:0xFFFFFFFF },1).unwrap();
+        assert!(overlay.push(debug::Line { from:[0.0,0.0,0.0],to:[2.0,2.0,2.0],rgba:0xFFFFFFFF },1).is_err());
     }
 }
