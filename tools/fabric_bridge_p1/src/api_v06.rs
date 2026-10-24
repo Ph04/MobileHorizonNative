@@ -48,6 +48,79 @@ pub mod transfer {
         move_items(from, to, max)
     }
 
+    /// Fluid amount is measured in the host's canonical mB-like integer unit.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct FluidStack { pub id: Id, pub amount: u64 }
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct FluidTank { pub fluid: Option<FluidStack>, pub capacity: u64 }
+    impl FluidTank {
+        pub fn validate(&self) -> Result<(), String> {
+            if self.capacity == 0 { return Err("fluid tank capacity must be positive".into()); }
+            if self.fluid.as_ref().is_some_and(|stack| stack.amount == 0 || stack.amount > self.capacity) {
+                return Err("fluid amount is zero or exceeds tank capacity".into());
+            }
+            Ok(())
+        }
+    }
+
+    /// Atomic transfer bounded by one global maximum and destination capacity.
+    pub fn transfer_fluid_limited(from: &mut FluidTank, to: &mut FluidTank, max: u64) -> Result<u64, String> {
+        from.validate()?; to.validate()?;
+        if max == 0 { return Ok(0); }
+        let Some(mut stack) = from.fluid.take() else { return Ok(0); };
+        if to.fluid.as_ref().is_some_and(|existing| existing.id != stack.id) {
+            from.fluid = Some(stack);
+            return Ok(0);
+        }
+        let current = to.fluid.as_ref().map_or(0, |existing| existing.amount);
+        let room = to.capacity.saturating_sub(current);
+        let moved = stack.amount.min(room).min(max);
+        if moved == 0 {
+            from.fluid = Some(stack);
+            return Ok(0);
+        }
+        stack.amount -= moved;
+        if stack.amount > 0 { from.fluid = Some(stack.clone()); }
+        match to.fluid.as_mut() {
+            Some(existing) => existing.amount += moved,
+            None => to.fluid = Some(FluidStack { id: stack.id.clone(), amount: moved }),
+        }
+        Ok(moved)
+    }
+
+    /// Snapshot transaction for fluid tanks with nested savepoint/rollback support.
+    pub struct FluidTransaction<'a> {
+        from: &'a mut FluidTank,
+        to: &'a mut FluidTank,
+        original_from: FluidTank,
+        original_to: FluidTank,
+        savepoints: Vec<(FluidTank, FluidTank)>,
+        committed: bool,
+    }
+    impl<'a> FluidTransaction<'a> {
+        pub fn begin(from: &'a mut FluidTank, to: &'a mut FluidTank) -> Self {
+            Self { original_from: from.clone(), original_to: to.clone(), from, to, savepoints: Vec::new(), committed: false }
+        }
+        pub fn transfer(&mut self, max: u64) -> Result<u64, String> { transfer_fluid_limited(self.from, self.to, max) }
+        pub fn begin_nested(&mut self) { self.savepoints.push((self.from.clone(), self.to.clone())); }
+        pub fn commit_nested(&mut self) -> Result<(), &'static str> {
+            self.savepoints.pop().map(|_| ()).ok_or("no nested savepoint")
+        }
+        pub fn rollback_nested(&mut self) -> Result<(), &'static str> {
+            let (from, to) = self.savepoints.pop().ok_or("no nested savepoint")?;
+            *self.from = from; *self.to = to; Ok(())
+        }
+        pub fn commit(mut self) -> Result<(), &'static str> {
+            if !self.savepoints.is_empty() { return Err("unfinished nested savepoint"); }
+            self.committed = true; Ok(())
+        }
+    }
+    impl Drop for FluidTransaction<'_> {
+        fn drop(&mut self) {
+            if !self.committed { *self.from = self.original_from.clone(); *self.to = self.original_to.clone(); }
+        }
+    }
+
     /// Snapshot-backed transaction: drop rolls back unless commit is explicit.
     pub struct Transaction<'a> {
         from: &'a mut Inventory,
@@ -1263,5 +1336,37 @@ mod api_v06_final_tests {
         ]};
         assert!(event.select(42).is_ok());
         assert!(event.select(42).unwrap().sound.as_str().starts_with("m:bell_"));
+    }
+}
+
+
+#[cfg(test)]
+mod fluid_transfer_tests {
+    use super::transfer::{self, FluidStack, FluidTank, FluidTransaction};
+    use crate::Id;
+    fn id(s: &str) -> Id { Id::parse(s).unwrap() }
+
+    #[test]
+    fn fluid_transfers_respect_capacity_limits_and_rollback_savepoints() {
+        let mut from=FluidTank{fluid:Some(FluidStack{id:id("minecraft:water"),amount:1000}),capacity:2000};
+        let mut to=FluidTank{fluid:None,capacity:600};
+        assert_eq!(transfer::transfer_fluid_limited(&mut from,&mut to,700).unwrap(),600);
+        assert_eq!(from.fluid.as_ref().unwrap().amount,400);
+        assert_eq!(to.fluid.as_ref().unwrap().amount,600);
+
+        let mut from=FluidTank{fluid:Some(FluidStack{id:id("minecraft:water"),amount:1000}),capacity:2000};
+        let mut to=FluidTank{fluid:None,capacity:1500};
+        {
+            let mut tx=FluidTransaction::begin(&mut from,&mut to);
+            assert_eq!(tx.transfer(400).unwrap(),400);
+            tx.begin_nested();
+            assert_eq!(tx.transfer(100).unwrap(),100);
+            tx.rollback_nested().unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(from.fluid.as_ref().unwrap().amount,600);
+        assert_eq!(to.fluid.as_ref().unwrap().amount,400);
+        let mut incompatible=FluidTank{fluid:Some(FluidStack{id:id("minecraft:lava"),amount:10}),capacity:100};
+        assert_eq!(transfer::transfer_fluid_limited(&mut from,&mut incompatible,50).unwrap(),0);
     }
 }

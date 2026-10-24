@@ -4,7 +4,7 @@ This change adds the next native API layer under `tools/fabric_bridge_p1/src/api
 
 ## Included native API models
 
-- Item transfer limits shared across all slots, transaction rollback and nested savepoints.
+- Item and fluid transfer limits, destination-capacity checks, transaction rollback, and nested savepoints.
 - Permission nodes with default operator levels, explicit allow/deny, and revisioned snapshots.
 - Deterministic registry negotiation which rejects incompatible required entries on either side.
 - Typed attachment snapshots with stale-revision checks and bounds on arbitrary text/byte payloads.
