@@ -276,7 +276,7 @@ impl fabric_bridge_p1_bindings::horizon::fabric_bridge::types::Host for P1State 
 impl fabric_bridge_p1_bindings::horizon::fabric_bridge::events::Host for P1State {
     fn register(&mut self, event: String, phase: P1Phase) -> Result<(), String> {
         p1_trace(&self.trace_path, &self.id, "api.events.register.request",
-            serde_json::json!({"event": event.clone(), "phase": match phase {
+            serde_json::json!({"event": event.clone(), "phase": match &phase {
                 P1Phase::Early => "early", P1Phase::Normal => "normal", P1Phase::Late => "late",
             }}));
         if !matches!(event.as_str(), "client_tick" | "world_join" | "world_leave" | "chat_received" | "chat_send") {
@@ -295,9 +295,7 @@ impl fabric_bridge_p1_bindings::horizon::fabric_bridge::keys::Host for P1State {
     fn register(&mut self, id: String, category: String, default: P1Trigger) -> Result<(), String> {
         p1_trace(&self.trace_path, &self.id, "api.keys.register.request",
             serde_json::json!({"binding_id": id.clone(), "category": category.clone(),
-                "trigger_kind": match &default {
-                    P1Trigger::Key(_) => "key", P1Trigger::Mouse(_) => "mouse", P1Trigger::Touch(_) => "touch",
-                }}));
+                "trigger_kind": if matches!(&default, P1Trigger::Touch(_)) { "touch" } else { "non_touch" }}));
         let own_prefix = format!("{}:", self.id);
         let path = id.strip_prefix(&own_prefix).unwrap_or("");
         if path.is_empty() || !Self::valid_key(path, 64) {
@@ -571,7 +569,7 @@ p1_runtime_methods = r"""
         let trace_path = path.parent().unwrap_or(Path::new("."))
             .join("fabric-bridge-runtime-trace.jsonl");
         p1_trace(&trace_path, &manifest.id, "mod.start_requested",
-            serde_json::json!({"path": path.to_string_lossy(), "api": manifest.api}));
+            serde_json::json!({"path": path.to_string_lossy(), "api": manifest.api.clone()}));
         let Some(wasm) = &package.wasm else {
             p1_trace(&trace_path, &manifest.id, "mod.start_skipped",
                 serde_json::json!({"reason": "package has no WASM component"}));
@@ -697,7 +695,7 @@ p1_runtime_methods = r"""
             Err(error) => {
                 let why = reason(&error);
                 p1_trace(&trace_path, &id, "mod.callback_failed",
-                    serde_json::json!({"operation": operation, "error": why}));
+                    serde_json::json!({"operation": operation, "error": why.clone()}));
                 log::warn!("Horizon: Fabric Bridge P1 mod {} stopped: {why}", running.store.data().id);
                 entry.status = Status::Failed(why);
                 entry.p1_run = None;
