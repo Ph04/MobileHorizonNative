@@ -138,17 +138,42 @@ rr(
 "outgoing chat cancellation hook",
 )
 
-rr(
- remote_game,
-'''    fn tick_remote_level(&mut self) -> Result<()> {
+# Horizon v0.2.27 refreshes its experience display during remote ticks.
+# Preserve that new behavior and add the P1 tick hook before the standard send logic.
+remote_tick_layouts = [
+    (
+        '''    fn tick_remote_level(&mut self) -> Result<()> {
         self.ticks += 1;
         // Options.broadcastOptions:''',
-'''    fn tick_remote_level(&mut self) -> Result<()> {
+        '''    fn tick_remote_level(&mut self) -> Result<()> {
         self.ticks += 1;
         // Run client-side Horizon/P1 callbacks while connected to remote servers too.
         self.tick_mods();
         // Options.broadcastOptions:''',
-"remote client mod tick hook",
-)
+    ),
+    (
+        '''    fn tick_remote_level(&mut self) -> Result<()> {
+        self.ticks += 1;
+        self.track_experience_display();
+        // Options.broadcastOptions:''',
+        '''    fn tick_remote_level(&mut self) -> Result<()> {
+        self.ticks += 1;
+        self.track_experience_display();
+        // Run client-side Horizon/P1 callbacks while connected to remote servers too.
+        self.tick_mods();
+        // Options.broadcastOptions:''',
+    ),
+]
+remote_text = remote_game.read_text(encoding="utf-8")
+matching_remote_tick = [
+    pair for pair in remote_tick_layouts if remote_text.count(pair[0]) == 1
+]
+if len(matching_remote_tick) != 1:
+    raise SystemExit(
+        f"{remote_game}: expected exactly one known remote tick layout, "
+        f"found {len(matching_remote_tick)}"
+    )
+old_remote_tick, new_remote_tick = matching_remote_tick[0]
+rr(remote_game, old_remote_tick, new_remote_tick, "remote client mod tick hook")
 
 print("Wired registered world join/leave and cancellable outgoing chat; P1 callbacks now tick on remote servers.")
