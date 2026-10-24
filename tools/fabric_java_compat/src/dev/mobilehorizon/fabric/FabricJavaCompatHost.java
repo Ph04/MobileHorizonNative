@@ -131,7 +131,7 @@ public final class FabricJavaCompatHost {
         String queryId = "java-query-" + BRIDGE_QUERY_IDS.incrementAndGet();
         Map<String,Object> query = new LinkedHashMap<>();
         query.put("protocol_version", 1); query.put("kind", "query"); query.put("request_id", queryId);
-        query.put("path", path); query.put("payload", payload); emitBridgeFrame(query);
+        query.put("path", path); query.put("payload", payload); query.put("timeout_ms", timeoutMillis); emitBridgeFrame(query);
         String line = readBoundedLine(input);
         if (line == null) throw new IOException("native_query_reply_missing");
         Object parsed = MiniJson.parse(line);

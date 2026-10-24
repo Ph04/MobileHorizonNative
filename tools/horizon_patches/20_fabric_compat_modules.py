@@ -97,11 +97,15 @@ rr(runtime, """                "bridge.capabilities" => serde_json::json!({
                             "registries","rendering","resource_reload","gameplay_mutation"],
                         "compatibility_modules":fabric_compat::capability_report()}
                 }),
-                _ => match fabric_compat::forward_query(
-                    path, query_id, frame.get("payload").cloned().unwrap_or(serde_json::Value::Null), query_sender,
-                ) {
-                    Ok(result) => serde_json::json!({"protocol_version":1,"kind":"response","request_id":query_id,"ok":true,"result":result}),
-                    Err(error) => serde_json::json!({"protocol_version":1,"kind":"response","request_id":query_id,"ok":false,"error":error}),
+                _ => {
+                    let timeout_ms = frame.get("timeout_ms").and_then(serde_json::Value::as_u64).unwrap_or(10_000);
+                    match fabric_compat::forward_query(
+                        path, query_id, frame.get("payload").cloned().unwrap_or(serde_json::Value::Null),
+                        timeout_ms, query_sender,
+                    ) {
+                        Ok(result) => serde_json::json!({"protocol_version":1,"kind":"response","request_id":query_id,"ok":true,"result":result}),
+                        Err(error) => serde_json::json!({"protocol_version":1,"kind":"response","request_id":query_id,"ok":false,"error":error}),
+                    }
                 },""", "query allow-list forwarding")
 
 rr(runtime, """    pub fn set_snapshot(&mut self, snapshot: Snapshot) {""", """    pub fn java_bridge_active(&self) -> bool {
