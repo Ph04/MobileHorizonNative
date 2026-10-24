@@ -1,0 +1,72 @@
+plugins {
+    id 'com.android.application'
+}
+
+def stableStoreFile = providers.gradleProperty('MOBILEHORIZON_STORE_FILE').getOrElse('')
+def stableStorePassword = providers.gradleProperty('MOBILEHORIZON_STORE_PASSWORD').getOrElse('')
+def stableKeyAlias = providers.gradleProperty('MOBILEHORIZON_KEY_ALIAS').getOrElse('')
+def stableKeyPassword = providers.gradleProperty('MOBILEHORIZON_KEY_PASSWORD').getOrElse('')
+def hasStableSigning = !stableStoreFile.isEmpty() && !stableStorePassword.isEmpty()
+        && !stableKeyAlias.isEmpty() && !stableKeyPassword.isEmpty()
+
+android {
+    namespace 'dev.mobilehorizon.app'
+    compileSdk 35
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    defaultConfig {
+        def msaClientId = providers.gradleProperty('HORIZON_MSA_CLIENT_ID').getOrElse('')
+        buildConfigField 'String', 'HORIZON_MSA_CLIENT_ID',
+                '"' + msaClientId.replace('\\', '\\\\').replace('"', '\\"') + '"'
+        applicationId 'dev.mobilehorizon.app'
+        minSdk 26
+        targetSdk 35
+        versionCode 13
+        versionName '0.3.10'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
+    signingConfigs {
+        stable {
+            if (hasStableSigning) {
+                storeFile file(stableStoreFile)
+                storePassword stableStorePassword
+                keyAlias stableKeyAlias
+                keyPassword stableKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            // Without a persistent private signing key, publish a side-by-side
+            // test package instead of an APK that could be mistaken for a safe update.
+            applicationIdSuffix = hasStableSigning ? '.offline1' : '.offline1.test.v13'
+            versionNameSuffix = hasStableSigning ? '-offline1' : '-offline1-test-v13'
+            if (hasStableSigning) signingConfig signingConfigs.stable
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+}
+
+dependencies {
+    implementation project(':core')
+    implementation 'org.tukaani:xz:1.10'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20250517'
+}
