@@ -63,9 +63,11 @@ public final class FabricJavaCompatHost {
 
 
     private static final int MAX_BRIDGE_LINE_CHARS = 64 * 1024;
+    private static final java.util.concurrent.atomic.AtomicLong BRIDGE_QUERY_IDS = new java.util.concurrent.atomic.AtomicLong();
+
     private static final class BridgeState {
-        boolean authenticated;
-        boolean closed;
+        volatile boolean authenticated;
+        volatile boolean closed;
         long tick;
         long revision;
         Map<String,Object> world = new LinkedHashMap<>(Map.of(
@@ -74,7 +76,7 @@ public final class FabricJavaCompatHost {
         long chatMessages;
     }
 
-    /** Long-lived JSONL control plane. It deliberately does not load Fabric JARs. */
+    /** Long-lived JSONL transport. It keeps reading frames while Java callers await native queries. */
     private static int runBridgeStdio() {
         String expectedToken = System.getenv("HORIZON_FABRIC_BRIDGE_TOKEN");
         if (expectedToken == null || expectedToken.isBlank()) {
@@ -83,12 +85,19 @@ public final class FabricJavaCompatHost {
         }
         BridgeState state = new BridgeState();
         BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
-        Thread bridgeDispatcher = Thread.currentThread();
+        java.util.concurrent.ConcurrentMap<String,java.util.concurrent.CompletableFuture<Map<String,Object>>> pending =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        java.util.concurrent.ExecutorService handlers = new java.util.concurrent.ThreadPoolExecutor(
+                1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+                new java.util.concurrent.ArrayBlockingQueue<>(256),
+                task -> {
+                    Thread thread = new Thread(task, "fabric-bridge-frame-dispatch");
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
         dev.mobilehorizon.fabric.compat.NativeBridgeClient.Transport transport =
-                (path, payload, timeoutMillis) -> {
-                    if (Thread.currentThread() != bridgeDispatcher) throw new IllegalStateException("Native queries must run on the serialized bridge dispatcher thread.");
-                    return queryStdio(input, path, payload, timeoutMillis);
-                };
+                (queryPath, payload, timeoutMillis) -> queryStdio(pending, queryPath, payload, timeoutMillis);
         dev.mobilehorizon.fabric.compat.NativeBridgeClient.install(transport);
         try {
             String line;
@@ -103,16 +112,47 @@ public final class FabricJavaCompatHost {
                             "message", safeText(error.getMessage(), 512))));
                     continue;
                 }
-                Map<String,Object> answer;
-                try {
-                    answer = handleBridgeFrame(state, request, input, expectedToken);
-                } catch (Throwable error) {
-                    answer = response(string(request.get("request_id")), false,
-                            Map.of("error", "bridge_handler_failed",
-                                    "message", safeText(error.getMessage(), 512)));
+                String kind = string(request.get("kind"));
+                String requestId = string(request.get("request_id"));
+                // Correlated responses wake the caller; they are not inbound commands.
+                if (kind.equals("response")) {
+                    java.util.concurrent.CompletableFuture<Map<String,Object>> future = pending.get(requestId);
+                    if (future != null) future.complete(request);
+                    continue;
                 }
-                emitBridgeFrame(answer);
-                if (state.closed) return 0;
+                // Handshake must establish auth before later frames arrive.
+                if (kind.equals("hello")) {
+                    try {
+                        emitBridgeFrame(handleBridgeFrame(state, request, expectedToken));
+                    } catch (Throwable error) {
+                        emitBridgeFrame(response(requestId, false, Map.of("error", "bridge_handler_failed",
+                                "message", safeText(error.getMessage(), 512))));
+                    }
+                    continue;
+                }
+                // Shutdown is synchronous so the process exits when stdin remains open.
+                if (kind.equals("shutdown")) {
+                    try {
+                        emitBridgeFrame(handleBridgeFrame(state, request, expectedToken));
+                    } catch (Throwable error) {
+                        emitBridgeFrame(response(requestId, false, Map.of("error", "bridge_handler_failed",
+                                "message", safeText(error.getMessage(), 512))));
+                    }
+                    handlers.shutdownNow();
+                    return 0;
+                }
+                try {
+                    handlers.execute(() -> {
+                        try {
+                            emitBridgeFrame(handleBridgeFrame(state, request, expectedToken));
+                        } catch (Throwable error) {
+                            emitBridgeFrame(response(requestId, false, Map.of("error", "bridge_handler_failed",
+                                    "message", safeText(error.getMessage(), 512))));
+                        }
+                    });
+                } catch (java.util.concurrent.RejectedExecutionException full) {
+                    emitBridgeFrame(response(requestId, false, Map.of("error", "bridge_handler_queue_full")));
+                }
             }
             return 0;
         } catch (Throwable error) {
@@ -121,30 +161,54 @@ public final class FabricJavaCompatHost {
             return 4;
         } finally {
             dev.mobilehorizon.fabric.compat.NativeBridgeClient.clear(transport);
+            handlers.shutdownNow();
+            for (Map.Entry<String,java.util.concurrent.CompletableFuture<Map<String,Object>>> entry : pending.entrySet()) {
+                entry.getValue().completeExceptionally(new IOException("native bridge closed"));
+            }
+            pending.clear();
         }
     }
 
-    private static final java.util.concurrent.atomic.AtomicLong BRIDGE_QUERY_IDS = new java.util.concurrent.atomic.AtomicLong();
-
-    private static Map<String,Object> queryStdio(BufferedReader input, String path, Map<String,Object> payload, long timeoutMillis) throws Exception {
+    private static Map<String,Object> queryStdio(
+            java.util.concurrent.ConcurrentMap<String,java.util.concurrent.CompletableFuture<Map<String,Object>>> pending,
+            String path, Map<String,Object> payload, long timeoutMillis) throws Exception {
         if (timeoutMillis < 1 || timeoutMillis > 30_000L) throw new IllegalArgumentException("invalid_query_timeout");
         String queryId = "java-query-" + BRIDGE_QUERY_IDS.incrementAndGet();
+        java.util.concurrent.CompletableFuture<Map<String,Object>> future = new java.util.concurrent.CompletableFuture<>();
+        if (pending.putIfAbsent(queryId, future) != null) throw new IllegalStateException("duplicate_request_id");
         Map<String,Object> query = new LinkedHashMap<>();
-        query.put("protocol_version", 1); query.put("kind", "query"); query.put("request_id", queryId);
-        query.put("path", path); query.put("payload", payload); query.put("timeout_ms", timeoutMillis); emitBridgeFrame(query);
-        String line = readBoundedLine(input);
-        if (line == null) throw new IOException("native_query_reply_missing");
-        Object parsed = MiniJson.parse(line);
-        if (!(parsed instanceof Map<?,?>)) throw new IOException("native_query_reply_not_object");
-        Map<String,Object> reply = castMap(parsed);
-        if (!"response".equals(string(reply.get("kind"))) || !queryId.equals(string(reply.get("request_id"))) || !Boolean.TRUE.equals(reply.get("ok"))) throw new IllegalStateException(safeText(reply.get("error"), 512));
-        Object result = reply.get("result");
-        if (result instanceof Map<?,?>) return castMap(result);
-        Map<String,Object> wrapped = new LinkedHashMap<>(); wrapped.put("value", result); return wrapped;
+        query.put("protocol_version", 1);
+        query.put("kind", "query");
+        query.put("request_id", queryId);
+        query.put("path", path);
+        query.put("payload", payload);
+        query.put("timeout_ms", timeoutMillis);
+        try {
+            emitBridgeFrame(query);
+            Map<String,Object> reply;
+            try {
+                reply = future.get(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (java.util.concurrent.TimeoutException timeout) {
+                throw new IOException("native_query_timeout", timeout);
+            } catch (java.util.concurrent.ExecutionException failure) {
+                throw new IOException("native_query_transport_failed", failure.getCause());
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("native_query_interrupted", interrupted);
+            }
+            if (!Boolean.TRUE.equals(reply.get("ok"))) throw new IOException(safeText(reply.get("error"), 512));
+            Object result = reply.get("result");
+            if (result instanceof Map<?,?>) return castMap(result);
+            Map<String,Object> wrapped = new LinkedHashMap<>();
+            wrapped.put("value", result);
+            return wrapped;
+        } finally {
+            pending.remove(queryId, future);
+        }
     }
 
     private static Map<String,Object> handleBridgeFrame(
-            BridgeState state, Map<String,Object> request, BufferedReader input, String expectedToken) throws Exception {
+            BridgeState state, Map<String,Object> request, String expectedToken) {
         String requestId = string(request.get("request_id"));
         String kind = string(request.get("kind"));
         if (requestId.isEmpty() || requestId.length() > 128) {
@@ -176,31 +240,18 @@ public final class FabricJavaCompatHost {
             return response(requestId, true, Map.of("runtime_status", "stopping"));
         }
         if (kind.equals("query_probe")) {
-            String queryId = requestId + ":query";
             Map<String,Object> payload = asMap(request.get("payload"));
             String path = string(payload.getOrDefault("path", "world.snapshot"));
             if (path.length() > 128) return response(requestId, false, Map.of("error", "query_path_too_long"));
-            Map<String,Object> query = new LinkedHashMap<>();
-            query.put("protocol_version", 1);
-            query.put("kind", "query");
-            query.put("request_id", queryId);
-            query.put("path", path);
-            emitBridgeFrame(query);
-            String replyLine = readBoundedLine(input);
-            if (replyLine == null) return response(requestId, false, Map.of("error", "query_reply_missing"));
-            Object parsed = MiniJson.parse(replyLine);
-            if (!(parsed instanceof Map<?,?>)) return response(requestId, false, Map.of("error", "query_reply_not_object"));
-            Map<String,Object> reply = castMap(parsed);
-            if (!"response".equals(string(reply.get("kind"))) || !queryId.equals(string(reply.get("request_id")))) {
-                return response(requestId, false, Map.of("error", "query_reply_id_mismatch"));
+            try {
+                Map<String,Object> queryResult = dev.mobilehorizon.fabric.compat.NativeBridgeClient.query(path, payload, 10_000L);
+                Map<String,Object> body = new LinkedHashMap<>();
+                body.put("query_path", path);
+                body.put("query_result", queryResult);
+                return response(requestId, true, body);
+            } catch (Throwable error) {
+                return response(requestId, false, Map.of("error", safeText(error.getMessage(), 512)));
             }
-            if (!Boolean.TRUE.equals(reply.get("ok"))) {
-                return response(requestId, false, Map.of("error", safeText(reply.get("error"), 256)));
-            }
-            Map<String,Object> body = new LinkedHashMap<>();
-            body.put("query_path", path);
-            body.put("query_result", reply.get("result"));
-            return response(requestId, true, body);
         }
         if (!kind.equals("event")) return response(requestId, false, Map.of("error", "unsupported_frame_kind"));
         String event = string(request.get("event"));
@@ -266,8 +317,10 @@ public final class FabricJavaCompatHost {
     }
 
     private static void emitBridgeFrame(Map<String,Object> frame) {
-        System.out.println(MiniJson.stringify(frame));
-        System.out.flush();
+        synchronized (System.out) {
+            System.out.println(MiniJson.stringify(frame));
+            System.out.flush();
+        }
     }
 
     private static String readBoundedLine(BufferedReader input) throws IOException {
