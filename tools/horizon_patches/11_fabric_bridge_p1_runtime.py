@@ -198,11 +198,11 @@ fn p1_trace(trace_path: &Path, mod_id: &str, event: &str, details: serde_json::V
         "timestamp_epoch_ms": timestamp_ms,
         "mod_id": mod_id,
         "event": event,
-        "details": details,
+        "details": details.clone(),
     });
     if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(trace_path) {
         if serde_json::to_writer(&mut file, &record).is_ok() {
-            let _ = file.write_all(b"\\n");
+            let _ = file.write_all(b"\n");
         }
     }
     log::debug!("Horizon: [fabric-trace] mod={mod_id} event={event} details={details}");
@@ -593,7 +593,7 @@ p1_runtime_methods = r"""
             .map(|(name, _)| name.to_string()).collect();
         manifest.check_imports(imports.iter().map(String::as_str))?;
         p1_trace(&trace_path, &manifest.id, "component.validated",
-            serde_json::json!({"imports": imports, "import_count": imports.len()}));
+            serde_json::json!({"imports": imports.clone(), "import_count": imports.len()}));
         let config_dir = path.parent().unwrap_or(Path::new("."))
             .join(STORAGE_DIR).join(&manifest.id).join("fabric-p1-config");
         let state = P1State {
