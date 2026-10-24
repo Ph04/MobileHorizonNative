@@ -34,7 +34,7 @@ key_method = """    /// Delivers a post-rebinding keyboard event to registered P
             .collect();
         for (index, ids) in owners {
             for id in ids {
-                let _ = self.call_p1(index, FUEL_EVENT, |m, store| {
+                let _ = self.call_p1(index, "key", FUEL_EVENT, |m, store| {
                     let state = if pressed { P1KeyState::Pressed } else { P1KeyState::Released };
                     m.horizon_fabric_bridge_guest().call_on_key(store, &id, state).map(|_| ())
                 });
