@@ -446,6 +446,28 @@ jobs:
             --upstream-sha256 "$EXPECTED_SHA256"
           echo "Bundled the full official Fabric API JAR intact (no manual module extraction)."
 
+      - name: Download and verify official Fabric Loader for Minecraft 26.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="0.19.5"
+          ARTIFACT="fabric-loader-$VERSION.jar"
+          MAVEN_DIR="https://maven.fabricmc.net/net/fabricmc/fabric-loader/$VERSION"
+          DEST="app/src/main/assets/fabric-loader"
+          mkdir -p "$DEST"
+          curl --fail --location --retry 3 --retry-all-errors "$MAVEN_DIR/$ARTIFACT" --output "$DEST/$ARTIFACT"
+          curl --fail --location --retry 3 --retry-all-errors "$MAVEN_DIR/$ARTIFACT.sha256" --output "$RUNNER_TEMP/fabric-loader.sha256"
+          EXPECTED_SHA256="$(tr -d '[:space:]' < "$RUNNER_TEMP/fabric-loader.sha256" | tr 'A-F' 'a-f')"
+          if [[ ! "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Official Fabric Loader Maven SHA-256 sidecar has an unexpected format."
+            exit 1
+          fi
+          printf '%s  %s\\n' "$EXPECTED_SHA256" "$DEST/$ARTIFACT" | sha256sum --check -
+          python3 tools/fabric_java_compat/verify_fabric_loader_bundle.py \\
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-runtime.json \\
+            --upstream-sha256 "$EXPECTED_SHA256"
+          echo "Bundled official Fabric Loader $VERSION separately from the mods/ directory."
+
       - name: Package standalone Fabric Java host for future runtime integration
         run: bash tools/fabric_java_compat/build-host.sh app/src/main/assets/fabric-java-host.jar
 
@@ -484,6 +506,8 @@ jobs:
           grep -Fq 'assets/fabric-java-host.jar' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-api-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/fabric-bridge/fabric-api-0.165.0+26.3.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/fabric-loader-0.19.5.jar' "$RUNNER_TEMP/apk-file-list.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
           if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
             grep -F "name='dev.mobilehorizon.app.offline1' versionCode='19' versionName='0.0.1-offline1'" "$RUNNER_TEMP/apk-badging.txt"
@@ -498,7 +522,7 @@ jobs:
             echo "::warning::APK is test-only and uses a separate application ID because stable signing secrets are missing. It will not overwrite the installed app or share its data."
             echo "Version-isolated test APK published under dev.mobilehorizon.app.offline1.test.v19; the previous test package and its data remain installed separately. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "APK is valid, package/version match, and Horizon ARM64, Java 25, Java host, and intact Fabric API 26.3 payloads are included."
+          echo "APK is valid, package/version match, and Horizon ARM64, Java 25, Fabric host scaffold, official Fabric Loader 0.19.5, and intact Fabric API 26.3 payloads are included. Loader presence is not proof of in-game mod execution."
 
       - name: Upload update-safe APK
         if: success() && steps.signing.outputs.enabled == 'true'

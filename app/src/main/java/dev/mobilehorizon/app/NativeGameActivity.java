@@ -51,22 +51,32 @@ public final class NativeGameActivity extends NativeActivity {
             if (fabricBridgeEnabled) {
                 try {
                     java.io.File fabricApiJar = FabricApiRuntimeInstaller.ensureInstalled(getApplicationContext());
+                    java.io.File fabricLoaderJar = FabricLoaderRuntimeInstaller.ensureInstalled(getApplicationContext());
                     android.system.Os.setenv("HORIZON_FABRIC_JAVA_MODS",
                             fabricApiJar.getParentFile().getAbsolutePath(), true);
                     android.system.Os.setenv("HORIZON_FABRIC_API_JAR",
                             fabricApiJar.getAbsolutePath(), true);
+                    android.system.Os.setenv("HORIZON_FABRIC_LOADER_JAR",
+                            fabricLoaderJar.getAbsolutePath(), true);
+                    android.system.Os.setenv("HORIZON_FABRIC_LOADER_VERSION",
+                            FabricLoaderRuntimeInstaller.VERSION, true);
                     android.util.Log.i("MobileHorizon",
-                            "Fabric API original JAR verified and staged intact; Java host/game API bridge is not yet active.");
+                            "Official Fabric Loader " + FabricLoaderRuntimeInstaller.VERSION
+                                    + " and Fabric API are verified and staged. Knot/GameProvider startup and Minecraft-to-Horizon API bridge are not active yet.");
                 } catch (Exception fabricRuntimeError) {
                     fabricBridgeEnabled = false;
                     android.system.Os.unsetenv("HORIZON_FABRIC_JAVA_MODS");
                     android.system.Os.unsetenv("HORIZON_FABRIC_API_JAR");
+                    android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_JAR");
+                    android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_VERSION");
                     android.util.Log.e("MobileHorizon",
-                            "Fabric Bridge disabled because the official Fabric API bundle failed verification.", fabricRuntimeError);
+                            "Fabric Bridge disabled because its official Fabric Loader/API payload failed verification.", fabricRuntimeError);
                 }
             } else {
                 android.system.Os.unsetenv("HORIZON_FABRIC_JAVA_MODS");
                 android.system.Os.unsetenv("HORIZON_FABRIC_API_JAR");
+                android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_JAR");
+                android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_VERSION");
             }
             android.system.Os.setenv(
                     "HORIZON_MOD_PROFILE",
