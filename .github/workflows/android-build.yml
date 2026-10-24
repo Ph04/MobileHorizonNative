@@ -458,6 +458,51 @@ jobs:
           PY
           echo "Bundled the intact official Fabric API and catalogued its exact JVM ABI."
 
+      - name: Download official Minecraft 26.3 client and generate named class ABI catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          META_SHA1="61fff1316bd50312624a858bbb5eb18fa45208ed"
+          META_URL="https://piston-meta.mojang.com/v1/packages/$META_SHA1/26.3.json"
+          META="$RUNNER_TEMP/minecraft-26.3-version.json"
+          CLIENT="$RUNNER_TEMP/minecraft-26.3-client.jar"
+          ABI="$RUNNER_TEMP/minecraft-26.3-client-abi.json"
+          curl --fail --location --retry 3 --retry-all-errors "$META_URL" --output "$META"
+          printf '%s  %s\n' "$META_SHA1" "$META" | sha1sum --check -
+          readarray -t CLIENT_INFO < <(python3 - "$META" <<'PY'
+          import json, sys
+          from pathlib import Path
+          data=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert data.get("id") == "26.3", "Unexpected official Minecraft metadata version"
+          download=data["downloads"]["client"]
+          url=download["url"]
+          sha1=download["sha1"].lower()
+          assert url.startswith("https://piston-data.mojang.com/"), "Client URL is not on Mojang's official object host"
+          assert len(sha1) == 40 and all(ch in "0123456789abcdef" for ch in sha1), "Invalid official client SHA-1"
+          print(url)
+          print(sha1)
+          PY
+          )
+          test "${#CLIENT_INFO[@]}" -eq 2
+          curl --fail --location --retry 3 --retry-all-errors "${CLIENT_INFO[0]}" --output "$CLIENT"
+          printf '%s  %s\n' "${CLIENT_INFO[1]}" "$CLIENT" | sha1sum --check -
+          python3 tools/fabric_java_compat/generate_minecraft_abi.py \
+            "$CLIENT" "${CLIENT_INFO[1]}" "$ABI"
+          python3 - "$ABI" <<'PY'
+          import json, sys
+          from pathlib import Path
+          catalog=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert catalog["target_minecraft"] == "26.3"
+          assert catalog["client_sha1"]
+          for name in ("net.minecraft.client.Minecraft", "net.minecraft.client.multiplayer.ClientLevel",
+                       "net.minecraft.client.player.LocalPlayer", "net.minecraft.world.item.ItemStack",
+                       "net.minecraft.world.level.Level", "net.minecraft.core.BlockPos"):
+              assert any(row["name"] == name for row in catalog["classes"]), f"Missing ABI class {name}"
+          print(f"Verified Minecraft 26.3 ABI: {catalog['public_class_count']} classes, "
+                f"{catalog['public_member_count']} members; client SHA-1 {catalog['client_sha1']}.")
+          PY
+          echo "$ABI" > "$RUNNER_TEMP/minecraft-26.3-abi-path.txt"
+
       - name: Download and verify official Fabric Loader for Minecraft 26.3
         shell: bash
         run: |
@@ -581,6 +626,15 @@ jobs:
         with:
           name: mobilehorizon-native-offline1-update-safe
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Minecraft 26.3 ABI catalog (developer diagnostics)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minecraft-26.3-abi-catalog
+          path: ${{ runner.temp }}/minecraft-26.3-client-abi.json
           if-no-files-found: error
           retention-days: 14
 

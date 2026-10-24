@@ -80,3 +80,10 @@ The host smoke test checks that larger state snapshots survive the JSONL protoco
 Each CI build scans the intact official Fabric API 0.165.0+26.3 aggregate JAR and its declared nested module JARs without loading or executing Java bytecode. It generates \`fabric-api-26.3-abi.json\`, containing public class names, superclass/interface names, field and method JVM descriptors, generic signatures where present, module ownership and hashes. The generated ABI catalog is packaged into the APK and tied to the exact SHA-256 of the official aggregate JAR.
 
 This provides an evidence-based target for version-specific adapters and shims. It does not itself implement the missing \`net.minecraft.*\` runtime, load the official API into the game, apply Mixins or prove arbitrary-mod compatibility. A class-file parser regression test and minimum catalog-size checks make incomplete scans fail closed.
+
+
+## J1.3 Official Minecraft 26.3 client ABI inventory
+
+CI downloads the version JSON for Minecraft 26.3 from Mojang's metadata host, verifies the metadata SHA-1, reads the official client URL and expected SHA-1 from that validated JSON, and verifies the 39.6 MB client JAR before inspecting it. The generator reads only public/protected class-file signatures under \`net.minecraft.*\`; it does not load the game or include the full client JAR in the APK. It verifies core types (\`Minecraft\`, \`ClientLevel\`, \`LocalPlayer\`, \`ItemStack\`, \`Level\`, \`BlockPos\`) and publishes the resulting descriptor catalog as a separate, short-lived CI artifact for adapter implementation.
+
+This is the accurate signature inventory needed for future shims, not a substitute for those shims. Fabric API calls that depend on renderer internals, world mutation, mixin target bodies or Java object identity remain unsupported until a matching adapter exists and is exercised against a real mod.
