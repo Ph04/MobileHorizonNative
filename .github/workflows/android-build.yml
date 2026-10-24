@@ -340,6 +340,10 @@ jobs:
           python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
           cargo test --manifest-path "$SOURCE/Cargo.toml" -p horizon-mods --lib --no-default-features
+          # Exercise the patched wire codecs and resource-pack/client tests too.
+          # These target crates are platform-neutral and use no desktop audio/controllers.
+          cargo test --manifest-path "$SOURCE/Cargo.toml" -p horizon-protocol --lib --no-default-features
+          cargo test --manifest-path "$SOURCE/Cargo.toml" -p horizon-client --lib --no-default-features
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
           test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
