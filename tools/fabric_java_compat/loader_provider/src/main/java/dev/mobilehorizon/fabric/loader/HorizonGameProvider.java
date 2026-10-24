@@ -68,7 +68,15 @@ public final class HorizonGameProvider implements GameProvider {
         return true;
     }
 
-    @Override public void initialize(FabricLauncher launcher) { launcher.setValidParentClassPath(launcher.getClassPath()); }
+    @Override
+    public void initialize(FabricLauncher launcher) {
+        launcher.setValidParentClassPath(launcher.getClassPath());
+        // GameTransformer.transform() requires locateEntrypoints() to have initialized
+        // its internal patch map. This provider is deliberately metadata-only: it does
+        // not have Minecraft Java game JARs, so initialize it against an empty input.
+        // Without this, even a tiny synthetic mod fails with patchedClasses == null.
+        transformer.locateEntrypoints(launcher, Collections.emptyList());
+    }
     @Override public GameTransformer getEntrypointTransformer() { return transformer; }
     @Override
     public void unlockClassPath(FabricLauncher launcher) {
