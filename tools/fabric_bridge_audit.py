@@ -661,7 +661,7 @@ def audit_jar(path: Path) -> dict[str, Any]:
                 if re.fullmatch(r"[a-z0-9_.-]+", parts[1]):
                     namespaces.add(parts[1])
 
-        fabric_api_refs = sorted({ref for ref in all_refs if "net/fabricmc/fabric/api/" in ref} | set(nested_report["fabric_api_refs"]))
+        fabric_api_refs = sorted({ref for ref in all_refs if "net/fabricmc/fabric/api/" in ref and not ref.endswith("/")} | {ref for ref in nested_report["fabric_api_refs"] if not ref.endswith("/")})
         loader_refs = sorted(
             ref for ref in all_refs
             if ref.startswith("net/fabricmc/loader/") or ref.startswith("net/fabricmc/api/")
@@ -711,10 +711,11 @@ def audit_jar(path: Path) -> dict[str, Any]:
         module_dependencies: dict[str, dict[str, Any]] = {}
         for group_name, dependencies in dependency_groups.items():
             for dependency_name, constraint in dependencies.items():
-                if dependency_name in catalog_modules:
+                if dependency_name == "fabric-api" or dependency_name in catalog_modules:
                     module_dependencies.setdefault(dependency_name, {
                         "constraints": {},
                         "declared_in": [],
+                        "aggregate_dependency": dependency_name == "fabric-api",
                     })
                     module_dependencies[dependency_name]["constraints"][group_name] = constraint
                     module_dependencies[dependency_name]["declared_in"].append(group_name)
