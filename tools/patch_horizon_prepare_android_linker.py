@@ -35,7 +35,7 @@ fn java_command(java: &Path) -> Command {
         let mut command = Command::new("/system/bin/sh");
         command.args([
             "-c",
-            "exec /system/bin/linker64 \\"$@\\"",
+            "exec /system/bin/linker64 \"$@\"",
             "linker64",
         ]);
         // linker64 consumes the ELF path followed by the loaded program's argv[0].
