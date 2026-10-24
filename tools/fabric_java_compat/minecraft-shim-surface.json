@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "target_minecraft": "26.3",
+  "implemented_minecraft_classes": [],
+  "implemented_fabric_api_classes": [],
+  "native_bridge_operations": [
+    "world.snapshot",
+    "player.snapshot",
+    "clock.snapshot",
+    "inventory.snapshot",
+    "inventory.selected",
+    "inventory.offhand"
+  ],
+  "native_events": [
+    "world.lifecycle",
+    "client_tick",
+    "chat.received"
+  ],
+  "unsupported_adapter_families": [
+    "Minecraft Java object shims",
+    "Fabric API callback/event implementations",
+    "registry registration",
+    "custom payload networking",
+    "Mixin target translation",
+    "access widener translation",
+    "client GUI/rendering",
+    "biome/world-generation lookup"
+  ],
+  "notes": "Native JSON snapshot/event transport is not equivalent to Java Minecraft/Fabric API classes. Keep implemented class lists empty until matching descriptors and behavior are implemented and tested in-game."
+}
