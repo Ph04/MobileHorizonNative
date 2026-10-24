@@ -59,7 +59,7 @@ class FabricApiBundleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             jar = Path(directory) / "missing.jar"
             self.write_bundle(jar, include_nested=False)
-            with self.assertRaisesRegex(ValueError, "nested module JAR is missing"):
+            with self.assertRaisesRegex(ValueError, "module JAR is missing"):
                 MODULE.inspect_archive(jar)
 
     def test_rejects_traversal_in_nested_jar_path(self):
