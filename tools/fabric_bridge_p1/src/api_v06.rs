@@ -193,8 +193,12 @@ pub mod registry_sync {
             }
         }
         for (id, remote_entry) in &remote.entries {
-            if remote_entry.required && !local.entries.contains_key(id) {
-                return Err(format!("server requires unknown registry entry: {}", id.as_str()));
+            match local.entries.get(id) {
+                Some(local_entry) if local_entry.version == remote_entry.version => {}
+                _ if remote_entry.required => {
+                    return Err(format!("server requires an incompatible registry entry: {}", id.as_str()));
+                }
+                _ => {}
             }
         }
         Ok(Negotiated { revision: local.revision.min(remote.revision), accepted, rejected_optional })
@@ -219,10 +223,16 @@ pub mod attachments {
     #[derive(Default)]
     pub struct Store { revision: u64, values: BTreeMap<(Id, Id), Record> }
     impl Store {
-        pub fn set(&mut self, owner: Id, key: Id, value: Value) -> u64 {
+        pub fn set(&mut self, owner: Id, key: Id, value: Value) -> Result<u64, String> {
+            match &value {
+                Value::Number(number) if !number.is_finite() => return Err("attachment number must be finite".into()),
+                Value::Text(text) if text.len() > 1_048_576 => return Err("attachment text exceeds 1 MiB".into()),
+                Value::Bytes(bytes) if bytes.len() > 1_048_576 => return Err("attachment bytes exceed 1 MiB".into()),
+                _ => {}
+            }
             self.revision = self.revision.wrapping_add(1);
             self.values.insert((owner.clone(), key.clone()), Record { owner, key, value, revision: self.revision });
-            self.revision
+            Ok(self.revision)
         }
         pub fn get(&self, owner: &Id, key: &Id) -> Option<&Value> { self.values.get(&(owner.clone(), key.clone())).map(|record| &record.value) }
         pub fn remove(&mut self, owner: &Id, key: &Id) -> bool {
@@ -687,6 +697,25 @@ pub mod networking {
             if size > channel.max_payload { return Err("network payload exceeds channel limit".into()); }
             Ok(())
         }
+        fn channel(&self, id: &Id) -> Option<&Channel> { self.channels.get(id) }
+    }
+
+    /// The host supplies a monotonic window token (for example, a server tick bucket).
+    /// Rate counters are discarded at window boundaries and keyed by player + channel.
+    #[derive(Default)]
+    pub struct RateLimiter { current_window: Option<u64>, counts: BTreeMap<(u64, Id), u32> }
+    impl RateLimiter {
+        pub fn allow(&mut self, registry: &Registry, player: u64, id: &Id, window: u64) -> Result<(), String> {
+            let limit = registry.channel(id).ok_or_else(|| format!("unregistered network channel {}", id.as_str()))?.max_messages_per_window;
+            if self.current_window != Some(window) {
+                self.current_window = Some(window);
+                self.counts.clear();
+            }
+            let count = self.counts.entry((player, id.clone())).or_default();
+            if *count >= limit { return Err("network channel rate limit exceeded".into()); }
+            *count += 1;
+            Ok(())
+        }
     }
 }
 
@@ -763,6 +792,160 @@ pub mod debug {
     }
 }
 
+
+/// Declarative screen/widget descriptions. Click/render callbacks are dispatched by the client host.
+pub mod screens {
+    use super::Id;
+    use std::collections::BTreeSet;
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Widget {
+        Label { id: Id, text: String },
+        Button { id: Id, label: String, action: Id },
+        Toggle { id: Id, label: String, checked: bool },
+        Slider { id: Id, label: String, min: f32, max: f32, step: f32, value: f32 },
+    }
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Screen { pub id: Id, pub width: u16, pub height: u16, pub widgets: Vec<Widget> }
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Event { Click(Id), ToggleChanged(Id, bool), SliderChanged(Id, f32), Close }
+    impl Widget { fn id(&self) -> &Id { match self { Self::Label{id,..}|Self::Button{id,..}|Self::Toggle{id,..}|Self::Slider{id,..} => id } } }
+    impl Screen {
+        pub fn validate(&self) -> Result<(), String> {
+            if self.width == 0 || self.height == 0 || self.width > 4096 || self.height > 4096 { return Err("screen dimensions must be 1..=4096".into()); }
+            if self.widgets.len() > 128 { return Err("screen exceeds 128 widgets".into()); }
+            let mut ids = BTreeSet::new();
+            for widget in &self.widgets {
+                if !ids.insert(widget.id().clone()) { return Err("duplicate screen widget id".into()); }
+                match widget {
+                    Widget::Label { text, .. } if text.len() > 8192 => return Err("label exceeds text budget".into()),
+                    Widget::Button { label, .. } | Widget::Toggle { label, .. } | Widget::Slider { label, .. } if label.len() > 1024 => return Err("widget label exceeds text budget".into()),
+                    Widget::Slider { min, max, step, value, .. } if !min.is_finite() || !max.is_finite() || !step.is_finite() || !value.is_finite() || min >= max || *step <= 0.0 || value < min || value > max => return Err("invalid slider range/value".into()),
+                    _ => {}
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Safe model declarations with bounded cuboids and explicit parent resolution.
+pub mod model_loading {
+    use super::Id;
+    use std::collections::{BTreeMap, BTreeSet};
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Face { pub texture: String, pub uv: [f32;4], pub tint_index: Option<i32> }
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Element { pub from: [f32;3], pub to: [f32;3], pub faces: BTreeMap<String, Face> }
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Model { pub id: Id, pub parent: Option<Id>, pub textures: BTreeMap<String, Id>, pub elements: Vec<Element> }
+    #[derive(Default)]
+    pub struct Registry { models: BTreeMap<Id, Model> }
+    impl Model {
+        pub fn validate(&self) -> Result<(), String> {
+            if self.elements.len() > 256 || self.textures.len() > 256 { return Err("model exceeds element/texture limits".into()); }
+            for (key, value) in &self.textures {
+                if key.is_empty() || key.len() > 128 || value.as_str().is_empty() { return Err("invalid model texture reference".into()); }
+            }
+            for element in &self.elements {
+                if element.faces.len() > 6 || element.faces.is_empty() { return Err("model element requires 1..=6 faces".into()); }
+                for axis in 0..3 {
+                    if !element.from[axis].is_finite() || !element.to[axis].is_finite() || element.from[axis] < -16.0 || element.to[axis] > 32.0 || element.from[axis] >= element.to[axis] {
+                        return Err("invalid model cuboid bounds".into());
+                    }
+                }
+                for (direction, face) in &element.faces {
+                    if !matches!(direction.as_str(), "north"|"south"|"east"|"west"|"up"|"down") { return Err("unknown model face direction".into()); }
+                    if face.texture.is_empty() || face.texture.len() > 256 || face.uv.iter().any(|v| !v.is_finite() || *v < -4096.0 || *v > 4096.0) {
+                        return Err("invalid model face texture/UV".into());
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+    impl Registry {
+        pub fn register(&mut self, model: Model) -> Result<(), String> {
+            model.validate()?;
+            if self.models.contains_key(&model.id) { return Err(format!("duplicate model {}", model.id.as_str())); }
+            self.models.insert(model.id.clone(), model); Ok(())
+        }
+        pub fn get(&self, id: &Id) -> Option<&Model> { self.models.get(id) }
+        pub fn validate_parent_chain(&self, id: &Id, external_parents: &BTreeSet<Id>) -> Result<Vec<Id>, String> {
+            let mut result = Vec::new();
+            let mut visiting = BTreeSet::new();
+            let mut current = Some(id.clone());
+            while let Some(next) = current {
+                if !visiting.insert(next.clone()) { return Err("model parent cycle detected".into()); }
+                if result.len() >= 64 { return Err("model parent chain exceeds 64 entries".into()); }
+                result.push(next.clone());
+                match self.models.get(&next) {
+                    Some(model) => current = model.parent.clone(),
+                    None if external_parents.contains(&next) => current = None,
+                    None if next == *id => return Err("model not registered".into()),
+                    None => return Err(format!("unresolved model parent {}", next.as_str())),
+                }
+            }
+            Ok(result)
+        }
+    }
+}
+
+/// Neutral fluid-surface mesh generation; actual GPU submission remains in the renderer host.
+pub mod rendering_fluids {
+    use super::{Id, render::{Mesh, Vertex}};
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Appearance { pub id: Id, pub still_texture: Id, pub flowing_texture: Id, pub tint_rgba: u32, pub viscosity: u32 }
+    impl Appearance {
+        pub fn validate(&self) -> Result<(), String> {
+            if self.viscosity > 1_000_000 { return Err("fluid viscosity exceeds supported bound".into()); }
+            Ok(())
+        }
+    }
+    pub fn surface_quad(x: f32, y: f32, z: f32, width: f32, depth: f32) -> Result<Mesh, String> {
+        if [x,y,z,width,depth].iter().any(|v| !v.is_finite()) || width <= 0.0 || depth <= 0.0 || width > 64.0 || depth > 64.0 {
+            return Err("invalid fluid surface bounds".into());
+        }
+        let x2=x+width; let z2=z+depth;
+        let mesh=Mesh { vertices: vec![
+            Vertex{position:[x,y,z],normal:[0.0,1.0,0.0],uv:[0.0,0.0]},
+            Vertex{position:[x,y,z2],normal:[0.0,1.0,0.0],uv:[0.0,1.0]},
+            Vertex{position:[x2,y,z2],normal:[0.0,1.0,0.0],uv:[1.0,1.0]},
+            Vertex{position:[x2,y,z],normal:[0.0,1.0,0.0],uv:[1.0,0.0]},
+        ], indices:vec![0,1,2,0,2,3]};
+        mesh.validate(4,6)?; Ok(mesh)
+    }
+}
+
+/// Typed equivalent of sounds.json event entries, including weighted variant selection.
+pub mod sounds {
+    use super::Id;
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Variant { pub sound: Id, pub weight: u32, pub volume: f32, pub pitch: f32, pub stream: bool, pub preload: bool }
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Event { pub id: Id, pub variants: Vec<Variant> }
+    impl Event {
+        pub fn validate(&self) -> Result<(), String> {
+            if self.variants.is_empty() || self.variants.len() > 256 { return Err("sound event requires 1..=256 variants".into()); }
+            for variant in &self.variants {
+                if variant.weight == 0 || !variant.volume.is_finite() || !(0.0..=16.0).contains(&variant.volume)
+                    || !variant.pitch.is_finite() || !(0.01..=4.0).contains(&variant.pitch) {
+                    return Err("invalid sound variant".into());
+                }
+            }
+            Ok(())
+        }
+        pub fn select(&self, seed: u64) -> Result<&Variant, String> {
+            self.validate()?;
+            let total: u64 = self.variants.iter().try_fold(0u64, |sum,v| sum.checked_add(v.weight as u64).ok_or("sound weight overflow"))?;
+            let mut x = if seed == 0 { 0x9e37_79b9_7f4a_7c15 } else { seed };
+            x ^= x << 13; x ^= x >> 7; x ^= x << 17;
+            let selected=x % total;
+            let mut cumulative=0u64;
+            self.variants.iter().find(|variant| { cumulative += variant.weight as u64; selected < cumulative }).ok_or_else(|| "sound variant selection failed".into())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{attachments, permissions, registry_sync, resources, transfer};
@@ -823,13 +1006,13 @@ mod tests {
     #[test]
     fn attachment_snapshots_reject_stale_revisions() {
         let mut store = attachments::Store::default();
-        store.set(id("m:player"), id("m:coins"), attachments::Value::Integer(12));
+        store.set(id("m:player"), id("m:coins"), attachments::Value::Integer(12)).unwrap();
         let snapshot = store.snapshot();
         assert_eq!(store.get(&id("m:player"), &id("m:coins")), Some(&attachments::Value::Integer(12)));
         let mut replica = attachments::Store::default();
         replica.apply_snapshot(snapshot.clone()).unwrap();
         assert_eq!(replica.get(&id("m:player"), &id("m:coins")), Some(&attachments::Value::Integer(12)));
-        store.set(id("m:player"), id("m:coins"), attachments::Value::Integer(13));
+        store.set(id("m:player"), id("m:coins"), attachments::Value::Integer(13)).unwrap();
         assert!(store.apply_snapshot(snapshot).is_err());
     }
 
@@ -1014,5 +1197,71 @@ mod api_v06_coverage_tests {
         let mut overlay=debug::Overlay::default();
         overlay.push(debug::Line { from:[0.0,0.0,0.0],to:[1.0,1.0,1.0],rgba:0xFFFFFFFF },1).unwrap();
         assert!(overlay.push(debug::Line { from:[0.0,0.0,0.0],to:[2.0,2.0,2.0],rgba:0xFFFFFFFF },1).is_err());
+    }
+}
+
+
+#[cfg(test)]
+mod api_v06_final_tests {
+    use super::{attachments, model_loading, networking, registry_sync, rendering_fluids, screens, sounds};
+    use crate::Id;
+    use std::collections::BTreeMap;
+    fn id(s: &str) -> Id { Id::parse(s).unwrap() }
+
+    #[test]
+    fn required_remote_registry_version_mismatch_fails_even_if_local_entry_is_optional() {
+        let local=registry_sync::Manifest { revision:1, entries:BTreeMap::from([(id("m:thing"),registry_sync::Entry{version:1,required:false})]) };
+        let mut remote=registry_sync::Manifest { revision:2, entries:BTreeMap::from([(id("m:thing"),registry_sync::Entry{version:2,required:true})]) };
+        assert!(registry_sync::negotiate(&local,&remote,16).is_err());
+        remote.entries.get_mut(&id("m:thing")).unwrap().version=1;
+        assert!(registry_sync::negotiate(&local,&remote,16).is_ok());
+        let local_empty=registry_sync::Manifest { revision:1, entries:BTreeMap::new() };
+        assert!(registry_sync::negotiate(&local_empty,&remote,16).is_err());
+    }
+
+    #[test]
+    fn attachment_rejects_non_finite_numbers_and_unbounded_payloads() {
+        let mut store=attachments::Store::default();
+        assert!(store.set(id("m:player"),id("m:value"),attachments::Value::Number(f64::NAN)).is_err());
+        assert!(store.set(id("m:player"),id("m:text"),attachments::Value::Text("x".repeat(1_048_577))).is_err());
+        assert!(store.set(id("m:player"),id("m:ok"),attachments::Value::Number(4.5)).is_ok());
+    }
+
+    #[test]
+    fn network_rate_limiter_counts_per_player_channel_and_window() {
+        let mut channels=networking::Registry::default();
+        channels.register(id("m:chat"),networking::Channel{direction:networking::Direction::Bidirectional,max_payload:128,max_messages_per_window:1}).unwrap();
+        let mut rate=networking::RateLimiter::default();
+        assert!(rate.allow(&channels,7,&id("m:chat"),10).is_ok());
+        assert!(rate.allow(&channels,7,&id("m:chat"),10).is_err());
+        assert!(rate.allow(&channels,8,&id("m:chat"),10).is_ok());
+        assert!(rate.allow(&channels,7,&id("m:chat"),11).is_ok());
+    }
+
+    #[test]
+    fn declarative_screen_and_model_loading_validate_inputs() {
+        let screen=screens::Screen{id:id("m:settings"),width:320,height:240,widgets:vec![
+            screens::Widget::Button{id:id("m:done"),label:"Done".into(),action:id("m:close")},
+            screens::Widget::Slider{id:id("m:volume"),label:"Volume".into(),min:0.0,max:1.0,step:0.1,value:0.5},
+        ]};
+        assert!(screen.validate().is_ok());
+        let model=model_loading::Model{id:id("m:cube"),parent:None,textures:BTreeMap::new(),elements:vec![]};
+        let mut registry=model_loading::Registry::default();
+        registry.register(model).unwrap();
+        assert_eq!(registry.validate_parent_chain(&id("m:cube"),&Default::default()).unwrap(),vec![id("m:cube")]);
+        assert!(registry.validate_parent_chain(&id("m:missing"),&Default::default()).is_err());
+    }
+
+    #[test]
+    fn fluid_mesh_and_weighted_sound_variants_are_bounded() {
+        let mesh=rendering_fluids::surface_quad(0.0,1.0,0.0,1.0,1.0).unwrap();
+        assert_eq!(mesh.indices.len(),6);
+        assert!(rendering_fluids::surface_quad(0.0,1.0,0.0,f32::NAN,1.0).is_err());
+        let event=sounds::Event{id:id("m:bell"),variants:vec![
+            sounds::Variant{sound:id("m:bell_low"),weight:1,volume:1.0,pitch:1.0,stream:false,preload:false},
+            sounds::Variant{sound:id("m:bell_high"),weight:3,volume:0.8,pitch:1.2,stream:false,preload:false},
+        ]};
+        assert!(event.select(42).is_ok());
+        assert!(event.select(42).unwrap().sound.as_str().starts_with("m:bell_"));
     }
 }
