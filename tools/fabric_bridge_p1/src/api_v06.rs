@@ -188,8 +188,13 @@ pub mod registry_sync {
         for (id, local_entry) in &local.entries {
             match remote.entries.get(id) {
                 Some(remote_entry) if remote_entry.version == local_entry.version => accepted.push(id.clone()),
-                _ if local_entry.required => return Err(format!("required registry entry incompatible: {}", id.as_str())),
+                _ if local_entry.required => return Err(format!("required local registry entry incompatible: {}", id.as_str())),
                 _ => rejected_optional.push(id.clone()),
+            }
+        }
+        for (id, remote_entry) in &remote.entries {
+            if remote_entry.required && !local.entries.contains_key(id) {
+                return Err(format!("server requires unknown registry entry: {}", id.as_str()));
             }
         }
         Ok(Negotiated { revision: local.revision.min(remote.revision), accepted, rejected_optional })
@@ -251,7 +256,7 @@ pub mod resources {
     pub struct Manager { packs: BTreeMap<Id, Pack>, revision: u64 }
     impl Manager {
         pub fn insert(&mut self, pack: Pack) -> Result<(), String> {
-            if pack.entries.keys().any(|path| path.is_empty() || path.starts_with('/') || path.split('/').any(|p| p == ".." || p.is_empty())) {
+            if pack.entries.keys().any(|path| path.is_empty() || path.starts_with('/') || path.contains('\\\\') || path.split('/').any(|p| p == ".." || p == "." || p.is_empty())) {
                 return Err("resource path is absolute or traverses its pack root".into());
             }
             self.packs.insert(pack.owner.clone(), pack); self.revision = self.revision.wrapping_add(1); Ok(())
@@ -418,6 +423,9 @@ pub mod loot {
             for pool in &self.pools {
                 if pool.entries.len() > 256 { return Err("loot pool has more than 256 entries".into()); }
                 for entry in &pool.entries {
+                    if entry.conditions.iter().any(|condition| matches!(condition, Condition::ChanceBasisPoints(bp) if *bp > 10_000)) {
+                        return Err("loot chance must be in basis points 0..=10000".into());
+                    }
                     if entry.weight == 0 || entry.max_stack == 0 || entry.max_stack > 99 { return Err("loot entry requires positive weight and max_stack 1..=99".into()); }
                     for f in &entry.functions {
                         match f {
@@ -525,6 +533,9 @@ mod tests {
         assert!(registry_sync::negotiate(&local, &remote, 32).unwrap().rejected_optional.contains(&id("m:optional")));
         remote.entries.remove(&id("m:required"));
         assert!(registry_sync::negotiate(&local, &remote, 32).is_err());
+        local.entries.remove(&id("m:required"));
+        remote.entries.insert(id("server:mandatory"), registry_sync::Entry { version: 1, required: true });
+        assert!(registry_sync::negotiate(&local, &remote, 32).is_err());
     }
 
     #[test]
@@ -548,6 +559,8 @@ mod tests {
         assert_eq!(manager.reload().resources["assets/m/x.png"], vec![2]);
         assert_eq!(manager.reload().shadowed_entries, 1);
         assert!(manager.insert(resources::Pack { owner:id("m:bad"), priority:0, entries:BTreeMap::from([("../escape".into(),vec![])]) }).is_err());
+        assert!(manager.insert(resources::Pack { owner:id("m:dot"), priority:0, entries:BTreeMap::from([("assets/./escape".into(),vec![])]) }).is_err());
+        assert!(manager.insert(resources::Pack { owner:id("m:windows"), priority:0, entries:BTreeMap::from([("assets\\\\..\\\\escape".into(),vec![])]) }).is_err());
     }
 }
 
@@ -610,5 +623,9 @@ mod recipes_loot_tests {
         assert_eq!(a, b);
         assert_eq!(a.len(), 4);
         assert!(a.iter().all(|drop| drop.count >= 3 && drop.count <= 4));
+        let invalid = loot::Table { pools: vec![loot::Pool { rolls: 1, entries: vec![
+            loot::Entry { item: id("m:gem"), weight: 1, conditions: vec![loot::Condition::ChanceBasisPoints(10_001)], functions: vec![], max_stack: 1 }
+        ]}]};
+        assert!(invalid.roll(1, &context).is_err());
     }
 }
