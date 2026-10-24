@@ -612,7 +612,7 @@ def build_target_map(
             "minecraft_member_reference_records": sum(row["target_kind"] in ("field", "method", "interface_method") for row in references),
             "access_widener_reference_records": sum(str(row["target_kind"]).startswith("access_widener_") for row in references),
             "mixin_config_count": len(artifact["mixin_configs"]),
-            "access_widener_file_reference_count": len(artifact["access_wideners"]),
+            "access_widener_entry_count": len(artifact["access_wideners"]),
             "minecraft_class_abi_hits": class_abi_hit,
             "minecraft_member_abi_hits": member_abi_hit,
             "references_with_native_module_candidates": len(references) - no_candidate,
