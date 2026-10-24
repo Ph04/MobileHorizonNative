@@ -36,6 +36,7 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
     static final String EXTRA_NATIVE_SMOKE_TEST = "dev.mobilehorizon.app.EXTRA_NATIVE_SMOKE_TEST";
     static final String EXTRA_FABRIC_BRIDGE = "dev.mobilehorizon.app.EXTRA_FABRIC_BRIDGE";
+    private FabricBridgeSession fabricBridgeSession;
     private NativeTouchControlsView touchControls;
     private PopupWindow touchControlsPopup;
     @Override
@@ -48,6 +49,46 @@ public final class NativeGameActivity extends NativeActivity {
             android.content.Intent launchIntent = getIntent();
             boolean fabricBridgeEnabled = launchIntent != null
                     && launchIntent.getBooleanExtra(EXTRA_FABRIC_BRIDGE, false);
+            if (fabricBridgeEnabled) {
+                try {
+                    java.io.File fabricApiJar = FabricApiRuntimeInstaller.ensureInstalled(getApplicationContext());
+                    java.io.File fabricLoaderJar = FabricLoaderRuntimeInstaller.ensureInstalled(getApplicationContext());
+                    java.io.File fabricLoaderProviderJar = FabricLoaderRuntimeInstaller.providerPath(getApplicationContext());
+                    android.system.Os.setenv("HORIZON_FABRIC_JAVA_MODS",
+                            fabricApiJar.getParentFile().getAbsolutePath(), true);
+                    android.system.Os.setenv("HORIZON_FABRIC_API_JAR",
+                            fabricApiJar.getAbsolutePath(), true);
+                    android.system.Os.setenv("HORIZON_FABRIC_LOADER_JAR",
+                            fabricLoaderJar.getAbsolutePath(), true);
+                    android.system.Os.setenv("HORIZON_FABRIC_PROVIDER_JAR",
+                            fabricLoaderProviderJar.getAbsolutePath(), true);
+                    android.system.Os.setenv("HORIZON_FABRIC_LOADER_VERSION",
+                            FabricLoaderRuntimeInstaller.VERSION, true);
+                    fabricBridgeSession = FabricBridgeSession.prepare(getApplicationContext());
+                    android.util.Log.i("MobileHorizon",
+                            "Verified Fabric Loader/API and prepared opt-in Java<->Rust bridge endpoint on loopback port "
+                                    + fabricBridgeSession.port() + ". Original mod execution remains blocked until Minecraft API adapters are implemented.");
+                } catch (Exception fabricRuntimeError) {
+                    if (fabricBridgeSession != null) {
+                        fabricBridgeSession.close();
+                        fabricBridgeSession = null;
+                    }
+                    fabricBridgeEnabled = false;
+                    android.system.Os.unsetenv("HORIZON_FABRIC_JAVA_MODS");
+                    android.system.Os.unsetenv("HORIZON_FABRIC_API_JAR");
+                    android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_JAR");
+                    android.system.Os.unsetenv("HORIZON_FABRIC_PROVIDER_JAR");
+                    android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_VERSION");
+                    android.util.Log.e("MobileHorizon",
+                            "Fabric Bridge disabled because its official Fabric Loader/API payload failed verification.", fabricRuntimeError);
+                }
+            } else {
+                android.system.Os.unsetenv("HORIZON_FABRIC_JAVA_MODS");
+                android.system.Os.unsetenv("HORIZON_FABRIC_API_JAR");
+                android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_JAR");
+                android.system.Os.unsetenv("HORIZON_FABRIC_PROVIDER_JAR");
+                android.system.Os.unsetenv("HORIZON_FABRIC_LOADER_VERSION");
+            }
             android.system.Os.setenv(
                     "HORIZON_MOD_PROFILE",
                     fabricBridgeEnabled ? "fabric-bridge" : "vanilla",
@@ -105,6 +146,7 @@ public final class NativeGameActivity extends NativeActivity {
         // Keep Android's Activity/UI thread at its normal scheduling priority. Raising it
         // before native renderer startup can starve system input/UI work on slower devices.
         super.onCreate(savedInstanceState);
+        if (fabricBridgeSession != null) fabricBridgeSession.start();
         Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         window.setNavigationBarColor(Color.TRANSPARENT);
@@ -201,6 +243,10 @@ public final class NativeGameActivity extends NativeActivity {
 
     @Override
     protected void onDestroy() {
+        if (fabricBridgeSession != null) {
+            fabricBridgeSession.close();
+            fabricBridgeSession = null;
+        }
         if (touchControls != null) touchControls.releaseAllInputs();
         if (touchControlsPopup != null) {
             try { touchControlsPopup.dismiss(); } catch (IllegalArgumentException ignored) {}

@@ -51,6 +51,7 @@ import java.util.LinkedHashMap;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -125,6 +126,8 @@ public final class ResourceManagerActivity extends Activity {
     private TextView status;
     private ProgressBar progress;
     private Button importFilesButton, importFolderButton, importFabricJarButton;
+    private Button validateFabricButton;
+    private final AtomicBoolean preflightCancelled = new AtomicBoolean(false);
     private CheckBox profileToggle;
     private File pendingDataPackInstall;
     private boolean busy;
@@ -139,6 +142,9 @@ public final class ResourceManagerActivity extends Activity {
     private File bridgeModDir() { return new File(home(), "horizon-fabric-bridge-mods"); }
     private File modDir() { return fabricBridgeEnabled() ? bridgeModDir() : vanillaModDir(); }
     private File fabricInboxDir() { return new File(home(), "horizon-fabric-bridge-inbox"); }
+    /** Only JARs in mods/ are candidates for the Fabric Loader; inactive JARs stay outside that directory. */
+    private File fabricJavaModDir() { return new File(home(), "fabric-bridge-runtime/mods"); }
+    private File fabricDisabledModDir() { return new File(home(), "fabric-bridge-runtime/mods-disabled"); }
     private File convertedDataPackDir() { return new File(home(), "horizon-fabric-bridge-datapacks"); }
     private File shaderDir() { return new File(home(), "shaderpacks"); }
     private File optionsFile() { return new File(home(), "options.txt"); }
@@ -197,7 +203,7 @@ public final class ResourceManagerActivity extends Activity {
         });
         profileCard.addView(profileToggle, params(-1, -2));
         TextView profileHint = text(
-                "A seleção é compartilhada com a tela Jogar. Os mods .hmod ficam separados por perfil; JARs Fabric são apenas armazenados para análise/conversão e nunca são executados diretamente.",
+                "A seleção é compartilhada com a tela Jogar. Mods .hmod ficam isolados por perfil. JARs Fabric originais são preservados inteiros e podem ser habilitados individualmente na pasta mods/ ou desabilitados movendo-os para fora dela. A Fabric API oficial e o Loader 0.19.5 são verificados e preparados separadamente dos mods. O GameProvider está em integração; isso ainda não significa que os mods funcionem dentro do jogo.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams profileHintParams = params(-1, -2);
         profileHintParams.topMargin = dp(4);
@@ -209,7 +215,7 @@ public final class ResourceManagerActivity extends Activity {
         page.addView(actions, actionsParams);
         importFilesButton = button("Importar recursos (.zip / .hmod)", true, v -> chooseFiles());
         actions.addView(importFilesButton, params(-1, dp(60)));
-        importFabricJarButton = button("Importar e converter mod Fabric (.jar)", false, v -> chooseFabricJars());
+        importFabricJarButton = button("Importar mod Fabric original (.jar)", false, v -> chooseFabricJars());
         LinearLayout.LayoutParams fabricImportParams = params(-1, dp(60));
         fabricImportParams.topMargin = dp(8);
         actions.addView(importFabricJarButton, fabricImportParams);
@@ -221,6 +227,10 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams refreshParams = params(-1, dp(56));
         refreshParams.topMargin = dp(8);
         actions.addView(refresh, refreshParams);
+        validateFabricButton = button("Verificar dependências Fabric (sem executar mods)", false, v -> confirmFabricPreflight());
+        LinearLayout.LayoutParams validateFabricParams = params(-1, dp(56));
+        validateFabricParams.topMargin = dp(8);
+        actions.addView(validateFabricButton, validateFabricParams);
 
         LinearLayout statusCard = card();
         LinearLayout.LayoutParams statusParams = params(-1, -2);
@@ -236,7 +246,7 @@ public final class ResourceManagerActivity extends Activity {
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "As alterações são aplicadas ao abrir o Minecraft novamente. O conversor Horizon cria .hmod de conteúdo a partir de assets/data que entende e declara alguns blocos/itens. A lógica Java, entrypoints, Mixins e access wideners não são convertidos nem executados. Packs de textura usam ZIP com pack.mcmeta e assets/; shader packs aceitam ZIPs shaders/ ou pastas pack.toml/shaders/.",
+                "As alterações são aplicadas ao abrir o Minecraft novamente. Cada mod Fabric original é gerenciado como JAR inteiro no perfil Java; desativado, fica em mods-disabled/ e não é candidato ao carregamento. O conversor Horizon cria um .hmod suplementar a partir de assets/data que entende, mas não converte a lógica Java, entrypoints ou Mixins. O runtime do Loader e a ponte com as APIs do Horizon ainda estão sendo integrados. Packs de textura usam ZIP com pack.mcmeta e assets/; shader packs aceitam ZIPs shaders/ ou pastas pack.toml/shaders/.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(12);
@@ -251,6 +261,52 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams backParams = params(-1, dp(56));
         backParams.topMargin = dp(14);
         page.addView(back, backParams);
+    }
+
+    private void confirmFabricPreflight() {
+        if (busy) return;
+        if (!fabricBridgeEnabled()) {
+            showStatus("Ative o perfil Fabric Bridge para verificar suas dependências. O perfil Vanilla não será alterado.");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Verificar dependências Fabric")
+                .setMessage("O Loader oficial analisará cópias temporárias dos JARs com bytecode, entrypoints, Mixins, access wideners e serviços removidos. Nenhum código original de mod será executado. Na primeira execução, poderá ser necessário instalar/baixar o Java 25. O resultado valida metadados e dependências, não o funcionamento em jogo.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Verificar", (dialog, which) -> runFabricPreflight())
+                .show();
+    }
+
+    private void runFabricPreflight() {
+        if (busy) return;
+        busy = true;
+        preflightCancelled.set(false);
+        setBusyUi(true);
+        progress.setIndeterminate(true);
+        showStatus("Preparando o perfil Fabric para verificação…");
+        File activeMods = fabricJavaModDir();
+        io.execute(() -> {
+            try {
+                FabricMetadataPreflight.Result result = FabricMetadataPreflight.run(
+                        getApplicationContext(), activeMods, preflightCancelled,
+                        (stage, detail) -> mainHandler.post(() -> {
+                            if (status != null) showStatus(stage + ": " + detail);
+                        }));
+                mainHandler.post(() -> {
+                    busy = false;
+                    setBusyUi(false);
+                    refreshResources();
+                    showStatus(result.summary());
+                });
+            } catch (Exception error) {
+                String failure = "Falha na pré-verificação Fabric: " + message(error);
+                mainHandler.post(() -> {
+                    busy = false;
+                    setBusyUi(false);
+                    showStatus(failure);
+                });
+            }
+        });
     }
 
     private void chooseFiles() {
@@ -338,7 +394,12 @@ public final class ResourceManagerActivity extends Activity {
             }
             if (lower.endsWith(".jar")) {
                 FabricJarInfo info = inspectFabricJar(staging);
+                if ("fabric-api".equals(info.id)) {
+                    throw new IllegalArgumentException("O ID 'fabric-api' é reservado para a cópia oficial verificada incluída no aplicativo.");
+                }
                 ensureDirs(fabricInboxDir());
+                ensureDirs(fabricJavaModDir());
+                ensureDirs(fabricDisabledModDir());
                 ensureDirs(bridgeModDir());
                 if (fabricJarIdExists(info.id)) {
                     throw new IllegalArgumentException("Já existe um JAR Fabric importado com ID '" + info.id + "'. Exclua a versão antiga antes de importar outra.");
@@ -347,6 +408,14 @@ public final class ResourceManagerActivity extends Activity {
                     throw new IllegalArgumentException("O perfil Fabric Bridge já contém um mod com ID '" + info.id + "'. Remova-o antes de importar outra versão.");
                 }
                 File target = copyToTarget(staging, fabricInboxDir(), fileName(name, ".jar"));
+                try {
+                    // New imports are never executed implicitly. Keep the original JAR intact,
+                    // but outside mods/ until the user explicitly enables it in this manager.
+                    copyToTarget(staging, fabricDisabledModDir(), fileName(info.id, ".jar"));
+                } catch (Exception javaCopyError) {
+                    target.delete();
+                    throw javaCopyError;
+                }
                 String conversion;
                 try {
                     conversion = convertFabricJarNative(staging, info);
@@ -357,7 +426,8 @@ public final class ResourceManagerActivity extends Activity {
                 File auditReport = writeFabricAuditReport(info, target);
                 return "JAR Fabric " + info.name + " (" + info.id + " " + info.version + ") importado; "
                         + conversion + " Original: " + target.getName()
-                        + ". A saída de conteúdo fica apenas no perfil Fabric Bridge; classes Java/Mixins não são executadas. "
+                        + ". O JAR original foi preservado no perfil Java e ficou desativado por padrão; use a caixa do recurso para incluí-lo na pasta mods do Loader. "
+                        + "A conversão de assets/data é complementar e não substitui o código Java original. "
                         + summarizeFabricAudit(info)
                         + (auditReport == null ? "" : " Relatório salvo em " + auditReport.getAbsolutePath() + ".");
             }
@@ -1054,7 +1124,13 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     private boolean fabricJarIdExists(String id) {
-        File[] files = fabricInboxDir().listFiles((dir, name) ->
+        return fabricJarIdExistsIn(fabricInboxDir(), id)
+                || fabricJarIdExistsIn(fabricJavaModDir(), id)
+                || fabricJarIdExistsIn(fabricDisabledModDir(), id);
+    }
+
+    private boolean fabricJarIdExistsIn(File directory, String id) {
+        File[] files = directory.listFiles((dir, name) ->
                 name.toLowerCase(Locale.ROOT).endsWith(".jar"));
         if (files == null) return false;
         for (File file : files) {
@@ -1062,6 +1138,79 @@ public final class ResourceManagerActivity extends Activity {
             catch (Exception ignored) {}
         }
         return false;
+    }
+
+    private void deleteRuntimeFabricJarCopy(String id) throws Exception {
+        if (id == null || id.isEmpty() || "fabric-api".equals(id)) return;
+        for (File directory : new File[]{fabricJavaModDir(), fabricDisabledModDir()}) {
+            File[] files = directory.listFiles((dir, name) ->
+                    name.toLowerCase(Locale.ROOT).endsWith(".jar"));
+            if (files == null) continue;
+            for (File file : files) {
+                try {
+                    FabricJarInfo info = inspectFabricJar(file);
+                    if (id.equals(info.id)) deleteRecursively(file);
+                } catch (Exception ignored) {
+                    // Do not delete an unrecognized runtime JAR on the basis of a failed scan.
+                }
+            }
+        }
+    }
+
+    private File findRuntimeFabricJar(File directory, String id) {
+        if (id == null || id.isEmpty()) return null;
+        File[] files = directory.listFiles((dir, name) ->
+                name.toLowerCase(Locale.ROOT).endsWith(".jar"));
+        if (files == null) return null;
+        for (File file : files) {
+            try {
+                if (id.equals(inspectFabricJar(file).id)) return file;
+            } catch (Exception ignored) {
+                // Keep malformed/unrelated JARs untouched; the audit view will report them separately.
+            }
+        }
+        return null;
+    }
+
+    private void moveRuntimeFabricJar(File source, File destinationDirectory, String id) throws Exception {
+        ensureDirs(destinationDirectory);
+        File destination = new File(destinationDirectory, fileName(id, ".jar"));
+        if (destination.exists()) {
+            throw new IOException("Já existe um arquivo no destino do mod '" + id + "'. Atualize a lista e revise a pasta do perfil Fabric.");
+        }
+        if (source.renameTo(destination)) return;
+        File copied = copyToTarget(source, destinationDirectory, fileName(id, ".jar"));
+        if (!source.delete()) {
+            deleteRecursively(copied);
+            throw new IOException("O JAR foi copiado, mas o arquivo anterior não pôde ser removido; a ativação foi cancelada.");
+        }
+    }
+
+    private void setFabricJarActive(ResourceItem item, boolean enabled) throws Exception {
+        if (item.id == null || item.id.isEmpty()) {
+            throw new IllegalArgumentException("O JAR não possui um ID Fabric válido.");
+        }
+        if ("fabric-api".equals(item.id)) {
+            throw new IllegalArgumentException("A Fabric API oficial é gerenciada e verificada automaticamente; ela não pode ser alternada aqui.");
+        }
+        ensureDirs(fabricJavaModDir());
+        ensureDirs(fabricDisabledModDir());
+        File active = findRuntimeFabricJar(fabricJavaModDir(), item.id);
+        File disabled = findRuntimeFabricJar(fabricDisabledModDir(), item.id);
+        if (enabled) {
+            if (active != null) return;
+            if (disabled != null) {
+                moveRuntimeFabricJar(disabled, fabricJavaModDir(), item.id);
+            } else if (item.path != null && item.path.isFile()) {
+                // Keep the audit/inbox copy intact for the resource manager.
+                copyToTarget(item.path, fabricJavaModDir(), fileName(item.id, ".jar"));
+            } else {
+                throw new IOException("O JAR original não está disponível para ativação. Reimporte o arquivo.");
+            }
+        } else {
+            if (active == null) return;
+            moveRuntimeFabricJar(active, fabricDisabledModDir(), item.id);
+        }
     }
 
     private ArchiveKind inspectZip(File file) throws Exception {
@@ -1231,7 +1380,8 @@ public final class ResourceManagerActivity extends Activity {
         if (content == null) return;
         content.removeAllViews();
         ensureUiDir(textureDir()); ensureUiDir(modDir()); ensureUiDir(shaderDir());
-        ensureUiDir(fabricInboxDir()); ensureUiDir(convertedDataPackDir());
+        ensureUiDir(fabricInboxDir()); ensureUiDir(fabricJavaModDir());
+        ensureUiDir(fabricDisabledModDir()); ensureUiDir(convertedDataPackDir());
         List<ResourceItem> textures = new ArrayList<>(), mods = new ArrayList<>(),
                 shaders = new ArrayList<>(), fabricJars = new ArrayList<>(),
                 convertedDataPacks = new ArrayList<>();
@@ -1277,10 +1427,16 @@ public final class ResourceManagerActivity extends Activity {
                 boolean resourceConverted = info.assets > 0 && hasConvertedFabricPack(info, false);
                 boolean dataConverted = info.data > 0 && hasConvertedFabricPack(info, true);
                 boolean contentConverted = modIdExistsIn(bridgeModDir(), info.id);
+                File activeRuntimeJar = findRuntimeFabricJar(fabricJavaModDir(), info.id);
+                File disabledRuntimeJar = findRuntimeFabricJar(fabricDisabledModDir(), info.id);
+                boolean loaderEnabled = activeRuntimeJar != null;
                 boolean code = info.classes > 0 || info.hasEntrypoints || info.hasMixins || info.hasAccessWidener;
                 StringBuilder details = new StringBuilder("ID: ").append(info.id).append(" · versão ")
                         .append(info.version).append(" · ").append(info.classes).append(" classes · ")
                         .append(info.resources).append(" arquivos assets/data");
+                if (loaderEnabled) details.append(" · JAR original na pasta mods (habilitado para o perfil Fabric)");
+                else if (disabledRuntimeJar != null) details.append(" · JAR original preservado fora de mods (desativado)");
+                else details.append(" · cópia de runtime ausente; reimporte para habilitar o carregamento");
                 if (contentConverted) details.append(" · convertido em .hmod de conteúdo no perfil Bridge");
                 else {
                     if (resourceConverted) details.append(" · assets convertidos para pack desativado");
@@ -1292,7 +1448,7 @@ public final class ResourceManagerActivity extends Activity {
                 else if (contentConverted || resourceConverted || dataConverted) details.append(" · conteúdo portátil convertido; validar no jogo");
                 else details.append(" · aguardando conversão nativa; não executado");
                 fabricJars.add(new ResourceItem(Kind.FABRIC_JAR, file.getName(), file,
-                        info.id, false, details.toString()));
+                        info.id, loaderEnabled, details.toString()));
             } catch (Exception error) {
                 fabricJars.add(new ResourceItem(Kind.FABRIC_JAR, file.getName(), file,
                         "", false, "JAR importado, mas sua análise falhou: " + message(error)));
@@ -1316,8 +1472,9 @@ public final class ResourceManagerActivity extends Activity {
         addSection("Pacotes de textura", "ZIPs Java com pack.mcmeta e assets/.", textures);
         addSection(fabricBridgeEnabled() ? "Mods Horizon — perfil Fabric Bridge" : "Mods Horizon — perfil Vanilla",
                 "Arquivos .hmod separados por perfil; a ativação vale no próximo início.", mods);
-        addSection("JARs Fabric importados — conversão automática de conteúdo",
-                "Assets/data podem ser extraídos; classes Java, entrypoints e Mixins ainda exigem adaptação para Horizon.", fabricJars);
+        addSection("Mods Fabric originais — pasta do Loader",
+                "Os JARs são preservados inteiros. Novas importações começam desativadas; habilitar move o original para mods/ e desabilitar o tira dessa pasta. A execução real ainda depende da integração do Loader com as APIs do Horizon.",
+                fabricJars);
         addSection("Pacotes de dados convertidos — instalação por mundo",
                 "Selecione a pasta de um mundo salvo para copiar o pack para datapacks/.", convertedDataPacks);
         addSection("Shader packs", "Pastas pack.toml/shaders/ e shader ZIPs Java reconhecidos.", shaders);
@@ -1515,13 +1672,15 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams actionsParams = params(-1, -2); actionsParams.topMargin = dp(4);
         row.addView(actions, actionsParams);
         CheckBox active = new CheckBox(this);
-        active.setText(item.kind == Kind.FABRIC_JAR ? "Conteúdo convertido / pendente"
+        active.setText(item.kind == Kind.FABRIC_JAR ? "Habilitar no Loader"
                 : item.kind == Kind.DATA_PACK ? "Instalação por mundo"
                 : item.active ? "Ativo" : "Desativado");
         active.setTextColor(0xff283550);
-        active.setChecked(item.kind != Kind.FABRIC_JAR && item.kind != Kind.DATA_PACK && item.active);
-        active.setEnabled(item.kind != Kind.FABRIC_JAR && item.kind != Kind.DATA_PACK
-                && (item.kind != Kind.MOD || !item.id.isEmpty()));
+        active.setChecked(item.kind != Kind.DATA_PACK && item.active);
+        active.setEnabled(item.kind != Kind.DATA_PACK
+                && (item.kind == Kind.FABRIC_JAR
+                        ? !item.id.isEmpty() && !"fabric-api".equals(item.id)
+                        : item.kind != Kind.MOD || !item.id.isEmpty()));
         active.setOnCheckedChangeListener((button, checked) -> {
             try {
                 setActive(item, checked);
@@ -1548,8 +1707,12 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     private void setActive(ResourceItem item, boolean enabled) throws Exception {
-        if (item.kind == Kind.FABRIC_JAR || item.kind == Kind.DATA_PACK) {
-            throw new IllegalArgumentException("Este recurso não pode ser ativado globalmente.");
+        if (item.kind == Kind.FABRIC_JAR) {
+            setFabricJarActive(item, enabled);
+            return;
+        }
+        if (item.kind == Kind.DATA_PACK) {
+            throw new IllegalArgumentException("Pacotes de dados são instalados por mundo.");
         }
         if (item.kind == Kind.MOD) {
             if (item.id.isEmpty()) throw new IllegalArgumentException("O manifesto deste mod é inválido.");
@@ -1577,6 +1740,7 @@ public final class ResourceManagerActivity extends Activity {
                     try {
                         if (item.kind != Kind.FABRIC_JAR && item.kind != Kind.DATA_PACK) setActive(item, false);
                         deleteRecursively(item.path);
+                        if (item.kind == Kind.FABRIC_JAR) deleteRuntimeFabricJarCopy(item.id);
                         if (item.kind == Kind.SHADER) new File(shaderDir(), item.name + ".txt").delete();
                         refreshResources();
                         showStatus(item.name + " excluído.");
@@ -1792,6 +1956,7 @@ public final class ResourceManagerActivity extends Activity {
         importFilesButton.setEnabled(!value);
         importFabricJarButton.setEnabled(!value);
         importFolderButton.setEnabled(!value);
+        if (validateFabricButton != null) validateFabricButton.setEnabled(!value);
         profileToggle.setEnabled(!value);
         progress.setVisibility(value ? View.VISIBLE : View.GONE);
         progress.setIndeterminate(value);
@@ -1843,6 +2008,7 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        preflightCancelled.set(true);
         io.shutdownNow();
         super.onDestroy();
     }

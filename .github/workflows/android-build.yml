@@ -19,6 +19,8 @@ on:
       - "app/src/main/assets/fabric-api-26.3-catalog.json"
       - "tools/fabric_jar_converter.py"
       - "tools/fabric_bridge_p1/**"
+      - "tools/fabric_java_compat/**"
+      - "docs/fabric-java-runtime-architecture.md"
       - "tools/tests/**"
       - "docs/fabric-bridge-phase1.md"
       - "tools/horizon_server_packs.rs"
@@ -39,6 +41,8 @@ on:
       - "tools/fabric_api_26_3_catalog.json"
       - "app/src/main/assets/fabric-api-26.3-catalog.json"
       - "tools/fabric_bridge_p1/**"
+      - "tools/fabric_java_compat/**"
+      - "docs/fabric-java-runtime-architecture.md"
       - "tools/tests/**"
       - "docs/fabric-bridge-phase1.md"
       - "tools/horizon_server_packs.rs"
@@ -146,6 +150,9 @@ jobs:
 
       - name: Test Fabric Bridge P1 kernel
         run: cargo test --manifest-path tools/fabric_bridge_p1/Cargo.toml
+
+      - name: Test standalone Java compatibility host
+        run: bash tools/fabric_java_compat/test-host.sh
 
       - name: Preflight pinned Horizon overlay before expensive builds
         shell: bash
@@ -416,6 +423,141 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Download and verify the complete official Fabric API mod
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="0.165.0+26.3"
+          VERSION_PATH="0.165.0%2B26.3"
+          ARTIFACT="fabric-api-$VERSION.jar"
+          MAVEN_DIR="https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/$VERSION_PATH"
+          DEST="app/src/main/assets/fabric-bridge"
+          mkdir -p "$DEST"
+          curl --fail --location --retry 3 --retry-all-errors "$MAVEN_DIR/$ARTIFACT" --output "$DEST/$ARTIFACT"
+          curl --fail --location --retry 3 --retry-all-errors "$MAVEN_DIR/$ARTIFACT.sha256" --output "$RUNNER_TEMP/fabric-api.sha256"
+          EXPECTED_SHA256="$(tr -d '[:space:]' < "$RUNNER_TEMP/fabric-api.sha256" | tr 'A-F' 'a-f')"
+          if [[ ! "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Official Fabric API Maven SHA-256 sidecar has an unexpected format."
+            exit 1
+          fi
+          printf '%s  %s\n' "$EXPECTED_SHA256" "$DEST/$ARTIFACT" | sha256sum --check -
+          python3 tools/fabric_java_compat/verify_fabric_api_bundle.py \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-api-runtime.json \
+            --upstream-sha256 "$EXPECTED_SHA256"
+          python3 tools/fabric_java_compat/generate_fabric_api_abi.py \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-api-26.3-abi.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          catalog = json.loads(Path("app/src/main/assets/fabric-api-26.3-abi.json").read_text(encoding="utf-8"))
+          assert catalog["target_minecraft"] == "26.3"
+          assert catalog["fabric_api_version"] == "0.165.0+26.3"
+          assert catalog["public_class_count"] >= 100
+          assert catalog["public_member_count"] >= 100
+          print(f"Verified ABI catalog: {catalog['public_class_count']} classes, {catalog['public_member_count']} members.")
+          PY
+          echo "Bundled the intact official Fabric API and catalogued its exact JVM ABI."
+
+      - name: Download official Minecraft 26.3 client and generate named class ABI catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          META_SHA1="61fff1316bd50312624a858bbb5eb18fa45208ed"
+          META_URL="https://piston-meta.mojang.com/v1/packages/$META_SHA1/26.3.json"
+          META="$RUNNER_TEMP/minecraft-26.3-version.json"
+          CLIENT="$RUNNER_TEMP/minecraft-26.3-client.jar"
+          ABI="$RUNNER_TEMP/minecraft-26.3-client-abi.json"
+          curl --fail --location --retry 3 --retry-all-errors "$META_URL" --output "$META"
+          printf '%s  %s\n' "$META_SHA1" "$META" | sha1sum --check -
+          readarray -t CLIENT_INFO < <(python3 - "$META" <<'PY'
+          import json, sys
+          from pathlib import Path
+          data=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert data.get("id") == "26.3", "Unexpected official Minecraft metadata version"
+          download=data["downloads"]["client"]
+          url=download["url"]
+          sha1=download["sha1"].lower()
+          assert url.startswith("https://piston-data.mojang.com/"), "Client URL is not on Mojang's official object host"
+          assert len(sha1) == 40 and all(ch in "0123456789abcdef" for ch in sha1), "Invalid official client SHA-1"
+          print(url)
+          print(sha1)
+          PY
+          )
+          test "${#CLIENT_INFO[@]}" -eq 2
+          curl --fail --location --retry 3 --retry-all-errors "${CLIENT_INFO[0]}" --output "$CLIENT"
+          printf '%s  %s\n' "${CLIENT_INFO[1]}" "$CLIENT" | sha1sum --check -
+          python3 tools/fabric_java_compat/generate_minecraft_abi.py \
+            "$CLIENT" "${CLIENT_INFO[1]}" "$ABI"
+          python3 - "$ABI" <<'PY'
+          import json, sys
+          from pathlib import Path
+          catalog=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert catalog["target_minecraft"] == "26.3"
+          assert catalog["client_sha1"]
+          for name in ("net.minecraft.client.Minecraft", "net.minecraft.client.multiplayer.ClientLevel",
+                       "net.minecraft.client.player.LocalPlayer", "net.minecraft.world.item.ItemStack",
+                       "net.minecraft.world.level.Level", "net.minecraft.core.BlockPos"):
+              assert any(row["name"] == name for row in catalog["classes"]), f"Missing ABI class {name}"
+          print(f"Verified Minecraft 26.3 ABI: {catalog['public_class_count']} classes, "
+                f"{catalog['public_member_count']} members; client SHA-1 {catalog['client_sha1']}.")
+          PY
+          echo "$ABI" > "$RUNNER_TEMP/minecraft-26.3-abi-path.txt"
+
+      - name: Download and verify official Fabric Loader for Minecraft 26.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="0.19.5"
+          ARTIFACT="fabric-loader-$VERSION.jar"
+          MAVEN_DIR="https://maven.fabricmc.net/net/fabricmc/fabric-loader/$VERSION"
+          DEST="app/src/main/assets/fabric-loader"
+          mkdir -p "$DEST"
+          curl --fail --location --retry 3 --retry-all-errors "$MAVEN_DIR/$ARTIFACT" --output "$DEST/$ARTIFACT"
+          curl --fail --location --retry 3 --retry-all-errors "$MAVEN_DIR/$ARTIFACT.sha256" --output "$RUNNER_TEMP/fabric-loader.sha256"
+          EXPECTED_SHA256="$(tr -d '[:space:]' < "$RUNNER_TEMP/fabric-loader.sha256" | tr 'A-F' 'a-f')"
+          if [[ ! "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Official Fabric Loader Maven SHA-256 sidecar has an unexpected format."
+            exit 1
+          fi
+          printf '%s  %s\n' "$EXPECTED_SHA256" "$DEST/$ARTIFACT" | sha256sum --check -
+          bash tools/fabric_java_compat/download-loader-dependencies.sh "$DEST/deps"
+          python3 tools/fabric_java_compat/verify_fabric_loader_bundle.py \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-runtime.json \
+            --upstream-sha256 "$EXPECTED_SHA256" \
+            --dependencies-dir "$DEST/deps"
+          bash tools/fabric_java_compat/build-loader-provider.sh \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-provider.jar
+          python3 tools/fabric_java_compat/verify_fabric_loader_bundle.py \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-runtime.json \
+            --upstream-sha256 "$EXPECTED_SHA256" \
+            --provider-jar app/src/main/assets/fabric-loader-provider.jar \
+            --dependencies-dir "$DEST/deps"
+          bash tools/fabric_java_compat/test-loader-provider.sh \
+            "$DEST/$ARTIFACT" app/src/main/assets/fabric-loader-provider.jar "$DEST/deps"
+          echo "Bundled official Loader 0.19.5 and smoke-tested the isolated Horizon GameProvider; this does not launch game mods."
+
+      - name: Package standalone Fabric Java host and lock its bridge protocol payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/fabric_java_compat/build-host.sh app/src/main/assets/fabric-java-host.jar
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          jar = Path("app/src/main/assets/fabric-java-host.jar")
+          manifest = {
+              "schema_version": 1,
+              "artifact": "MobileHorizonNative/fabric-java-host",
+              "main_class": "dev.mobilehorizon.fabric.FabricJavaCompatHost",
+              "protocol_version": 1,
+              "sha256": hashlib.sha256(jar.read_bytes()).hexdigest(),
+              "size_bytes": jar.stat().st_size,
+          }
+          Path("app/src/main/assets/fabric-java-host-runtime.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print("Locked Fabric Java bridge host SHA-256: " + manifest["sha256"])
+          PY
+
       - name: Run compatibility tests and build debug APK
         shell: bash
         env:
@@ -448,6 +590,20 @@ jobs:
           grep -Fq 'lib/arm64-v8a/libhorizon_android.so' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/horizon-prepare/horizon-prepare-arm64' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-java-host.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-java-host-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-api-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-api-26.3-abi.json' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-bridge/fabric-api-0.165.0+26.3.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader-runtime.json' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/fabric-loader-0.19.5.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader-provider.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/asm-9.10.1.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/asm-analysis-9.10.1.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/asm-commons-9.10.1.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/asm-tree-9.10.1.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/asm-util-9.10.1.jar' "$RUNNER_TEMP/apk-file-list.txt"
+          grep -Fq 'assets/fabric-loader/deps/sponge-mixin-0.17.4+mixin.0.8.7.jar' "$RUNNER_TEMP/apk-file-list.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
           if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
             grep -F "name='dev.mobilehorizon.app.offline1' versionCode='19' versionName='0.0.1-offline1'" "$RUNNER_TEMP/apk-badging.txt"
@@ -462,7 +618,7 @@ jobs:
             echo "::warning::APK is test-only and uses a separate application ID because stable signing secrets are missing. It will not overwrite the installed app or share its data."
             echo "Version-isolated test APK published under dev.mobilehorizon.app.offline1.test.v19; the previous test package and its data remain installed separately. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "APK is valid, package/version match, and Horizon ARM64 runtime plus Java 25 manifest payload are included."
+          echo "APK is valid, package/version match, and Horizon ARM64, Java 25, Fabric host scaffold, official Fabric Loader 0.19.5, its checksum-verified ASM/Mixin dependencies, and intact Fabric API 26.3 payloads are included. Loader presence is not proof of in-game mod execution."
 
       - name: Upload update-safe APK
         if: success() && steps.signing.outputs.enabled == 'true'
@@ -470,6 +626,15 @@ jobs:
         with:
           name: mobilehorizon-native-offline1-update-safe
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Minecraft 26.3 ABI catalog (developer diagnostics)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minecraft-26.3-abi-catalog
+          path: ${{ runner.temp }}/minecraft-26.3-client-abi.json
           if-no-files-found: error
           retention-days: 14
 
