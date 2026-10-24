@@ -28,6 +28,8 @@ import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.DataInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -44,6 +46,8 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -52,6 +56,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 /** Manages only resource formats supported by the bundled Horizon runtime. */
@@ -61,10 +66,18 @@ public final class ResourceManagerActivity extends Activity {
     private static final int REQUEST_IMPORT_FABRIC_JAR = 703;
     private static final int REQUEST_INSTALL_DATA_PACK = 704;
     private static final long MAX_IMPORT_BYTES = 512L * 1024L * 1024L;
+    private static final int MAX_CLASS_AUDIT_BYTES = 16 * 1024 * 1024;
+    private static final long MAX_TOTAL_CLASS_AUDIT_BYTES = 256L * 1024L * 1024L;
+    private static final int MAX_NESTED_JARS = 32;
+    private static final long MAX_NESTED_JAR_BYTES = 32L * 1024L * 1024L;
+    private static final long MAX_NESTED_JAR_TOTAL_BYTES = 64L * 1024L * 1024L;
+    private static final long MAX_NESTED_UNCOMPRESSED_BYTES = 128L * 1024L * 1024L;
+    private static final int MAX_SUPPORTED_CLASS_MAJOR = 69; // Java 25
     private static final int MAX_FOLDER_ENTRIES = 20_000;
     private static final int MAX_FOLDER_DEPTH = 64;
     private static final int BUFFER_SIZE = 32 * 1024;
     private static final Pattern MOD_ID = Pattern.compile("(?m)^\\s*id\\s*=\\s*\"([A-Za-z0-9_.-]+)\"\\s*(?:#.*)?$");
+    private static final Pattern FABRIC_API_REFERENCE = Pattern.compile("net/fabricmc/fabric/api/[A-Za-z0-9_/$]+");
 
     private enum Kind { TEXTURE, MOD, SHADER, FABRIC_JAR, DATA_PACK }
     private enum ArchiveKind { TEXTURE, JAVA_SHADER, HORIZON_SHADER, UNKNOWN }
@@ -83,16 +96,25 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     private static final class FabricJarInfo {
-        final String id, name, version;
-        final int classes, resources, assets, data;
+        final String id, name, version, fabricApiConstraint;
+        final int classes, resources, assets, data, unmappedApiReferences, maxClassMajor, nestedJarCount;
         final boolean hasMixins, hasAccessWidener, hasEntrypoints;
+        final List<String> fabricApiModules, auditWarnings;
         FabricJarInfo(String id, String name, String version, int classes, int resources,
                       int assets, int data, boolean hasMixins, boolean hasAccessWidener,
-                      boolean hasEntrypoints) {
+                      boolean hasEntrypoints, List<String> fabricApiModules,
+                      int unmappedApiReferences, int maxClassMajor, int nestedJarCount,
+                      String fabricApiConstraint, List<String> auditWarnings) {
             this.id = id; this.name = name; this.version = version;
             this.classes = classes; this.resources = resources; this.assets = assets; this.data = data;
             this.hasMixins = hasMixins; this.hasAccessWidener = hasAccessWidener;
             this.hasEntrypoints = hasEntrypoints;
+            this.fabricApiModules = new ArrayList<>(fabricApiModules);
+            this.unmappedApiReferences = unmappedApiReferences;
+            this.maxClassMajor = maxClassMajor;
+            this.nestedJarCount = nestedJarCount;
+            this.fabricApiConstraint = fabricApiConstraint == null ? "" : fabricApiConstraint;
+            this.auditWarnings = new ArrayList<>(auditWarnings);
         }
     }
 
@@ -106,6 +128,7 @@ public final class ResourceManagerActivity extends Activity {
     private CheckBox profileToggle;
     private File pendingDataPackInstall;
     private boolean busy;
+    private Map<String, String> fabricApiCatalogCache;
 
     private boolean fabricBridgeEnabled() {
         return getSharedPreferences("horizon_fabric_bridge", MODE_PRIVATE).getBoolean("enabled", false);
