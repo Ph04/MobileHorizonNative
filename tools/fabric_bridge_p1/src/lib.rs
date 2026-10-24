@@ -1,4 +1,5 @@
 //! Fabric Bridge P1 kernel. It uses namespaced IDs and never stores game-object pointers.
+pub mod api_v06;
 pub mod commands;
 pub mod config;
 pub mod events;
