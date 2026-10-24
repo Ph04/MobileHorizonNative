@@ -268,6 +268,17 @@ pack_patch("crates/horizon-client/src/net.rs", '''fn receive_play(
     send: &Sender<Event>,
 ) -> Result<String, String> {''', "play packet reader signature")
 
+pack_patch("crates/horizon-client/src/net.rs",
+    '''receive_play(&mut reader, &thread_writer, &Language::new(), &send)''',
+    '''receive_play(
+                &mut reader,
+                Arc::clone(&thread_writer),
+                Arc::new(AtomicU8::new(PACK_STATE_PLAY)),
+                &Language::new(),
+                &send,
+            )''',
+    "update connection test call for protocol-state parameter")
+
 pack_patch("crates/horizon-client/src/net.rs", '''    pub fn send(&self, packet: play::Serverbound) {
         if self.debug''', '''    pub fn send(&self, packet: play::Serverbound) {
         // Serialize the phase check with packet writes. A state check before
