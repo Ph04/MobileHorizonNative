@@ -1,7 +1,6 @@
 //! APIs nativas adicionais do Fabric Bridge v0.6, mantidas sem hooks de jogo implícitos.
 //! São modelos/algoritmos determinísticos para o host ligar aos caminhos autoritativos do Horizon.
 use crate::Id;
-use std::collections::{BTreeMap, BTreeSet};
 
 pub mod transfer {
     use super::Id;
@@ -17,8 +16,8 @@ pub mod transfer {
         let mut moved = 0;
         for source in &mut from.slots {
             if moved >= max { break; }
-            let Some(stack) = source.stack.as_mut() else { continue; };
-            if stack.count == 0 { source.stack = None; continue; }
+            let Some(mut stack) = source.stack.take() else { continue; };
+            if stack.count == 0 { continue; }
             for target in &mut to.slots {
                 if moved >= max { break; }
                 let room = match target.stack.as_ref() {
@@ -39,7 +38,7 @@ pub mod transfer {
                 stack.count -= amount;
                 moved += amount;
             }
-            if stack.count == 0 { source.stack = None; }
+            if stack.count > 0 { source.stack = Some(stack); }
         }
         moved
     }
