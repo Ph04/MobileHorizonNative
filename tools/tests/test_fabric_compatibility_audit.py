@@ -15,7 +15,7 @@ def minimal_class(name="test/Fixture", references=("net/minecraft/world/level/Le
     cp = []
     for value in strings:
         cp.append(utf8(value))
-        cp.append(class_info(len(cp) + 1))
+        cp.append(class_info(len(cp)))
     cp_count = len(cp) + 1
     return (
         b"\xca\xfe\xba\xbe" + struct.pack(">HHH", 0, 69, cp_count)
