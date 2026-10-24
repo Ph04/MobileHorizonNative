@@ -278,6 +278,201 @@ pub mod resources {
     }
 }
 
+
+/// Declarative vanilla recipes and a deterministic RecipeBook.
+pub mod recipes {
+    use super::Id;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum Ingredient { Item(Id), Tag(Id) }
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct ItemStack { pub id: Id, pub count: u32 }
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum Recipe {
+        Shaped { id: Id, width: u8, height: u8, pattern: Vec<Option<Ingredient>>, result: ItemStack },
+        Shapeless { id: Id, ingredients: Vec<Ingredient>, result: ItemStack },
+    }
+    impl Recipe {
+        pub fn id(&self) -> &Id { match self { Self::Shaped { id, .. } | Self::Shapeless { id, .. } => id } }
+        pub fn result(&self) -> &ItemStack { match self { Self::Shaped { result, .. } | Self::Shapeless { result, .. } => result } }
+        pub fn validate(&self) -> Result<(), String> {
+            if self.result().count == 0 || self.result().count > 99 { return Err("recipe result count must be 1..=99".into()); }
+            match self {
+                Self::Shaped { width, height, pattern, .. } => {
+                    if *width == 0 || *height == 0 || *width > 3 || *height > 3 || pattern.len() != (*width as usize) * (*height as usize) || pattern.iter().all(Option::is_none) {
+                        return Err("shaped recipe must have a non-empty pattern no larger than 3x3".into());
+                    }
+                }
+                Self::Shapeless { ingredients, .. } => {
+                    if ingredients.is_empty() || ingredients.len() > 9 { return Err("shapeless recipe must have 1..=9 ingredients".into()); }
+                }
+            }
+            Ok(())
+        }
+        pub fn matches(&self, grid: &[Option<Id>], grid_width: u8, grid_height: u8, tags: &BTreeMap<Id, BTreeSet<Id>>) -> bool {
+            if grid_width == 0 || grid_height == 0 || grid.len() != grid_width as usize * grid_height as usize { return false; }
+            match self {
+                Self::Shaped { width, height, pattern, .. } => {
+                    if *width > grid_width || *height > grid_height { return false; }
+                    for oy in 0..=(grid_height - *height) {
+                        for ox in 0..=(grid_width - *width) {
+                            for mirrored in [false, true] {
+                                let mut valid = true;
+                                for y in 0..grid_height {
+                                    for x in 0..grid_width {
+                                        let in_pattern = x >= ox && x < ox + *width && y >= oy && y < oy + *height;
+                                        let item = grid[y as usize * grid_width as usize + x as usize].as_ref();
+                                        if !in_pattern {
+                                            if item.is_some() { valid = false; }
+                                            continue;
+                                        }
+                                        let px = x - ox;
+                                        let px = if mirrored { *width - 1 - px } else { px };
+                                        let ingredient = pattern[(y - oy) as usize * *width as usize + px as usize].as_ref();
+                                        if !ingredient_matches(ingredient, item, tags) { valid = false; }
+                                    }
+                                }
+                                if valid { return true; }
+                            }
+                        }
+                    }
+                    false
+                }
+                Self::Shapeless { ingredients, .. } => {
+                    let items: Vec<&Id> = grid.iter().filter_map(Option::as_ref).collect();
+                    if items.len() != ingredients.len() { return false; }
+                    let mut used = vec![false; items.len()];
+                    match_shapeless(ingredients, &items, tags, 0, &mut used)
+                }
+            }
+        }
+    }
+    fn ingredient_matches(ingredient: Option<&Ingredient>, item: Option<&Id>, tags: &BTreeMap<Id, BTreeSet<Id>>) -> bool {
+        match (ingredient, item) {
+            (None, None) => true,
+            (Some(Ingredient::Item(expected)), Some(actual)) => expected == actual,
+            (Some(Ingredient::Tag(tag)), Some(actual)) => tags.get(tag).is_some_and(|members| members.contains(actual)),
+            _ => false,
+        }
+    }
+    fn match_shapeless(ingredients: &[Ingredient], items: &[&Id], tags: &BTreeMap<Id, BTreeSet<Id>>, index: usize, used: &mut [bool]) -> bool {
+        if index == ingredients.len() { return true; }
+        for i in 0..items.len() {
+            if used[i] { continue; }
+            if ingredient_matches(Some(&ingredients[index]), Some(items[i]), tags) {
+                used[i] = true;
+                if match_shapeless(ingredients, items, tags, index + 1, used) { return true; }
+                used[i] = false;
+            }
+        }
+        false
+    }
+    #[derive(Default)]
+    pub struct RecipeBook { recipes: BTreeMap<Id, Recipe> }
+    impl RecipeBook {
+        pub fn register(&mut self, recipe: Recipe) -> Result<(), String> {
+            recipe.validate()?;
+            if self.recipes.contains_key(recipe.id()) { return Err(format!("duplicate recipe {}", recipe.id().as_str())); }
+            self.recipes.insert(recipe.id().clone(), recipe);
+            Ok(())
+        }
+        pub fn get(&self, id: &Id) -> Option<&Recipe> { self.recipes.get(id) }
+        pub fn matching(&self, grid: &[Option<Id>], width: u8, height: u8, tags: &BTreeMap<Id, BTreeSet<Id>>) -> Vec<&Recipe> {
+            self.recipes.values().filter(|recipe| recipe.matches(grid, width, height, tags)).collect()
+        }
+        pub fn ids(&self) -> impl Iterator<Item = &Id> { self.recipes.keys() }
+    }
+}
+
+/// Safe declarative subset of vanilla loot conditions/functions. Arbitrary Java callbacks must be ported.
+pub mod loot {
+    use super::Id;
+    use std::collections::BTreeSet;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Weather { Clear, Rain, Thunder }
+    #[derive(Clone, Debug, Default)]
+    pub struct Context { pub weather: Option<Weather>, pub entity_tags: BTreeSet<Id> }
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum Condition { Always, ChanceBasisPoints(u16), Weather(Weather), EntityTag(Id) }
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum Function { SetCount { min: u32, max: u32 }, AddCount(u32), MultiplyCount { numerator: u32, denominator: u32 } }
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Entry { pub item: Id, pub weight: u32, pub conditions: Vec<Condition>, pub functions: Vec<Function>, pub max_stack: u32 }
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    pub struct Pool { pub rolls: u8, pub entries: Vec<Entry> }
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    pub struct Table { pub pools: Vec<Pool> }
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Drop { pub item: Id, pub count: u32 }
+    #[derive(Clone, Copy)]
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 { self.0 ^= self.0 << 13; self.0 ^= self.0 >> 7; self.0 ^= self.0 << 17; self.0 }
+        fn below(&mut self, upper: u64) -> u64 { if upper == 0 { 0 } else { self.next() % upper } }
+    }
+    impl Table {
+        pub fn validate(&self) -> Result<(), String> {
+            if self.pools.len() > 64 { return Err("loot table has more than 64 pools".into()); }
+            for pool in &self.pools {
+                if pool.entries.len() > 256 { return Err("loot pool has more than 256 entries".into()); }
+                for entry in &pool.entries {
+                    if entry.weight == 0 || entry.max_stack == 0 || entry.max_stack > 99 { return Err("loot entry requires positive weight and max_stack 1..=99".into()); }
+                    for f in &entry.functions {
+                        match f {
+                            Function::SetCount { min, max } if min == &0 || min > max || *max > entry.max_stack => return Err("invalid loot set-count range".into()),
+                            Function::MultiplyCount { denominator: 0, .. } => return Err("loot multiplier denominator cannot be zero".into()),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+        pub fn roll(&self, seed: u64, context: &Context) -> Result<Vec<Drop>, String> {
+            self.validate()?;
+            let mut rng = Rng(if seed == 0 { 0x9e37_79b9_7f4a_7c15 } else { seed });
+            let mut output = Vec::new();
+            for pool in &self.pools {
+                for _ in 0..pool.rolls {
+                    let mut eligible: Vec<&Entry> = Vec::new();
+                    let mut total = 0u64;
+                    for entry in &pool.entries {
+                        if entry.conditions.iter().all(|c| condition_matches(c, context, &mut rng)) {
+                            total = total.checked_add(entry.weight as u64).ok_or("loot weights overflow")?;
+                            eligible.push(entry);
+                        }
+                    }
+                    if total == 0 { continue; }
+                    let chosen = rng.below(total);
+                    let mut cursor = 0u64;
+                    let entry = eligible.into_iter().find(|e| { cursor += e.weight as u64; chosen < cursor }).expect("weight selection is bounded");
+                    let mut count = 1u32;
+                    for function in &entry.functions {
+                        count = match function {
+                            Function::SetCount { min, max } => min + rng.below((*max - *min + 1) as u64) as u32,
+                            Function::AddCount(add) => count.saturating_add(*add),
+                            Function::MultiplyCount { numerator, denominator } => count.saturating_mul(*numerator) / *denominator,
+                        }.clamp(1, entry.max_stack);
+                    }
+                    output.push(Drop { item: entry.item.clone(), count });
+                    if output.len() > 1024 { return Err("loot output exceeded safety cap".into()); }
+                }
+            }
+            Ok(output)
+        }
+    }
+    fn condition_matches(condition: &Condition, context: &Context, rng: &mut Rng) -> bool {
+        match condition {
+            Condition::Always => true,
+            Condition::ChanceBasisPoints(bp) => rng.below(10_000) < (*bp as u64).min(10_000),
+            Condition::Weather(expected) => context.weather == Some(*expected),
+            Condition::EntityTag(tag) => context.entity_tags.contains(tag),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{attachments, permissions, registry_sync, resources, transfer};
