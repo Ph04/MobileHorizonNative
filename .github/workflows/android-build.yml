@@ -19,6 +19,8 @@ on:
       - "app/src/main/assets/fabric-api-26.3-catalog.json"
       - "tools/fabric_jar_converter.py"
       - "tools/fabric_bridge_p1/**"
+      - "tools/fabric_java_compat/**"
+      - "docs/fabric-java-runtime-architecture.md"
       - "tools/tests/**"
       - "docs/fabric-bridge-phase1.md"
       - "tools/horizon_server_packs.rs"
@@ -39,6 +41,8 @@ on:
       - "tools/fabric_api_26_3_catalog.json"
       - "app/src/main/assets/fabric-api-26.3-catalog.json"
       - "tools/fabric_bridge_p1/**"
+      - "tools/fabric_java_compat/**"
+      - "docs/fabric-java-runtime-architecture.md"
       - "tools/tests/**"
       - "docs/fabric-bridge-phase1.md"
       - "tools/horizon_server_packs.rs"
@@ -146,6 +150,9 @@ jobs:
 
       - name: Test Fabric Bridge P1 kernel
         run: cargo test --manifest-path tools/fabric_bridge_p1/Cargo.toml
+
+      - name: Test standalone Java compatibility host
+        run: bash tools/fabric_java_compat/test-host.sh
 
       - name: Preflight pinned Horizon overlay before expensive builds
         shell: bash

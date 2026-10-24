@@ -197,7 +197,7 @@ public final class ResourceManagerActivity extends Activity {
         });
         profileCard.addView(profileToggle, params(-1, -2));
         TextView profileHint = text(
-                "A seleção é compartilhada com a tela Jogar. Os mods .hmod ficam separados por perfil; JARs Fabric são apenas armazenados para análise/conversão e nunca são executados diretamente.",
+                "A seleção é compartilhada com a tela Jogar. Os mods .hmod ficam separados por perfil; O JAR original fica preservado para a futura camada Java; esta build ainda não executa entrypoints, chamadas Fabric API ou Mixins.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams profileHintParams = params(-1, -2);
         profileHintParams.topMargin = dp(4);
@@ -209,7 +209,7 @@ public final class ResourceManagerActivity extends Activity {
         page.addView(actions, actionsParams);
         importFilesButton = button("Importar recursos (.zip / .hmod)", true, v -> chooseFiles());
         actions.addView(importFilesButton, params(-1, dp(60)));
-        importFabricJarButton = button("Importar e converter mod Fabric (.jar)", false, v -> chooseFabricJars());
+        importFabricJarButton = button("Importar mod Fabric original (.jar)", false, v -> chooseFabricJars());
         LinearLayout.LayoutParams fabricImportParams = params(-1, dp(60));
         fabricImportParams.topMargin = dp(8);
         actions.addView(importFabricJarButton, fabricImportParams);
@@ -236,7 +236,7 @@ public final class ResourceManagerActivity extends Activity {
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "As alterações são aplicadas ao abrir o Minecraft novamente. O conversor Horizon cria .hmod de conteúdo a partir de assets/data que entende e declara alguns blocos/itens. A lógica Java, entrypoints, Mixins e access wideners não são convertidos nem executados. Packs de textura usam ZIP com pack.mcmeta e assets/; shader packs aceitam ZIPs shaders/ ou pastas pack.toml/shaders/.",
+                "As alterações são aplicadas ao abrir o Minecraft novamente. O conversor Horizon cria .hmod de conteúdo a partir de assets/data que entende e declara alguns blocos/itens. O JAR original fica preservado para a camada de compatibilidade Java; esta build ainda não executa entrypoints, chamadas Fabric API ou Mixins. Packs de textura usam ZIP com pack.mcmeta e assets/; shader packs aceitam ZIPs shaders/ ou pastas pack.toml/shaders/.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(12);
@@ -357,7 +357,7 @@ public final class ResourceManagerActivity extends Activity {
                 File auditReport = writeFabricAuditReport(info, target);
                 return "JAR Fabric " + info.name + " (" + info.id + " " + info.version + ") importado; "
                         + conversion + " Original: " + target.getName()
-                        + ". A saída de conteúdo fica apenas no perfil Fabric Bridge; classes Java/Mixins não são executadas. "
+                        + ". O JAR original foi preservado para a camada de compatibilidade Java; esta build ainda não executa entrypoints/Mixins. A saída de conteúdo fica apenas no perfil Fabric Bridge. "
                         + summarizeFabricAudit(info)
                         + (auditReport == null ? "" : " Relatório salvo em " + auditReport.getAbsolutePath() + ".");
             }
