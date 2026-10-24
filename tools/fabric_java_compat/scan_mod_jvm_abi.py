@@ -252,6 +252,8 @@ def scan_mod(mod_jar: Path, minecraft_abi: Path | None = None, fabric_abi: Path 
             if not 0 < info.file_size <= MAX_CLASS_BYTES:
                 raise ValueError(f"class outside size limits: {label}!/{name}")
             class_entries += 1
+            if class_entries > MAX_ENTRIES:
+                raise ValueError("mod JAR tree exceeds the total class-file budget")
             row = parse_class_file(archive.read(info), f"{label}!/{name}")
             class_versions.append(row["class_major"])
             class_refs.update(row["class_references_internal"])

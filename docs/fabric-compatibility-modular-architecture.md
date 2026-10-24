@@ -27,3 +27,8 @@ This change is source-only and is not compiled in this step. Automatic push buil
 
 
 The Java-side NativeBiomeApi is a typed module client for catalog/sample/search responses. Its DTOs are explicitly not Minecraft Biome/BlockPos instances, so future facades can use it without exposing JSON parsing to higher-level adapters.
+
+
+## Exact JVM member inventory
+
+The CI audit now emits a second JSON report with constant-pool class, field and method references, exact JVM descriptors, Java class-file versions, declared nested JARs, and a comparison against the public Minecraft 26.3 and Fabric API ABI catalogs. A member that is not in the public/protected catalog is marked as not found in that public ABI only; private members may still exist in the official JAR, and access wideners may be relevant. The report is a static inventory and does not execute mod code.

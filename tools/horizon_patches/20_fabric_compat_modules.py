@@ -162,8 +162,8 @@ rr(game_mods, """    /// What mods read this tick.
                 let search = horizon_world::worldgen::generator::BiomeSearch {
                     allowed: &allowed, origin: Some(spec.origin), radius: spec.radius,
                     horizontal: spec.horizontal_step, vertical: spec.vertical_step,
-                    min_y: horizon_client::chunk::MIN_Y,
-                    max_y: horizon_client::chunk::MIN_Y + horizon_client::chunk::HEIGHT - 1,
+                    min_y: crate::chunk::MIN_Y,
+                    max_y: crate::chunk::MIN_Y + crate::chunk::HEIGHT - 1,
                 };
                 let locator = self.end.locator().ok_or_else(|| "native_biome_search_unavailable_for_this_session".to_owned())?;
                 match locator.find_closest_biome(&search) {
