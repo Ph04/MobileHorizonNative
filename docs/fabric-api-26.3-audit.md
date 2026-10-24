@@ -8,7 +8,7 @@ O catálogo foi gerado da branch `26.3` de [FabricMC/fabric-api](https://github.
 - Fabric API: **0.165.0**
 - Commit fonte: [2065040b236a0d5ac011bd6a45625dc49579b222](https://github.com/FabricMC/fabric-api/commit/2065040b236a0d5ac011bd6a45625dc49579b222)
 - Módulos catalogados: **46**, incluindo o loader de recursos v0 depreciado.
-- Classes públicas fonte mapeadas: **415**. O catálogo mapeia classes/fonte, não métodos inteiros nem semântica de execução.
+- Classes públicas fonte mapeadas: **401**. O catálogo mapeia classes/fonte, não métodos inteiros nem semântica de execução.
 
 O arquivo `tools/fabric_api_26_3_catalog.json` é a fonte de verdade para a auditoria CLI; o espelho `app/src/main/assets/fabric-api-26.3-catalog.json` é usado pelo Gerenciador de Recursos Android. Ambos devem ser atualizados juntos quando a versão-alvo mudar.
 
