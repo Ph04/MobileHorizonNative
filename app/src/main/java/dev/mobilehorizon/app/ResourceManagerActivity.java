@@ -354,9 +354,12 @@ public final class ResourceManagerActivity extends Activity {
                     conversion = "O conversor Horizon não conseguiu gerar um mod de conteúdo completo: "
                             + message(conversionError) + ". O JAR original foi mantido na fila para análise.";
                 }
+                File auditReport = writeFabricAuditReport(info, target);
                 return "JAR Fabric " + info.name + " (" + info.id + " " + info.version + ") importado; "
                         + conversion + " Original: " + target.getName()
-                        + ". A saída de conteúdo fica apenas no perfil Fabric Bridge; classes Java/Mixins não são executadas.";
+                        + ". A saída de conteúdo fica apenas no perfil Fabric Bridge; classes Java/Mixins não são executadas. "
+                        + summarizeFabricAudit(info)
+                        + (auditReport == null ? "" : " Relatório salvo em " + auditReport.getAbsolutePath() + ".");
             }
             if (lower.endsWith(".hmod")) {
                 String id = readModId(staging);
@@ -388,6 +391,16 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     private FabricJarInfo inspectFabricJar(File file) throws Exception {
+        List<String> auditWarnings = new ArrayList<>();
+        Map<String, String> apiCatalog = loadFabricApiCatalog(auditWarnings);
+        Set<String> apiModules = new TreeSet<>();
+        Set<String> unknownApiReferences = new TreeSet<>();
+        long[] classBytesScanned = {0L};
+        int[] maxClassMajor = {0};
+        int[] nestedClassCount = {0};
+        int[] nestedJarCount = {0};
+        long[] nestedArchiveBytes = {0L};
+        long[] nestedUncompressedBytes = {0L};
         try (ZipFile zip = new ZipFile(file)) {
             ZipEntry metadata = zip.getEntry("fabric.mod.json");
             if (metadata == null || metadata.isDirectory()) {
@@ -407,6 +420,9 @@ public final class ResourceManagerActivity extends Activity {
             if (name.isEmpty()) name = id;
             String version = json.optString("version", "desconhecida").trim();
             if (version.isEmpty()) version = "desconhecida";
+            if (json.optInt("schemaVersion", -1) != 1) {
+                auditWarnings.add("fabric.mod.json não declara schemaVersion 1; confirme a versão do Loader.");
+            }
             int classes = 0, resources = 0, assets = 0, data = 0;
             boolean mixinFile = false, accessWidenerFile = false;
             java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
@@ -414,7 +430,26 @@ public final class ResourceManagerActivity extends Activity {
                 ZipEntry entry = entries.nextElement();
                 if (entry.isDirectory()) continue;
                 String path = entry.getName().replace('\\', '/');
-                if (path.endsWith(".class")) classes++;
+                if (path.endsWith(".class")) {
+                    classes++;
+                    if (entry.getSize() > MAX_CLASS_AUDIT_BYTES) {
+                        auditWarnings.add("Classe ignorada por exceder o limite de auditoria: " + path);
+                    } else if (entry.getSize() >= 0
+                            && classBytesScanned[0] + entry.getSize() > MAX_TOTAL_CLASS_AUDIT_BYTES) {
+                        if (!auditWarnings.contains("Auditoria de bytecode interrompida ao atingir o limite total de bytes.")) {
+                            auditWarnings.add("Auditoria de bytecode interrompida ao atingir o limite total de bytes.");
+                        }
+                    } else {
+                        try (InputStream input = zip.getInputStream(entry)) {
+                            byte[] classBytes = readLimitedBytes(input, MAX_CLASS_AUDIT_BYTES);
+                            classBytesScanned[0] += classBytes.length;
+                            scanFabricClassReferences(classBytes, apiCatalog, apiModules,
+                                    unknownApiReferences, maxClassMajor);
+                        } catch (IOException | RuntimeException error) {
+                            auditWarnings.add("Não foi possível analisar bytecode de " + path + ": " + message(error));
+                        }
+                    }
+                }
                 if (path.startsWith("assets/")) { assets++; resources++; }
                 if (path.startsWith("data/")) { data++; resources++; }
                 String pathLower = path.toLowerCase(Locale.ROOT);
@@ -423,6 +458,10 @@ public final class ResourceManagerActivity extends Activity {
                 if (pathLower.endsWith(".accesswidener") || pathLower.endsWith(".access_widener")
                         || pathLower.endsWith(".aw")) accessWidenerFile = true;
             }
+            inspectDeclaredNestedJars(zip, json, apiCatalog, apiModules, unknownApiReferences,
+                    maxClassMajor, classBytesScanned, nestedClassCount, nestedJarCount,
+                    nestedArchiveBytes, nestedUncompressedBytes, auditWarnings);
+            classes += nestedClassCount[0];
             Object mixins = json.opt("mixins");
             boolean hasMixins = mixinFile || (mixins instanceof JSONArray && ((JSONArray) mixins).length() > 0)
                     || (mixins instanceof String && !((String) mixins).trim().isEmpty())
@@ -431,10 +470,290 @@ public final class ResourceManagerActivity extends Activity {
                     || !json.optString("accessWidener", "").trim().isEmpty();
             JSONObject entrypoints = json.optJSONObject("entrypoints");
             boolean hasEntrypoints = entrypoints != null && entrypoints.length() > 0;
+            JSONObject dependencies = json.optJSONObject("depends");
+            String fabricApiConstraint = dependencies == null ? "" : dependencies.optString("fabric-api", "");
+            if (maxClassMajor[0] > MAX_SUPPORTED_CLASS_MAJOR) {
+                auditWarnings.add("Bytecode Java major " + maxClassMajor[0]
+                        + " é mais novo que Java 25 (major " + MAX_SUPPORTED_CLASS_MAJOR + ").");
+            }
+            if (!unknownApiReferences.isEmpty()) {
+                auditWarnings.add(unknownApiReferences.size()
+                        + " referência(s) à Fabric API não mapeada(s) no catálogo oficial 26.3.");
+            }
+            if (hasEntrypoints || hasMixins || hasAccessWidener || classes > 0) {
+                auditWarnings.add("A conversão de assets/data não converte entrypoints, lógica Java, Mixins ou access wideners.");
+            }
+            if (!apiCatalog.isEmpty()) {
+                auditWarnings.add("Catálogo de referência: Fabric API 0.165.0 para Minecraft 26.3; símbolos encontrados indicam uso provável, não compatibilidade comprovada.");
+            }
+            if (apiCatalog.isEmpty()) {
+                auditWarnings.add("Catálogo Fabric API não carregado; os módulos usados pelo mod não puderam ser classificados.");
+            }
             return new FabricJarInfo(id, name, version, classes, resources, assets, data,
-                    hasMixins, hasAccessWidener, hasEntrypoints);
+                    hasMixins, hasAccessWidener, hasEntrypoints,
+                    new ArrayList<>(apiModules), unknownApiReferences.size(), maxClassMajor[0],
+                    nestedJarCount[0], fabricApiConstraint, auditWarnings);
         } catch (IOException error) {
             throw new IllegalArgumentException("O arquivo não é um JAR/ZIP válido.");
+        }
+    }
+
+    private Map<String, String> loadFabricApiCatalog(List<String> warnings) {
+        if (fabricApiCatalogCache != null) return fabricApiCatalogCache;
+        Map<String, String> catalog = new LinkedHashMap<>();
+        try (InputStream input = getAssets().open("fabric-api-26.3-catalog.json")) {
+            JSONObject root = new JSONObject(new String(readLimitedBytes(input, 2 * 1024 * 1024), StandardCharsets.UTF_8));
+            if (!"26.3".equals(root.optString("minecraft_version"))
+                    || !"0.165.0".equals(root.optString("fabric_api_version"))) {
+                warnings.add("O catálogo Fabric API empacotado tem uma versão inesperada.");
+            }
+            JSONObject mappings = root.optJSONObject("api_class_to_module");
+            if (mappings != null) {
+                java.util.Iterator<String> keys = mappings.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    Object value = mappings.opt(key);
+                    if (value instanceof String) catalog.put(key, (String) value);
+                }
+            }
+        } catch (Exception error) {
+            warnings.add("Não foi possível carregar o catálogo Fabric API 26.3: " + message(error));
+        }
+        fabricApiCatalogCache = catalog;
+        return catalog;
+    }
+
+    private void scanFabricClassReferences(byte[] classBytes, Map<String, String> catalog,
+            Set<String> modules, Set<String> unknown, int[] maxClassMajor) throws IOException {
+        try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(classBytes))) {
+            if (input.readInt() != 0xCAFEBABE) throw new IOException("magic de class inválido");
+            input.readUnsignedShort(); // minor
+            int major = input.readUnsignedShort();
+            maxClassMajor[0] = Math.max(maxClassMajor[0], major);
+            int constantPoolCount = input.readUnsignedShort();
+            List<String> utf8 = new ArrayList<>();
+            for (int index = 1; index < constantPoolCount; index++) {
+                int tag = input.readUnsignedByte();
+                switch (tag) {
+                    case 1: {
+                        int length = input.readUnsignedShort();
+                        byte[] raw = new byte[length];
+                        input.readFully(raw);
+                        utf8.add(new String(raw, StandardCharsets.UTF_8));
+                        break;
+                    }
+                    case 3: case 4:
+                        skipFully(input, 4);
+                        break;
+                    case 5: case 6:
+                        skipFully(input, 8);
+                        index++;
+                        break;
+                    case 7: case 8: case 16: case 19: case 20:
+                        skipFully(input, 2);
+                        break;
+                    case 9: case 10: case 11: case 12: case 17: case 18:
+                        skipFully(input, 4);
+                        break;
+                    case 15:
+                        skipFully(input, 3);
+                        break;
+                    default:
+                        throw new IOException("tag desconhecida no constant pool: " + tag);
+                }
+            }
+            for (String value : utf8) {
+                java.util.regex.Matcher matcher = FABRIC_API_REFERENCE.matcher(value);
+                while (matcher.find()) {
+                    String reference = matcher.group();
+                    if (reference.endsWith("/")) continue;
+                    String internal = reference.substring("net/fabricmc/fabric/".length());
+                    String module = catalog.get(internal);
+                    if (module == null && internal.contains("$")) {
+                        module = catalog.get(internal.substring(0, internal.indexOf('$')));
+                    }
+                    if (module != null) modules.add(module);
+                    else unknown.add(reference);
+                }
+            }
+        }
+    }
+
+    private static void skipFully(DataInputStream input, int count) throws IOException {
+        int remaining = count;
+        while (remaining > 0) {
+            int skipped = input.skipBytes(remaining);
+            if (skipped <= 0) {
+                if (input.read() < 0) throw new IOException("class truncada durante a leitura do constant pool");
+                skipped = 1;
+            }
+            remaining -= skipped;
+        }
+    }
+
+    private void inspectDeclaredNestedJars(ZipFile archive, JSONObject metadata,
+            Map<String, String> catalog, Set<String> modules, Set<String> unknown,
+            int[] maxClassMajor, long[] classBytesScanned, int[] nestedClassCount,
+            int[] nestedJarCount, long[] nestedArchiveBytes, long[] nestedUncompressedBytes,
+            List<String> warnings) {
+        JSONArray declarations = metadata.optJSONArray("jars");
+        if (declarations == null || declarations.length() == 0) return;
+        if (declarations.length() > MAX_NESTED_JARS) {
+            warnings.add("A declaração de JARs aninhados excede o limite de " + MAX_NESTED_JARS + ".");
+        }
+        Set<String> seen = new TreeSet<>();
+        int limit = Math.min(declarations.length(), MAX_NESTED_JARS);
+        for (int index = 0; index < limit; index++) {
+            JSONObject definition = declarations.optJSONObject(index);
+            String path = definition == null ? "" : definition.optString("file", "");
+            String[] parts = path.split("/", -1);
+            boolean safe = !path.isEmpty() && !path.startsWith("/") && !path.contains("\\")
+                    && path.indexOf(0) < 0;
+            for (String part : parts) if (part.isEmpty() || ".".equals(part) || "..".equals(part)) safe = false;
+            if (!safe) {
+                warnings.add("Caminho inválido de JAR aninhado no fabric.mod.json: " + path);
+                continue;
+            }
+            if (!seen.add(path)) {
+                warnings.add("Declaração duplicada de JAR aninhado: " + path);
+                continue;
+            }
+            ZipEntry nested = archive.getEntry(path);
+            if (nested == null || nested.isDirectory()) {
+                warnings.add("JAR aninhado declarado não encontrado: " + path);
+                continue;
+            }
+            if (nested.getSize() < 0 || nested.getSize() > MAX_NESTED_JAR_BYTES
+                    || nestedArchiveBytes[0] + nested.getSize() > MAX_NESTED_JAR_TOTAL_BYTES) {
+                warnings.add("JAR aninhado ignorado por limite de tamanho: " + path);
+                continue;
+            }
+            try {
+                byte[] raw;
+                try (InputStream input = archive.getInputStream(nested)) {
+                    raw = readLimitedBytes(input, (int) MAX_NESTED_JAR_BYTES);
+                }
+                nestedArchiveBytes[0] += raw.length;
+                try (ZipInputStream input = new ZipInputStream(new ByteArrayInputStream(raw))) {
+                    ZipEntry child;
+                    int entryCount = 0;
+                    boolean complete = true;
+                    while ((child = input.getNextEntry()) != null) {
+                        entryCount++;
+                        if (entryCount > 50_000) {
+                            warnings.add("JAR aninhado excedeu o limite de entradas: " + path);
+                            complete = false;
+                            break;
+                        }
+                        if (nestedUncompressedBytes[0] >= MAX_NESTED_UNCOMPRESSED_BYTES) {
+                            warnings.add("Auditoria de JARs aninhados interrompida pelo limite total descompactado.");
+                            complete = false;
+                            break;
+                        }
+                        long remaining = MAX_NESTED_UNCOMPRESSED_BYTES - nestedUncompressedBytes[0];
+                        if (child.getSize() > remaining) {
+                            warnings.add("Entrada do JAR aninhado excede o orçamento de auditoria: " + child.getName());
+                            complete = false;
+                            break;
+                        }
+                        if (child.isDirectory()) continue;
+                        if (child.getName().endsWith(".class")) {
+                            if (child.getSize() > MAX_CLASS_AUDIT_BYTES
+                                    || classBytesScanned[0] + Math.max(0L, child.getSize()) > MAX_TOTAL_CLASS_AUDIT_BYTES) {
+                                warnings.add("Classe aninhada ignorada por limite de tamanho/bytes: " + child.getName());
+                                complete = false;
+                                break;
+                            }
+                            byte[] classBytes = readLimitedBytes(input, MAX_CLASS_AUDIT_BYTES);
+                            nestedUncompressedBytes[0] += classBytes.length;
+                            classBytesScanned[0] += classBytes.length;
+                            nestedClassCount[0]++;
+                            scanFabricClassReferences(classBytes, catalog, modules, unknown, maxClassMajor);
+                        } else {
+                            long consumed = drainNestedEntry(input,
+                                    Math.min(remaining, 16L * 1024L * 1024L));
+                            nestedUncompressedBytes[0] += consumed;
+                        }
+                    }
+                    if (!complete) continue;
+                    nestedJarCount[0]++;
+                }
+            } catch (IOException | RuntimeException error) {
+                warnings.add("Não foi possível auditar o JAR aninhado " + path + ": " + message(error));
+            }
+        }
+    }
+
+    private static long drainNestedEntry(InputStream input, long limit) throws IOException {
+        byte[] buffer = new byte[8192];
+        long total = 0;
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            total += read;
+            if (total > limit) throw new IOException("entrada descompactada excede limite");
+        }
+        return total;
+    }
+
+    private String summarizeFabricAudit(FabricJarInfo info) {
+        StringBuilder summary = new StringBuilder("Auditoria Fabric API 0.165.0/MC 26.3: ");
+        if (info.fabricApiModules.isEmpty()) {
+            summary.append("nenhuma referência pública Fabric API foi reconhecida");
+        } else {
+            summary.append("módulos detectados: ").append(String.join(", ", info.fabricApiModules));
+        }
+        if (!info.fabricApiConstraint.isEmpty()) {
+            summary.append("; dependência fabric-api declarada: ").append(info.fabricApiConstraint);
+        }
+        if (info.maxClassMajor > 0) {
+            summary.append("; bytecode máximo Java major ").append(info.maxClassMajor);
+            if (info.maxClassMajor > MAX_SUPPORTED_CLASS_MAJOR) summary.append(" (acima do alvo Java 25)");
+        }
+        if (info.nestedJarCount > 0) summary.append("; ").append(info.nestedJarCount).append(" JAR(s) aninhado(s) inspecionado(s)");
+        if (info.unmappedApiReferences > 0) summary.append("; ").append(info.unmappedApiReferences).append(" referência(s) sem mapeamento catalogado");
+        summary.append(". O JAR ainda requer porte/teste; referências detectadas não significam que a lógica Java foi convertida.");
+        return summary.toString();
+    }
+
+    private File writeFabricAuditReport(FabricJarInfo info, File jar) {
+        File dir = new File(home(), "fabric-bridge-audits");
+        try {
+            ensureDirs(dir);
+            JSONObject report = new JSONObject();
+            report.put("schema_version", 1);
+            report.put("target_minecraft_version", "26.3");
+            report.put("fabric_api_catalog_version", "0.165.0");
+            report.put("mod_id", info.id);
+            report.put("mod_name", info.name);
+            report.put("mod_version", info.version);
+            report.put("source_jar", jar.getName());
+            report.put("source_size_bytes", jar.length());
+            report.put("top_level_and_nested_class_count", info.classes);
+            report.put("resource_count", info.resources);
+            report.put("asset_count", info.assets);
+            report.put("data_count", info.data);
+            report.put("fabric_api_modules_detected", new JSONArray(info.fabricApiModules));
+            report.put("fabric_api_constraint", info.fabricApiConstraint);
+            report.put("unmapped_api_reference_count", info.unmappedApiReferences);
+            report.put("java_class_major", info.maxClassMajor);
+            report.put("compatible_with_java_25_bytecode_target", info.maxClassMajor == 0
+                    || info.maxClassMajor <= MAX_SUPPORTED_CLASS_MAJOR);
+            report.put("nested_jars_inspected", info.nestedJarCount);
+            report.put("entrypoints_declared", info.hasEntrypoints);
+            report.put("mixins_declared_or_detected", info.hasMixins);
+            report.put("access_widener_declared_or_detected", info.hasAccessWidener);
+            report.put("java_code_executed", false);
+            report.put("java_behavior_converted", false);
+            report.put("content_carry_over_is_not_behavior_conversion", true);
+            report.put("warnings", new JSONArray(info.auditWarnings));
+            File output = new File(dir, info.id + "-audit.json");
+            try (OutputStream stream = new BufferedOutputStream(new FileOutputStream(output))) {
+                stream.write((report.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
+            }
+            return output;
+        } catch (Exception error) {
+            android.util.Log.w("MobileHorizon", "Não foi possível salvar auditoria Fabric", error);
+            return null;
         }
     }
 
