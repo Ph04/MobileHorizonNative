@@ -602,7 +602,7 @@ p1_runtime_methods = r"""
             widgets: BTreeMap::new(),
             config_schema: BTreeMap::new(),
             config_values: BTreeMap::new(),
-            config_dir,
+            config_dir: config_dir.clone(),
             trace_path: trace_path.clone(),
             tick_calls: 0,
             panel: None,
