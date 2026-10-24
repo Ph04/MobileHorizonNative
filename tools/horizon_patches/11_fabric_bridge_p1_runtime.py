@@ -179,6 +179,35 @@ pub struct Mods {
 }''', "P1 engine field")
 
 p1_state = r"""
+fn p1_trace(trace_path: &Path, mod_id: &str, event: &str, details: serde_json::Value) {
+    use std::io::Write as _;
+    const MAX_TRACE_BYTES: u64 = 8 * 1024 * 1024;
+    if let Some(parent) = trace_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if std::fs::metadata(trace_path).is_ok_and(|metadata| metadata.len() > MAX_TRACE_BYTES) {
+        let previous = trace_path.with_extension("jsonl.previous");
+        let _ = std::fs::remove_file(&previous);
+        let _ = std::fs::rename(trace_path, previous);
+    }
+    let timestamp_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0);
+    let record = serde_json::json!({
+        "timestamp_epoch_ms": timestamp_ms,
+        "mod_id": mod_id,
+        "event": event,
+        "details": details,
+    });
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(trace_path) {
+        if serde_json::to_writer(&mut file, &record).is_ok() {
+            let _ = file.write_all(b"\\n");
+        }
+    }
+    log::debug!("Horizon: [fabric-trace] mod={mod_id} event={event} details={details}");
+}
+
 struct P1State {
     id: String,
     subscriptions: BTreeMap<String, P1Phase>,
@@ -188,6 +217,8 @@ struct P1State {
     config_schema: BTreeMap<String, P1Field>,
     config_values: BTreeMap<String, P1Value>,
     config_dir: PathBuf,
+    trace_path: PathBuf,
+    tick_calls: u64,
     panel: Option<Panel>,
     limits: StoreLimits,
 }
@@ -244,18 +275,29 @@ impl fabric_bridge_p1_bindings::horizon::fabric_bridge::types::Host for P1State 
 
 impl fabric_bridge_p1_bindings::horizon::fabric_bridge::events::Host for P1State {
     fn register(&mut self, event: String, phase: P1Phase) -> Result<(), String> {
+        p1_trace(&self.trace_path, &self.id, "api.events.register.request",
+            serde_json::json!({"event": event.clone(), "phase": match phase {
+                P1Phase::Early => "early", P1Phase::Normal => "normal", P1Phase::Late => "late",
+            }}));
         if !matches!(event.as_str(), "client_tick" | "world_join" | "world_leave" | "chat_received" | "chat_send") {
             return Err(format!("unsupported P1 event: {event}"));
         }
         if self.subscriptions.contains_key(&event) { return Err("event already registered".into()); }
         if self.subscriptions.len() >= 16 { return Err("maximum 16 event registrations per mod".into()); }
-        self.subscriptions.insert(event, phase);
+        self.subscriptions.insert(event.clone(), phase);
+        p1_trace(&self.trace_path, &self.id, "api.events.register.accepted",
+            serde_json::json!({"event": event}));
         Ok(())
     }
 }
 
 impl fabric_bridge_p1_bindings::horizon::fabric_bridge::keys::Host for P1State {
     fn register(&mut self, id: String, category: String, default: P1Trigger) -> Result<(), String> {
+        p1_trace(&self.trace_path, &self.id, "api.keys.register.request",
+            serde_json::json!({"binding_id": id.clone(), "category": category.clone(),
+                "trigger_kind": match &default {
+                    P1Trigger::Key(_) => "key", P1Trigger::Mouse(_) => "mouse", P1Trigger::Touch(_) => "touch",
+                }}));
         let own_prefix = format!("{}:", self.id);
         let path = id.strip_prefix(&own_prefix).unwrap_or("");
         if path.is_empty() || !Self::valid_key(path, 64) {
@@ -270,13 +312,17 @@ impl fabric_bridge_p1_bindings::horizon::fabric_bridge::keys::Host for P1State {
         if self.keybindings.len() >= 128 || self.keybindings.contains_key(&id) {
             return Err("keybinding limit reached or id duplicated".into());
         }
-        self.keybindings.insert(id, default);
+        self.keybindings.insert(id.clone(), default);
+        p1_trace(&self.trace_path, &self.id, "api.keys.register.accepted",
+            serde_json::json!({"binding_id": id, "category": category}));
         Ok(())
     }
 }
 
 impl fabric_bridge_p1_bindings::horizon::fabric_bridge::commands::Host for P1State {
     fn register(&mut self, name: String, args: Vec<P1Arg>) -> Result<(), String> {
+        p1_trace(&self.trace_path, &self.id, "api.commands.register.request",
+            serde_json::json!({"name": name.clone(), "argument_count": args.len()}));
         if name.is_empty() || name.len() > 64
             || !name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_') {
             return Err("command name must use [a-z0-9_] and be at most 64 characters".into());
@@ -302,13 +348,17 @@ impl fabric_bridge_p1_bindings::horizon::fabric_bridge::commands::Host for P1Sta
                 _ => {}
             }
         }
-        self.commands.insert(name, args);
+        self.commands.insert(name.clone(), args);
+        p1_trace(&self.trace_path, &self.id, "api.commands.register.accepted",
+            serde_json::json!({"name": name}));
         Ok(())
     }
 }
 
 impl fabric_bridge_p1_bindings::horizon::fabric_bridge::hud::Host for P1State {
     fn set_widget(&mut self, key: String, mut widget: P1Widget) -> Result<(), String> {
+        p1_trace(&self.trace_path, &self.id, "api.hud.set_widget.request",
+            serde_json::json!({"key": key.clone(), "row_count": widget.rows.len(), "visible": widget.visible}));
         if !Self::valid_key(&key, 64) { return Err("invalid HUD widget key".into()); }
         if widget.rows.len() > HUD_LINES { return Err(format!("maximum {HUD_LINES} HUD rows")); }
         for row in &mut widget.rows {
@@ -335,12 +385,16 @@ impl fabric_bridge_p1_bindings::horizon::fabric_bridge::hud::Host for P1State {
         if !self.widgets.contains_key(&key) && self.widgets.len() >= 8 {
             return Err("maximum 8 HUD widgets per mod".into());
         }
-        self.widgets.insert(key, widget);
+        self.widgets.insert(key.clone(), widget);
         self.sync_panel();
+        p1_trace(&self.trace_path, &self.id, "api.hud.set_widget.accepted",
+            serde_json::json!({"key": key}));
         Ok(())
     }
 
     fn remove_widget(&mut self, key: String) {
+        p1_trace(&self.trace_path, &self.id, "api.hud.remove_widget",
+            serde_json::json!({"key": key.clone()}));
         self.widgets.remove(&key);
         self.sync_panel();
     }
@@ -348,6 +402,8 @@ impl fabric_bridge_p1_bindings::horizon::fabric_bridge::hud::Host for P1State {
 
 impl fabric_bridge_p1_bindings::horizon::fabric_bridge::config::Host for P1State {
     fn declare(&mut self, key: String, field: P1Field) -> Result<(), String> {
+        p1_trace(&self.trace_path, &self.id, "api.config.declare.request",
+            serde_json::json!({"key": key.clone()}));
         if !Self::valid_key(&key, 64) || self.config_schema.len() >= 128 || self.config_schema.contains_key(&key) {
             return Err("invalid or duplicate config key; at most 128 keys".into());
         }
@@ -356,20 +412,34 @@ impl fabric_bridge_p1_bindings::horizon::fabric_bridge::config::Host for P1State
             .filter(|v| validate_p1_config(&field, v).is_ok())
             .unwrap_or_else(|| field.default.clone());
         self.config_values.insert(key.clone(), value);
-        self.config_schema.insert(key, field);
+        self.config_schema.insert(key.clone(), field);
+        p1_trace(&self.trace_path, &self.id, "api.config.declare.accepted",
+            serde_json::json!({"key": key}));
         Ok(())
     }
 
     fn get(&mut self, key: String) -> Option<P1Value> {
-        self.config_values.get(&key).cloned()
-            .or_else(|| self.config_schema.get(&key).map(|field| field.default.clone()))
+        p1_trace(&self.trace_path, &self.id, "api.config.get.request",
+            serde_json::json!({"key": key.clone()}));
+        let value = self.config_values.get(&key).cloned()
+            .or_else(|| self.config_schema.get(&key).map(|field| field.default.clone()));
+        p1_trace(&self.trace_path, &self.id, "api.config.get.result",
+            serde_json::json!({"key": key, "found": value.is_some()}));
+        value
     }
 
     fn set(&mut self, key: String, value: P1Value) -> Result<(), String> {
+        p1_trace(&self.trace_path, &self.id, "api.config.set.request",
+            serde_json::json!({"key": key.clone(), "value_kind": match &value {
+                P1Value::Bool(_) => "bool", P1Value::Int(_) => "int",
+                P1Value::Float(_) => "float", P1Value::Text(_) => "text",
+            }}));
         let field = self.config_schema.get(&key).ok_or_else(|| "config key was not declared".to_owned())?;
         validate_p1_config(field, &value)?;
         write_p1_config(&self.config_dir, &key, &value)?;
-        self.config_values.insert(key, value);
+        self.config_values.insert(key.clone(), value);
+        p1_trace(&self.trace_path, &self.id, "api.config.set.accepted",
+            serde_json::json!({"key": key}));
         Ok(())
     }
 }
@@ -498,7 +568,15 @@ p1_runtime_methods = r"""
         reserved: &dyn Fn(&str) -> bool,
     ) -> Result<Option<RunningP1>, String> {
         let manifest = &package.manifest;
-        let Some(wasm) = &package.wasm else { return Ok(None); };
+        let trace_path = path.parent().unwrap_or(Path::new("."))
+            .join("fabric-bridge-runtime-trace.jsonl");
+        p1_trace(&trace_path, &manifest.id, "mod.start_requested",
+            serde_json::json!({"path": path.to_string_lossy(), "api": manifest.api}));
+        let Some(wasm) = &package.wasm else {
+            p1_trace(&trace_path, &manifest.id, "mod.start_skipped",
+                serde_json::json!({"reason": "package has no WASM component"}));
+            return Ok(None);
+        };
         if manifest.side != Side::Client {
             return Err("Fabric Bridge P1 currently supports client-side components only".into());
         }
@@ -514,6 +592,8 @@ p1_runtime_methods = r"""
         let imports: Vec<String> = component.component_type().imports(engine)
             .map(|(name, _)| name.to_string()).collect();
         manifest.check_imports(imports.iter().map(String::as_str))?;
+        p1_trace(&trace_path, &manifest.id, "component.validated",
+            serde_json::json!({"imports": imports, "import_count": imports.len()}));
         let config_dir = path.parent().unwrap_or(Path::new("."))
             .join(STORAGE_DIR).join(&manifest.id).join("fabric-p1-config");
         let state = P1State {
@@ -525,14 +605,23 @@ p1_runtime_methods = r"""
             config_schema: BTreeMap::new(),
             config_values: BTreeMap::new(),
             config_dir,
+            trace_path: trace_path.clone(),
+            tick_calls: 0,
             panel: None,
             limits: StoreLimitsBuilder::new().memory_size(MEMORY).instances(16).build(),
         };
+        let _ = std::fs::create_dir_all(&config_dir);
         let mut store = Store::new(engine, state);
         store.limiter(|s| &mut s.limits);
         store.set_fuel(FUEL_INIT).map_err(|e| e.to_string())?;
         let exports = ModP1::instantiate(&mut store, &component, linker).map_err(|e| reason(&e))?;
-        exports.horizon_fabric_bridge_guest().call_init(&mut store).map_err(|e| reason(&e))??;
+        p1_trace(&trace_path, &manifest.id, "mod.init.started", serde_json::json!({}));
+        let init_started = Instant::now();
+        let init_result = exports.horizon_fabric_bridge_guest().call_init(&mut store);
+        p1_trace(&trace_path, &manifest.id, "mod.init.returned",
+            serde_json::json!({"ok": matches!(&init_result, Ok(Ok(()))),
+                "elapsed_ms": init_started.elapsed().as_millis()}));
+        init_result.map_err(|e| reason(&e))??;
         let conflicts: Vec<String> = store.data().commands.keys()
             .filter(|name| reserved(name) || taken.iter().any(|old| old == *name))
             .cloned().collect();
@@ -541,6 +630,15 @@ p1_runtime_methods = r"""
             store.data_mut().commands.remove(&name);
         }
         store.data_mut().sync_panel();
+        p1_trace(&trace_path, &manifest.id, "mod.registration_summary",
+            serde_json::json!({
+                "subscriptions": store.data().subscriptions.keys().cloned().collect::<Vec<_>>(),
+                "keybindings": store.data().keybindings.keys().cloned().collect::<Vec<_>>(),
+                "commands": store.data().commands.keys().cloned().collect::<Vec<_>>(),
+                "hud_widgets": store.data().widgets.keys().cloned().collect::<Vec<_>>(),
+                "config_keys": store.data().config_schema.keys().cloned().collect::<Vec<_>>(),
+            }));
+        p1_trace(&trace_path, &manifest.id, "mod.running", serde_json::json!({}));
         Ok(Some(RunningP1 { store, exports }))
     }
 
@@ -556,25 +654,50 @@ p1_runtime_methods = r"""
             Some((rank, index))
         }).collect();
         order.sort_by_key(|(rank, index)| (*rank, *index));
-        for (_, index) in order { self.call_p1(index, fuel, &mut call); }
+        for (_, index) in order { self.call_p1(index, event, fuel, &mut call); }
     }
 
     fn call_p1<R>(
         &mut self,
         index: usize,
+        operation: &str,
         fuel: u64,
         call: impl FnOnce(&ModP1, &mut Store<P1State>) -> wasmtime::Result<R>,
     ) -> Option<R> {
         let entry = &mut self.entries[index];
         let running = entry.p1_run.as_mut()?;
+        let id = running.store.data().id.clone();
+        let trace_path = running.store.data().trace_path.clone();
+        let tick_count = if operation == "client_tick" {
+            let state = running.store.data_mut();
+            state.tick_calls = state.tick_calls.saturating_add(1);
+            state.tick_calls
+        } else { 0 };
+        let should_trace = operation != "client_tick" || tick_count == 1 || tick_count % 100 == 0;
+        if should_trace {
+            p1_trace(&trace_path, &id, "callback.started", serde_json::json!({
+                "operation": operation, "fuel_budget": fuel, "tick_invocation": tick_count
+            }));
+        }
         let started = Instant::now();
         let result = running.store.set_fuel(fuel)
             .and_then(|()| call(&running.exports, &mut running.store));
-        entry.cost = (entry.cost * 63 + started.elapsed()) / 64;
+        let elapsed = started.elapsed();
+        let fuel_remaining = running.store.get_fuel().ok();
+        entry.cost = (entry.cost * 63 + elapsed) / 64;
+        if should_trace || result.is_err() {
+            p1_trace(&trace_path, &id, "callback.completed", serde_json::json!({
+                "operation": operation, "ok": result.is_ok(),
+                "elapsed_us": elapsed.as_micros(), "fuel_budget": fuel,
+                "fuel_remaining": fuel_remaining, "tick_invocation": tick_count
+            }));
+        }
         match result {
             Ok(value) => Some(value),
             Err(error) => {
                 let why = reason(&error);
+                p1_trace(&trace_path, &id, "mod.callback_failed",
+                    serde_json::json!({"operation": operation, "error": why}));
                 log::warn!("Horizon: Fabric Bridge P1 mod {} stopped: {why}", running.store.data().id);
                 entry.status = Status::Failed(why);
                 entry.p1_run = None;
@@ -685,6 +808,10 @@ old_command = '''        let result = self.call(i, FUEL_EVENT, |m, s| {
         true
     }'''
 new_command = '''        if self.entries[i].p1_run.is_some() {
+            if let Some(running) = self.entries[i].p1_run.as_ref() {
+                p1_trace(&running.store.data().trace_path, &running.store.data().id, "command.invoked",
+                    serde_json::json!({"name": name, "argument_bytes": args.len()}));
+            }
             let spec = self.entries[i].p1_run.as_ref()
                 .and_then(|running| running.store.data().commands.get(name)).cloned().unwrap_or_default();
             let parsed = match parse_p1_command(&spec, args) {
@@ -694,7 +821,7 @@ new_command = '''        if self.entries[i].p1_run.is_some() {
                     return true;
                 }
             };
-            match self.call_p1(i, FUEL_EVENT, |m, s| {
+            match self.call_p1(i, "command", FUEL_EVENT, |m, s| {
                 m.horizon_fabric_bridge_guest().call_on_command(s, name, &parsed)
             }) {
                 Some(Ok(())) => {}
