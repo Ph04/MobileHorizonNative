@@ -194,7 +194,7 @@ final class FabricCompatibilityTestRunner {
         report.put("log_path", finalLog.getAbsolutePath());
         report.put("log_tail", logTail);
         report.put("note", "This probe has no real Minecraft Java client classes. Reaching an entrypoint is not proof of in-game compatibility.");
-        Files.writeString(finalReport.toPath(), report.toString(2) + "\n", StandardCharsets.UTF_8);
+        Files.write(finalReport.toPath(), (report.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
 
         String summary;
         if ("ENTRYPOINT_SMOKE_ONLY".equals(outcome)) {
@@ -220,7 +220,7 @@ final class FabricCompatibilityTestRunner {
     private static JSONObject readJsonIfSmall(File file) {
         if (!file.isFile() || file.length() <= 0 || file.length() > MAX_REPORT_BYTES) return null;
         try {
-            return new JSONObject(Files.readString(file.toPath(), StandardCharsets.UTF_8));
+            return new JSONObject(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
         } catch (Exception ignored) {
             return null;
         }
