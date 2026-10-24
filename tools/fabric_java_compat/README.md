@@ -23,3 +23,10 @@ Execution requires the explicit environment opt-in and is not connected to impor
 The host hashes and scans the original JAR, reports class-file versions and metadata, and uses JSONL on stdout. It accepts only the default preLaunch, main and client entrypoint adapters. Mixins, access wideners, nested JARs and unsupported Java versions fail closed. Missing Fabric API/Minecraft symbols are reported as errors; this is not complete Fabric compatibility.
 
 The Android integration must still supervise the process, connect it to the Rust runtime, and keep it disabled in Vanilla.
+
+
+## Static target map
+
+CI runs build_fabric_target_map.py after verifying the official Fabric API and Minecraft 26.3 client ABI catalogs. It scans nested Fabric API implementation classes, Minecraft class/member references, Mixin configuration names, and access-widener entries, then proposes likely native-module owners from native-targets.json.
+
+The generated JSON is uploaded as the fabric-java-to-horizon-target-map artifact. HZN-JAVA-* IDs identify individual references; HZN-FABRIC-* IDs identify source-level native integration points returned by the capability report. The IDs do not mean a binding is implemented or that a call was observed at runtime. A static scan is never proof that a mod executes successfully in-game.
