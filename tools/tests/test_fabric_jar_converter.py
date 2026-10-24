@@ -5,7 +5,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from tools.fabric_jar_converter import convert_jar
+from tools.fabric_jar_converter import TraceWriter, convert_jar
 
 
 def _tiny_class() -> bytes:
@@ -77,6 +77,31 @@ class FabricJarConverterTests(unittest.TestCase):
             with zipfile.ZipFile(item["path"]) as output:
                 self.assertFalse(any(name.endswith(".class") for name in output.namelist()))
                 self.assertIn("pack.mcmeta", output.namelist())
+
+    def test_jsonl_trace_records_entry_decisions_and_conversion_result(self) -> None:
+        jar = self.make_jar("trace-mod.jar", with_code=True, extra_entries={
+            "assets/sample_mod/lang/en_us.json": b'{"item.sample":"Sample"}',
+            "data/sample_mod/recipes/test.json": b'{}',
+            "META-INF/sample.txt": b"not pack data",
+        })
+        trace_path = self.root / "trace" / "fabric-conversion-trace.jsonl"
+        trace = TraceWriter(trace_path)
+        try:
+            result = convert_jar(jar, self.output, trace=trace)
+        finally:
+            trace.close()
+
+        self.assertEqual(result["status"], "partial_resources_only")
+        events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
+        names = [event["event"] for event in events]
+        self.assertIn("static_audit_completed", names)
+        self.assertIn("resource_selected", names)
+        self.assertIn("pack_write_completed", names)
+        self.assertIn("mod_conversion_completed", names)
+        java_class = next(event for event in events
+                          if event.get("classification") == "java_class_not_executed_or_converted")
+        self.assertEqual(java_class["entry"], "sample/Entry.class")
+        self.assertTrue(all("timestamp_utc" in event for event in events))
 
     def test_unsafe_resource_path_is_rejected_without_partial_outputs(self) -> None:
         jar = self.make_jar("traversal.jar", extra_entries={
