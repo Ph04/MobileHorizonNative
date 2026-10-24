@@ -103,8 +103,8 @@ rr(runtime, """                "bridge.capabilities" => serde_json::json!({
                         path, query_id, frame.get("payload").cloned().unwrap_or(serde_json::Value::Null),
                         timeout_ms, query_sender,
                     ) {
-                        Ok(result) => serde_json::json!({"protocol_version":1,"kind":"response","request_id":query_id,"ok":true,"result":result}),
-                        Err(error) => serde_json::json!({"protocol_version":1,"kind":"response","request_id":query_id,"ok":false,"error":error}),
+                        Ok(result) => serde_json::json!({"protocol_version":1,"kind":"response","request_id":query_id,"ok":true,"target_marker":fabric_compat::marker_for_query(path),"result":result}),
+                        Err(error) => serde_json::json!({"protocol_version":1,"kind":"response","request_id":query_id,"ok":false,"target_marker":fabric_compat::marker_for_query(path),"error":error}),
                     }
                 },""", "query allow-list forwarding")
 
