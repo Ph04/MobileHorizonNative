@@ -725,7 +725,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fabric-java-to-horizon-target-map
-          path: \${{ runner.temp }}/fabric-java-to-horizon-map.json
+          path: ${{ runner.temp }}/fabric-java-to-horizon-map.json
           if-no-files-found: error
           retention-days: 14
 
