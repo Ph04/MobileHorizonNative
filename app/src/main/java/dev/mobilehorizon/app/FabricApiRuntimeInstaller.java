@@ -59,6 +59,19 @@ final class FabricApiRuntimeInstaller {
         if (!javaMods.isDirectory()) throw new IOException("Não foi possível criar a pasta Java do perfil Fabric Bridge.");
 
         File target = new File(javaMods, "fabric-api-" + VERSION + ".jar");
+        if (target.isFile() && !expectedHash.equals(sha256(target)) && !validateJar(target, lock)) {
+            throw new IOException("O nome reservado do JAR Fabric API já existe com conteúdo diferente; nada foi sobrescrito.");
+        }
+        File[] otherJars = javaMods.listFiles((directory, name) ->
+                name.toLowerCase(Locale.ROOT).endsWith(".jar")
+                        && !name.equals(target.getName()));
+        if (otherJars != null) {
+            for (File other : otherJars) {
+                if (isFabricApiMod(other)) {
+                    throw new IOException("Há outra versão do Fabric API no perfil Java. Remova a cópia antiga antes de ativar o Bridge.");
+                }
+            }
+        }
         if (target.isFile() && target.length() <= MAX_JAR_BYTES
                 && expectedHash.equals(sha256(target)) && validateJar(target, lock)) {
             return target;
@@ -142,6 +155,20 @@ final class FabricApiRuntimeInstaller {
             }
             return true;
         } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private static boolean isFabricApiMod(File candidate) {
+        try (ZipFile archive = new ZipFile(candidate)) {
+            ZipEntry entry = archive.getEntry("fabric.mod.json");
+            if (entry == null || entry.getSize() <= 0 || entry.getSize() > MAX_METADATA_BYTES) return false;
+            try (InputStream input = archive.getInputStream(entry)) {
+                JSONObject metadata = new JSONObject(new String(
+                        readLimited(input, MAX_METADATA_BYTES), StandardCharsets.UTF_8));
+                return MOD_ID.equals(metadata.optString("id", ""));
+            }
+        } catch (Exception ignored) {
             return false;
         }
     }
