@@ -481,6 +481,287 @@ pub mod loot {
     }
 }
 
+
+/// Declarative biome modifier pipeline. Actual chunk/worldgen injection belongs to the host.
+pub mod biomes {
+    use super::Id;
+    use std::collections::BTreeMap;
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct SpawnRule { pub entity: Id, pub weight: u32, pub min_group: u8, pub max_group: u8 }
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Modifier {
+        AddFeature { feature: Id, step: String },
+        AddSpawn(SpawnRule),
+        SetTemperature(f32),
+        SetDownfall(f32),
+    }
+    #[derive(Clone, Debug, Default, PartialEq)]
+    pub struct Snapshot { pub features: Vec<(String, Id)>, pub spawns: Vec<SpawnRule>, pub temperature: Option<f32>, pub downfall: Option<f32> }
+    #[derive(Default)]
+    pub struct Registry { by_biome: BTreeMap<Id, Vec<Modifier>> }
+    impl Registry {
+        pub fn add(&mut self, biome: Id, modifier: Modifier) -> Result<(), String> {
+            match &modifier {
+                Modifier::AddFeature { step, .. } if step.trim().is_empty() || step.len() > 64 => return Err("invalid feature generation step".into()),
+                Modifier::AddSpawn(rule) if rule.weight == 0 || rule.min_group == 0 || rule.max_group < rule.min_group => return Err("invalid biome spawn rule".into()),
+                Modifier::SetTemperature(v) if !v.is_finite() || !(-2.0..=2.0).contains(v) => return Err("temperature must be finite and within -2..=2".into()),
+                Modifier::SetDownfall(v) if !v.is_finite() || !(0.0..=1.0).contains(v) => return Err("downfall must be finite and within 0..=1".into()),
+                _ => {}
+            }
+            let entries = self.by_biome.entry(biome).or_default();
+            if entries.len() >= 1024 { return Err("biome modifier limit reached".into()); }
+            entries.push(modifier); Ok(())
+        }
+        /// Produces a deterministic patch; host applies it during authoritative world generation.
+        pub fn apply_to_snapshot(&self, biome: &Id, mut base: Snapshot) -> Snapshot {
+            if let Some(modifiers) = self.by_biome.get(biome) {
+                for modifier in modifiers {
+                    match modifier {
+                        Modifier::AddFeature { feature, step } => base.features.push((step.clone(), feature.clone())),
+                        Modifier::AddSpawn(rule) => base.spawns.push(rule.clone()),
+                        Modifier::SetTemperature(value) => base.temperature = Some(*value),
+                        Modifier::SetDownfall(value) => base.downfall = Some(*value),
+                    }
+                }
+            }
+            base.features.sort_by(|a,b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+            base
+        }
+        pub fn biome_count(&self) -> usize { self.by_biome.len() }
+    }
+}
+
+/// Typed registries and vanilla-style data maps; custom Java behavior is intentionally not representable.
+pub mod content_registries {
+    use super::Id;
+    use std::collections::BTreeMap;
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Definition<T> { pub id: Id, pub value: T }
+    #[derive(Default)]
+    pub struct Registry<T> { entries: BTreeMap<Id, T>, frozen: bool, revision: u64 }
+    impl<T> Registry<T> {
+        pub fn register(&mut self, id: Id, value: T) -> Result<u64, String> {
+            if self.frozen { return Err("registry is frozen".into()); }
+            if self.entries.contains_key(&id) { return Err(format!("duplicate registry id {}", id.as_str())); }
+            self.entries.insert(id, value);
+            self.revision = self.revision.wrapping_add(1);
+            Ok(self.revision)
+        }
+        pub fn get(&self, id: &Id) -> Option<&T> { self.entries.get(id) }
+        pub fn freeze(&mut self) { self.frozen = true; }
+        pub fn is_frozen(&self) -> bool { self.frozen }
+        pub fn revision(&self) -> u64 { self.revision }
+        pub fn iter(&self) -> impl Iterator<Item=(&Id, &T)> { self.entries.iter() }
+    }
+    #[derive(Default)]
+    pub struct DataMap<T> { entries: BTreeMap<Id, T>, revision: u64 }
+    impl<T> DataMap<T> {
+        pub fn set(&mut self, key: Id, value: T) -> u64 {
+            self.entries.insert(key, value); self.revision = self.revision.wrapping_add(1); self.revision
+        }
+        pub fn get(&self, key: &Id) -> Option<&T> { self.entries.get(key) }
+        pub fn remove(&mut self, key: &Id) -> bool {
+            let removed = self.entries.remove(key).is_some();
+            if removed { self.revision = self.revision.wrapping_add(1); }
+            removed
+        }
+        pub fn revision(&self) -> u64 { self.revision }
+        pub fn iter(&self) -> impl Iterator<Item=(&Id, &T)> { self.entries.iter() }
+    }
+}
+
+/// Bounded declarative object-builder values and schemas. Native serializers are supplied by explicit ports.
+pub mod object_builder {
+    use std::collections::BTreeMap;
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Value { Null, Bool(bool), Integer(i64), Number(f64), Text(String), Array(Vec<Value>), Object(BTreeMap<String, Value>) }
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Kind { Any, Bool, Integer { min: i64, max: i64 }, Number { min: f64, max: f64 }, Text { max_bytes: usize }, Array { item: Box<Kind>, max_items: usize }, Object { fields: BTreeMap<String, Kind>, allow_unknown: bool } }
+    pub fn validate(value: &Value, kind: &Kind, max_depth: usize, max_nodes: usize) -> Result<(), String> {
+        let mut nodes = 0usize;
+        validate_inner(value, kind, 0, max_depth, max_nodes, &mut nodes)
+    }
+    fn validate_inner(value: &Value, kind: &Kind, depth: usize, max_depth: usize, max_nodes: usize, nodes: &mut usize) -> Result<(), String> {
+        *nodes = nodes.saturating_add(1);
+        if *nodes > max_nodes { return Err("object-builder node budget exceeded".into()); }
+        if depth > max_depth { return Err("object-builder nesting limit exceeded".into()); }
+        match (value, kind) {
+            (_, Kind::Any) | (Value::Null, _) => Ok(()),
+            (Value::Bool(_), Kind::Bool) => Ok(()),
+            (Value::Integer(v), Kind::Integer { min, max }) if min <= v && v <= max => Ok(()),
+            (Value::Number(v), Kind::Number { min, max }) if v.is_finite() && min.is_finite() && max.is_finite() && min <= v && v <= max => Ok(()),
+            (Value::Text(v), Kind::Text { max_bytes }) if v.len() <= *max_bytes => Ok(()),
+            (Value::Array(items), Kind::Array { item, max_items }) if items.len() <= *max_items => {
+                for child in items { validate_inner(child, item, depth + 1, max_depth, max_nodes, nodes)?; } Ok(())
+            }
+            (Value::Object(fields), Kind::Object { fields: schema, allow_unknown }) => {
+                if !allow_unknown && fields.keys().any(|key| !schema.contains_key(key)) { return Err("object contains unknown field".into()); }
+                for (key, child) in fields {
+                    if let Some(child_schema) = schema.get(key) { validate_inner(child, child_schema, depth + 1, max_depth, max_nodes, nodes)?; }
+                    else if !allow_unknown { return Err(format!("unknown object field {key}")); }
+                    else { validate_inner(child, &Kind::Any, depth + 1, max_depth, max_nodes, nodes)?; }
+                }
+                Ok(())
+            }
+            _ => Err("object-builder value does not match schema".into()),
+        }
+    }
+}
+
+/// Dimension metadata registry. A registered generator ID is only a host hook request.
+pub mod dimensions {
+    use super::Id;
+    use std::collections::BTreeMap;
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Definition { pub id: Id, pub generator: Id, pub effects: Id, pub has_ceiling: bool, pub ambient_light: f32, pub logical_height: u16, pub coordinate_scale: f64 }
+    #[derive(Default)]
+    pub struct Registry { entries: BTreeMap<Id, Definition>, frozen: bool }
+    impl Registry {
+        pub fn register(&mut self, definition: Definition) -> Result<(), String> {
+            if self.frozen { return Err("dimension registry is frozen".into()); }
+            if !definition.ambient_light.is_finite() || !(0.0..=1.0).contains(&definition.ambient_light)
+                || definition.logical_height == 0 || definition.logical_height > 4096
+                || !definition.coordinate_scale.is_finite() || definition.coordinate_scale <= 0.0 || definition.coordinate_scale > 1.0e6 {
+                return Err("invalid dimension numeric properties".into());
+            }
+            if self.entries.contains_key(&definition.id) { return Err(format!("duplicate dimension {}", definition.id.as_str())); }
+            self.entries.insert(definition.id.clone(), definition); Ok(())
+        }
+        pub fn get(&self, id: &Id) -> Option<&Definition> { self.entries.get(id) }
+        pub fn freeze(&mut self) { self.frozen = true; }
+    }
+}
+
+/// Chat pipeline that explicitly records whether modifications invalidate an upstream signature.
+pub mod messages {
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Signature { pub bytes: Vec<u8>, pub algorithm: String }
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Message { pub sender: Option<String>, pub text: String, pub signature: Option<Signature>, pub modified: bool, pub blocked: bool }
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum Action { Pass, Modify(String), Block }
+    pub fn apply_pipeline(mut message: Message, actions: impl IntoIterator<Item=Action>, max_bytes: usize) -> Result<Message, String> {
+        if message.text.len() > max_bytes { return Err("incoming message exceeds text budget".into()); }
+        for action in actions {
+            if message.blocked { break; }
+            match action {
+                Action::Pass => {}
+                Action::Modify(text) => {
+                    if text.len() > max_bytes { return Err("modified message exceeds text budget".into()); }
+                    if text != message.text { message.text = text; message.modified = true; }
+                }
+                Action::Block => message.blocked = true,
+            }
+        }
+        // Do not pretend a changed signed message remains cryptographically valid.
+        if message.modified { message.signature = None; }
+        Ok(message)
+    }
+}
+
+/// Bounded, allowlisted custom payload channels; actual packet transport belongs to the host.
+pub mod networking {
+    use super::Id;
+    use std::collections::BTreeMap;
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Direction { ClientToServer, ServerToClient, Bidirectional }
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Channel { pub direction: Direction, pub max_payload: usize, pub max_messages_per_window: u32 }
+    #[derive(Default)]
+    pub struct Registry { channels: BTreeMap<Id, Channel> }
+    impl Registry {
+        pub fn register(&mut self, id: Id, channel: Channel) -> Result<(), String> {
+            if channel.max_payload == 0 || channel.max_payload > 1_048_576 || channel.max_messages_per_window == 0 || channel.max_messages_per_window > 10_000 {
+                return Err("invalid network channel limits".into());
+            }
+            if self.channels.len() >= 1024 { return Err("network channel registration limit reached".into()); }
+            if self.channels.insert(id.clone(), channel).is_some() { return Err(format!("duplicate network channel {}", id.as_str())); }
+            Ok(())
+        }
+        pub fn validate_payload(&self, id: &Id, direction: Direction, size: usize) -> Result<(), String> {
+            let channel = self.channels.get(id).ok_or_else(|| format!("unregistered network channel {}", id.as_str()))?;
+            let direction_ok = channel.direction == Direction::Bidirectional || channel.direction == direction;
+            if !direction_ok { return Err("network channel direction is not permitted".into()); }
+            if size > channel.max_payload { return Err("network payload exceeds channel limit".into()); }
+            Ok(())
+        }
+    }
+}
+
+/// Backend-neutral mesh validation and per-frame draw budgeting.
+pub mod render {
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Vertex { pub position: [f32; 3], pub normal: [f32; 3], pub uv: [f32; 2] }
+    #[derive(Clone, Debug, Default, PartialEq)]
+    pub struct Mesh { pub vertices: Vec<Vertex>, pub indices: Vec<u32> }
+    impl Mesh {
+        pub fn validate(&self, max_vertices: usize, max_indices: usize) -> Result<(), String> {
+            if self.vertices.len() > max_vertices || self.indices.len() > max_indices { return Err("mesh exceeds geometry budget".into()); }
+            if self.indices.len() % 3 != 0 { return Err("triangle mesh index count must be divisible by three".into()); }
+            if self.indices.iter().any(|i| *i as usize >= self.vertices.len()) { return Err("mesh index references missing vertex".into()); }
+            for v in &self.vertices {
+                if v.position.iter().chain(v.normal.iter()).chain(v.uv.iter()).any(|x| !x.is_finite()) { return Err("mesh contains non-finite vertex data".into()); }
+            }
+            Ok(())
+        }
+    }
+    #[derive(Clone, Debug)]
+    pub struct DrawBudget { remaining: usize }
+    impl DrawBudget {
+        pub fn new(max_commands: usize) -> Self { Self { remaining: max_commands } }
+        pub fn consume(&mut self, count: usize) -> Result<(), String> {
+            self.remaining = self.remaining.checked_sub(count).ok_or("render command budget exceeded")?;
+            Ok(())
+        }
+        pub fn remaining(&self) -> usize { self.remaining }
+    }
+}
+
+/// Declarative effects. The host must enqueue emissions into its real particle/audio engine.
+pub mod effects {
+    use super::Id;
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Particle { pub id: Id, pub count: u16, pub spread: [f32; 3], pub speed: f32 }
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Sound { pub id: Id, pub volume: f32, pub pitch: f32, pub category: String }
+    impl Particle {
+        pub fn validate(&self) -> Result<(), String> {
+            if self.count == 0 || self.count > 4096 || self.spread.iter().any(|v| !v.is_finite() || *v < 0.0 || *v > 128.0) || !self.speed.is_finite() || !(0.0..=16.0).contains(&self.speed) {
+                return Err("invalid particle emission parameters".into());
+            }
+            Ok(())
+        }
+    }
+    impl Sound {
+        pub fn validate(&self) -> Result<(), String> {
+            if !self.volume.is_finite() || !(0.0..=16.0).contains(&self.volume)
+                || !self.pitch.is_finite() || !(0.01..=4.0).contains(&self.pitch)
+                || self.category.is_empty() || self.category.len() > 64 {
+                return Err("invalid sound parameters".into());
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Bounded debug primitives, rendered only when the host exposes a debug overlay.
+pub mod debug {
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Line { pub from: [f32; 3], pub to: [f32; 3], pub rgba: u32 }
+    #[derive(Default)]
+    pub struct Overlay { lines: Vec<Line> }
+    impl Overlay {
+        pub fn push(&mut self, line: Line, max_lines: usize) -> Result<(), String> {
+            if line.from.iter().chain(line.to.iter()).any(|v| !v.is_finite()) { return Err("debug line has non-finite coordinates".into()); }
+            if self.lines.len() >= max_lines { return Err("debug overlay budget exceeded".into()); }
+            self.lines.push(line); Ok(())
+        }
+        pub fn lines(&self) -> &[Line] { &self.lines }
+        pub fn clear(&mut self) { self.lines.clear(); }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{attachments, permissions, registry_sync, resources, transfer};
