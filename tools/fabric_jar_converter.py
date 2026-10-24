@@ -191,7 +191,6 @@ def convert_jar(
         fabric_api_references=audit.get("code_references", {}).get("fabric_reference_count", 0),
         minecraft_references=audit.get("code_references", {}).get("minecraft_reference_count", 0),
     )
-    archive_report = audit["archive"]
     mod_id = str(metadata.get("id", "")).strip()
     if not MOD_ID_RE.fullmatch(mod_id):
         error = "fabric.mod.json must contain a lowercase, valid mod ID"
@@ -199,7 +198,6 @@ def convert_jar(
         return {"path": str(jar_path), "status": "error", "error": error}
     version = str(metadata.get("version", "unknown")).strip() or "unknown"
     display_name = str(metadata.get("name", mod_id)).strip() or mod_id
-    emit("metadata_validated", mod_id=mod_id, mod_version=version, display_name=display_name)
     emit("metadata_validated", mod_id=mod_id, mod_version=version, display_name=display_name)
     made_outputs: list[Path] = []
     try:
