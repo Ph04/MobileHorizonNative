@@ -688,7 +688,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: natures-compass-compatibility-audit
-          path: $RUNNER_TEMP/natures-compass-compatibility-report.json
+          path: ${{ runner.temp }}/natures-compass-compatibility-report.json
           if-no-files-found: error
           retention-days: 14
 
