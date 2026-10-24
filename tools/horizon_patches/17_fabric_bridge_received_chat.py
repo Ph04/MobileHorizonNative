@@ -80,17 +80,18 @@ rr(
     "propagate chat cancellation through Game",
 )
 
-rr(
-    remote_game,
-'''        self.ui.chat.add(
+# Horizon v0.2.28+ preserves translated/styled chat components in Text.
+# Keep those styles intact while running cancellable P1 listeners before display.
+remote_chat_layouts = [
+    (
+        '''        self.ui.chat.add(
             &self.gui.atlas,
             horizon_client::text::Text::literal(text.clone()),
             None,
             self.ticks,
             self.screen == Screen::Chat,
         );''',
-'''        // Fabric's received-chat allow/cancel hook runs before this message is
-        // presented. The packet is still counted and retained in remote history.
+        '''        // Fabric's received-chat allow/cancel hook runs before presentation.
         if !self.mods_chat(&text) {
             self.ui.chat.add(
                 &self.gui.atlas,
@@ -100,7 +101,38 @@ rr(
                 self.screen == Screen::Chat,
             );
         }''',
-    "server chat presentation hook",
-)
+    ),
+    (
+        '''        self.ui.chat.add(
+            &self.gui.atlas,
+            content,
+            None,
+            self.ticks,
+            self.screen == Screen::Chat,
+        );''',
+        '''        // Fabric's received-chat allow/cancel hook runs before presentation.
+        // Keep Horizon's server-supplied component styles, click and hover events.
+        if !self.mods_chat(&text) {
+            self.ui.chat.add(
+                &self.gui.atlas,
+                content,
+                None,
+                self.ticks,
+                self.screen == Screen::Chat,
+            );
+        }''',
+    ),
+]
+remote_text = remote_game.read_text(encoding="utf-8")
+matching_remote_chat = [
+    pair for pair in remote_chat_layouts if remote_text.count(pair[0]) == 1
+]
+if len(matching_remote_chat) != 1:
+    raise SystemExit(
+        f"{remote_game}: expected exactly one known remote chat rendering layout, "
+        f"found {len(matching_remote_chat)}"
+    )
+old_remote_chat, new_remote_chat = matching_remote_chat[0]
+rr(remote_game, old_remote_chat, new_remote_chat, "server chat presentation hook")
 
 print("Connected cancellable P1 received-chat events to multiplayer chat presentation.")
