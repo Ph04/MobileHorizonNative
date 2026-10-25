@@ -16,6 +16,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.system.Os;
 import android.content.pm.ApplicationInfo;
 import android.view.Gravity;
@@ -134,6 +136,13 @@ public final class MainActivity extends Activity {
     private Uri pendingUri;
     private boolean pendingZip;
     private Future<?> currentJob;
+    private final Handler runtimeUpdateHandler = new Handler(Looper.getMainLooper());
+    private final Runnable runtimeUpdatePoll = new Runnable() {
+        @Override public void run() {
+            HorizonRuntimeUpdateService.checkInBackground(MainActivity.this);
+            runtimeUpdateHandler.postDelayed(this, 30L * 60L * 1000L);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -192,6 +201,9 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        HorizonRuntimeUpdateService.checkInBackground(this);
+        runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
+        runtimeUpdateHandler.postDelayed(runtimeUpdatePoll, 30L * 60L * 1000L);
         if (sessionEnvSet) {
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
@@ -219,6 +231,12 @@ public final class MainActivity extends Activity {
                         "A atividade do jogo voltou sem entregar um relatório de inicialização. Isso sugere que o processo nativo terminou antes de registrar o resultado; ainda não é possível atribuir a causa ao Vulkan ou aos recursos do Minecraft.");
             }
         }
+    }
+
+    @Override
+    protected void onPause() {
+        runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
+        super.onPause();
     }
 
     @Override
