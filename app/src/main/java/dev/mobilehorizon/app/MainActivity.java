@@ -230,6 +230,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        ensureRuntimeUpdateNotificationPermission();
         HorizonRuntimeUpdateService.checkInBackground(this);
         refreshRuntimeUpdateStatus();
         runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
@@ -277,6 +278,17 @@ public final class MainActivity extends Activity {
             receiverRegistered = false;
         }
         super.onStop();
+    }
+
+    private void ensureRuntimeUpdateNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    == android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+        android.content.SharedPreferences preferences =
+                getSharedPreferences("horizon_runtime_updates", MODE_PRIVATE);
+        if (preferences.getBoolean("notification_permission_prompted", false)) return;
+        preferences.edit().putBoolean("notification_permission_prompted", true).apply();
+        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 26036);
     }
 
     private void refreshRuntimeUpdateStatus() {
