@@ -672,9 +672,9 @@ public final class MainActivity extends Activity {
         header.setOrientation(LinearLayout.VERTICAL);
         header.setFocusable(true);
         header.setClickable(true);
-        TextView heading = text((expanded ? "▾  " : "▸  ") + title, 16, 0xff18213a, true);
+        TextView heading = text((expanded ? "▾  " : "▸  ") + title, 16, 0xfff1edff, true);
         header.addView(heading, params(-1, -2));
-        TextView summary = text(description, 12, 0xff68728a, false);
+        TextView summary = text(description, 12, 0xffa9a3c7, false);
         LinearLayout.LayoutParams summaryParams = params(-1, -2);
         summaryParams.topMargin = dp(4);
         header.addView(summary, summaryParams);
@@ -1747,9 +1747,9 @@ public final class MainActivity extends Activity {
 
     private void showLogsDialog() {
         StringBuilder report = new StringBuilder();
-        report.append("HORIZON LOG VIEWER\\n");
-        report.append("Minecraft ").append(OfficialMinecraftInstaller.VERSION).append("\\n");
-        report.append("Runtime updater: ").append(HorizonRuntimeUpdateService.lastStatus(this)).append("\\n\\n");
+        report.append("HORIZON LOG VIEWER\n");
+        report.append("Minecraft ").append(OfficialMinecraftInstaller.VERSION).append("\n");
+        report.append("Runtime updater: ").append(HorizonRuntimeUpdateService.lastStatus(this)).append("\n\n");
 
         File gameHome = new File(getFilesDir(), "horizon");
         appendLogTail(report, "Client log: logs/latest.log",
@@ -1766,10 +1766,10 @@ public final class MainActivity extends Activity {
             appendLogTail(report, "Latest crash report: " + crashes[0].getName(),
                     crashes[0], 48 * 1024);
         } else {
-            report.append("\\n--- Crash reports ---\\nNenhum crash-report encontrado.\\n");
+            report.append("\n--- Crash reports ---\nNenhum crash-report encontrado.\n");
         }
         if (report.length() < 100) {
-            report.append("\\nAinda não existem logs. Abra o Horizon ou execute o teste Vulkan primeiro.\\n");
+            report.append("\nAinda não existem logs. Abra o Horizon ou execute o teste Vulkan primeiro.\n");
         }
 
         ScrollView scroll = new ScrollView(this);
@@ -1791,9 +1791,9 @@ public final class MainActivity extends Activity {
     }
 
     private void appendLogTail(StringBuilder output, String title, File file, int maxBytes) {
-        output.append("\\n--- ").append(title).append(" ---\\n");
+        output.append("\n--- ").append(title).append(" ---\n");
         if (!file.isFile()) {
-            output.append("Arquivo não encontrado: ").append(file.getAbsolutePath()).append("\\n");
+            output.append("Arquivo não encontrado: ").append(file.getAbsolutePath()).append("\n");
             return;
         }
         try (RandomAccessFile input = new RandomAccessFile(file, "r")) {
@@ -1801,7 +1801,7 @@ public final class MainActivity extends Activity {
             long start = Math.max(0L, length - maxBytes);
             if (start > 0) {
                 output.append("[exibindo os últimos ").append(maxBytes)
-                        .append(" bytes de ").append(length).append("]\\n");
+                        .append(" bytes de ").append(length).append("]\n");
             }
             input.seek(start);
             byte[] buffer = new byte[(int) Math.min((long) maxBytes, length - start)];
@@ -1809,13 +1809,13 @@ public final class MainActivity extends Activity {
             output.append(new String(buffer, StandardCharsets.UTF_8));
             if (output.length() > 180_000) {
                 output.setLength(180_000);
-                output.append("\\n[visualização limitada para preservar memória]\\n");
+                output.append("\n[visualização limitada para preservar memória]\n");
             }
-            if (output.length() > 0 && output.charAt(output.length() - 1) != '\\n') {
-                output.append('\\n');
+            if (output.length() > 0 && output.charAt(output.length() - 1) != '\n') {
+                output.append('\n');
             }
         } catch (Exception error) {
-            output.append("Falha ao ler log: ").append(safeMessage(error)).append("\\n");
+            output.append("Falha ao ler log: ").append(safeMessage(error)).append("\n");
         }
     }
 
@@ -2191,13 +2191,6 @@ public final class MainActivity extends Activity {
         TextView text = new TextView(this);
         text.setText(value);
         text.setTextSize(sizeSp);
-        if (color == 0xff17213b || color == 0xff18213a || color == 0xff24304c) {
-            color = 0xfff1edff;
-        } else if (color == 0xff59647b || color == 0xff68728a) {
-            color = 0xffb9b3d1;
-        } else if (color == 0xff5363bd) {
-            color = 0xffb69aff;
-        }
         text.setTextColor(color);
         text.setGravity(Gravity.START);
         if (bold) text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
