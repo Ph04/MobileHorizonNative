@@ -61,12 +61,11 @@ jobs:
                   raise
 
           releases = get_json("https://api.github.com/repos/ludovic111/horizon/releases?per_page=100")
+          import re
           stable = [
               release for release in releases
               if not release.get("draft") and not release.get("prerelease")
-              and len(release.get("tag_name", "")) > 1
-              and release["tag_name"].startswith("v")
-              and release["tag_name"][1].isdigit()
+              and re.fullmatch(r"v[0-9][A-Za-z0-9._+-]{0,79}", release.get("tag_name", ""))
           ]
           if not stable:
               raise SystemExit("No published stable Horizon release was found.")
@@ -84,6 +83,7 @@ jobs:
           overlay_files = [
               pathlib.Path("tools/horizon-revisions.env"),
               pathlib.Path("android-native/Cargo.toml"),
+              pathlib.Path("android-native/src/lib.rs"),
               pathlib.Path("tools/patch_horizon_android_touch.py"),
           ] + sorted(pathlib.Path("tools/horizon_patches").glob("*.py"))
           material = b"".join(path.read_bytes() for path in overlay_files)
