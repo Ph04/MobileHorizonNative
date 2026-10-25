@@ -160,6 +160,9 @@ public final class HorizonRuntimeManager {
                 throw new IOException("Não foi possível criar " + versionDir);
             }
             File temporary = new File(versionDir, ENGINE_NAME + ".partial");
+            if (temporary.exists() && !temporary.delete()) {
+                throw new IOException("Não foi possível limpar o arquivo temporário anterior.");
+            }
             copy(downloadedLibrary, temporary);
             try {
                 verifyEngine(temporary, sha);
@@ -238,8 +241,12 @@ public final class HorizonRuntimeManager {
             throw new IOException("Não foi possível criar " + versionDir);
         }
         File temporary = new File(versionDir, ENGINE_NAME + ".partial");
+        if (temporary.exists() && !temporary.delete()) {
+            throw new IOException("Não foi possível limpar o runtime base temporário anterior.");
+        }
         try (InputStream input = context.getAssets().open(ASSET_ROOT + ENGINE_NAME);
              FileOutputStream output = new FileOutputStream(temporary)) {
+            makeReadOnly(temporary);
             byte[] buffer = new byte[64 * 1024];
             int count;
             while ((count = input.read(buffer)) != -1) {
@@ -321,8 +328,12 @@ public final class HorizonRuntimeManager {
     }
 
     private static void copy(File source, File target) throws IOException {
+        if (target.exists() && !target.delete()) {
+            throw new IOException("Não foi possível limpar o runtime temporário anterior.");
+        }
         try (InputStream input = new FileInputStream(source);
              FileOutputStream output = new FileOutputStream(target)) {
+            makeReadOnly(target);
             byte[] buffer = new byte[64 * 1024];
             int count;
             long written = 0;
@@ -343,8 +354,11 @@ public final class HorizonRuntimeManager {
         }
         byte[] header = new byte[20];
         try (FileInputStream input = new FileInputStream(file)) {
-            if (input.read(header) != header.length) {
-                throw new IOException("Cabeçalho ELF incompleto: " + file);
+            int offset = 0;
+            while (offset < header.length) {
+                int count = input.read(header, offset, header.length - offset);
+                if (count < 0) throw new IOException("Cabeçalho ELF incompleto: " + file);
+                offset += count;
             }
         }
         // ELF64, little-endian, e_machine == EM_AARCH64 (183).
