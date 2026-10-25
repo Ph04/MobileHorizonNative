@@ -498,6 +498,8 @@ public final class MainActivity extends Activity {
         addSpaced(accountSection, accountNote, -2, 5);
         microsoftLoginButton = button("Entrar com Microsoft", true, v -> startMicrosoftSignIn());
         addSpaced(accountSection, microsoftLoginButton, 44, 8);
+        openEngineButton = button("Jogar com conta Microsoft", false, v -> openNativeClient());
+        addSpaced(accountSection, openEngineButton, 44, 7);
         microsoftSignOutButton = button("Remover conta salva", false, v -> signOutMicrosoft());
         microsoftSignOutButton.setVisibility(View.GONE);
         addSpaced(accountSection, microsoftSignOutButton, 40, 6);
@@ -505,9 +507,8 @@ public final class MainActivity extends Activity {
         logsSectionView = collapsibleSection(page, "Logs e diagnóstico",
                 "Consultar logs locais, testar o renderizador e exportar um pacote de diagnóstico.", false);
         LinearLayout tools = (LinearLayout) logsSectionView;
-        openEngineButton = button("Verificar requisitos", false, v -> openNativeClient());
         smokeTestButton = button("Testar Vulkan", false, v -> openNativeSmokeTest());
-        addButtonPair(tools, openEngineButton, smokeTestButton, 42, 0);
+        addSpaced(tools, smokeTestButton, 42, 0);
         viewLogsButton = button("Abrir logs do Horizon", false, v -> showLogsDialog());
         addSpaced(tools, viewLogsButton, 42, 7);
         TextView diagnosticNote = text(
