@@ -454,8 +454,6 @@ jobs:
         shell: bash
         env:
           HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
-          HORIZON_PC_RELEASE_TAG: ${{ env.HORIZON_PC_RELEASE_TAG }}
-          HORIZON_TEST_OLD_RELEASE_TAG: ${{ env.HORIZON_TEST_OLD_RELEASE_TAG }}
           MOBILEHORIZON_KEYSTORE_PASSWORD: ${{ secrets.MOBILEHORIZON_KEYSTORE_PASSWORD }}
           MOBILEHORIZON_KEY_ALIAS: ${{ secrets.MOBILEHORIZON_KEY_ALIAS }}
           MOBILEHORIZON_KEY_PASSWORD: ${{ secrets.MOBILEHORIZON_KEY_PASSWORD }}
@@ -477,8 +475,6 @@ jobs:
         shell: bash
         env:
           STABLE_SIGNING: ${{ steps.signing.outputs.enabled }}
-          HORIZON_PC_RELEASE_TAG: ${{ env.HORIZON_PC_RELEASE_TAG }}
-          HORIZON_TEST_OLD_RELEASE_TAG: ${{ env.HORIZON_TEST_OLD_RELEASE_TAG }}
         run: |
           set -euo pipefail
           STANDARD_APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
