@@ -162,7 +162,7 @@ public final class HorizonRuntimeUpdateService {
             String overlay = manifest.optString("overlay", "");
             String expectedVersion = upstreamCommit.matches("(?i)[0-9a-f]{40}")
                     && overlay.matches("(?i)[0-9a-f]{8}")
-                    && upstreamTag.matches("v[0-9]+\\\\.[0-9]+\\\\.[0-9]+")
+                    && upstreamTag.matches("v[0-9]+\\.[0-9]+\\.[0-9]+")
                     ? "horizon-" + upstreamTag + "-c" + upstreamCommit.substring(0, 8)
                         + "-o" + overlay : "";
             if (manifest.optInt("format", -1) != 1
@@ -285,11 +285,11 @@ public final class HorizonRuntimeUpdateService {
         int separator = version.indexOf("-c", "horizon-".length());
         if (separator < 0) return "";
         String tag = version.substring("horizon-".length(), separator);
-        return tag.matches("v[0-9]+\\\\.[0-9]+\\\\.[0-9]+") ? tag : "";
+        return tag.matches("v[0-9]+\\.[0-9]+\\.[0-9]+") ? tag : "";
     }
 
     private static int comparePcReleaseTags(String left, String right) {
-        Pattern semantic = Pattern.compile("v([0-9]+)\\\\.([0-9]+)\\\\.([0-9]+)");
+        Pattern semantic = Pattern.compile("v([0-9]+)\\.([0-9]+)\\.([0-9]+)");
         Matcher a = semantic.matcher(left == null ? "" : left);
         Matcher b = semantic.matcher(right == null ? "" : right);
         if (a.matches() && b.matches()) {
