@@ -83,7 +83,7 @@ public final class MainActivity extends Activity {
     private Button runtimeUpdateButton;
     private Button viewLogsButton;
     private ScrollView dashboardScroll;
-    private View heroPanel;
+    private FrameLayout heroPanel;
     private View downloadSectionView;
     private View resourcesSectionView;
     private View logsSectionView;
