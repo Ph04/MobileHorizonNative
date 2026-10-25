@@ -28,25 +28,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''        let (id, payload) = re
         }
         let packet = match play::Clientbound::decode(id, &payload) {''', "trace resource-pack and world-login packet receipt")
 
-pack_patch("crates/horizon-client/src/net.rs", '''        let (id, payload) = reader.recv().map_err(|e| e.to_string())?;
-        let packet = match cfg::Clientbound::decode(id, &payload) {''', '''        let (id, payload) = reader.recv().map_err(|e| e.to_string())?;
-        let packet_name = horizon_protocol::ids::name(
-            horizon_protocol::State::Configuration,
-            horizon_protocol::Direction::Clientbound,
-            id,
-        ).unwrap_or("?");
-        if packet_name.contains("resource_pack")
-            || packet_name == "registry_data"
-            || packet_name == "select_known_packs"
-            || packet_name == "finish_configuration"
-            || packet_name == "update_tags"
-        {
-            log::info!(
-                "HorizonDiag: packet_received phase=configuration id={} name={} payload_bytes={}",
-                id, packet_name, payload.len()
-            );
-        }
-        let packet = match cfg::Clientbound::decode(id, &payload) {''', "trace configuration resource and registry packet receipt")
+pack_patch("crates/horizon-client/src/net.rs", "        let (id, payload) = reader.recv().map_err(|e| e.to_string())?;\n        match cfg::Clientbound::decode(id, &payload).map_err(|e| e.to_string())? {", "        let (id, payload) = reader.recv().map_err(|e| e.to_string())?;\n        let packet_name = horizon_protocol::ids::name(\n            horizon_protocol::State::Configuration,\n            horizon_protocol::Direction::Clientbound,\n            id,\n        ).unwrap_or(\"?\");\n        if packet_name.contains(\"resource_pack\")\n            || packet_name == \"registry_data\"\n            || packet_name == \"select_known_packs\"\n            || packet_name == \"finish_configuration\"\n            || packet_name == \"update_tags\"\n        {\n            log::info!(\n                \"HorizonDiag: packet_received phase=configuration id={} name={} payload_bytes={}\",\n                id, packet_name, payload.len()\n            );\n        }\n        match cfg::Clientbound::decode(id, &payload).map_err(|e| e.to_string())? {", "trace configuration resource and registry packet receipt")
 
 # Removed: the v0.2.50 upstream pack manager now owns offer, cache and status state.
 
@@ -54,7 +36,7 @@ pack_patch("crates/horizon-client/src/net.rs", '''        let (id, payload) = re
 # Removed: the v0.2.50 upstream pack manager now owns offer, cache and status state.
 
 
-pack_patch("crates/horizon-client/src/net.rs", "            cfg::Clientbound::FinishConfiguration(_) => {\n                reply(cfg::Serverbound::FinishConfiguration(Empty))?;\n                return Ok(registries);\n            }", "            cfg::Clientbound::FinishConfiguration(_) => {\n                log::info!(\"HorizonDiag: configuration_phase_complete\");\n                reply(cfg::Serverbound::FinishConfiguration(Empty))?;\n                return Ok(registries);\n            }", "summarize configuration resource offers and registries")
+pack_patch("crates/horizon-client/src/net.rs", "            cfg::Clientbound::FinishConfiguration(_) => {\n                let mut w = writer.lock().unwrap();\n                let w = w.as_mut().ok_or(\"Disconnected\")?;\n                w.send(&cfg::Serverbound::FinishConfiguration(Empty).encode())\n                    .map_err(|e| e.to_string())?;\n                configuring.store(false, Ordering::Relaxed);\n                return Ok(registries);\n            }", "            cfg::Clientbound::FinishConfiguration(_) => {\n                log::info!(\"HorizonDiag: configuration_phase_complete\");\n                let mut w = writer.lock().unwrap();\n                let w = w.as_mut().ok_or(\"Disconnected\")?;\n                w.send(&cfg::Serverbound::FinishConfiguration(Empty).encode())\n                    .map_err(|e| e.to_string())?;\n                configuring.store(false, Ordering::Relaxed);\n                return Ok(registries);\n            }", "summarize configuration resource offers and registries")
 
 # Entity metadata is logged after decode, including item IDs and component IDs,
 # while text previews are short and escaped. No NBT, texture URLs or profile blobs.
