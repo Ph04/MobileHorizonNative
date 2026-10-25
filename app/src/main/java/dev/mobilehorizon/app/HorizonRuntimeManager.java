@@ -22,18 +22,17 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * Selects and verifies the native Horizon engine before NativeActivity starts.
+ * Selects and verifies the downloaded native Horizon engine before NativeActivity starts.
  *
- * The APK contains a small, stable libhorizon_android.so bootstrap plus a signed-build
- * baseline engine asset. Downloaded engines are installed into app-private version folders,
- * never over a library that might already be mapped by the current process.
+ * The APK contains only the stable libhorizon_android.so bootstrap. Versioned engines are
+ * downloaded from verified MobileHorizonNative releases and kept in app-private folders.
+ * The last-known-good downloaded engine is retained as a fallback across runtime upgrades.
  */
 public final class HorizonRuntimeManager {
     private static final String TAG = "HorizonRuntime";
-    private static final String ASSET_ROOT = "horizon-runtime/";
     private static final String ENGINE_NAME = "libhorizon_engine.so";
-    private static final String MANIFEST_NAME = "manifest.json";
     private static final String ACTIVE_NAME = "active.json";
+    private static final String PREVIOUS_NAME = "previous.json";
     private static final String STATUS_NAME = "loader-status.txt";
     private static final long MAX_ENGINE_BYTES = 300L * 1024L * 1024L;
     private static final Pattern VERSION_PATTERN =
@@ -44,34 +43,58 @@ public final class HorizonRuntimeManager {
     public static final class PreparedRuntime {
         public final File root;
         public final File activeLibrary;
-        public final File bundledLibrary;
+        public final File fallbackLibrary;
         public final File statusFile;
         public final String activeVersion;
-        public final String bundledVersion;
 
-        private PreparedRuntime(File root, File activeLibrary, File bundledLibrary,
-                                File statusFile, String activeVersion, String bundledVersion) {
+        private PreparedRuntime(File root, File activeLibrary, File fallbackLibrary,
+                                File statusFile, String activeVersion) {
             this.root = root;
             this.activeLibrary = activeLibrary;
-            this.bundledLibrary = bundledLibrary;
+            this.fallbackLibrary = fallbackLibrary;
             this.statusFile = statusFile;
             this.activeVersion = activeVersion;
-            this.bundledVersion = bundledVersion;
         }
     }
 
-    /** Read the selected version without copying assets; safe for the updater's background check. */
+    /**
+     * Returns the selected, hash-verified runtime version, or an empty string before the first
+     * runtime download. No engine binary is bundled in the APK.
+     */
     public static synchronized String currentVersion(Context context) throws IOException {
         Context app = context.getApplicationContext();
         File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
-        File versions = new File(root, "versions");
-        Active active = readValidActive(versions);
-        if (active != null) return active.version;
-        JSONObject manifest = readBundledManifest(app);
-        return requireVersion(manifest.optString("version", ""));
+        Active active = readValidActive(new File(root, "versions"));
+        return active == null ? "" : active.version;
     }
 
-    /** Ensures the bundled baseline exists, repairs a failed previous switch, and selects a runtime. */
+    /** Fast UI hint only; full SHA-256/ELF validation is performed before use. */
+    public static boolean hasActiveRuntimeMarker(Context context) {
+        try {
+            Context app = context.getApplicationContext();
+            File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
+            File versions = new File(root, "versions");
+            File activeFile = new File(root, ACTIVE_NAME);
+            if (!activeFile.isFile() || activeFile.length() <= 0 || activeFile.length() > 16 * 1024) {
+                return false;
+            }
+            try (FileInputStream input = new FileInputStream(activeFile)) {
+                byte[] bytes = new byte[(int) activeFile.length()];
+                int count = input.read(bytes);
+                if (count <= 0) return false;
+                JSONObject json = new JSONObject(new String(bytes, 0, count, StandardCharsets.UTF_8));
+                String version = requireVersion(json.optString("version", ""));
+                File library = new File(new File(versions, version), ENGINE_NAME).getCanonicalFile();
+                String prefix = versions.getCanonicalPath() + File.separator;
+                return library.getPath().startsWith(prefix) && library.isFile()
+                        && library.length() >= 4096 && library.length() <= MAX_ENGINE_BYTES;
+            }
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /** Selects a downloaded runtime and safely rolls back to a prior downloaded version. */
     public static synchronized PreparedRuntime prepare(Context context) throws IOException {
         Context app = context.getApplicationContext();
         File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
@@ -84,41 +107,50 @@ public final class HorizonRuntimeManager {
                      new File(root, ".runtime-manager.lock").toPath(),
                      StandardOpenOption.CREATE, StandardOpenOption.WRITE);
              FileLock ignoredLock = lockChannel.lock()) {
-        JSONObject manifest = readBundledManifest(app);
-        String bundledVersion = requireVersion(manifest.optString("version", ""));
-        String bundledSha = requireSha256(manifest.optString("sha256", ""));
-        String assetName = manifest.optString("library", ENGINE_NAME);
-        if (!ENGINE_NAME.equals(assetName)) {
-            throw new IOException("O manifesto aponta para uma biblioteca inesperada: " + assetName);
-        }
+            File status = new File(root, STATUS_NAME);
+            String previousStatus = readSmallText(status);
+            boolean previousLaunchFailed = previousStatus.startsWith("FALLBACK:")
+                    || previousStatus.startsWith("ERROR:")
+                    || previousStatus.startsWith("STARTING:");
 
-        File bundledLibrary = installBundledBaseline(app, versions, bundledVersion, bundledSha);
-        File status = new File(root, STATUS_NAME);
-        String previousStatus = readSmallText(status);
-        if (previousStatus.startsWith("FALLBACK:") || previousStatus.startsWith("ERROR:")
-                || previousStatus.startsWith("STARTING:")) {
-            // The native bootstrap could not start the selected engine on the prior attempt.
-            // Return to the APK-provided baseline before another game launch.
-            writeActive(root, bundledVersion, bundledSha);
-            Log.e(TAG, "Runtime anterior falhou ao carregar; revertendo para " + bundledVersion
-                    + ": " + previousStatus);
-        }
-        if (status.exists() && !status.delete()) {
-            Log.w(TAG, "Não foi possível remover o marcador nativo antigo: " + status);
-        }
+            Active active = readValidActive(versions);
+            Active previous = readValidSelection(versions, PREVIOUS_NAME);
+            if (previousLaunchFailed) {
+                if (previous != null && (active == null || !previous.version.equals(active.version))) {
+                    writeActive(root, previous.version, previous.sha256);
+                    active = previous;
+                    previous = null;
+                    deleteSelection(root, PREVIOUS_NAME);
+                    Log.e(TAG, "A runtime atual falhou; revertendo para a última runtime baixada "
+                            + "e verificada " + active.version + ": " + previousStatus);
+                } else {
+                    if (active != null) deleteSelection(root, ACTIVE_NAME);
+                    if (previous != null) deleteSelection(root, PREVIOUS_NAME);
+                    active = null;
+                    previous = null;
+                    Log.e(TAG, "A runtime falhou e não há uma versão anterior disponível: "
+                            + previousStatus);
+                }
+            } else if (active == null && previous != null) {
+                writeActive(root, previous.version, previous.sha256);
+                active = previous;
+                previous = null;
+                deleteSelection(root, PREVIOUS_NAME);
+                Log.w(TAG, "Recuperando a última runtime baixada e verificada " + active.version);
+            }
 
-        Active active = readValidActive(versions);
-        if (active == null) {
-            writeActive(root, bundledVersion, bundledSha);
-            active = new Active(bundledVersion, bundledSha,
-                    new File(new File(versions, bundledVersion), ENGINE_NAME));
-        }
-
-        // Recheck the selected binary before passing its path into native code.
-        verifyEngine(active.library, active.sha256);
-        return new PreparedRuntime(root, active.library.getCanonicalFile(),
-                bundledLibrary.getCanonicalFile(), status.getCanonicalFile(),
-                active.version, bundledVersion);
+            if (status.exists() && !status.delete()) {
+                Log.w(TAG, "Não foi possível remover o marcador nativo antigo: " + status);
+            }
+            if (active == null) {
+                throw new IOException("Nenhuma runtime Horizon instalada. Volte à launcher para "
+                        + "baixar e verificar a runtime Android mais recente.");
+            }
+            if (previous != null && previous.version.equals(active.version)) previous = null;
+            verifyEngine(active.library, active.sha256);
+            File fallbackLibrary = previous == null ? null : previous.library.getCanonicalFile();
+            return new PreparedRuntime(root, active.library.getCanonicalFile(), fallbackLibrary,
+                    status.getCanonicalFile(), active.version);
         }
     }
 
@@ -148,15 +180,22 @@ public final class HorizonRuntimeManager {
              FileLock ignoredLock = lockChannel.lock()) {
         File versionDir = new File(versions, safeVersion);
         File target = new File(versionDir, ENGINE_NAME);
+        Active previousActive = readValidActive(versions);
         if (target.isFile()) {
             try {
                 verifyEngine(target, sha);
                 makeReadOnly(target);
-            } catch (IOException wrongExistingBuild) {
-                throw new IOException("Já existe outra biblioteca para a versão " + safeVersion
-                        + "; use uma versão/commit único para cada binário.", wrongExistingBuild);
+            } catch (IOException invalidExistingBuild) {
+                File quarantined = new File(versions,
+                        ".corrupt-" + safeVersion + "-" + System.currentTimeMillis());
+                if (!versionDir.renameTo(quarantined)) {
+                    throw new IOException("A runtime existente está inválida e não pôde ser isolada: "
+                            + target, invalidExistingBuild);
+                }
             }
-        } else {
+        }
+        target = new File(versionDir, ENGINE_NAME);
+        if (!target.isFile()) {
             if (!versionDir.isDirectory() && !versionDir.mkdirs()) {
                 throw new IOException("Não foi possível criar " + versionDir);
             }
@@ -178,94 +217,10 @@ public final class HorizonRuntimeManager {
             }
         }
 
+        if (previousActive != null && !previousActive.version.equals(safeVersion)) {
+            writeSelection(root, PREVIOUS_NAME, previousActive.version, previousActive.sha256);
+        }
         writeActive(root, safeVersion, sha);
-        }
-    }
-
-    /** Force the next launch to use the engine shipped in the APK. */
-    public static synchronized void rollbackToBundled(Context context) throws IOException {
-        Context app = context.getApplicationContext();
-        JSONObject manifest = readBundledManifest(app);
-        String version = requireVersion(manifest.optString("version", ""));
-        String sha = requireSha256(manifest.optString("sha256", ""));
-        File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
-        File versions = new File(root, "versions");
-        if (!versions.isDirectory() && !versions.mkdirs()) {
-            throw new IOException("Não foi possível criar " + versions);
-        }
-        try (FileChannel lockChannel = FileChannel.open(
-                     new File(root, ".runtime-manager.lock").toPath(),
-                     StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-             FileLock ignoredLock = lockChannel.lock()) {
-            installBundledBaseline(app, versions, version, sha);
-            writeActive(root, version, sha);
-        }
-    }
-
-    private static JSONObject readBundledManifest(Context context) throws IOException {
-        try (InputStream input = context.getAssets().open(ASSET_ROOT + MANIFEST_NAME)) {
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            byte[] buffer = new byte[4096];
-            int count;
-            while ((count = input.read(buffer)) != -1) {
-                output.write(buffer, 0, count);
-                if (output.size() > 64 * 1024) {
-                    throw new IOException("Manifesto do runtime excede o tamanho permitido.");
-                }
-            }
-            return new JSONObject(output.toString(StandardCharsets.UTF_8.name()));
-        } catch (org.json.JSONException error) {
-            throw new IOException("Manifesto do runtime inválido.", error);
-        }
-    }
-
-    private static File installBundledBaseline(Context context, File versions,
-                                                String version, String sha) throws IOException {
-        File versionDir = new File(versions, version);
-        File target = new File(versionDir, ENGINE_NAME);
-        if (target.isFile()) {
-            try {
-                verifyEngine(target, sha);
-                makeReadOnly(target);
-                return target;
-            } catch (IOException invalidExisting) {
-                // Do not overwrite an existing path: a previous process may still have it mapped.
-                File quarantined = new File(versions,
-                        ".corrupt-" + version + "-" + System.currentTimeMillis());
-                if (!versionDir.renameTo(quarantined)) {
-                    throw new IOException("A biblioteca base existente está inválida e não pôde "
-                            + "ser isolada: " + target, invalidExisting);
-                }
-            }
-        }
-        if (!versionDir.isDirectory() && !versionDir.mkdirs()) {
-            throw new IOException("Não foi possível criar " + versionDir);
-        }
-        File temporary = new File(versionDir, ENGINE_NAME + ".partial");
-        if (temporary.exists() && !temporary.delete()) {
-            throw new IOException("Não foi possível limpar o runtime base temporário anterior.");
-        }
-        try (InputStream input = context.getAssets().open(ASSET_ROOT + ENGINE_NAME);
-             FileOutputStream output = new FileOutputStream(temporary)) {
-            byte[] buffer = new byte[64 * 1024];
-            int count;
-            while ((count = input.read(buffer)) != -1) {
-                output.write(buffer, 0, count);
-            }
-            output.getFD().sync();
-        } catch (IOException error) {
-            if (temporary.exists()) temporary.delete();
-            throw error;
-        }
-        try {
-            verifyEngine(temporary, sha);
-            makeReadOnly(temporary);
-            if (!temporary.renameTo(target)) {
-                throw new IOException("Não foi possível finalizar o runtime base.");
-            }
-            return target;
-        } finally {
-            if (temporary.exists()) temporary.delete();
         }
     }
 
@@ -281,11 +236,16 @@ public final class HorizonRuntimeManager {
     }
 
     private static Active readValidActive(File versions) {
+        return readValidSelection(versions, ACTIVE_NAME);
+    }
+
+    private static Active readValidSelection(File versions, String selectionName) {
         File root = versions.getParentFile();
-        File activeFile = new File(root, ACTIVE_NAME);
-        if (!activeFile.isFile()) return null;
-        try (FileInputStream input = new FileInputStream(activeFile)) {
-            byte[] bytes = new byte[(int) Math.min(activeFile.length(), 16 * 1024)];
+        File selectionFile = new File(root, selectionName);
+        if (!selectionFile.isFile() || selectionFile.length() <= 0
+                || selectionFile.length() > 16 * 1024) return null;
+        try (FileInputStream input = new FileInputStream(selectionFile)) {
+            byte[] bytes = new byte[(int) selectionFile.length()];
             int count = input.read(bytes);
             if (count <= 0) return null;
             JSONObject json = new JSONObject(new String(bytes, 0, count, StandardCharsets.UTF_8));
@@ -298,12 +258,17 @@ public final class HorizonRuntimeManager {
             makeReadOnly(library);
             return new Active(version, sha, library);
         } catch (Exception error) {
-            Log.w(TAG, "Registro de runtime ativo inválido; usando o runtime base.", error);
+            Log.w(TAG, "Registro de runtime " + selectionName + " inválido: " + error.getMessage());
             return null;
         }
     }
 
     private static void writeActive(File root, String version, String sha) throws IOException {
+        writeSelection(root, ACTIVE_NAME, version, sha);
+    }
+
+    private static void writeSelection(File root, String selectionName,
+                                       String version, String sha) throws IOException {
         JSONObject json = new JSONObject();
         try {
             json.put("version", version);
@@ -311,11 +276,11 @@ public final class HorizonRuntimeManager {
         } catch (org.json.JSONException impossible) {
             throw new IOException("Não foi possível montar o registro de runtime.", impossible);
         }
-        File temporary = new File(root, ACTIVE_NAME + ".partial");
-        File target = new File(root, ACTIVE_NAME);
         if (!root.isDirectory() && !root.mkdirs()) {
             throw new IOException("Não foi possível criar " + root);
         }
+        File temporary = new File(root, selectionName + ".partial");
+        File target = new File(root, selectionName);
         try (FileOutputStream output = new FileOutputStream(temporary)) {
             output.write((json.toString() + "\n").getBytes(StandardCharsets.UTF_8));
             output.getFD().sync();
@@ -324,7 +289,14 @@ public final class HorizonRuntimeManager {
             Os.rename(temporary.getAbsolutePath(), target.getAbsolutePath());
         } catch (android.system.ErrnoException error) {
             temporary.delete();
-            throw new IOException("Não foi possível ativar atomicamente o runtime.", error);
+            throw new IOException("Não foi possível atualizar atomicamente a seleção de runtime.", error);
+        }
+    }
+
+    private static void deleteSelection(File root, String selectionName) throws IOException {
+        File target = new File(root, selectionName);
+        if (target.exists() && !target.delete()) {
+            throw new IOException("Não foi possível remover a seleção de runtime " + selectionName);
         }
     }
 

@@ -49,13 +49,17 @@ public final class NativeGameActivity extends NativeActivity {
                 throw new java.io.IOException("Não foi possível criar o diretório privado do jogo.");
             }
 
-            // Choose and verify a versioned Horizon engine before NativeActivity resolves the
-            // stable libhorizon_android.so bootstrap. The selected engine is never overwritten
-            // in place; the APK-provided engine remains the fallback.
+            // Select only a downloaded, hash-verified engine. During upgrades, the previous
+            // downloaded version is kept as a fallback; no game engine binary is bundled in the APK.
             HorizonRuntimeManager.PreparedRuntime runtime = HorizonRuntimeManager.prepare(this);
             android.system.Os.setenv("HORIZON_RUNTIME_HOME", runtime.root.getAbsolutePath(), true);
             android.system.Os.setenv("HORIZON_RUNTIME_LIBRARY", runtime.activeLibrary.getAbsolutePath(), true);
-            android.system.Os.setenv("HORIZON_RUNTIME_FALLBACK_LIBRARY", runtime.bundledLibrary.getAbsolutePath(), true);
+            if (runtime.fallbackLibrary != null) {
+                android.system.Os.setenv("HORIZON_RUNTIME_FALLBACK_LIBRARY",
+                        runtime.fallbackLibrary.getAbsolutePath(), true);
+            } else {
+                android.system.Os.unsetenv("HORIZON_RUNTIME_FALLBACK_LIBRARY");
+            }
             android.system.Os.setenv("HORIZON_RUNTIME_STATUS_FILE", runtime.statusFile.getAbsolutePath(), true);
             android.system.Os.setenv("HORIZON_RUNTIME_VERSION", runtime.activeVersion, true);
 
