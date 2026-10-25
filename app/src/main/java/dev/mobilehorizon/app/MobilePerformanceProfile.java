@@ -14,7 +14,7 @@ import java.util.Map;
 
 /** One-time conservative defaults for weaker Android devices; user overrides are preserved. */
 final class MobilePerformanceProfile {
-    private static final String MARKER = ".mobilehorizon-performance-v3";
+    private static final String MARKER = ".mobilehorizon-performance-v4";
 
     private static final class Setting {
         final String defaultValue;
@@ -57,7 +57,13 @@ final class MobilePerformanceProfile {
         File marker = new File(root, MARKER);
         if (marker.isFile()) return;
 
-        File options = new File(root, "options.txt");
+        // Horizon's NativeActivity runs with HORIZON_HOME=<filesDir>/horizon.
+        // options.txt must live beside the game's logs and saves, not at filesDir.
+        File gameHome = new File(root, "horizon");
+        if (!gameHome.isDirectory() && !gameHome.mkdirs()) {
+            throw new java.io.IOException("Não foi possível criar a pasta de configuração do Horizon.");
+        }
+        File options = new File(gameHome, "options.txt");
         String oldText = options.isFile() ? read(options) : "version:4000\n";
         String tuned = tuneOptionsText(oldText);
         File temporary = new File(root, "options.txt.mobilehorizon.tmp");
