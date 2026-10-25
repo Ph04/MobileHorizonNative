@@ -345,7 +345,9 @@ public final class MainActivity extends Activity {
         heroBrand.setOrientation(LinearLayout.VERTICAL);
         heroBrand.setGravity(Gravity.CENTER_VERTICAL);
         heroMain.addView(heroBrand, new LinearLayout.LayoutParams(0, -1, 1f));
-        heroBrand.addView(text("Horizon", landscape ? 40 : 32, 0xfff7f1ff, true),
+        int heroTitleSize = landscape ? 40
+                : (getResources().getConfiguration().screenWidthDp < 360 ? 27 : 32);
+        heroBrand.addView(text("Horizon", heroTitleSize, 0xfff7f1ff, true),
                 params(-1, -2));
         TextView heroDescription = text("Minecraft Java Edition", 12, 0xffe0c9f2, false);
         LinearLayout.LayoutParams heroDescriptionParams = params(-1, -2);
@@ -354,7 +356,9 @@ public final class MainActivity extends Activity {
 
         offlinePlayButton = button("▶  Jogar", true, v -> openOfflineClient());
         offlinePlayButton.setTextSize(17);
-        LinearLayout.LayoutParams playButtonParams = params(landscape ? 156 : 124, 52);
+        int heroPlayWidth = landscape ? 156
+                : (getResources().getConfiguration().screenWidthDp < 360 ? 110 : 124);
+        LinearLayout.LayoutParams playButtonParams = params(heroPlayWidth, 52);
         playButtonParams.setMargins(dp(8), 0, 0, 0);
         heroMain.addView(offlinePlayButton, playButtonParams);
 
@@ -602,6 +606,8 @@ public final class MainActivity extends Activity {
         selected.setStroke(dp(1), 0xff51406c);
         selected.setCornerRadius(dp(4));
         instance.setBackground(selected);
+        instance.setClickable(true);
+        instance.setOnClickListener(v -> scrollToSection(heroPanel));
         LinearLayout.LayoutParams instanceParams = params(-1, -2);
         instanceParams.topMargin = dp(10);
         sidebar.addView(instance, instanceParams);
