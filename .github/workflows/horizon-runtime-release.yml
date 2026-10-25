@@ -18,7 +18,7 @@ on:
         type: string
         default: feature/horizon-runtime-loader
   push:
-    branches: ["feature/horizon-runtime-loader", "fix/runtime-release-detection"]
+    branches: ["feature/horizon-runtime-loader"]
     paths:
       - "android-native/Cargo.toml"
       - "tools/horizon-revisions.env"
@@ -91,7 +91,7 @@ jobs:
           stable = [
               release for release in releases
               if not release.get("draft") and not release.get("prerelease")
-              and re.fullmatch(r"v[0-9][A-Za-z0-9._+-]{0,79}", release.get("tag_name", ""))
+              and re.fullmatch(r"v[0-9][A-Za-z0-9._+-]{0,50}", release.get("tag_name", ""))
               and (release.get("published_at") or release.get("created_at"))
           ]
           if not stable:
