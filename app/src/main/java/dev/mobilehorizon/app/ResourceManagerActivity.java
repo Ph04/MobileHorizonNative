@@ -5,6 +5,8 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.database.Cursor;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
@@ -18,6 +20,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -60,7 +63,9 @@ public final class ResourceManagerActivity extends Activity {
     private static final int REQUEST_IMPORT_FILES = 701;
     private static final int REQUEST_IMPORT_SHADER_FOLDER = 702;
     private static final int REQUEST_INSTALL_DATA_PACK = 704;
+    private static final int REQUEST_IMPORT_SKIN = 705;
     private static final long MAX_IMPORT_BYTES = 512L * 1024L * 1024L;
+    private static final long MAX_SKIN_BYTES = 4L * 1024L * 1024L;
     private static final int MAX_FOLDER_ENTRIES = 20_000;
     private static final int MAX_FOLDER_DEPTH = 64;
     private static final int BUFFER_SIZE = 32 * 1024;
@@ -89,7 +94,7 @@ public final class ResourceManagerActivity extends Activity {
     private LinearLayout content;
     private TextView status;
     private ProgressBar progress;
-    private Button importFilesButton, importFolderButton;
+    private Button importFilesButton, importFolderButton, importSkinButton;
     private File pendingDataPackInstall;
     private boolean busy;
 
@@ -107,6 +112,9 @@ public final class ResourceManagerActivity extends Activity {
     private File modListFile() { return new File(home(), "horizon-mods.txt"); }
 
     private File graphicsFile() { return new File(home(), "horizon-graphics.txt"); }
+    private File skinsDir() { return new File(home(), "skins"); }
+    private File favoriteSkinFile() { return new File(home(), "favorite-skin.txt"); }
+    private File activeSkinFile() { return new File(home(), "active-skin.txt"); }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -115,6 +123,7 @@ public final class ResourceManagerActivity extends Activity {
         if (android.os.Build.VERSION.SDK_INT >= 23) {
             getWindow().getDecorView().setSystemUiVisibility(0);
         }
+        setTitle(AppLanguage.translate(this, "Gerenciador de recursos"));
         buildUi();
         refreshResources();
     }
@@ -151,6 +160,10 @@ public final class ResourceManagerActivity extends Activity {
         importFolderButton = button("Pasta de shader", false, v -> chooseShaderFolder());
         Button refresh = button("Atualizar lista", false, v -> refreshResources());
         addButtonPair(actions, importFolderButton, refresh, 42, 6);
+        importSkinButton = button("Importar skin PNG", false, v -> chooseSkin());
+        LinearLayout.LayoutParams skinImportParams = params(-1, dp(44));
+        skinImportParams.topMargin = dp(6);
+        actions.addView(importSkinButton, skinImportParams);
 
         LinearLayout statusCard = card();
         LinearLayout.LayoutParams statusParams = params(-1, -2);
@@ -244,6 +257,83 @@ public final class ResourceManagerActivity extends Activity {
             File pack = pendingDataPackInstall;
             pendingDataPackInstall = null;
             if (pack != null) installDataPackIntoWorld(data.getData(), pack);
+        } else if (requestCode == REQUEST_IMPORT_SKIN && data.getData() != null) {
+            importSkin(data.getData());
+        }
+    }
+
+    private void chooseSkin() {
+        if (busy) return;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/png");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try { startActivityForResult(intent, REQUEST_IMPORT_SKIN); }
+        catch (Exception error) { showStatus(AppLanguage.translate(this, "Não foi possível abrir o seletor: ") + message(error)); }
+    }
+
+    private void importSkin(Uri uri) {
+        busy = true;
+        setBusyUi(true);
+        showStatus(AppLanguage.translate(this, "Importando ") + displayName(uri));
+        io.execute(() -> {
+            File staging = null;
+            String outcome;
+            try {
+                staging = File.createTempFile("mh-skin-", ".part", getCacheDir());
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IOException("O Android não conseguiu abrir o arquivo.");
+                    copyLimited(input, staging, MAX_SKIN_BYTES);
+                }
+                int[] dimensions = readPngDimensions(staging);
+                validateMinecraftSkinPng(dimensions);
+                ensureDirs(skinsDir());
+                File saved = copyToTarget(staging, skinsDir(), fileName(displayName(uri), ".png"));
+                outcome = AppLanguage.translate(this, "PNG de skin importado: ") + saved.getName()
+                        + " (" + dimensions[0] + "×" + dimensions[1] + ").";
+            } catch (Exception error) {
+                outcome = message(error);
+            } finally {
+                if (staging != null) staging.delete();
+            }
+            final String result = outcome;
+            mainHandler.post(() -> {
+                busy = false;
+                setBusyUi(false);
+                refreshResources();
+                showStatus(result);
+            });
+        });
+    }
+
+    private int[] readPngDimensions(File file) throws IOException {
+        byte[] header = new byte[24];
+        try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+            int offset = 0;
+            while (offset < header.length) {
+                int count = input.read(header, offset, header.length - offset);
+                if (count < 0) break;
+                offset += count;
+            }
+            byte[] signature = new byte[]{(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a};
+            if (offset < header.length) throw new IOException("PNG incompleto.");
+            for (int i = 0; i < signature.length; i++) {
+                if (header[i] != signature[i]) throw new IOException("O arquivo selecionado não é um PNG válido.");
+            }
+        }
+        int width = ((header[16] & 255) << 24) | ((header[17] & 255) << 16)
+                | ((header[18] & 255) << 8) | (header[19] & 255);
+        int height = ((header[20] & 255) << 24) | ((header[21] & 255) << 16)
+                | ((header[22] & 255) << 8) | (header[23] & 255);
+        return new int[]{width, height};
+    }
+
+    private void validateMinecraftSkinPng(int[] dimensions) throws IOException {
+        int width = dimensions[0], height = dimensions[1];
+        // Horizon's current skin decoder accepts the canonical Java skin layouts only.
+        if (!((width == 64 && height == 64) || (width == 64 && height == 32))) {
+            throw new IOException(AppLanguage.translate(this,
+                    "PNG inválido. Use exatamente 64×64 ou 64×32 pixels para garantir compatibilidade com o runtime."));
         }
     }
 
@@ -476,6 +566,8 @@ public final class ResourceManagerActivity extends Activity {
     private void refreshResources() {
         if (content == null) return;
         content.removeAllViews();
+        ensureUiDir(skinsDir());
+        addSkinSection();
         ensureUiDir(textureDir());
         ensureUiDir(modDir());
         ensureUiDir(shaderDir());
@@ -535,11 +627,148 @@ public final class ResourceManagerActivity extends Activity {
         addSection("Mods Horizon", "Arquivos .hmod; a ativação vale no próximo início.", mods);
         addSection("Pacotes de dados", "Selecione a pasta de um mundo salvo para copiar o pack para datapacks/.", dataPacks);
         addSection("Shader packs", "Pastas pack.toml/shaders/ e shader ZIPs Java reconhecidos.", shaders);
-        if (textures.isEmpty() && mods.isEmpty() && shaders.isEmpty() && dataPacks.isEmpty()) {
+        if (textures.isEmpty() && mods.isEmpty() && shaders.isEmpty() && dataPacks.isEmpty() && listSkins().isEmpty()) {
             TextView empty = text("Nenhum recurso compatível instalado. Importe um arquivo ou uma pasta de shader pack.", 14, 0xff68728a, false);
             LinearLayout.LayoutParams p = params(-1, -2);
             p.topMargin = dp(8);
             content.addView(empty, p);
+        }
+    }
+
+    private List<File> listSkins() {
+        ensureUiDir(skinsDir());
+        File[] found = skinsDir().listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".png"));
+        List<File> result = new ArrayList<>();
+        if (found != null) for (File file : found) if (file.isFile()) result.add(file);
+        result.sort(Comparator.comparing(file -> file.getName().toLowerCase(Locale.ROOT)));
+        return result;
+    }
+
+    private String readSkinSelection(File file) {
+        if (!file.isFile()) return "";
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                new FileInputStream(file), StandardCharsets.UTF_8))) {
+            String line = reader.readLine();
+            return line == null ? "" : line.trim();
+        } catch (Exception ignored) { return ""; }
+    }
+
+    private String favoriteSkinName() { return readSkinSelection(favoriteSkinFile()); }
+    private String activeSkinName() { return readSkinSelection(activeSkinFile()); }
+
+    private void addSkinSection() {
+        LinearLayout section = card();
+        LinearLayout.LayoutParams sectionParams = params(-1, -2);
+        sectionParams.topMargin = dp(8);
+        content.addView(section, sectionParams);
+        section.addView(text("Skins do jogador", 16, 0xff18213a, true), params(-1, -2));
+        TextView note = text("Importe, ative localmente, favorite ou remova uma skin. A skin ativa será carregada pelo cliente na próxima abertura; isso não altera a skin da conta Microsoft nem força outros clientes do servidor a usar essa textura.",
+                12, 0xff68728a, false);
+        LinearLayout.LayoutParams noteParams = params(-1, -2);
+        noteParams.topMargin = dp(3);
+        section.addView(note, noteParams);
+
+        List<File> skins = listSkins();
+        String favorite = favoriteSkinName();
+        String active = activeSkinName();
+        if (skins.isEmpty()) {
+            TextView empty = text("Nenhuma skin importada. Adicione um PNG Java de 64×64 ou 64×32 pixels.", 13, 0xff68728a, false);
+            LinearLayout.LayoutParams p = params(-1, -2);
+            p.topMargin = dp(8);
+            section.addView(empty, p);
+            return;
+        }
+
+        for (File skin : skins) {
+            View divider = new View(this);
+            divider.setBackgroundColor(0xffe7ebf3);
+            LinearLayout.LayoutParams dividerParams = params(-1, dp(1));
+            dividerParams.topMargin = dp(8);
+            section.addView(divider, dividerParams);
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(2), dp(8), dp(2), dp(2));
+            section.addView(row, params(-1, -2));
+
+            ImageView preview = new ImageView(this);
+            preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            GradientDrawable previewBg = new GradientDrawable();
+            previewBg.setColor(0xff242132);
+            previewBg.setCornerRadius(dp(5));
+            previewBg.setStroke(dp(1), 0xff413953);
+            preview.setBackground(previewBg);
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = 1;
+            Bitmap bitmap = BitmapFactory.decodeFile(skin.getAbsolutePath(), options);
+            if (bitmap != null) preview.setImageBitmap(bitmap);
+            row.addView(preview, params(dp(58), dp(58)));
+
+            LinearLayout details = new LinearLayout(this);
+            details.setOrientation(LinearLayout.VERTICAL);
+            details.setPadding(dp(9), 0, 0, 0);
+            row.addView(details, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            boolean isActive = skin.getName().equals(active);
+            boolean isFavorite = skin.getName().equals(favorite);
+            details.addView(text(skin.getName(), 13, 0xff18213a, true), params(-1, -2));
+            int[] dimensions;
+            String dimensionText;
+            try {
+                dimensions = readPngDimensions(skin);
+                dimensionText = dimensions[0] + "×" + dimensions[1] + " PNG";
+            } catch (Exception invalid) { dimensionText = "PNG"; }
+            String stateText = (isActive ? "✓ Ativa localmente · " : "")
+                    + (isFavorite ? "★ Favorita · " : "") + dimensionText;
+            TextView metadata = text(stateText, 11, isActive ? 0xff6f54d9 : 0xff68728a, isActive);
+            LinearLayout.LayoutParams metadataParams = params(-1, -2);
+            metadataParams.topMargin = dp(2);
+            details.addView(metadata, metadataParams);
+
+            Button activate = button(isActive ? "Skin ativa" : "Ativar skin", isActive, v -> {
+                try {
+                    writeUtf8(activeSkinFile(), skin.getName());
+                    showStatus("Skin ativa: " + skin.getName()
+                            + ". Ela será carregada na próxima abertura do Minecraft.");
+                    refreshResources();
+                } catch (Exception error) {
+                    showStatus("Não foi possível ativar a skin: " + message(error));
+                }
+            });
+            activate.setTextSize(11);
+
+            Button favoriteButton = button(isFavorite ? "★ Favorita" : "☆ Favoritar", isFavorite, v -> {
+                try {
+                    writeUtf8(favoriteSkinFile(), isFavorite ? "" : skin.getName());
+                    showStatus(isFavorite ? "Skin removida dos favoritos." : "Skin favorita: " + skin.getName());
+                    refreshResources();
+                } catch (Exception error) {
+                    showStatus("Não foi possível atualizar o favorito: " + message(error));
+                }
+            });
+            favoriteButton.setTextSize(11);
+            addButtonPair(details, activate, favoriteButton, 38, 5);
+
+            Button remove = button("Remover skin", false, v -> new AlertDialog.Builder(this)
+                    .setTitle(AppLanguage.translate(this, "Remover skin"))
+                    .setMessage("Remover " + skin.getName() + " da coleção local?")
+                    .setNegativeButton(AppLanguage.translate(this, "Cancelar"), null)
+                    .setPositiveButton(AppLanguage.translate(this, "Remover"), (dialog, which) -> {
+                        try {
+                            if (skin.getName().equals(activeSkinName())) writeUtf8(activeSkinFile(), "");
+                            if (skin.getName().equals(favoriteSkinName())) writeUtf8(favoriteSkinFile(), "");
+                            if (!skin.delete()) throw new IOException("Não foi possível remover a skin.");
+                            showStatus("Skin removida: " + skin.getName());
+                        } catch (Exception error) {
+                            showStatus("Falha ao remover a skin: " + message(error));
+                        }
+                        refreshResources();
+                    }).show());
+            remove.setTextSize(11);
+            LinearLayout.LayoutParams removeParams = params(-1, dp(42));
+            removeParams.topMargin = dp(4);
+            details.addView(remove, removeParams);
         }
     }
 
@@ -729,7 +958,7 @@ public final class ResourceManagerActivity extends Activity {
         row.addView(actions, actionsParams);
 
         CheckBox active = new CheckBox(this);
-        active.setText(item.kind == Kind.DATA_PACK ? "Por mundo" : item.active ? "Ativo" : "Ativar");
+        active.setText(AppLanguage.translate(this, item.kind == Kind.DATA_PACK ? "Por mundo" : item.active ? "Ativo" : "Ativar"));
         active.setTextSize(13);
         active.setTextColor(0xff283550);
         active.setMinHeight(dp(38));
@@ -1020,17 +1249,18 @@ public final class ResourceManagerActivity extends Activity {
     private void setBusyUi(boolean value) {
         importFilesButton.setEnabled(!value);
         importFolderButton.setEnabled(!value);
+        if (importSkinButton != null) importSkinButton.setEnabled(!value);
         progress.setVisibility(value ? View.VISIBLE : View.GONE);
         progress.setIndeterminate(value);
     }
 
     private void showStatus(String value) {
-        if (status != null) status.setText(value == null ? "" : value);
+        if (status != null) status.setText(AppLanguage.translate(this, value == null ? "" : value));
     }
 
     private TextView text(String value, float size, int color, boolean bold) {
         TextView view = new TextView(this);
-        view.setText(value);
+        view.setText(AppLanguage.translate(this, value));
         view.setTextSize(size);
         if (color == 0xff17213b || color == 0xff18213a || color == 0xff26324d) {
             color = 0xfff1edff;
@@ -1056,7 +1286,7 @@ public final class ResourceManagerActivity extends Activity {
 
     private Button button(String label, boolean primary, View.OnClickListener listener) {
         Button view = new Button(this);
-        view.setText(label);
+        view.setText(AppLanguage.translate(this, label));
         view.setTextSize(14);
         view.setAllCaps(false);
         view.setSingleLine(false);

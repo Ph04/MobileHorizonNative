@@ -379,6 +379,10 @@ public final class MainActivity extends Activity {
         addButtonPair(heroActions, offlineNameButton, touchControlsButton, 38, 0);
         heroContent.addView(heroActions, params(-1, -2));
 
+        Button languageButton = button(AppLanguage.languageLabel(this), false,
+                v -> showLanguageDialog());
+        addSpaced(heroContent, languageButton, 36, 6);
+
         TextView readyHeading = text("PRONTO PARA JOGAR", 11, 0xffc6b8ef, true);
         LinearLayout.LayoutParams readyHeadingParams = params(-1, -2);
         readyHeadingParams.topMargin = dp(15);
@@ -1432,6 +1436,20 @@ public final class MainActivity extends Activity {
         launchAuthenticatedClient(resourceSummary, refreshToken);
     }
 
+    private void showLanguageDialog() {
+        String[] choices = new String[]{"Português (Brasil)", "English (United States)"};
+        int selected = "en-US".equals(AppLanguage.getLanguage(this)) ? 1 : 0;
+        new AlertDialog.Builder(this)
+                .setTitle(AppLanguage.translate(this, "Idioma do aplicativo"))
+                .setSingleChoiceItems(choices, selected, (dialog, which) -> {
+                    AppLanguage.setLanguage(this, which == 1 ? "en-US" : "pt-BR");
+                    dialog.dismiss();
+                    recreate();
+                })
+                .setNegativeButton(AppLanguage.translate(this, "Cancelar"), null)
+                .show();
+    }
+
     private void openTouchControlsEditor() {
         startActivity(new Intent(this, TouchControlsEditorActivity.class));
     }
@@ -2175,8 +2193,8 @@ public final class MainActivity extends Activity {
     }
 
     private void setStatus(String title, String details) {
-        statusTitle.setText(title);
-        statusDetails.setText(details);
+        statusTitle.setText(AppLanguage.translate(this, title));
+        statusDetails.setText(AppLanguage.translate(this, details));
     }
 
     private LinearLayout card() {
@@ -2194,7 +2212,7 @@ public final class MainActivity extends Activity {
     private Button button(String label, boolean primary, View.OnClickListener click) {
         Button button = new Button(this);
         button.setAllCaps(false);
-        button.setText(label);
+        button.setText(AppLanguage.translate(this, label));
         button.setTextSize(13);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         button.setMinHeight(0);
@@ -2212,7 +2230,7 @@ public final class MainActivity extends Activity {
 
     private TextView text(String value, int sizeSp, int color, boolean bold) {
         TextView text = new TextView(this);
-        text.setText(value);
+        text.setText(AppLanguage.translate(this, value));
         text.setTextSize(sizeSp);
         text.setTextColor(color);
         text.setGravity(Gravity.START);
