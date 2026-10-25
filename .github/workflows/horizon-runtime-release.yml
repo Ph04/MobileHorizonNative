@@ -336,6 +336,39 @@ jobs:
           print(f"Runtime manifest: {version}, SHA-256 {digest}")
           PYMANIFEST
 
+      - name: Verify the selected Horizon release is still the latest stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request
+
+          request = urllib.request.Request(
+              "https://api.github.com/repos/ludovic111/horizon/releases/latest",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "MobileHorizonNative-runtime-release",
+                  "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              release = json.loads(response.read().decode("utf-8"))
+          latest_tag = release.get("tag_name", "")
+          selected_tag = os.environ["UPSTREAM_TAG"]
+          if (release.get("draft") or release.get("prerelease")
+                  or latest_tag != selected_tag):
+              raise SystemExit(
+                  "Horizon advanced during the Android runtime build: selected "
+                  + selected_tag + ", latest stable is " + latest_tag
+                  + ". Refusing to publish a stale runtime; the next scheduled/push run will resolve it."
+              )
+          print("Confirmed upstream stable release is still latest:", latest_tag)
+          PY
+
       - name: Publish versioned Horizon runtime
         env:
           GH_TOKEN: ${{ github.token }}
