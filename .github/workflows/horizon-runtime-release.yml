@@ -116,7 +116,7 @@ jobs:
               b".github/workflows/horizon-runtime-release.yml",
           }
           tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=".", text=False)
-          tracked_paths = [entry for entry in tracked.split(b"\\0") if entry]
+          tracked_paths = [entry for entry in tracked.split(b"\0") if entry]
           overlay_paths = sorted(
               entry for entry in tracked_paths
               if entry in exact_inputs
@@ -131,9 +131,9 @@ jobs:
               if not source_path.is_file():
                   raise SystemExit("Missing runtime build input: " + str(source_path))
               overlay_digest.update(raw_path)
-              overlay_digest.update(b"\\0")
+              overlay_digest.update(b"\0")
               overlay_digest.update(source_path.read_bytes())
-              overlay_digest.update(b"\\0")
+              overlay_digest.update(b"\0")
           overlay_sha = overlay_digest.hexdigest()[:8]
           runtime_version = "horizon-" + upstream_tag + "-c" + upstream_commit[:8] + "-o" + overlay_sha
           runtime_tag = "horizon-runtime-" + runtime_version
