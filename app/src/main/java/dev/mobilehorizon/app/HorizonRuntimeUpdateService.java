@@ -42,12 +42,32 @@ public final class HorizonRuntimeUpdateService {
     private HorizonRuntimeUpdateService() {}
 
     public static void checkInBackground(Context context) {
+        checkInBackground(context, null, false);
+    }
+
+    /** Checks immediately when the player requests it, bypassing only the normal cooldown. */
+    public static void checkNow(Context context, Runnable onFinished) {
+        checkInBackground(context, onFinished, true);
+    }
+
+    public static void checkInBackground(Context context, Runnable onFinished) {
+        checkInBackground(context, onFinished, false);
+    }
+
+    private static void checkInBackground(Context context, Runnable onFinished, boolean force) {
         Context app = context.getApplicationContext();
         SharedPreferences preferences = app.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
-        if (!preferences.getBoolean("enabled", true)) return;
+        if (!preferences.getBoolean("enabled", true)) {
+            postFinished(onFinished);
+            return;
+        }
         long now = System.currentTimeMillis();
         long previous = preferences.getLong(LAST_CHECK, 0L);
-        if (now - previous < CHECK_INTERVAL_MS || !IN_FLIGHT.compareAndSet(false, true)) return;
+        if ((!force && now - previous < CHECK_INTERVAL_MS)
+                || !IN_FLIGHT.compareAndSet(false, true)) {
+            postFinished(onFinished);
+            return;
+        }
         preferences.edit().putLong(LAST_CHECK, now).apply();
 
         EXECUTOR.execute(() -> {
@@ -59,8 +79,14 @@ public final class HorizonRuntimeUpdateService {
                 Log.w(TAG, message, error);
             } finally {
                 IN_FLIGHT.set(false);
+                postFinished(onFinished);
             }
         });
+    }
+
+    private static void postFinished(Runnable callback) {
+        if (callback == null) return;
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(callback);
     }
 
     /** Enables/disables automatic runtime checks. A disable setting never removes installed versions. */
