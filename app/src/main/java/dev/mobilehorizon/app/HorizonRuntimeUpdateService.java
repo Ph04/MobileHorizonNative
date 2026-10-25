@@ -15,6 +15,8 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -48,6 +50,8 @@ public final class HorizonRuntimeUpdateService {
 
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final AtomicBoolean IN_FLIGHT = new AtomicBoolean(false);
+    private static final Object CHECK_LOCK = new Object();
+    private static final List<Runnable> PENDING_CALLBACKS = new ArrayList<>();
 
     private HorizonRuntimeUpdateService() {}
 
@@ -67,17 +71,37 @@ public final class HorizonRuntimeUpdateService {
     private static void checkInBackground(Context context, Runnable onFinished, boolean force) {
         Context app = context.getApplicationContext();
         SharedPreferences preferences = app.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
-        if (!preferences.getBoolean("enabled", true)) {
-            postFinished(onFinished);
-            return;
-        }
         long now = System.currentTimeMillis();
         long previous = preferences.getLong(LAST_CHECK, 0L);
-        if ((!force && now - previous < CHECK_INTERVAL_MS)
-                || !IN_FLIGHT.compareAndSet(false, true)) {
+        boolean startCheck = false;
+        boolean finishImmediately = false;
+
+        synchronized (CHECK_LOCK) {
+            // Join an existing check instead of reporting completion before download/install ends.
+            if (IN_FLIGHT.get()) {
+                if (onFinished != null) PENDING_CALLBACKS.add(onFinished);
+                return;
+            }
+            if (!preferences.getBoolean("enabled", true)) {
+                finishImmediately = true;
+            } else {
+                // Never let the normal cooldown block the very first runtime installation.
+                boolean firstInstallRequired = !HorizonRuntimeManager.hasActiveRuntimeMarker(app);
+                if (!force && !firstInstallRequired && now - previous < CHECK_INTERVAL_MS) {
+                    finishImmediately = true;
+                } else {
+                    IN_FLIGHT.set(true);
+                    if (onFinished != null) PENDING_CALLBACKS.add(onFinished);
+                    startCheck = true;
+                }
+            }
+        }
+
+        if (finishImmediately) {
             postFinished(onFinished);
             return;
         }
+        if (!startCheck) return;
         preferences.edit().putLong(LAST_CHECK, now).apply();
 
         EXECUTOR.execute(() -> {
@@ -88,8 +112,13 @@ public final class HorizonRuntimeUpdateService {
                 preferences.edit().putString(LAST_STATUS, message).apply();
                 Log.w(TAG, message, error);
             } finally {
-                IN_FLIGHT.set(false);
-                postFinished(onFinished);
+                List<Runnable> callbacks;
+                synchronized (CHECK_LOCK) {
+                    IN_FLIGHT.set(false);
+                    callbacks = new ArrayList<>(PENDING_CALLBACKS);
+                    PENDING_CALLBACKS.clear();
+                }
+                for (Runnable callback : callbacks) postFinished(callback);
             }
         });
     }
@@ -110,12 +139,18 @@ public final class HorizonRuntimeUpdateService {
                 .getString(LAST_STATUS, "Ainda não foi verificada uma atualização do Horizon.");
     }
 
-    /** The PC release tag represented by the selected runtime, for the launcher UI. */
+    /** The PC release tag represented by the installed runtime, for the launcher UI. */
     public static String pcReleaseLabel(Context context) {
         SharedPreferences preferences = context.getApplicationContext()
                 .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
-        String tag = preferences.getString(PC_RELEASE_TAG, BuildConfig.HORIZON_PC_RELEASE_TAG);
-        return tag == null || tag.trim().isEmpty() ? BuildConfig.HORIZON_PC_RELEASE_TAG : tag;
+        String defaultTag = BuildConfig.HORIZON_TEST_OLD_RUNTIME
+                ? BuildConfig.HORIZON_PC_RELEASE_TAG : "";
+        String tag = preferences.getString(PC_RELEASE_TAG, defaultTag);
+        if (tag == null || tag.trim().isEmpty()) {
+            return BuildConfig.HORIZON_TEST_OLD_RUNTIME
+                    ? BuildConfig.HORIZON_PC_RELEASE_TAG : "runtime Android ainda não instalada";
+        }
+        return tag;
     }
 
     /** Last official Horizon release successfully checked against upstream GitHub. */

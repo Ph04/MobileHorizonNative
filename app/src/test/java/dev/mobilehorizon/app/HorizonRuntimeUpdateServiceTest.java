@@ -16,6 +16,14 @@ public final class HorizonRuntimeUpdateServiceTest {
     }
 
     @Test
+    public void recognizesCurrentOfficialSemanticRelease() {
+        assertTrue(HorizonRuntimeUpdateService.isValidUpstreamTag("v0.2.59"));
+        assertEquals("v0.2.59",
+                HorizonRuntimeUpdateService.upstreamTagFromRuntimeVersion(
+                        "horizon-v0.2.59-c1234abcd-o89abcdef"));
+    }
+
+    @Test
     public void recognizesDateBasedHorizonReleaseTags() {
         assertTrue(HorizonRuntimeUpdateService.isValidUpstreamTag("v2026.10.22.07"));
         assertEquals("v2026.10.22.07",

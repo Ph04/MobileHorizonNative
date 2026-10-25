@@ -122,6 +122,7 @@ public final class MainActivity extends Activity {
     private boolean authBusy;
     private boolean launchBusy;
     private boolean diagnosticsBusy;
+    private boolean runtimeInstallBusy;
     private File pendingDiagnosticsArchive;
     private boolean pendingNativeSmokeResult;
     private boolean pendingNativeClientResult;
@@ -156,7 +157,10 @@ public final class MainActivity extends Activity {
     private final Handler runtimeUpdateHandler = new Handler(Looper.getMainLooper());
     private final Runnable runtimeUpdatePoll = new Runnable() {
         @Override public void run() {
-            HorizonRuntimeUpdateService.checkInBackground(MainActivity.this, () -> refreshRuntimeUpdateStatus());
+            HorizonRuntimeUpdateService.checkInBackground(MainActivity.this, () -> {
+                refreshRuntimeUpdateStatus();
+                updateActionEnablement();
+            });
             runtimeUpdateHandler.postDelayed(this, 30L * 60L * 1000L);
         }
     };
@@ -176,6 +180,7 @@ public final class MainActivity extends Activity {
                 "Baixe os arquivos oficiais do Minecraft 26.3, prepare as entradas para conversão ou importe uma saída Horizon já preparada.");
         refreshAccountUi();
         refreshOfflineUi();
+        updateActionEnablement();
     }
 
     @Override
@@ -218,7 +223,10 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        HorizonRuntimeUpdateService.checkInBackground(this, () -> refreshRuntimeUpdateStatus());
+        HorizonRuntimeUpdateService.checkInBackground(this, () -> {
+            refreshRuntimeUpdateStatus();
+            updateActionEnablement();
+        });
         runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
         runtimeUpdateHandler.postDelayed(runtimeUpdatePoll, 30L * 60L * 1000L);
         if (sessionEnvSet) {
@@ -277,6 +285,7 @@ public final class MainActivity extends Activity {
             runtimeOfficialReleaseText.setText(
                     HorizonRuntimeUpdateService.latestOfficialReleaseLabel(this));
         }
+        updateActionEnablement();
     }
 
     private void buildUi() {
@@ -477,6 +486,7 @@ public final class MainActivity extends Activity {
             HorizonRuntimeUpdateService.checkNow(this, () -> {
                 refreshRuntimeUpdateStatus();
                 runtimeUpdateButton.setEnabled(true);
+                updateActionEnablement();
             });
         });
         addSpaced(runtimeCard, runtimeUpdateButton, 40, 8);
@@ -1373,13 +1383,13 @@ public final class MainActivity extends Activity {
     }
 
     private void openOfflineClient() {
-        if (busy || conversionBusy || downloadBusy || authBusy || launchBusy) return;
+        if (busy || conversionBusy || downloadBusy || authBusy || launchBusy || runtimeInstallBusy) return;
         if (!isHorizonNativeLibraryAvailable()) {
             showRuntimeError("Biblioteca Horizon ausente",
-                    "O APK precisa conter libhorizon_android.so para ARM64 antes que o cliente possa ser usado.");
+                    "O APK precisa conter o carregador nativo libhorizon_android.so para ARM64.");
             return;
         }
-        validateResourcesBeforeLaunch(this::launchOfflineClientAfterValidation);
+        ensureRuntimeInstalled(() -> validateResourcesBeforeLaunch(this::launchOfflineClientAfterValidation));
     }
 
     private void launchOfflineClientAfterValidation(String resourceSummary) {
@@ -1412,13 +1422,13 @@ public final class MainActivity extends Activity {
     }
 
     private void openNativeClient() {
-        if (busy || conversionBusy || downloadBusy || authBusy || launchBusy) return;
+        if (busy || conversionBusy || downloadBusy || authBusy || launchBusy || runtimeInstallBusy) return;
         if (!isHorizonNativeLibraryAvailable()) {
             showRuntimeError("Biblioteca Horizon ausente",
-                    "O APK precisa conter libhorizon_android.so para ARM64 antes que o cliente possa ser usado.");
+                    "O APK precisa conter o carregador nativo libhorizon_android.so para ARM64.");
             return;
         }
-        validateResourcesBeforeLaunch(this::continueNativeClientAfterValidation);
+        ensureRuntimeInstalled(() -> validateResourcesBeforeLaunch(this::continueNativeClientAfterValidation));
     }
 
     private void continueNativeClientAfterValidation(String resourceSummary) {
@@ -2084,15 +2094,20 @@ public final class MainActivity extends Activity {
     }
 
     private void openNativeSmokeTest() {
+        if (runtimeInstallBusy || launchBusy) return;
         if (!isHorizonNativeLibraryAvailable()) {
             showRuntimeError("Biblioteca nativa ausente",
-                    "O teste Vulkan exige libhorizon_android.so empacotada para arm64-v8a.");
+                    "O teste Vulkan exige o carregador libhorizon_android.so empacotado para arm64-v8a.");
             return;
         }
         if (!Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a")) {
             showRuntimeError("Arquitetura não suportada", "O teste de renderer requer ARM64.");
             return;
         }
+        ensureRuntimeInstalled(this::launchNativeSmokeTest);
+    }
+
+    private void launchNativeSmokeTest() {
         File marker = new File(getFilesDir(), "horizon-native-smoke.flag");
         marker.delete(); // Legacy flag: smoke mode is now passed explicitly in the Intent.
         new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
@@ -2108,6 +2123,88 @@ public final class MainActivity extends Activity {
             pendingNativeSmokeResult = false;
             showRuntimeError("Não foi possível abrir NativeActivity", safeMessage(error));
         }
+    }
+
+    /** Downloads and verifies a runtime before a game or native smoke-test launch. */
+    private void ensureRuntimeInstalled(Runnable onReady) {
+        if (runtimeInstallBusy || isFinishing() || isDestroyed()) return;
+        runtimeInstallBusy = true;
+        updateActionEnablement();
+        progressBar.setVisibility(View.VISIBLE);
+        progressBar.setIndeterminate(true);
+        progressDetails.setText("Verificando a runtime Android…");
+        setStatus("Preparando runtime Horizon",
+                "A primeira instalação precisa de internet para baixar uma runtime Android ARM64 verificada.");
+
+        executor.submit(() -> {
+            String version = "";
+            String inspectionError = null;
+            try {
+                version = HorizonRuntimeManager.currentVersion(MainActivity.this);
+            } catch (Exception error) {
+                inspectionError = safeMessage(error);
+            }
+            final String installedVersion = version;
+            final String checkError = inspectionError;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) {
+                    finishRuntimeInstallUi();
+                    return;
+                }
+                if (installedVersion != null && !installedVersion.isEmpty()) {
+                    finishRuntimeInstallUi();
+                    onReady.run();
+                    return;
+                }
+
+                progressDetails.setText("Baixando e verificando a runtime Android mais recente…");
+                setStatus("Baixando runtime Horizon",
+                        "A runtime anterior não está disponível ou não passou na verificação."
+                                + (checkError == null ? "" : "\n" + checkError));
+                HorizonRuntimeUpdateService.checkNow(MainActivity.this, () ->
+                        executor.submit(() -> {
+                            String verifiedVersion = "";
+                            String verificationError = null;
+                            try {
+                                verifiedVersion = HorizonRuntimeManager.currentVersion(MainActivity.this);
+                            } catch (Exception error) {
+                                verificationError = safeMessage(error);
+                            }
+                            final String readyVersion = verifiedVersion;
+                            final String readyError = verificationError;
+                            runOnUiThread(() -> {
+                                finishRuntimeInstallUi();
+                                refreshRuntimeUpdateStatus();
+                                if (isFinishing() || isDestroyed()) return;
+                                if (readyVersion == null || readyVersion.isEmpty()) {
+                                    showRuntimeError("Runtime Horizon indisponível",
+                                            HorizonRuntimeUpdateService.lastStatus(MainActivity.this)
+                                                    + "\n\nO jogo não será iniciado sem uma runtime "
+                                                    + "Android verificada. Confira a conexão e use "
+                                                    + "“Verificar atualizações” para tentar novamente."
+                                                    + (readyError == null ? "" : "\n\n" + readyError));
+                                    setStatus("Runtime pendente",
+                                            "Nenhuma runtime verificada está instalada; a inicialização do jogo foi bloqueada.");
+                                    return;
+                                }
+                                setStatus("Runtime Horizon pronta",
+                                        "Runtime instalada e verificada: " + readyVersion
+                                                + ". O jogo pode ser iniciado.");
+                                onReady.run();
+                            });
+                        }));
+            });
+        });
+    }
+
+    private void finishRuntimeInstallUi() {
+        runtimeInstallBusy = false;
+        if (progressBar != null) {
+            progressBar.setVisibility(View.GONE);
+            progressBar.setIndeterminate(false);
+        }
+        if (progressDetails != null) progressDetails.setText("");
+        updateActionEnablement();
     }
 
     private boolean isHorizonNativeLibraryAvailable() {
@@ -2144,21 +2241,23 @@ public final class MainActivity extends Activity {
     }
 
     private void updateActionEnablement() {
-        boolean blocked = busy || conversionBusy || downloadBusy || authBusy || launchBusy || diagnosticsBusy;
+        boolean runtimeAvailable = HorizonRuntimeManager.hasActiveRuntimeMarker(this);
+        boolean blocked = busy || conversionBusy || downloadBusy || authBusy || launchBusy
+                || diagnosticsBusy || runtimeInstallBusy;
         if (importFolderButton != null) importFolderButton.setEnabled(!blocked);
         if (importZipButton != null) importZipButton.setEnabled(!blocked);
         if (downloadBaseButton != null) downloadBaseButton.setEnabled(!blocked);
         if (downloadAssetsButton != null) downloadAssetsButton.setEnabled(!blocked);
         if (prepareInputsButton != null) prepareInputsButton.setEnabled(!blocked);
         if (fullConvertButton != null) fullConvertButton.setEnabled(!blocked);
-        if (openEngineButton != null) openEngineButton.setEnabled(!blocked);
-        if (smokeTestButton != null) smokeTestButton.setEnabled(!blocked);
+        if (openEngineButton != null) openEngineButton.setEnabled(!blocked && runtimeAvailable);
+        if (smokeTestButton != null) smokeTestButton.setEnabled(!blocked && runtimeAvailable);
         if (exportDiagnosticsButton != null) exportDiagnosticsButton.setEnabled(!blocked);
         if (microsoftLoginButton != null) microsoftLoginButton.setEnabled(!blocked);
         if (microsoftSignOutButton != null) microsoftSignOutButton.setEnabled(!blocked
                 && getSharedPreferences("microsoft_account_state", MODE_PRIVATE).getBoolean("hasAccount", false));
         if (offlineNameButton != null) offlineNameButton.setEnabled(!blocked);
-        if (offlinePlayButton != null) offlinePlayButton.setEnabled(!blocked);
+        if (offlinePlayButton != null) offlinePlayButton.setEnabled(!blocked && runtimeAvailable);
         if (cancelButton != null) {
             boolean cancellable = busy || conversionBusy || authBusy;
             cancelButton.setVisibility(cancellable ? View.VISIBLE : View.GONE);

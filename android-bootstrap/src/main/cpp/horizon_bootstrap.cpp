@@ -103,7 +103,7 @@ bool start_engine(const std::string &path, ANativeActivity *activity,
         unsetenv("HORIZON_RUNTIME_USING_FALLBACK");
     }
     LOGI("Iniciando Horizon runtime: %s%s", path.c_str(),
-         fallback ? " (fallback do APK)" : "");
+         fallback ? " (fallback da runtime anterior)" : "");
     entry(activity, saved_state, saved_state_size);
     return true;
 }
@@ -142,11 +142,13 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved_state,
         return;
     }
 
-    if (!canonical_runtime_path(root, fallback, &fallback_path)) {
-        write_status(status_path, "ERROR: caminho do runtime de recuperação inválido");
-        LOGE("HORIZON_RUNTIME_FALLBACK_LIBRARY ausente ou inválido");
-        ANativeActivity_finish(activity);
-        return;
+    // A fallback is optional. On first installation, only the active downloaded runtime exists.
+    // On upgrades, Java supplies the previous verified runtime as a rollback candidate.
+    if (fallback != nullptr && *fallback != '\0') {
+        if (!canonical_runtime_path(root, fallback, &fallback_path)) {
+            LOGE("O caminho da runtime anterior é inválido; continuando apenas com a ativa");
+            fallback_path.clear();
+        }
     }
 
     if (start_engine(active_path, activity, saved_state, saved_state_size,
@@ -154,14 +156,14 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved_state,
         return;
     }
 
-    if (fallback_path != active_path &&
+    if (!fallback_path.empty() && fallback_path != active_path &&
         start_engine(fallback_path, activity, saved_state, saved_state_size,
                      status_path, true)) {
         return;
     }
 
-    write_status(status_path, "ERROR: não foi possível carregar o runtime ativo nem o runtime base");
-    LOGE("Não foi possível iniciar Horizon com o runtime ativo ou o fallback");
+    write_status(status_path, "ERROR: não foi possível carregar a runtime ativa nem a anterior");
+    LOGE("Não foi possível iniciar Horizon com a runtime ativa ou a anterior");
     ANativeActivity_finish(activity);
 }
 

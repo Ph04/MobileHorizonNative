@@ -334,12 +334,12 @@ jobs:
             echo "::error::The native engine is missing the touch/mouse JNI bridge."
             exit 1
           }
-          ASSET_DIR="app/src/main/assets/horizon-runtime"
-          mkdir -p "$ASSET_DIR"
-          cp "$LIB" "$ASSET_DIR/libhorizon_engine.so"
+          RUNTIME_STAGE="$RUNNER_TEMP/horizon-runtime-stage"
+          mkdir -p "$RUNTIME_STAGE"
+          cp "$LIB" "$RUNTIME_STAGE/libhorizon_engine.so"
           ENGINE_SHA256="$(sha256sum "$LIB" | awk '{print $1}')"
           OVERLAY_SHA="$(cat android-native/Cargo.toml android-native/src/lib.rs tools/patch_horizon_android_touch.py tools/horizon_patches/01_offline_server_login.py tools/horizon_patches/02_android_native.py | sha256sum | awk '{print $1}' | cut -c1-8)"
-          python3 - "$ASSET_DIR/manifest.json" "$UPSTREAM_COMMIT" "$UPSTREAM_TAG" "$ENGINE_SHA256" "$OVERLAY_SHA" <<'PYMANIFEST'
+          python3 - "$RUNTIME_STAGE/manifest.json" "$UPSTREAM_COMMIT" "$UPSTREAM_TAG" "$ENGINE_SHA256" "$OVERLAY_SHA" <<'PYMANIFEST'
           import json, sys
           manifest_path, commit, upstream_tag, digest, overlay = sys.argv[1:]
           manifest = {
@@ -357,8 +357,8 @@ jobs:
               stream.write("\n")
           print(f"Staged Android Horizon engine {manifest['version']} with SHA-256 {digest}")
           PYMANIFEST
-          echo "Built the Horizon engine separately from the stable APK bootstrap."
-          sha256sum "$ASSET_DIR/libhorizon_engine.so" | tee "$RUNNER_TEMP/horizon-engine-sha256.txt"
+          echo "Built the engine for CI validation and updater-test fixtures only; it is not included in either APK."
+          sha256sum "$RUNTIME_STAGE/libhorizon_engine.so" | tee "$RUNNER_TEMP/horizon-engine-sha256.txt"
 
       - name: Build and publish isolated updater-test fixture (previous PC release -> pinned PC release)
         if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/horizon-runtime-loader' && github.event.pull_request.head.repo.full_name == github.repository
@@ -396,7 +396,7 @@ jobs:
 
           FIXTURE_DIR="$RUNNER_TEMP/horizon-runtime-update-test"
           mkdir -p "$FIXTURE_DIR"
-          CURRENT_LIB="app/src/main/assets/horizon-runtime/libhorizon_engine.so"
+          CURRENT_LIB="$RUNNER_TEMP/horizon-runtime-stage/libhorizon_engine.so"
           CURRENT_COMMIT="$HORIZON_RUNTIME_COMMIT"
           CURRENT_SHA="$(sha256sum "$CURRENT_LIB" | awk '{print $1}')"
           OLD_SHA="$(sha256sum "$OLD_LIB" | awk '{print $1}')"
@@ -484,8 +484,11 @@ jobs:
             unzip -tq "$APK"
             unzip -l "$APK" > "$RUNNER_TEMP/apk-file-list.txt"
             grep -Fq 'lib/arm64-v8a/libhorizon_android.so' "$RUNNER_TEMP/apk-file-list.txt"
-            grep -Fq 'assets/horizon-runtime/libhorizon_engine.so' "$RUNNER_TEMP/apk-file-list.txt"
-            grep -Fq 'assets/horizon-runtime/manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
+            if grep -Fq 'assets/horizon-runtime/libhorizon_engine.so' "$RUNNER_TEMP/apk-file-list.txt" \
+              || grep -Fq 'assets/horizon-runtime/manifest.json' "$RUNNER_TEMP/apk-file-list.txt"; then
+              echo "::error::The APK must not bundle a fixed Horizon engine; it must download a verified runtime on first launch."
+              exit 1
+            fi
             grep -Fq 'assets/horizon-prepare/horizon-prepare-arm64' "$RUNNER_TEMP/apk-file-list.txt"
             grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
             "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/one-apk-badging.txt"
