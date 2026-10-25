@@ -85,4 +85,4 @@ Sem a chave persistente, os APKs de teste são assinados por uma chave de CI tem
 
 The `feature/horizon-runtime-loader` design keeps a small `libhorizon_android.so` bootstrap inside the APK and stores each verified Horizon engine (`libhorizon_engine.so`) in a separate app-private version directory. SHA-256/ARM64 checks, an atomic active-version record, and a bundled fallback are implemented as the foundation for in-place engine updates. See [the native runtime updater notes](docs/native-runtime-updater.md).
 
-The automatic release checker, signed update-manifest publisher, progress UI, and device validation are still outstanding. This work has not yet been compiled or tested on-device.
+This branch also adds a release-checking service and a scheduled workflow that builds/publishes versioned Android ARM64 engines. Signed-manifest verification, detailed download progress, updates for the preparer/resource modules, and device validation remain outstanding. This work has not yet been compiled or tested on-device.
