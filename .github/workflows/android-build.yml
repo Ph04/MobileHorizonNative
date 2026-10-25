@@ -346,7 +346,7 @@ jobs:
               "format": 1,
               "version": "horizon-" + upstream_tag + "-c" + commit[:8] + "-o" + overlay,
               "upstream_tag": upstream_tag,
-              "commit": commit,
+              "upstream_commit": commit,
               "overlay": overlay,
               "abi": "arm64-v8a",
               "library": "libhorizon_engine.so",
