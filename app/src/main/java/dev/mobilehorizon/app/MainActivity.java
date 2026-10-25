@@ -13,8 +13,11 @@ import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.Path;
+import android.graphics.PixelFormat;
+import android.graphics.Rect;
+import android.graphics.ColorFilter;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.content.res.Configuration;
 import android.widget.FrameLayout;
@@ -87,6 +90,12 @@ public final class MainActivity extends Activity {
     private Button viewLogsButton;
     private ScrollView dashboardScroll;
     private FrameLayout heroPanel;
+    private LinearLayout mobileNavigation;
+    private TextView[] mobileNavigationItems;
+    private Typeface bodyTypeface = Typeface.DEFAULT;
+    private Typeface pixelTypeface = Typeface.DEFAULT_BOLD;
+    private Typeface buttonTypeface = Typeface.DEFAULT_BOLD;
+    private Typeface monoTypeface = Typeface.MONOSPACE;
     private View downloadSectionView;
     private View resourcesSectionView;
     private View logsSectionView;
@@ -321,13 +330,32 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private Typeface loadHorizonTypeface(String filename, Typeface fallback) {
+        try {
+            return Typeface.createFromAsset(getAssets(), "horizon-ui/" + filename);
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private void loadHorizonFonts() {
+        bodyTypeface = loadHorizonTypeface("Geist-Regular.ttf",
+                Typeface.create("sans-serif", Typeface.NORMAL));
+        pixelTypeface = loadHorizonTypeface("PixelifySans-Bold.ttf",
+                Typeface.create("sans-serif", Typeface.BOLD));
+        buttonTypeface = loadHorizonTypeface("PixelifySans-SemiBold.ttf",
+                Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        monoTypeface = loadHorizonTypeface("GeistMono-Regular.ttf", Typeface.MONOSPACE);
+    }
+
     private void buildUi() {
+        loadHorizonFonts();
         boolean landscape = getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_LANDSCAPE
                 && getResources().getConfiguration().screenWidthDp >= 600;
-        final int backgroundColor = 0xff090911;
-        getWindow().setStatusBarColor(backgroundColor);
-        getWindow().setNavigationBarColor(backgroundColor);
+        final int backgroundColor = 0xff0f0d17;
+        getWindow().setStatusBarColor(0xff0b0a11);
+        getWindow().setNavigationBarColor(0xff0b0a11);
         if (Build.VERSION.SDK_INT >= 23) {
             getWindow().getDecorView().setSystemUiVisibility(0);
         }
@@ -351,9 +379,9 @@ public final class MainActivity extends Activity {
             LinearLayout topBar = new LinearLayout(this);
             topBar.setOrientation(LinearLayout.HORIZONTAL);
             topBar.setGravity(Gravity.CENTER_VERTICAL);
-            TextView topTitle = text("HORIZON", 16, 0xfff2eeff, true);
+            TextView topTitle = text("HORIZON", 16, 0xffecedf3, true);
             topBar.addView(topTitle, new LinearLayout.LayoutParams(0, dp(28), 1f));
-            topBar.addView(text("MINECRAFT 26.3  •  ANDROID", 10, 0xffb4a8dc, true),
+            topBar.addView(text("MINECRAFT 26.3  •  ANDROID", 10, 0xffa29cb8, true),
                     params(-2, -2));
             page.addView(topBar, params(-1, -2));
         }
@@ -361,8 +389,8 @@ public final class MainActivity extends Activity {
         // Horizon-style hero/banner. The pixel backdrop is drawn natively, so it scales
         // cleanly and does not depend on a fixed-resolution desktop screenshot.
         heroPanel = new FrameLayout(this);
-        heroPanel.setBackgroundColor(0xff211744);
-        LinearLayout.LayoutParams heroParams = params(-1, landscape ? 226 : 204);
+        heroPanel.setBackgroundColor(0xff0a0f2c);
+        LinearLayout.LayoutParams heroParams = params(-1, landscape ? 250 : 220);
         heroParams.topMargin = dp(8);
         page.addView(heroPanel, heroParams);
         HorizonPixelBackdrop pixelBackdrop = new HorizonPixelBackdrop(this);
@@ -381,7 +409,7 @@ public final class MainActivity extends Activity {
         TextView readyBadge = text("  ■  MINECRAFT 26.3  •  " + (resourcesPrepared() ? "READY" : "SETUP REQUIRED") + "  ", 10, 0xffb8ffd5, true);
         GradientDrawable badgeBackground = new GradientDrawable();
         badgeBackground.setColor(0xdd111420);
-        badgeBackground.setCornerRadius(dp(3));
+        badgeBackground.setCornerRadius(0);
         readyBadge.setBackground(badgeBackground);
         readyBadge.setPadding(dp(7), dp(5), dp(7), dp(5));
         badgeLine.addView(readyBadge, params(-2, -2));
@@ -400,8 +428,8 @@ public final class MainActivity extends Activity {
         heroBrand.setOrientation(LinearLayout.VERTICAL);
         heroBrand.setGravity(Gravity.CENTER_VERTICAL);
         heroMain.addView(heroBrand, new LinearLayout.LayoutParams(0, -1, 1f));
-        int heroTitleSize = landscape ? 40
-                : (getResources().getConfiguration().screenWidthDp < 360 ? 27 : 32);
+        int heroTitleSize = landscape ? 42
+                : (getResources().getConfiguration().screenWidthDp < 360 ? 28 : 34);
         heroBrand.addView(text("Horizon", heroTitleSize, 0xfff7f1ff, true),
                 params(-1, -2));
         TextView heroDescription = text("Minecraft Java Edition", 12, 0xffe0c9f2, false);
@@ -606,9 +634,11 @@ public final class MainActivity extends Activity {
             root.addView(buildSidebar(dashboardScroll), params(184, -1));
             root.addView(dashboardScroll, new LinearLayout.LayoutParams(0, -1, 1f));
         } else {
-            root.addView(dashboardScroll, params(-1, -1));
+            root.addView(dashboardScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+            root.addView(buildMobileNavigation(), params(-1, 56));
         }
         setContentView(root);
+        if (!landscape) updateMobileNavigation(heroPanel);
     }
 
     private boolean resourcesPrepared() {
@@ -657,7 +687,7 @@ public final class MainActivity extends Activity {
         LinearLayout sidebar = new LinearLayout(this);
         sidebar.setOrientation(LinearLayout.VERTICAL);
         sidebar.setPadding(dp(10), dp(14), dp(10), dp(14));
-        sidebar.setBackgroundColor(0xff07070d);
+        sidebar.setBackgroundColor(0xff0b0a11);
         sidebar.addView(text("INSTÂNCIAS", 10, 0xff8b82aa, true), params(-1, -2));
 
         LinearLayout instance = new LinearLayout(this);
@@ -665,9 +695,9 @@ public final class MainActivity extends Activity {
         instance.setGravity(Gravity.CENTER_VERTICAL);
         instance.setPadding(dp(9), dp(9), dp(7), dp(9));
         GradientDrawable selected = new GradientDrawable();
-        selected.setColor(0xff211c35);
-        selected.setStroke(dp(1), 0xff51406c);
-        selected.setCornerRadius(dp(4));
+        selected.setColor(0xff221e34);
+        selected.setStroke(dp(2), 0xff05040a);
+        selected.setCornerRadius(0);
         instance.setBackground(selected);
         instance.setClickable(true);
         instance.setOnClickListener(v -> scrollToSection(heroPanel));
@@ -701,8 +731,63 @@ public final class MainActivity extends Activity {
         return sidebar;
     }
 
+    private LinearLayout buildMobileNavigation() {
+        mobileNavigation = new LinearLayout(this);
+        mobileNavigation.setOrientation(LinearLayout.VERTICAL);
+        mobileNavigation.setBackgroundColor(0xff0b0a11);
+
+        View rule = new View(this);
+        rule.setBackgroundColor(0xff342d52);
+        mobileNavigation.addView(rule, params(-1, 1));
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        mobileNavigation.addView(row, params(-1, 55));
+
+        String[] labels = {"Início", "Downloads", "Recursos", "Logs", "Atualizações"};
+        View[] targets = {heroPanel, downloadSectionView, resourcesSectionView,
+                logsSectionView, runtimeUpdateSectionView};
+        mobileNavigationItems = new TextView[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            final View target = targets[i];
+            TextView item = text(labels[i], 10, 0xffa29cb8, true);
+            item.setTypeface(buttonTypeface);
+            item.setGravity(Gravity.CENTER);
+            item.setSingleLine(true);
+            item.setPadding(dp(1), 0, dp(1), 0);
+            item.setFocusable(true);
+            item.setClickable(true);
+            item.setOnClickListener(v -> scrollToSection(target));
+            row.addView(item, new LinearLayout.LayoutParams(0, -1, 1f));
+            mobileNavigationItems[i] = item;
+        }
+        return mobileNavigation;
+    }
+
+    private void updateMobileNavigation(View target) {
+        if (mobileNavigationItems == null) return;
+        String selected = "Início";
+        if (target == downloadSectionView) selected = "Downloads";
+        else if (target == resourcesSectionView) selected = "Recursos";
+        else if (target == logsSectionView) selected = "Logs";
+        else if (target == runtimeUpdateSectionView) selected = "Atualizações";
+        for (TextView item : mobileNavigationItems) {
+            boolean active = selected.contentEquals(item.getText());
+            if (active) {
+                item.setBackground(new HorizonBlockDrawable(0xff221e34, 0xff3d3560,
+                        0xff07060b, 0xff05040a, dp(1), dp(1), dp(2)));
+                item.setTextColor(0xffecedf3);
+            } else {
+                item.setBackgroundColor(0xff0b0a11);
+                item.setTextColor(0xffa29cb8);
+            }
+        }
+    }
+
     private void scrollToSection(View target) {
         if (dashboardScroll == null || target == null) return;
+        updateMobileNavigation(target);
         View anchor = target;
         if (target.getTag() instanceof View) {
             anchor = (View) target.getTag();
@@ -1849,7 +1934,7 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         TextView logText = text(report.toString(), 11, 0xffe2dcf8, false);
-        logText.setTypeface(Typeface.MONOSPACE);
+        logText.setTypeface(monoTypeface);
         logText.setTextIsSelectable(true);
         logText.setPadding(dp(12), dp(12), dp(12), dp(12));
         scroll.addView(logText, params(-1, -2));
@@ -2344,11 +2429,8 @@ public final class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(13), dp(12), dp(13), dp(12));
-        GradientDrawable background = new GradientDrawable();
-        background.setColor(0xff171622);
-        background.setCornerRadius(dp(5));
-        background.setStroke(dp(1), 0xff302b43);
-        card.setBackground(background);
+        card.setBackground(new HorizonBlockDrawable(0xff1a1727, 0xff342d52,
+                0xff07060b, 0xff05040a, dp(2), dp(2), dp(4)));
         return card;
     }
 
@@ -2357,16 +2439,19 @@ public final class MainActivity extends Activity {
         button.setAllCaps(false);
         button.setText(label);
         button.setTextSize(13);
-        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setTypeface(buttonTypeface);
         button.setMinHeight(0);
         button.setMinimumHeight(0);
         button.setPadding(dp(10), 0, dp(10), 0);
-        GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius(dp(4));
-        background.setColor(primary ? 0xff6042d8 : 0xff242132);
-        if (!primary) background.setStroke(dp(1), 0xff413953);
-        button.setBackground(background);
-        button.setTextColor(primary ? Color.WHITE : 0xffe7e0ff);
+        button.setStateListAnimator(null);
+        if (primary) {
+            button.setBackground(new HorizonBlockDrawable(0xff5b3fd6, 0xff8a74ff,
+                    0xff3a2694, 0xff05040a, dp(2), dp(2), dp(4)));
+        } else {
+            button.setBackground(new HorizonBlockDrawable(0xff2b2641, 0xff3d3560,
+                    0xff07060b, 0xff05040a, dp(2), dp(2), dp(4)));
+        }
+        button.setTextColor(primary ? Color.WHITE : 0xffc5c7d1);
         button.setOnClickListener(click);
         return button;
     }
@@ -2377,93 +2462,112 @@ public final class MainActivity extends Activity {
         text.setTextSize(sizeSp);
         text.setTextColor(color);
         text.setGravity(Gravity.START);
-        if (bold) text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        text.setTypeface(bold ? pixelTypeface : bodyTypeface);
         return text;
     }
 
-    private static final class HorizonPixelBackdrop extends View {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final int[] sky = {
-                0xff22204c, 0xff33265b, 0xff51275e, 0xff7b365f, 0xff8d435d
-        };
+    private static final class HorizonBlockDrawable extends Drawable {
+        private final Paint paint = new Paint();
+        private final int faceColor;
+        private final int bevelColor;
+        private final int lipColor;
+        private final int outlineColor;
+        private final float outlineWidth;
+        private final float bevelSize;
+        private final float lipSize;
+        private int alpha = 255;
+        private boolean pressed;
+        private ColorFilter colorFilter;
 
-        HorizonPixelBackdrop(Context context) {
-            super(context);
-        }
-
-        private void block(Canvas canvas, int color, float x, float y, float width, float height) {
-            paint.setColor(color);
+        HorizonBlockDrawable(int faceColor, int bevelColor, int lipColor, int outlineColor,
+                             float outlineWidth, float bevelSize, float lipSize) {
+            this.faceColor = faceColor;
+            this.bevelColor = bevelColor;
+            this.lipColor = lipColor;
+            this.outlineColor = outlineColor;
+            this.outlineWidth = outlineWidth;
+            this.bevelSize = bevelSize;
+            this.lipSize = lipSize;
+            paint.setAntiAlias(false);
             paint.setStyle(Paint.Style.FILL);
-            canvas.drawRect(x, y, x + width, y + height, paint);
         }
 
-        @Override protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            float w = getWidth();
-            float h = getHeight();
-            if (w <= 0 || h <= 0) return;
-            float density = getResources().getDisplayMetrics().density;
-            float cell = Math.max(5f * density, Math.min(12f * density, w / 85f));
-            for (int i = 0; i < sky.length; i++) {
-                block(canvas, sky[i], 0, h * i / sky.length, w, h / sky.length + 1);
+        @Override
+        public void draw(Canvas canvas) {
+            Rect bounds = getBounds();
+            if (bounds.width() <= 0 || bounds.height() <= 0) return;
+            float left = bounds.left;
+            float top = bounds.top;
+            float right = bounds.right;
+            float bottom = bounds.bottom;
+            float inset = Math.min(outlineWidth, Math.min(bounds.width(), bounds.height()) / 2f);
+            int base = pressed ? shade(faceColor, -8) : faceColor;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(withAlpha(base));
+            paint.setColorFilter(colorFilter);
+            canvas.drawRect(left + inset, top + inset, right - inset, bottom - inset, paint);
+
+            if (!pressed && bevelSize > 0) {
+                paint.setColor(withAlpha(bevelColor));
+                canvas.drawRect(left + inset, top + inset, right - inset,
+                        Math.min(bottom - inset, top + inset + bevelSize), paint);
+                canvas.drawRect(left + inset, top + inset, Math.min(right - inset, left + inset + bevelSize),
+                        bottom - inset, paint);
             }
-            // Pixel clouds and stars.
-            block(canvas, 0xffa06b9b, w * .64f, h * .12f, cell * 7, cell);
-            block(canvas, 0xffa06b9b, w * .64f + cell * 2, h * .12f - cell, cell * 5, cell);
-            block(canvas, 0xff73548f, w * .72f, h * .24f, cell * 8, cell);
-            block(canvas, 0xff73548f, w * .72f + cell, h * .24f - cell, cell * 5, cell);
-            block(canvas, 0xffd3b2de, w * .08f, h * .17f, cell * 2, cell * .6f);
-            block(canvas, 0xffd3b2de, w * .10f, h * .17f - cell * .7f, cell * 3, cell * .6f);
-            block(canvas, 0xffffd88a, w * .62f, h * .21f, cell * 6, cell);
-            block(canvas, 0xffffd88a, w * .62f + cell, h * .21f - cell, cell * 4, cell);
-            block(canvas, 0xffffd88a, w * .62f + cell, h * .21f + cell, cell * 4, cell);
-            block(canvas, 0xffffd88a, w * .62f + cell * 2, h * .21f + cell * 2, cell * 2, cell);
-            for (int i = 0; i < 20; i++) {
-                float x = (i * 97f % 997f) / 997f * w;
-                float y = (i * 31f % 101f) / 101f * h * .50f;
-                block(canvas, i % 3 == 0 ? 0xffd8b4e9 : 0xff8874b1, x, y, cell * .36f, cell * .36f);
+            if (lipSize > 0) {
+                paint.setColor(withAlpha(lipColor));
+                canvas.drawRect(left + inset, Math.max(top + inset, bottom - inset - lipSize),
+                        right - inset, bottom - inset, paint);
             }
-            // Dark pixel hills; the stair-step skyline is intentional.
-            Path farHill = new Path();
-            farHill.moveTo(0, h * .72f);
-            farHill.lineTo(w * .10f, h * .68f);
-            farHill.lineTo(w * .16f, h * .70f);
-            farHill.lineTo(w * .25f, h * .58f);
-            farHill.lineTo(w * .33f, h * .61f);
-            farHill.lineTo(w * .40f, h * .55f);
-            farHill.lineTo(w * .54f, h * .69f);
-            farHill.lineTo(w * .68f, h * .63f);
-            farHill.lineTo(w * .80f, h * .70f);
-            farHill.lineTo(w * .90f, h * .59f);
-            farHill.lineTo(w, h * .65f);
-            farHill.lineTo(w, h);
-            farHill.lineTo(0, h);
-            farHill.close();
-            paint.setColor(0xff241c45);
-            canvas.drawPath(farHill, paint);
-            Path foreground = new Path();
-            foreground.moveTo(0, h * .83f);
-            foreground.lineTo(w * .15f, h * .78f);
-            foreground.lineTo(w * .26f, h * .84f);
-            foreground.lineTo(w * .42f, h * .75f);
-            foreground.lineTo(w * .54f, h * .81f);
-            foreground.lineTo(w * .70f, h * .77f);
-            foreground.lineTo(w * .84f, h * .85f);
-            foreground.lineTo(w, h * .80f);
-            foreground.lineTo(w, h);
-            foreground.lineTo(0, h);
-            foreground.close();
-            paint.setColor(0xff131429);
-            canvas.drawPath(foreground, paint);
-            // Block trees add the game's pixel-art silhouette without raster assets.
-            for (int i = 0; i < 7; i++) {
-                float x = w * (.07f + i * .137f);
-                float base = h * (.82f + (i % 2) * .035f);
-                block(canvas, 0xff111528, x, base - cell * 4, cell, cell * 5);
-                block(canvas, 0xff111528, x - cell, base - cell * 4, cell * 3, cell * 2);
-                block(canvas, 0xff111528, x - cell * 2, base - cell * 3, cell * 5, cell);
-            }
-            block(canvas, 0x663d2858, 0, h * .96f, w, h * .04f);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(outlineWidth);
+            paint.setColor(withAlpha(outlineColor));
+            canvas.drawRect(left + outlineWidth / 2f, top + outlineWidth / 2f,
+                    right - outlineWidth / 2f, bottom - outlineWidth / 2f, paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
+
+        private int withAlpha(int color) {
+            return (color & 0x00ffffff) | (alpha << 24);
+        }
+
+        private static int shade(int color, int amount) {
+            int r = Math.max(0, Math.min(255, ((color >> 16) & 255) + amount));
+            int g = Math.max(0, Math.min(255, ((color >> 8) & 255) + amount));
+            int b = Math.max(0, Math.min(255, (color & 255) + amount));
+            return (r << 16) | (g << 8) | b;
+        }
+
+        @Override
+        public boolean isStateful() {
+            return true;
+        }
+
+        @Override
+        protected boolean onStateChange(int[] state) {
+            boolean isPressed = false;
+            for (int value : state) if (value == android.R.attr.state_pressed) isPressed = true;
+            if (pressed == isPressed) return false;
+            pressed = isPressed;
+            invalidateSelf();
+            return true;
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            this.alpha = Math.max(0, Math.min(255, alpha));
+            invalidateSelf();
+        }
+
+        @Override
+        public void setColorFilter(ColorFilter colorFilter) {
+            this.colorFilter = colorFilter;
+            invalidateSelf();
+        }
+
+        @Override
+        public int getOpacity() {
+            return PixelFormat.TRANSLUCENT;
         }
     }
 
