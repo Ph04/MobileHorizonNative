@@ -80,6 +80,8 @@ public final class MainActivity extends Activity {
     private TextView compatibilityText;
     private TextView progressDetails;
     private TextView runtimeUpdateText;
+    private TextView runtimeUpdateProgressDetail;
+    private ProgressBar runtimeUpdateProgressBar;
     private TextView runtimePcReleaseText;
     private Button runtimeUpdateButton;
     private Button viewLogsButton;
@@ -146,6 +148,17 @@ public final class MainActivity extends Activity {
                 showMicrosoftDeviceCode(intent);
             } else if (MicrosoftAuthService.ACTION_FINISHED.equals(intent.getAction())) {
                 handleMicrosoftAuthFinished(intent);
+            } else if (HorizonRuntimeUpdateForegroundService.ACTION_PROGRESS.equals(intent.getAction())) {
+                refreshRuntimeUpdateStatus();
+            } else if (HorizonRuntimeUpdateForegroundService.ACTION_FINISHED.equals(intent.getAction())) {
+                refreshRuntimeUpdateStatus();
+                updateActionEnablement();
+                try {
+                    startService(new Intent(MainActivity.this, HorizonRuntimeUpdateForegroundService.class)
+                            .setAction(HorizonRuntimeUpdateForegroundService.ACTION_ACK));
+                } catch (Exception ignored) {
+                    // The result is also stored in SharedPreferences for the next resume.
+                }
             }
         }
     };
@@ -155,8 +168,37 @@ public final class MainActivity extends Activity {
     private final Handler runtimeUpdateHandler = new Handler(Looper.getMainLooper());
     private final Runnable runtimeUpdatePoll = new Runnable() {
         @Override public void run() {
-            HorizonRuntimeUpdateService.checkInBackground(MainActivity.this, () -> refreshRuntimeUpdateStatus());
-            runtimeUpdateHandler.postDelayed(this, 30L * 60L * 1000L);
+            if (!HorizonRuntimeUpdateService.isUpdateInProgress(MainActivity.this)) {
+                HorizonRuntimeUpdateService.checkInBackground(MainActivity.this);
+            }
+            refreshRuntimeUpdateStatus();
+            long delay = HorizonRuntimeUpdateService.isUpdateInProgress(MainActivity.this)
+                    ? 1000L : 30L * 60L * 1000L;
+            runtimeUpdateHandler.postDelayed(this, delay);
+        }
+    };
+
+    // Request notification permission only after the launcher has completed its first resume.
+    // Automatic update checking waits for the permission result (or for the user to decline it).
+    private final Runnable runtimeUpdateStartup = new Runnable() {
+        @Override public void run() {
+            if (isFinishing() || isDestroyed()) return;
+            if (Build.VERSION.SDK_INT >= 33
+                    && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                android.content.SharedPreferences preferences =
+                        getSharedPreferences("horizon_runtime_updates", MODE_PRIVATE);
+                if (!preferences.getBoolean("notification_permission_prompted", false)) {
+                    preferences.edit().putBoolean("notification_permission_prompted", true).commit();
+                    try {
+                        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 26036);
+                        return;
+                    } catch (RuntimeException error) {
+                        // Notifications are optional; do not prevent the launcher from opening.
+                    }
+                }
+            }
+            startRuntimeUpdaterAfterPermissionFlow();
         }
     };
 
@@ -212,14 +254,20 @@ public final class MainActivity extends Activity {
         } catch (Exception ignored) {
             // Restoring a sign-in session is best-effort.
         }
+        try {
+            startService(new Intent(this, HorizonRuntimeUpdateForegroundService.class)
+                    .setAction(HorizonRuntimeUpdateForegroundService.ACTION_QUERY));
+        } catch (Exception ignored) {
+            // Recovering updater state is best-effort; automatic checking runs after resume.
+        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        HorizonRuntimeUpdateService.checkInBackground(this, () -> refreshRuntimeUpdateStatus());
+        refreshRuntimeUpdateStatus();
         runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
-        runtimeUpdateHandler.postDelayed(runtimeUpdatePoll, 30L * 60L * 1000L);
+        runtimeUpdateHandler.removeCallbacks(runtimeUpdateStartup);
         if (sessionEnvSet) {
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
@@ -250,8 +298,56 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onPostResume() {
+        super.onPostResume();
+        runtimeUpdateHandler.removeCallbacks(runtimeUpdateStartup);
+        runtimeUpdateHandler.postDelayed(runtimeUpdateStartup, 250L);
+    }
+
+    private void startRuntimeUpdaterAfterPermissionFlow() {
+        if (isFinishing() || isDestroyed()) return;
+        HorizonRuntimeUpdateService.checkInBackground(this);
+        refreshRuntimeUpdateStatus();
+        runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
+        runtimeUpdateHandler.postDelayed(runtimeUpdatePoll,
+                HorizonRuntimeUpdateService.isUpdateInProgress(this) ? 1000L : 30L * 60L * 1000L);
+    }
+
+    private void refreshRuntimeUpdateStatus() {
+        boolean updating = HorizonRuntimeUpdateService.isUpdateInProgress(this);
+        int percent = HorizonRuntimeUpdateService.progressPercent(this);
+        String status = HorizonRuntimeUpdateService.lastStatus(this);
+        String stage = HorizonRuntimeUpdateService.progressStage(this);
+        if (runtimeUpdateText != null) runtimeUpdateText.setText(status);
+        if (runtimePcReleaseText != null) {
+            runtimePcReleaseText.setText("Release de PC acompanhada: "
+                    + HorizonRuntimeUpdateService.pcReleaseLabel(this));
+        }
+        if (runtimeUpdateProgressBar != null) {
+            runtimeUpdateProgressBar.setVisibility(updating ? View.VISIBLE : View.GONE);
+            runtimeUpdateProgressBar.setIndeterminate(updating && percent < 0);
+            if (percent >= 0) runtimeUpdateProgressBar.setProgress(percent);
+        }
+        if (runtimeUpdateProgressDetail != null) {
+            runtimeUpdateProgressDetail.setVisibility(updating ? View.VISIBLE : View.GONE);
+            runtimeUpdateProgressDetail.setText(updating
+                    ? (stage == null || stage.isEmpty() ? "Atualização em andamento…" : stage)
+                        + (percent >= 0 ? " · " + percent + "%" : "")
+                    : "");
+        }
+        if (runtimeUpdateButton != null) {
+            runtimeUpdateButton.setEnabled(!updating && !busy && !conversionBusy
+                    && !downloadBusy && !authBusy && !launchBusy && !diagnosticsBusy);
+            runtimeUpdateButton.setText(updating ? "Atualização em andamento…" : "Verificar atualizações");
+            runtimeUpdateButton.setAlpha(updating ? 0.55f : 1f);
+        }
+        updateActionEnablement();
+    }
+
+    @Override
     protected void onPause() {
         runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
+        runtimeUpdateHandler.removeCallbacks(runtimeUpdateStartup);
         super.onPause();
     }
 
@@ -429,9 +525,6 @@ public final class MainActivity extends Activity {
 
         // These rows mirror the desktop launcher's Ready to play panel while routing to
         // functionality this Android build actually supports.
-        addDashboardRow(page, "Resources", resourceReadySummary(),
-                "Gerenciar", v -> startActivity(new Intent(this, ResourceManagerActivity.class)),
-                landscape);
         addDashboardRow(page, "Minecraft folder",
                 "Diretório privado: files/minecraft • Downloads oficiais verificados",
                 "Downloads", v -> scrollToSection(downloadSectionView), landscape);
@@ -443,7 +536,9 @@ public final class MainActivity extends Activity {
         LinearLayout runtimeCard = (LinearLayout) runtimeUpdateSectionView;
         LinearLayout.LayoutParams runtimeParams = params(-1, -2);
         runtimeParams.topMargin = dp(10);
-        page.addView(runtimeCard, runtimeParams);
+        // Insert the updater card at its final location now; avoid removing/reparenting it later.
+        int heroIndex = page.indexOfChild(heroPanel);
+        page.addView(runtimeCard, heroIndex >= 0 ? heroIndex + 1 : page.getChildCount(), runtimeParams);
         LinearLayout runtimeTitleRow = new LinearLayout(this);
         runtimeTitleRow.setOrientation(LinearLayout.HORIZONTAL);
         runtimeTitleRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -460,13 +555,23 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams runtimeUpdateTextParams = params(-1, -2);
         runtimeUpdateTextParams.topMargin = dp(5);
         runtimeCard.addView(runtimeUpdateText, runtimeUpdateTextParams);
+        runtimeUpdateProgressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        runtimeUpdateProgressBar.setMax(100);
+        runtimeUpdateProgressBar.setProgressTintList(android.content.res.ColorStateList.valueOf(0xff8e63ff));
+        runtimeUpdateProgressBar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff302a43));
+        runtimeUpdateProgressBar.setVisibility(View.GONE);
+        LinearLayout.LayoutParams runtimeProgressParams = params(-1, 6);
+        runtimeProgressParams.topMargin = dp(8);
+        runtimeCard.addView(runtimeUpdateProgressBar, runtimeProgressParams);
+        runtimeUpdateProgressDetail = text("", 11, 0xffbcb6d5, false);
+        LinearLayout.LayoutParams runtimeProgressDetailParams = params(-1, -2);
+        runtimeProgressDetailParams.topMargin = dp(4);
+        runtimeCard.addView(runtimeUpdateProgressDetail, runtimeProgressDetailParams);
         runtimeUpdateButton = button("Verificar atualizações", false, v -> {
-            runtimeUpdateButton.setEnabled(false);
-            runtimeUpdateText.setText("Verificando a versão mais recente do Horizon...");
-            HorizonRuntimeUpdateService.checkNow(this, () -> {
-                refreshRuntimeUpdateStatus();
-                runtimeUpdateButton.setEnabled(true);
-            });
+            HorizonRuntimeUpdateService.checkNow(this);
+            refreshRuntimeUpdateStatus();
+            runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
+            runtimeUpdateHandler.postDelayed(runtimeUpdatePoll, 250L);
         });
         addSpaced(runtimeCard, runtimeUpdateButton, 40, 8);
 
@@ -493,7 +598,7 @@ public final class MainActivity extends Activity {
         addButtonPair(setup, prepareInputsButton, fullConvertButton, 46, 8);
 
         resourcesSectionView = collapsibleSection(page, "Gerenciador de recursos",
-                "Importar, inspecionar e organizar recursos já preparados.", false);
+                "Importar, inspecionar e organizar recursos já preparados.", true);
         LinearLayout resourcesSection = (LinearLayout) resourcesSectionView;
         resourcesSection.addView(text(
                 "Gerencie recursos compatíveis com o runtime instalado. A saída preparada do Minecraft fica no armazenamento privado do app.",
@@ -551,6 +656,15 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams footerParams = params(-1, -2);
         footerParams.topMargin = dp(16);
         page.addView(footer, footerParams);
+
+        // Place the expanded resources section directly below the updater card.
+        // Only this section is reparented; the updater card was inserted in place above.
+        if (resourcesSectionView != null && runtimeUpdateSectionView != null) {
+            page.removeView(resourcesSectionView);
+            int updaterIndex = page.indexOfChild(runtimeUpdateSectionView);
+            page.addView(resourcesSectionView,
+                    updaterIndex >= 0 ? updaterIndex + 1 : page.getChildCount());
+        }
 
         if (landscape) {
             root.addView(buildSidebar(dashboardScroll), params(184, -1));
@@ -937,6 +1051,11 @@ public final class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 26036) {
+            // Whether granted or denied, notification permission must never block game/launcher use.
+            startRuntimeUpdaterAfterPermissionFlow();
+            return;
+        }
         if (requestCode == 26033 && pendingPreparationPermission) {
             pendingPreparationPermission = false;
             boolean granted = grantResults.length > 0
@@ -1361,7 +1480,15 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private boolean blockGameLaunchDuringUpdate() {
+        if (!HorizonRuntimeUpdateService.isRuntimeInstallInProgress(this)) return false;
+        showRuntimeError("Atualização do Horizon em andamento",
+                "O motor nativo está sendo baixado ou ativado. Aguarde essa etapa terminar; depois o jogo poderá ser iniciado.");
+        return true;
+    }
+
     private void openOfflineClient() {
+        if (blockGameLaunchDuringUpdate()) return;
         if (busy || conversionBusy || downloadBusy || authBusy || launchBusy) return;
         if (!isHorizonNativeLibraryAvailable()) {
             showRuntimeError("Biblioteca Horizon ausente",
@@ -1372,6 +1499,7 @@ public final class MainActivity extends Activity {
     }
 
     private void launchOfflineClientAfterValidation(String resourceSummary) {
+        if (blockGameLaunchDuringUpdate()) return;
         try {
             String playerName = OfflineProfile.loadName(this);
             MobilePerformanceProfile.applyInitialOptions(this);
@@ -1401,6 +1529,7 @@ public final class MainActivity extends Activity {
     }
 
     private void openNativeClient() {
+        if (blockGameLaunchDuringUpdate()) return;
         if (busy || conversionBusy || downloadBusy || authBusy || launchBusy) return;
         if (!isHorizonNativeLibraryAvailable()) {
             showRuntimeError("Biblioteca Horizon ausente",
@@ -1411,6 +1540,7 @@ public final class MainActivity extends Activity {
     }
 
     private void continueNativeClientAfterValidation(String resourceSummary) {
+        if (blockGameLaunchDuringUpdate()) return;
         if (!MicrosoftAuthentication.isValidClientId(BuildConfig.HORIZON_MSA_CLIENT_ID)) {
             showRuntimeError("Autenticação ainda não configurada",
                     resourceSummary + "\n\nPara login real, o responsável pelo projeto precisa registrar um App ID próprio da Microsoft e habilitar o fluxo de dispositivo. Builds sem HORIZON_MSA_CLIENT_ID não podem autenticar.");
@@ -1674,6 +1804,7 @@ public final class MainActivity extends Activity {
     }
 
     private void launchAuthenticatedClient(String resourceSummary, String refreshToken) {
+        if (blockGameLaunchDuringUpdate()) return;
         launchBusy = true;
         updateActionEnablement();
         progressBar.setVisibility(View.VISIBLE);
@@ -2073,6 +2204,7 @@ public final class MainActivity extends Activity {
     }
 
     private void openNativeSmokeTest() {
+        if (blockGameLaunchDuringUpdate()) return;
         if (!isHorizonNativeLibraryAvailable()) {
             showRuntimeError("Biblioteca nativa ausente",
                     "O teste Vulkan exige libhorizon_android.so empacotada para arm64-v8a.");
@@ -2134,14 +2266,18 @@ public final class MainActivity extends Activity {
 
     private void updateActionEnablement() {
         boolean blocked = busy || conversionBusy || downloadBusy || authBusy || launchBusy || diagnosticsBusy;
+        boolean installingRuntime = HorizonRuntimeUpdateService.isRuntimeInstallInProgress(this);
+        boolean updaterBusy = HorizonRuntimeUpdateService.isUpdateInProgress(this);
         if (importFolderButton != null) importFolderButton.setEnabled(!blocked);
         if (importZipButton != null) importZipButton.setEnabled(!blocked);
         if (downloadBaseButton != null) downloadBaseButton.setEnabled(!blocked);
         if (downloadAssetsButton != null) downloadAssetsButton.setEnabled(!blocked);
         if (prepareInputsButton != null) prepareInputsButton.setEnabled(!blocked);
         if (fullConvertButton != null) fullConvertButton.setEnabled(!blocked);
-        if (openEngineButton != null) openEngineButton.setEnabled(!blocked);
-        if (smokeTestButton != null) smokeTestButton.setEnabled(!blocked);
+        if (openEngineButton != null) openEngineButton.setEnabled(!blocked && !installingRuntime);
+        if (offlinePlayButton != null) offlinePlayButton.setEnabled(!blocked && !installingRuntime);
+        if (smokeTestButton != null) smokeTestButton.setEnabled(!blocked && !installingRuntime);
+        if (runtimeUpdateButton != null) runtimeUpdateButton.setEnabled(!blocked && !updaterBusy);
         if (exportDiagnosticsButton != null) exportDiagnosticsButton.setEnabled(!blocked);
         if (microsoftLoginButton != null) microsoftLoginButton.setEnabled(!blocked);
         if (microsoftSignOutButton != null) microsoftSignOutButton.setEnabled(!blocked
@@ -2167,8 +2303,10 @@ public final class MainActivity extends Activity {
         if (downloadAssetsButton != null) downloadAssetsButton.setAlpha(alpha);
         if (prepareInputsButton != null) prepareInputsButton.setAlpha(alpha);
         if (fullConvertButton != null) fullConvertButton.setAlpha(alpha);
-        if (openEngineButton != null) openEngineButton.setAlpha(alpha);
-        if (smokeTestButton != null) smokeTestButton.setAlpha(alpha);
+        if (openEngineButton != null) openEngineButton.setAlpha(installingRuntime ? 0.55f : alpha);
+        if (offlinePlayButton != null) offlinePlayButton.setAlpha(installingRuntime ? 0.55f : alpha);
+        if (smokeTestButton != null) smokeTestButton.setAlpha(installingRuntime ? 0.55f : alpha);
+        if (runtimeUpdateButton != null) runtimeUpdateButton.setAlpha(updaterBusy ? 0.55f : alpha);
         if (exportDiagnosticsButton != null) exportDiagnosticsButton.setAlpha(alpha);
         if (microsoftLoginButton != null) microsoftLoginButton.setAlpha(alpha);
         if (microsoftSignOutButton != null) microsoftSignOutButton.setAlpha(alpha);
