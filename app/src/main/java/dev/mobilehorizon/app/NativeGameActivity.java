@@ -85,6 +85,7 @@ public final class NativeGameActivity extends NativeActivity {
             java.io.File resources = new java.io.File(
                     gameRoot, ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
             android.system.Os.setenv("HORIZON_RESOURCES", resources.getAbsolutePath(), true);
+            configureLocalSkin(home);
             // NativeGameActivity runs in :game, so copy launch context explicitly:
             // environment changes made in MainActivity are not inherited across processes.
             if (launchIntent != null) {
@@ -131,6 +132,48 @@ public final class NativeGameActivity extends NativeActivity {
             touchControlsPopup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
             // Defer until the Activity's window token is attached; onCreate can be too early.
             window.getDecorView().post(this::showTouchControlsPopupWhenAttached);
+        }
+    }
+
+    /**
+     * Applies the skin selected in the resource manager to this app's local Horizon
+     * player model. The native runtime reads this variable during startup.
+     */
+    private void configureLocalSkin(java.io.File home) {
+        try {
+            java.io.File skinDirectory = new java.io.File(home, "skins").getCanonicalFile();
+            java.io.File selection = new java.io.File(home, "active-skin.txt");
+            if (!selection.isFile() || selection.length() < 1 || selection.length() > 256) {
+                android.system.Os.unsetenv("HORIZON_LOCAL_SKIN");
+                return;
+            }
+            String name = new String(java.nio.file.Files.readAllBytes(selection.toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8).trim();
+            if (name.isEmpty() || name.contains("/") || name.contains("\\")
+                    || !name.toLowerCase(java.util.Locale.ROOT).endsWith(".png")) {
+                android.system.Os.unsetenv("HORIZON_LOCAL_SKIN");
+                return;
+            }
+            java.io.File skin = new java.io.File(skinDirectory, name).getCanonicalFile();
+            if (!skin.getParentFile().equals(skinDirectory)
+                    || !skin.isFile() || skin.length() < 24 || skin.length() > 4L * 1024L * 1024L) {
+                android.system.Os.unsetenv("HORIZON_LOCAL_SKIN");
+                return;
+            }
+            android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeFile(skin.getAbsolutePath(), options);
+            boolean supported = (options.outWidth == 64 && options.outHeight == 64)
+                    || (options.outWidth == 64 && options.outHeight == 32);
+            if (!supported) {
+                android.system.Os.unsetenv("HORIZON_LOCAL_SKIN");
+                return;
+            }
+            android.system.Os.setenv("HORIZON_LOCAL_SKIN", skin.getAbsolutePath(), true);
+            android.util.Log.i("MobileHorizon", "Local Horizon skin selected: " + skin.getName());
+        } catch (Exception error) {
+            try { android.system.Os.unsetenv("HORIZON_LOCAL_SKIN"); } catch (Exception ignored) { }
+            android.util.Log.w("MobileHorizon", "Could not configure the local skin", error);
         }
     }
 

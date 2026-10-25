@@ -4,10 +4,11 @@ These files are ordered patch steps, not reusable gameplay mods. They patch Hori
 
 ## Default Android runtime patch set
 
-Only two patch steps are active in the default Android engine:
+Three patch steps are active in the default Android engine:
 
 1. `01_offline_server_login.py` — preserves offline-nickname joining on servers configured for offline mode and lets hybrid servers decide whether a missing Microsoft session is acceptable. Servers that truly require official online authentication still require a valid Microsoft session.
 2. `02_android_native.py` — Android NativeActivity integration, touch/keyboard/clipboard support, audio fallback, GUI scale and native build configuration. It also copies the Android `cdylib` entrypoint into the pinned Horizon source tree for compilation.
+3. `08_local_skin.py` — loads the skin selected in MobileHorizon into this client's local-player model using Horizon's existing skin decoder/atlas. It does not upload skins to Microsoft or impersonate a skin for other players.
 
 The server compatibility experiments remain available in source, but are **not applied to the default runtime** while this work is paused:
 

@@ -114,6 +114,7 @@ public final class ResourceManagerActivity extends Activity {
     private File graphicsFile() { return new File(home(), "horizon-graphics.txt"); }
     private File skinsDir() { return new File(home(), "skins"); }
     private File favoriteSkinFile() { return new File(home(), "favorite-skin.txt"); }
+    private File activeSkinFile() { return new File(home(), "active-skin.txt"); }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -329,12 +330,10 @@ public final class ResourceManagerActivity extends Activity {
 
     private void validateMinecraftSkinPng(int[] dimensions) throws IOException {
         int width = dimensions[0], height = dimensions[1];
-        boolean modern = width == height && width >= 64 && width <= 1024 && width % 64 == 0;
-        boolean classic = width == height * 2 && width >= 64 && width <= 1024
-                && width % 64 == 0 && height % 32 == 0;
-        if (!modern && !classic) {
+        // Horizon's current skin decoder accepts the canonical Java skin layouts only.
+        if (!((width == 64 && height == 64) || (width == 64 && height == 32))) {
             throw new IOException(AppLanguage.translate(this,
-                    "PNG inválido. Use uma textura de skin Java quadrada ou no formato clássico 2:1 (por exemplo, 64×64 ou 64×32)."));
+                    "PNG inválido. Use exatamente 64×64 ou 64×32 pixels para garantir compatibilidade com o runtime."));
         }
     }
 
@@ -645,8 +644,7 @@ public final class ResourceManagerActivity extends Activity {
         return result;
     }
 
-    private String favoriteSkinName() {
-        File file = favoriteSkinFile();
+    private String readSkinSelection(File file) {
         if (!file.isFile()) return "";
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                 new FileInputStream(file), StandardCharsets.UTF_8))) {
@@ -655,38 +653,45 @@ public final class ResourceManagerActivity extends Activity {
         } catch (Exception ignored) { return ""; }
     }
 
+    private String favoriteSkinName() { return readSkinSelection(favoriteSkinFile()); }
+    private String activeSkinName() { return readSkinSelection(activeSkinFile()); }
+
     private void addSkinSection() {
         LinearLayout section = card();
         LinearLayout.LayoutParams sectionParams = params(-1, -2);
         sectionParams.topMargin = dp(8);
         content.addView(section, sectionParams);
         section.addView(text("Skins do jogador", 16, 0xff18213a, true), params(-1, -2));
-        TextView note = text("A coleção é salva neste dispositivo. Favoritar não altera automaticamente a skin da conta Microsoft nem a skin fornecida por um servidor.",
+        TextView note = text("Importe, ative localmente, favorite ou remova uma skin. A skin ativa será carregada pelo cliente na próxima abertura; isso não altera a skin da conta Microsoft nem força outros clientes do servidor a usar essa textura.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(3);
         section.addView(note, noteParams);
+
         List<File> skins = listSkins();
         String favorite = favoriteSkinName();
+        String active = activeSkinName();
         if (skins.isEmpty()) {
-            TextView empty = text("Nenhuma skin importada. Adicione um PNG de skin Java (64×64 ou 64×32).",
-                    13, 0xff68728a, false);
+            TextView empty = text("Nenhuma skin importada. Adicione um PNG Java de 64×64 ou 64×32 pixels.", 13, 0xff68728a, false);
             LinearLayout.LayoutParams p = params(-1, -2);
             p.topMargin = dp(8);
             section.addView(empty, p);
             return;
         }
+
         for (File skin : skins) {
             View divider = new View(this);
             divider.setBackgroundColor(0xffe7ebf3);
             LinearLayout.LayoutParams dividerParams = params(-1, dp(1));
             dividerParams.topMargin = dp(8);
             section.addView(divider, dividerParams);
+
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(dp(2), dp(8), dp(2), dp(2));
             section.addView(row, params(-1, -2));
+
             ImageView preview = new ImageView(this);
             preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
             GradientDrawable previewBg = new GradientDrawable();
@@ -695,54 +700,75 @@ public final class ResourceManagerActivity extends Activity {
             previewBg.setStroke(dp(1), 0xff413953);
             preview.setBackground(previewBg);
             BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inSampleSize = 2;
+            options.inSampleSize = 1;
             Bitmap bitmap = BitmapFactory.decodeFile(skin.getAbsolutePath(), options);
             if (bitmap != null) preview.setImageBitmap(bitmap);
-            row.addView(preview, params(dp(52), dp(52)));
+            row.addView(preview, params(dp(58), dp(58)));
+
             LinearLayout details = new LinearLayout(this);
             details.setOrientation(LinearLayout.VERTICAL);
             details.setPadding(dp(9), 0, 0, 0);
             row.addView(details, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            boolean isActive = skin.getName().equals(active);
+            boolean isFavorite = skin.getName().equals(favorite);
             details.addView(text(skin.getName(), 13, 0xff18213a, true), params(-1, -2));
             int[] dimensions;
-            String detail;
+            String dimensionText;
             try {
                 dimensions = readPngDimensions(skin);
-                detail = dimensions[0] + "×" + dimensions[1] + " PNG";
-            } catch (Exception invalid) { detail = "PNG"; }
-            if (skin.getName().equals(favorite)) detail = "★ " + AppLanguage.translate(this, "Favorita") + " · " + detail;
-            TextView metadata = text(detail, 11, 0xff68728a, false);
-            details.addView(metadata, params(-1, -2));
-            LinearLayout actions = new LinearLayout(this);
-            actions.setGravity(Gravity.CENTER_VERTICAL);
-            Button choose = button(skin.getName().equals(favorite) ? "Favorita" : "Selecionar como favorita",
-                    skin.getName().equals(favorite), v -> {
-                        try {
-                            writeUtf8(favoriteSkinFile(), skin.getName());
-                            showStatus("Skin favorita salva: " + skin.getName());
-                            refreshResources();
-                        } catch (Exception error) { showStatus(message(error)); }
-                    });
-            choose.setTextSize(11);
+                dimensionText = dimensions[0] + "×" + dimensions[1] + " PNG";
+            } catch (Exception invalid) { dimensionText = "PNG"; }
+            String stateText = (isActive ? "✓ Ativa localmente · " : "")
+                    + (isFavorite ? "★ Favorita · " : "") + dimensionText;
+            TextView metadata = text(stateText, 11, isActive ? 0xff6f54d9 : 0xff68728a, isActive);
+            LinearLayout.LayoutParams metadataParams = params(-1, -2);
+            metadataParams.topMargin = dp(2);
+            details.addView(metadata, metadataParams);
+
+            Button activate = button(isActive ? "Skin ativa" : "Ativar skin", isActive, v -> {
+                try {
+                    writeUtf8(activeSkinFile(), skin.getName());
+                    showStatus("Skin ativa: " + skin.getName()
+                            + ". Ela será carregada na próxima abertura do Minecraft.");
+                    refreshResources();
+                } catch (Exception error) {
+                    showStatus("Não foi possível ativar a skin: " + message(error));
+                }
+            });
+            activate.setTextSize(11);
+
+            Button favoriteButton = button(isFavorite ? "★ Favorita" : "☆ Favoritar", isFavorite, v -> {
+                try {
+                    writeUtf8(favoriteSkinFile(), isFavorite ? "" : skin.getName());
+                    showStatus(isFavorite ? "Skin removida dos favoritos." : "Skin favorita: " + skin.getName());
+                    refreshResources();
+                } catch (Exception error) {
+                    showStatus("Não foi possível atualizar o favorito: " + message(error));
+                }
+            });
+            favoriteButton.setTextSize(11);
+            addButtonPair(details, activate, favoriteButton, 38, 5);
+
             Button remove = button("Remover skin", false, v -> new AlertDialog.Builder(this)
                     .setTitle(AppLanguage.translate(this, "Remover skin"))
-                    .setMessage(skin.getName())
+                    .setMessage("Remover " + skin.getName() + " da coleção local?")
                     .setNegativeButton(AppLanguage.translate(this, "Cancelar"), null)
                     .setPositiveButton(AppLanguage.translate(this, "Remover"), (dialog, which) -> {
-                        if (skin.getName().equals(favoriteSkinName())) {
-                            try { writeUtf8(favoriteSkinFile(), ""); } catch (Exception ignored) { }
+                        try {
+                            if (skin.getName().equals(activeSkinName())) writeUtf8(activeSkinFile(), "");
+                            if (skin.getName().equals(favoriteSkinName())) writeUtf8(favoriteSkinFile(), "");
+                            if (!skin.delete()) throw new IOException("Não foi possível remover a skin.");
+                            showStatus("Skin removida: " + skin.getName());
+                        } catch (Exception error) {
+                            showStatus("Falha ao remover a skin: " + message(error));
                         }
-                        if (skin.delete()) showStatus("Skin removida: " + skin.getName());
-                        else showStatus("Não foi possível remover a skin.");
                         refreshResources();
                     }).show());
             remove.setTextSize(11);
-            actions.setOrientation(LinearLayout.HORIZONTAL);
-            LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(0, dp(42), 1f);
-            actionParams.topMargin = dp(3);
-            details.addView(actions, actionParams);
-            actions.addView(choose, new LinearLayout.LayoutParams(0, dp(42), 1f));
-            actions.addView(remove, new LinearLayout.LayoutParams(0, dp(42), 1f));
+            LinearLayout.LayoutParams removeParams = params(-1, 36);
+            removeParams.topMargin = dp(4);
+            details.addView(remove, removeParams);
         }
     }
 

@@ -49,6 +49,18 @@ public final class AppLanguage {
         put("Selecionar como favorita", "Set as favorite");
         put("Favorita", "Favorite");
         put("Remover skin", "Remove skin");
+        put("Ativar skin", "Activate skin");
+        put("Skin ativa", "Active skin");
+        put("Ativa localmente", "Active locally");
+        put("✓ Ativa localmente · ", "✓ Active locally · ");
+        put("★ Favorita · ", "★ Favorite · ");
+        put("Favoritar", "Add to favorites");
+        put("Skin removida dos favoritos.", "Skin removed from favorites.");
+        put("Skin ativa: ", "Active skin: ");
+        put("Ela será carregada na próxima abertura do Minecraft.", "It will be loaded the next time Minecraft starts.");
+        put("Importe, ative localmente, favorite ou remova uma skin. A skin ativa será carregada pelo cliente na próxima abertura; isso não altera a skin da conta Microsoft nem força outros clientes do servidor a usar essa textura.", "Import, activate locally, favorite, or remove a skin. The active skin is loaded by this client on next launch; this does not change your Microsoft account skin or force other clients on a server to use this texture.");
+        put("Nenhuma skin importada. Adicione um PNG Java de 64×64 ou 64×32 pixels.", "No skins imported. Add a Java skin PNG sized 64×64 or 64×32 pixels.");
+        put("PNG inválido. Use exatamente 64×64 ou 64×32 pixels para garantir compatibilidade com o runtime.", "Invalid PNG. Use exactly 64×64 or 64×32 pixels for runtime compatibility.");
         put("Nenhuma skin importada. Adicione um PNG de skin Java (64×64 ou 64×32).", "No skins imported. Add a Java skin PNG (64×64 or 64×32).");
         put("A coleção é salva neste dispositivo. Favoritar não altera automaticamente a skin da conta Microsoft nem a skin fornecida por um servidor.", "This collection is stored on this device. Favoriting a skin does not automatically change your Microsoft account skin or a skin supplied by a server.");
         put("PNG de skin importado: ", "Skin PNG imported: ");
@@ -73,6 +85,16 @@ public final class AppLanguage {
         put("Scroll para cima", "Scroll up");
         put("Scroll para baixo", "Scroll down");
         put("Alternar tecla (toque liga/desliga)", "Toggle key (tap to switch on/off)");
+        put("Alternar ação por toque (liga/desliga)", "Toggle action on tap (on/off)");
+        put("Alternar tecla por toque (liga/desliga)", "Toggle key on tap (on/off)");
+        put("Limiar de corrida ", "Sprint threshold ");
+        put("Posição na tela", "On-screen position");
+        put("Posição X ", "X position ");
+        put("Posição Y ", "Y position ");
+        put("Ação do botão", "Button action");
+        put("Texto exibido", "Displayed label");
+        put("Rótulo do botão (até 7 caracteres)", "Button label (up to 7 characters)");
+        put("Ocultar botão", "Hide button");
         put("Alternar pressão: toque para ligar/desligar", "Toggle hold: tap to turn on/off");
         put("Tecla, ex.: G, SPACE, F6", "Key, e.g. G, SPACE, F6");
         put("Texto do botão", "Button label");
@@ -189,6 +211,13 @@ public final class AppLanguage {
         fragment("O recurso ultrapassa o limite de 512 MiB.", "The resource exceeds the 512 MiB limit.");
         fragment("Feche e reabra o mundo para validar o conteúdo.", "Close and reopen the world to validate the content.");
         fragment("Nome de arquivo inseguro.", "Unsafe file name.");
+        fragment("Skin ativa: ", "Active skin: ");
+        fragment("Skin favorita: ", "Favorite skin: ");
+        fragment("Skin removida: ", "Skin removed: ");
+        fragment("Falha ao remover a skin: ", "Failed to remove skin: ");
+        fragment("Não foi possível ativar a skin: ", "Could not activate skin: ");
+        fragment("Não foi possível atualizar o favorito: ", "Could not update favorite: ");
+        fragment("Não foi possível configurar a skin local", "Could not configure the local skin");
     }
 
     private AppLanguage() { }
