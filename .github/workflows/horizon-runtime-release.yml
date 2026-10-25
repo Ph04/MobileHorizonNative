@@ -3,9 +3,22 @@ name: Publish Android Horizon runtime
 on:
   schedule:
     - cron: "17 * * * *"
+  workflow_call:
+    inputs:
+      source_ref:
+        description: "Branch containing the live Android updater code."
+        required: false
+        type: string
+        default: feature/horizon-runtime-loader
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Branch to build the Android Horizon runtime from."
+        required: true
+        type: string
+        default: feature/horizon-runtime-loader
   push:
-    branches: ["main"]
+    branches: ["feature/horizon-runtime-loader", "fix/runtime-release-detection"]
     paths:
       - "android-native/Cargo.toml"
       - "tools/horizon-revisions.env"
@@ -32,6 +45,8 @@ jobs:
     steps:
       - name: Checkout overlay sources
         uses: actions/checkout@v4
+        with:
+          ref: \${{ inputs.source_ref || github.ref_name }}
 
       - name: Resolve upstream Horizon release and runtime tag
         id: resolve
@@ -60,16 +75,28 @@ jobs:
                       return None
                   raise
 
-          releases = get_json("https://api.github.com/repos/ludovic111/horizon/releases?per_page=100")
           import re
+          releases = []
+          # The newest stable tag is normally on page 1, but rapid prerelease activity can push
+          # it beyond the first 100 records. Page until a short page or a bounded safety limit.
+          for page in range(1, 11):
+              batch = get_json(
+                  "https://api.github.com/repos/ludovic111/horizon/releases?per_page=100&page=" + str(page)
+              )
+              if not isinstance(batch, list):
+                  raise SystemExit("Unexpected response while listing Horizon releases.")
+              releases.extend(batch)
+              if len(batch) < 100:
+                  break
           stable = [
               release for release in releases
               if not release.get("draft") and not release.get("prerelease")
               and re.fullmatch(r"v[0-9][A-Za-z0-9._+-]{0,79}", release.get("tag_name", ""))
+              and (release.get("published_at") or release.get("created_at"))
           ]
           if not stable:
               raise SystemExit("No published stable Horizon release was found.")
-          latest = max(stable, key=lambda item: item.get("published_at", ""))
+          latest = max(stable, key=lambda item: item.get("published_at") or item.get("created_at", ""))
           upstream_tag = latest["tag_name"]
           encoded_tag = urllib.parse.quote(upstream_tag, safe="")
           ref = get_json("https://api.github.com/repos/ludovic111/horizon/git/ref/tags/" + encoded_tag)
@@ -129,6 +156,8 @@ jobs:
     steps:
       - name: Checkout MobileHorizonNative overlay
         uses: actions/checkout@v4
+        with:
+          ref: \${{ inputs.source_ref || github.ref_name }}
 
       - name: Set up Rust for Android ARM64
         uses: dtolnay/rust-toolchain@stable
