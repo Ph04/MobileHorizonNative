@@ -135,61 +135,75 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams titleParams = params(-1, -2);
         titleParams.topMargin = dp(5);
         page.addView(title, titleParams);
-        TextView intro = text("Importe, ative, desative e remova texturas, mods Horizon e shader packs compatíveis.",
+        TextView intro = text("Organize os recursos instalados e escolha o que será carregado no Minecraft.",
                 14, 0xff59647b, false);
         LinearLayout.LayoutParams introParams = params(-1, -2);
         introParams.topMargin = dp(5);
         page.addView(intro, introParams);
 
+        // One clear primary action, with the two less frequently used actions
+        // grouped side-by-side to reduce the tall stack of buttons.
         LinearLayout actions = card();
         LinearLayout.LayoutParams actionsParams = params(-1, -2);
         actionsParams.topMargin = dp(14);
         page.addView(actions, actionsParams);
-        importFilesButton = button("Importar recursos (.zip / .hmod)", true, v -> chooseFiles());
-        actions.addView(importFilesButton, params(-1, dp(60)));
-        importFolderButton = button("Importar pasta de shader pack", false, v -> chooseShaderFolder());
-        LinearLayout.LayoutParams folderParams = params(-1, dp(60));
-        folderParams.topMargin = dp(8);
-        actions.addView(importFolderButton, folderParams);
-        Button refresh = button("Atualizar lista de recursos", false, v -> refreshResources());
-        LinearLayout.LayoutParams refreshParams = params(-1, dp(56));
-        refreshParams.topMargin = dp(8);
-        actions.addView(refresh, refreshParams);
+        importFilesButton = button("Importar arquivos (.zip / .hmod)", true, v -> chooseFiles());
+        actions.addView(importFilesButton, params(-1, dp(50)));
+        importFolderButton = button("Pasta de shader", false, v -> chooseShaderFolder());
+        Button refresh = button("Atualizar lista", false, v -> refreshResources());
+        addButtonPair(actions, importFolderButton, refresh, 42, 6);
 
         LinearLayout statusCard = card();
         LinearLayout.LayoutParams statusParams = params(-1, -2);
         statusParams.topMargin = dp(10);
         page.addView(statusCard, statusParams);
+        TextView statusHeading = text("Status", 13, 0xff5363bd, true);
+        statusCard.addView(statusHeading, params(-1, -2));
         status = text("Pronto.", 13, 0xff59647b, false);
-        statusCard.addView(status, params(-1, -2));
+        LinearLayout.LayoutParams statusTextParams = params(-1, -2);
+        statusTextParams.topMargin = dp(3);
+        statusCard.addView(status, statusTextParams);
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setVisibility(View.GONE);
         progress.setMax(100);
-        LinearLayout.LayoutParams progressParams = params(-1, dp(6));
+        LinearLayout.LayoutParams progressParams = params(-1, dp(5));
         progressParams.topMargin = dp(8);
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "As alterações são aplicadas ao abrir o Minecraft novamente. Importe mods Horizon em .hmod, pacotes de textura ZIP, data packs e shader packs compatíveis.",
+                "Texturas, mods Horizon, data packs e shaders compatíveis. As mudanças entram em vigor ao reiniciar o Minecraft.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
-        noteParams.topMargin = dp(12);
+        noteParams.topMargin = dp(10);
         page.addView(note, noteParams);
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams contentParams = params(-1, -2);
-        contentParams.topMargin = dp(8);
+        contentParams.topMargin = dp(4);
         page.addView(content, contentParams);
-        Button back = button("Voltar", false, v -> finish());
-        LinearLayout.LayoutParams backParams = params(-1, dp(56));
-        backParams.topMargin = dp(14);
+
+        Button back = button("Voltar à tela principal", false, v -> finish());
+        LinearLayout.LayoutParams backParams = params(-1, dp(46));
+        backParams.topMargin = dp(12);
         page.addView(back, backParams);
     }
 
+    private void addButtonPair(LinearLayout parent, View left, View right, int heightDp, int topMarginDp) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams rowParams = params(-1, -2);
+        rowParams.topMargin = dp(topMarginDp);
+        parent.addView(row, rowParams);
 
-
-
+        LinearLayout.LayoutParams leftParams = new LinearLayout.LayoutParams(0, dp(heightDp), 1f);
+        leftParams.setMargins(0, 0, dp(4), 0);
+        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(0, dp(heightDp), 1f);
+        rightParams.setMargins(dp(4), 0, 0, 0);
+        row.addView(left, leftParams);
+        row.addView(right, rightParams);
+    }
 
     private void chooseFiles() {
         if (busy) return;
@@ -663,63 +677,104 @@ public final class ResourceManagerActivity extends Activity {
         LinearLayout.LayoutParams sectionParams = params(-1, -2);
         sectionParams.topMargin = dp(8);
         content.addView(section, sectionParams);
-        section.addView(text(title, 17, 0xff18213a, true), params(-1, -2));
-        LinearLayout.LayoutParams sub = params(-1, -2); sub.topMargin = dp(3);
-        section.addView(text(subtitle, 12, 0xff68728a, false), sub);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        section.addView(header, params(-1, -2));
+        TextView heading = text(title, 16, 0xff18213a, true);
+        header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1f));
+        String count = items.size() == 1 ? "1 item" : items.size() + " itens";
+        TextView counter = text(count, 11, 0xff5363bd, true);
+        counter.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        header.addView(counter, params(-2, -2));
+
+        LinearLayout.LayoutParams subParams = params(-1, -2);
+        subParams.topMargin = dp(3);
+        section.addView(text(subtitle, 12, 0xff68728a, false), subParams);
         if (items.isEmpty()) {
-            TextView none = text("Nenhum item instalado.", 13, 0xff68728a, false);
-            LinearLayout.LayoutParams p = params(-1, -2); p.topMargin = dp(8); section.addView(none, p);
+            TextView none = text("Nada instalado aqui ainda. Use Importar arquivos acima para adicionar recursos.",
+                    13, 0xff68728a, false);
+            LinearLayout.LayoutParams noneParams = params(-1, -2);
+            noneParams.topMargin = dp(8);
+            section.addView(none, noneParams);
             return;
         }
         for (ResourceItem item : items) addResourceRow(section, item);
     }
 
     private void addResourceRow(LinearLayout section, ResourceItem item) {
+        // Resource entries use flat separators instead of a card nested inside
+        // another card. This keeps names, state and actions easy to scan.
+        View divider = new View(this);
+        divider.setBackgroundColor(0xffe7ebf3);
+        LinearLayout.LayoutParams dividerParams = params(-1, dp(1));
+        dividerParams.topMargin = dp(8);
+        section.addView(divider, dividerParams);
+
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(dp(10), dp(9), dp(10), dp(8));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xfff7f8fc); bg.setCornerRadius(dp(10)); bg.setStroke(dp(1), 0xffdde3ef);
-        row.setBackground(bg);
-        LinearLayout.LayoutParams rowParams = params(-1, -2);
-        rowParams.topMargin = dp(8); section.addView(row, rowParams);
+        row.setPadding(dp(2), dp(8), dp(2), dp(2));
+        section.addView(row, params(-1, -2));
         row.addView(text(item.name, 14, 0xff18213a, true), params(-1, -2));
-        LinearLayout.LayoutParams detail = params(-1, -2); detail.topMargin = dp(3);
-        row.addView(text(item.detail, 12, 0xff68728a, false), detail);
+
+        LinearLayout.LayoutParams detailParams = params(-1, -2);
+        detailParams.topMargin = dp(2);
+        row.addView(text(item.detail, 12, 0xff68728a, false), detailParams);
+
         LinearLayout actions = new LinearLayout(this);
-        actions.setGravity(Gravity.CENTER_VERTICAL); actions.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams actionsParams = params(-1, -2); actionsParams.topMargin = dp(4);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams actionsParams = params(-1, -2);
+        actionsParams.topMargin = dp(4);
         row.addView(actions, actionsParams);
+
         CheckBox active = new CheckBox(this);
-        active.setText(item.kind == Kind.DATA_PACK ? "Instalação por mundo"
-                : item.active ? "Ativo" : "Desativado");
+        active.setText(item.kind == Kind.DATA_PACK ? "Por mundo" : item.active ? "Ativo" : "Ativar");
+        active.setTextSize(13);
         active.setTextColor(0xff283550);
+        active.setMinHeight(dp(38));
         active.setChecked(item.kind != Kind.DATA_PACK && item.active);
         active.setEnabled(item.kind != Kind.DATA_PACK
                 && (item.kind != Kind.MOD || !item.id.isEmpty()));
         active.setOnCheckedChangeListener((button, checked) -> {
             try {
                 setActive(item, checked);
+                button.setText(checked ? "Ativo" : "Ativar");
                 showStatus(item.name + (checked ? " ativado" : " desativado")
                         + ". A mudança será aplicada quando o Minecraft iniciar novamente.");
                 refreshResources();
             } catch (Exception error) {
                 button.setOnCheckedChangeListener(null);
                 button.setChecked(item.active);
+                button.setText(item.active ? "Ativo" : "Ativar");
                 button.setOnCheckedChangeListener((b, value) -> {
-                    try { setActive(item, value); refreshResources(); }
-                    catch (Exception e) { showStatus(message(e)); }
+                    try {
+                        setActive(item, value);
+                        showStatus(item.name + (value ? " ativado" : " desativado") + ".");
+                        refreshResources();
+                    } catch (Exception e) {
+                        showStatus(message(e));
+                    }
                 });
                 showStatus("Não foi possível alterar " + item.name + ": " + message(error));
             }
         });
-        actions.addView(active, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        actions.addView(active, new LinearLayout.LayoutParams(0, dp(40), 1f));
+
         if (item.kind == Kind.DATA_PACK) {
-            actions.addView(button("Instalar no mundo", true, v -> chooseWorldForDataPack(item.path)),
-                    new LinearLayout.LayoutParams(-2, dp(42)));
+            Button install = button("Instalar", true, v -> chooseWorldForDataPack(item.path));
+            install.setMinHeight(dp(38));
+            install.setMinimumHeight(dp(38));
+            LinearLayout.LayoutParams installParams = params(dp(78), dp(38));
+            installParams.setMargins(dp(3), 0, dp(3), 0);
+            actions.addView(install, installParams);
         }
-        actions.addView(button("Excluir", false, v -> confirmDelete(item)),
-                new LinearLayout.LayoutParams(-2, dp(42)));
+        Button delete = button("Excluir", false, v -> confirmDelete(item));
+        delete.setMinHeight(dp(38));
+        delete.setMinimumHeight(dp(38));
+        delete.setPadding(dp(5), dp(2), dp(5), dp(2));
+        actions.addView(delete, params(dp(76), dp(38)));
     }
 
     private void setActive(ResourceItem item, boolean enabled) throws Exception {
