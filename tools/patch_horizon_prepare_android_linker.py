@@ -45,7 +45,7 @@ fn java_command(java: &Path) -> Command {
     }
     #[cfg(not(target_os = "android"))]
     {
-        Command::new(java)
+        command(java)
     }
 }
 
@@ -59,7 +59,7 @@ fn javac_command(javac: &Path, java: &Path) -> Command {
     #[cfg(not(target_os = "android"))]
     {
         let _ = java;
-        Command::new(javac)
+        command(javac)
     }
 }
 
@@ -78,7 +78,7 @@ source = replace_one_compatible(
 )
 source = replace_one_compatible(
     source,
-    "    let output = Command::new(javac)\n        .arg(\"-version\")",
+    "    let output = command(javac)\n        .arg(\"-version\")",
     "    let output = javac_command(javac, java)\n        .arg(\"-version\")",
     "javac version invocation",
 )
@@ -90,13 +90,13 @@ source = replace_one_compatible(
 )
 source = replace_one_compatible(
     source,
-    "        let mut command = Command::new(&self.javac);",
+    "        let mut command = command(&self.javac);",
     "        let mut command = javac_command(&self.javac, &self.java);",
     "Jdk::javac invocation",
 )
 source = replace_one_compatible(
     source,
-    "        let mut command = Command::new(&self.java);",
+    "        let mut command = command(&self.java);",
     "        let mut command = java_command(&self.java);",
     "Jdk::java invocation",
 )
