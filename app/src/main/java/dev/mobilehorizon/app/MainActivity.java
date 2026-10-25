@@ -73,6 +73,8 @@ public final class MainActivity extends Activity {
     private TextView statusDetails;
     private TextView compatibilityText;
     private TextView progressDetails;
+    private TextView runtimeUpdateText;
+    private Button runtimeUpdateButton;
     private ProgressBar progressBar;
     private Button importFolderButton;
     private Button importZipButton;
@@ -139,7 +141,7 @@ public final class MainActivity extends Activity {
     private final Handler runtimeUpdateHandler = new Handler(Looper.getMainLooper());
     private final Runnable runtimeUpdatePoll = new Runnable() {
         @Override public void run() {
-            HorizonRuntimeUpdateService.checkInBackground(MainActivity.this);
+            HorizonRuntimeUpdateService.checkInBackground(MainActivity.this, () -> refreshRuntimeUpdateStatus());
             runtimeUpdateHandler.postDelayed(this, 30L * 60L * 1000L);
         }
     };
@@ -201,7 +203,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        HorizonRuntimeUpdateService.checkInBackground(this);
+        HorizonRuntimeUpdateService.checkInBackground(this, () -> refreshRuntimeUpdateStatus());
         runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
         runtimeUpdateHandler.postDelayed(runtimeUpdatePoll, 30L * 60L * 1000L);
         if (sessionEnvSet) {
@@ -246,6 +248,12 @@ public final class MainActivity extends Activity {
             receiverRegistered = false;
         }
         super.onStop();
+    }
+
+    private void refreshRuntimeUpdateStatus() {
+        if (runtimeUpdateText != null) {
+            runtimeUpdateText.setText(HorizonRuntimeUpdateService.lastStatus(this));
+        }
     }
 
     private void buildUi() {
@@ -307,6 +315,26 @@ public final class MainActivity extends Activity {
         cancelDownloadParams.topMargin = dp(6);
         cancelDownloadButton.setVisibility(View.GONE);
         statusCard.addView(cancelDownloadButton, cancelDownloadParams);
+
+        LinearLayout runtimeUpdateCard = card();
+        LinearLayout.LayoutParams runtimeUpdateCardParams = params(-1, -2);
+        runtimeUpdateCardParams.topMargin = dp(10);
+        page.addView(runtimeUpdateCard, runtimeUpdateCardParams);
+        runtimeUpdateCard.addView(text("Motor Horizon", 15, 0xff18213a, true), params(-1, -2));
+        runtimeUpdateText = text(HorizonRuntimeUpdateService.lastStatus(this),
+                13, 0xff59647b, false);
+        LinearLayout.LayoutParams runtimeUpdateTextParams = params(-1, -2);
+        runtimeUpdateTextParams.topMargin = dp(5);
+        runtimeUpdateCard.addView(runtimeUpdateText, runtimeUpdateTextParams);
+        runtimeUpdateButton = button("Verificar atualizações", false, v -> {
+            runtimeUpdateButton.setEnabled(false);
+            runtimeUpdateText.setText("Verificando a versão mais recente do Horizon...");
+            HorizonRuntimeUpdateService.checkNow(this, () -> {
+                refreshRuntimeUpdateStatus();
+                runtimeUpdateButton.setEnabled(true);
+            });
+        });
+        addSpaced(runtimeUpdateCard, runtimeUpdateButton, 42, 8);
 
         // Keep the primary play action prominent and place its secondary
         // shortcuts together so the screen is shorter without changing flows.
