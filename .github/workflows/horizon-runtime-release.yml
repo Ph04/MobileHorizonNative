@@ -46,7 +46,7 @@ jobs:
       - name: Checkout overlay sources
         uses: actions/checkout@v4
         with:
-          ref: \${{ inputs.source_ref || github.ref_name }}
+          ref: ${{ inputs.source_ref || github.ref_name }}
 
       - name: Resolve upstream Horizon release and runtime tag
         id: resolve
@@ -157,7 +157,7 @@ jobs:
       - name: Checkout MobileHorizonNative overlay
         uses: actions/checkout@v4
         with:
-          ref: \${{ inputs.source_ref || github.ref_name }}
+          ref: ${{ inputs.source_ref || github.ref_name }}
 
       - name: Set up Rust for Android ARM64
         uses: dtolnay/rust-toolchain@stable
