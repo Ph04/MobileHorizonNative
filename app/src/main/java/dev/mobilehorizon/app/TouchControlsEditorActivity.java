@@ -38,24 +38,27 @@ public final class TouchControlsEditorActivity extends Activity {
         root.addView(controls, new FrameLayout.LayoutParams(-1, -1));
 
         TextView settingsButton = new TextView(this);
-        settingsButton.setText("⚙  Ajustes");
+        settingsButton.setText(AppLanguage.translate(this, "⚙  Ajustes"));
         settingsButton.setTextColor(Color.WHITE);
-        settingsButton.setTextSize(12);
+        settingsButton.setTextSize(13);
+        settingsButton.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         settingsButton.setGravity(Gravity.CENTER);
         settingsButton.setPadding(dp(12), dp(5), dp(12), dp(5));
-        settingsButton.setBackground(makePill(0xD51A2434));
+        settingsButton.setBackground(makePill(0xE522344C));
         settingsButton.setClickable(true);
         settingsButton.setFocusable(true);
         settingsButton.setOnClickListener(v -> controls.showGlobalSettingsDialog());
         FrameLayout.LayoutParams settingsParams = new FrameLayout.LayoutParams(
-                dp(108), dp(34), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        settingsParams.topMargin = dp(43);
+                dp(112), dp(36), Gravity.TOP | Gravity.END);
+        settingsParams.topMargin = dp(10);
+        settingsParams.rightMargin = dp(12);
         root.addView(settingsButton, settingsParams);
 
         TextView hint = new TextView(this);
-        hint.setText("Arraste os botões  ·  guias azuis alinham  ·  toque para editar  ·  ✓ salva");
+        hint.setText(AppLanguage.translate(this, "LAYOUT DOS CONTROLES  ·  Arraste para mover · toque para editar"));
         hint.setTextColor(Color.WHITE);
         hint.setTextSize(12);
+        hint.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         hint.setGravity(Gravity.CENTER);
         hint.setPadding(dp(12), dp(7), dp(12), dp(7));
         hint.setClickable(false);
@@ -64,10 +67,13 @@ public final class TouchControlsEditorActivity extends Activity {
         hintBackground.setColor(0xB51A2434);
         hintBackground.setCornerRadius(dp(18));
         hint.setBackground(hintBackground);
+        hint.setElevation(dp(4));
         FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        hintParams.topMargin = dp(8);
+        hintParams.topMargin = dp(10);
+        hintParams.leftMargin = dp(12);
+        hintParams.rightMargin = dp(132);
         root.addView(hint, hintParams);
 
         setContentView(root);

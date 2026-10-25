@@ -52,6 +52,8 @@ final class NativeTouchControlsView extends View {
     static final String KEY_LEFT_HANDED = "left_handed";
     static final String KEY_LAYOUT = "button_layout_v2";
     static final String KEY_CUSTOM_BUTTONS = "custom_buttons_v1";
+    static final String KEY_HIDDEN_BUTTONS = "hidden_buttons_v1";
+    static final String KEY_AUTO_SPRINT = "auto_sprint";
     static final String KEY_SNAP_GAP = "snap_gap_dp";
     private static final String KEY_UNIFORM_SIZE_VERSION = "uniform_button_size_version";
     private static final String KEY_FLOAT_MENU_X = "floating_menu_x";
@@ -66,6 +68,7 @@ final class NativeTouchControlsView extends View {
     private static final int FUNCTION_MOUSE_RIGHT = 3;
     private static final int FUNCTION_SCROLL_UP = 4;
     private static final int FUNCTION_SCROLL_DOWN = 5;
+    private static final int FUNCTION_KEY_TOGGLE = 6;
 
     private static final int NONE = 0, JOYSTICK = 1, TOGGLE = 2, JUMP = 3, SNEAK = 4,
             SPRINT = 5, INVENTORY = 6, ATTACK = 7, USE = 8, ESCAPE = 9,
@@ -84,6 +87,8 @@ final class NativeTouchControlsView extends View {
     private final Set<Integer> heldKeys = new HashSet<>();
     private final Set<Integer> pressedControls = new HashSet<>();
     private final Set<Integer> joystickKeys = new HashSet<>();
+    private final Set<Integer> hiddenButtons = new HashSet<>();
+    private final Set<Integer> toggleActiveControls = new HashSet<>();
     private final Map<Integer, Integer> controlPointerCounts = new HashMap<>();
     private final Map<Integer, ButtonLayout> buttonLayouts = new HashMap<>();
     private final List<CustomButton> customButtons = new ArrayList<>();
@@ -113,6 +118,7 @@ final class NativeTouchControlsView extends View {
     private float opacity;
     private float sensitivity;
     private boolean leftHanded;
+    private boolean autoSprint;
     private boolean controlsVisible = true;
     private long lastHotbarTapTime;
     private int lastHotbarTapSlot = -1;
@@ -203,6 +209,12 @@ final class NativeTouchControlsView extends View {
         snapGapDp = clamp(prefs.getFloat(KEY_SNAP_GAP, 12f), 4f, 32f);
         loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
         loadCustomButtons(prefs.getString(KEY_CUSTOM_BUTTONS, ""));
+        autoSprint = prefs.getBoolean(KEY_AUTO_SPRINT, false);
+        String hiddenButtonIds = prefs.getString(KEY_HIDDEN_BUTTONS, "");
+        for (String value : hiddenButtonIds.split(",")) {
+            try { if (!value.trim().isEmpty()) hiddenButtons.add(Integer.parseInt(value.trim())); }
+            catch (NumberFormatException ignored) { }
+        }
         if (prefs.getInt(KEY_UNIFORM_SIZE_VERSION, 0) < 1) {
             for (Map.Entry<Integer, ButtonLayout> entry : buttonLayouts.entrySet()) {
                 int id = entry.getKey();
@@ -346,7 +358,7 @@ final class NativeTouchControlsView extends View {
     }
 
     private void drawButton(Canvas canvas, ButtonSpec spec) {
-        boolean pressed = pressedControls.contains(spec.id);
+        boolean pressed = pressedControls.contains(spec.id) || toggleActiveControls.contains(spec.id);
         float r = spec.radius;
         float buttonOpacity = opacity * clamp(spec.opacity, 0.20f, 1f);
         paint.setStyle(Paint.Style.FILL);
@@ -387,7 +399,7 @@ final class NativeTouchControlsView extends View {
     }
 
     private static int clampShape(int shape) { return Math.max(0, Math.min(2, shape)); }
-    private static int clampFunction(int function) { return Math.max(FUNCTION_DEFAULT, Math.min(FUNCTION_SCROLL_DOWN, function)); }
+    private static int clampFunction(int function) { return Math.max(FUNCTION_DEFAULT, Math.min(FUNCTION_KEY_TOGGLE, function)); }
 
     private float toolbarX(float offset) { return mirrorControlX(dp(offset)); }
     private float toolbarY() { return dp(31); }
@@ -489,6 +501,7 @@ final class NativeTouchControlsView extends View {
     }
 
     private void addButtonSpec(List<ButtonSpec> specs, int id, String label, float x, float y, float legacyRadius) {
+        if (id != JOYSTICK && hiddenButtons.contains(id)) return;
         ButtonLayout layout = buttonLayouts.get(id);
         float baseRadius = id == JOYSTICK ? dp(67) * scale : dp(24) * scale;
         float defaultScale = id == JOYSTICK ? 1f
@@ -599,6 +612,18 @@ final class NativeTouchControlsView extends View {
         } catch (Exception error) {
             android.util.Log.w("MobileHorizon", "Não foi possível salvar o layout dos controles.", error);
         }
+    }
+
+    private void saveHiddenButtons() {
+        List<Integer> ordered = new ArrayList<>(hiddenButtons);
+        java.util.Collections.sort(ordered);
+        StringBuilder value = new StringBuilder();
+        for (Integer id : ordered) {
+            if (value.length() > 0) value.append(',');
+            value.append(id);
+        }
+        activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+                .putString(KEY_HIDDEN_BUTTONS, value.toString()).apply();
     }
 
     private void saveCustomButtons() {
@@ -722,7 +747,7 @@ final class NativeTouchControlsView extends View {
     private void showKeyboardDialog() {
         EditText input = new EditText(activity);
         input.setSingleLine(true);
-        input.setHint("Texto para o campo selecionado ou mensagem");
+        input.setHint(AppLanguage.translate(activity, "Texto para o campo selecionado ou mensagem"));
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE
                 | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
@@ -733,10 +758,10 @@ final class NativeTouchControlsView extends View {
         panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
 
         AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle("Teclado do Minecraft")
+                .setTitle(AppLanguage.translate(activity, "Teclado do Minecraft"))
                 .setView(panel)
-                .setNegativeButton("Cancelar", (d, which) -> { })
-                .setPositiveButton("Aplicar / enviar", (d, which) -> {
+                .setNegativeButton(AppLanguage.translate(activity, "Cancelar"), (d, which) -> { })
+                .setPositiveButton(AppLanguage.translate(activity, "Aplicar / enviar"), (d, which) -> {
                     if (gameActivity != null) gameActivity.injectKeyboardText(input.getText().toString());
                 })
                 .create();
@@ -768,23 +793,26 @@ final class NativeTouchControlsView extends View {
     private void showAddButtonDialog() {
         EditText label = new EditText(activity);
         label.setSingleLine(true);
-        label.setHint("Texto do botão (ex.: MAP)");
+        label.setHint(AppLanguage.translate(activity, "Texto do botão (ex.: MAP)"));
         label.setText("G");
         EditText key = new EditText(activity);
         key.setSingleLine(true);
-        key.setHint("Tecla (ex.: G, SPACE, F6)");
+        key.setHint(AppLanguage.translate(activity, "Tecla (ex.: G, SPACE, F6)"));
         key.setText("G");
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding((int) dp(20), (int) dp(8), (int) dp(20), (int) dp(4));
         panel.addView(label, new LinearLayout.LayoutParams(-1, -2));
         panel.addView(key, new LinearLayout.LayoutParams(-1, -2));
+        android.widget.CheckBox toggle = new android.widget.CheckBox(activity);
+        toggle.setText(AppLanguage.translate(activity, "Alternar pressão: toque para ligar/desligar"));
+        panel.addView(toggle, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle("Adicionar botão")
-                .setMessage("O botão mantém a tecla pressionada enquanto você segura.")
+                .setTitle(AppLanguage.translate(activity, "Adicionar botão"))
+                .setMessage(AppLanguage.translate(activity, "O botão mantém a tecla pressionada enquanto você segura, ou pode alternar a pressão a cada toque."))
                 .setView(panel)
-                .setNegativeButton("Cancelar", (d, which) -> { })
-                .setPositiveButton("Adicionar", null)
+                .setNegativeButton(AppLanguage.translate(activity, "Cancelar"), (d, which) -> { })
+                .setPositiveButton(AppLanguage.translate(activity, "Adicionar"), null)
                 .create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String caption = label.getText().toString().trim();
@@ -797,8 +825,10 @@ final class NativeTouchControlsView extends View {
             for (CustomButton item : customButtons) id = Math.max(id, item.id + 1);
             float x = 0.62f + (customButtons.size() % 3) * 0.055f;
             float y = 0.50f + (customButtons.size() % 4) * 0.055f;
-            customButtons.add(new CustomButton(id, caption, keyCode,
-                    clamp(x, 0.10f, 0.90f), clamp(y, 0.15f, 0.85f), 1f));
+            CustomButton created = new CustomButton(id, caption, keyCode,
+                    clamp(x, 0.10f, 0.90f), clamp(y, 0.15f, 0.85f), 1f);
+            created.function = toggle.isChecked() ? FUNCTION_KEY_TOGGLE : FUNCTION_KEY;
+            customButtons.add(created);
             saveCustomButtons();
             invalidate();
             dialog.dismiss();
@@ -808,7 +838,7 @@ final class NativeTouchControlsView extends View {
 
     private TextView miniLabel(String value, int size, boolean bold) {
         TextView label = new TextView(activity);
-        label.setText(value);
+        label.setText(AppLanguage.translate(activity, value));
         label.setTextColor(0xffeaf0ff);
         label.setTextSize(size);
         if (bold) label.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
@@ -818,13 +848,13 @@ final class NativeTouchControlsView extends View {
     private void showGameControlMenu() {
         if (gameActivity == null || previewOnly) return;
         String[] items = new String[] {
-                "Personalizar layout",
-                "Ajustes gerais dos controles",
-                controlsVisible ? "Ocultar controles" : "Mostrar controles",
-                "Fechar jogo"
+                AppLanguage.translate(activity, "Personalizar layout"),
+                AppLanguage.translate(activity, "Ajustes gerais dos controles"),
+                AppLanguage.translate(activity, controlsVisible ? "Ocultar controles" : "Mostrar controles"),
+                AppLanguage.translate(activity, "Fechar jogo")
         };
         new AlertDialog.Builder(gameActivity)
-                .setTitle("Configurações do jogo")
+                .setTitle(AppLanguage.translate(activity, "Configurações do jogo"))
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
                         controlsVisible = true;
@@ -844,10 +874,10 @@ final class NativeTouchControlsView extends View {
                         invalidate();
                     } else if (which == 3) {
                         new AlertDialog.Builder(gameActivity)
-                                .setTitle("Fechar o jogo?")
-                                .setMessage("Você voltará à tela inicial do MobileHorizon.")
-                                .setNegativeButton("Cancelar", (d, w) -> { })
-                                .setPositiveButton("Fechar jogo", (d, w) -> {
+                                .setTitle(AppLanguage.translate(activity, "Fechar o jogo?"))
+                                .setMessage(AppLanguage.translate(activity, "Você voltará à tela inicial do MobileHorizon."))
+                                .setNegativeButton(AppLanguage.translate(activity, "Cancelar"), (d, w) -> { })
+                                .setPositiveButton(AppLanguage.translate(activity, "Fechar jogo"), (d, w) -> {
                                     releaseAllInputs();
                                     gameActivity.finish();
                                 })
@@ -900,7 +930,7 @@ final class NativeTouchControlsView extends View {
         });
 
         TextView shapeLabel = miniLabel("Formato", 11, false);
-        String[] shapeNames = new String[]{"Retângulo arredondado", "Círculo / oval", "Quadrado"};
+        String[] shapeNames = new String[]{AppLanguage.translate(activity, "Retângulo arredondado"), AppLanguage.translate(activity, "Círculo / oval"), AppLanguage.translate(activity, "Quadrado")};
         Button shapeButton = new Button(activity);
         shapeButton.setTextSize(11);
         shapeButton.setMinHeight(dpInt(34));
@@ -930,7 +960,7 @@ final class NativeTouchControlsView extends View {
         Spinner function = new Spinner(activity);
         ArrayAdapter<String> functionAdapter = new ArrayAdapter<>(activity,
                 android.R.layout.simple_spinner_item,
-                new String[]{"Padrão", "Tecla personalizada", "Clique esquerdo", "Clique direito", "Scroll para cima", "Scroll para baixo"});
+                new String[]{AppLanguage.translate(activity, "Padrão"), AppLanguage.translate(activity, "Tecla personalizada"), AppLanguage.translate(activity, "Clique esquerdo"), AppLanguage.translate(activity, "Clique direito"), AppLanguage.translate(activity, "Scroll para cima"), AppLanguage.translate(activity, "Scroll para baixo"), AppLanguage.translate(activity, "Alternar tecla (toque liga/desliga)")});
         functionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         function.setAdapter(functionAdapter);
         function.setSelection(clampFunction(currentFunction));
@@ -944,16 +974,16 @@ final class NativeTouchControlsView extends View {
         key.setTextSize(12);
         key.setTextColor(Color.WHITE);
         key.setHintTextColor(0xffaeb9cb);
-        key.setHint("Tecla, ex.: G, SPACE, F6");
+        key.setHint(AppLanguage.translate(activity, "Tecla, ex.: G, SPACE, F6"));
         key.setPadding(dpInt(7), 0, dpInt(7), 0);
         key.setText(currentKey == KeyEvent.KEYCODE_UNKNOWN ? "" : KeyEvent.keyCodeToString(currentKey).replace("KEYCODE_", ""));
         key.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff7e91ad));
         if (!joystickButton && !inGame) {
             panel.addView(key, new LinearLayout.LayoutParams(-1, dpInt(36)));
-            key.setVisibility(function.getSelectedItemPosition() == FUNCTION_KEY ? View.VISIBLE : View.GONE);
+            key.setVisibility(isKeyFunction(function.getSelectedItemPosition()) ? View.VISIBLE : View.GONE);
             function.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
                 @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long itemId) {
-                    key.setVisibility(position == FUNCTION_KEY ? View.VISIBLE : View.GONE);
+                    key.setVisibility(isKeyFunction(position) ? View.VISIBLE : View.GONE);
                 }
                 @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
             });
@@ -966,7 +996,7 @@ final class NativeTouchControlsView extends View {
             label.setTextSize(12);
             label.setTextColor(Color.WHITE);
             label.setHintTextColor(0xffaeb9cb);
-            label.setHint("Texto do botão");
+            label.setHint(AppLanguage.translate(activity, "Texto do botão"));
             label.setPadding(dpInt(7), 0, dpInt(7), 0);
             label.setText(custom.label);
             label.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff7e91ad));
@@ -980,7 +1010,7 @@ final class NativeTouchControlsView extends View {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         Button reset = new Button(activity);
-        reset.setText(custom != null ? "Excluir" : "Padrão");
+        reset.setText(AppLanguage.translate(activity, custom != null ? "Excluir" : joystickButton ? "Padrão" : "Remover"));
         reset.setTextSize(10);
         Button cancel = new Button(activity);
         cancel.setText("Fechar");
@@ -1046,10 +1076,15 @@ final class NativeTouchControlsView extends View {
         reset.setOnClickListener(v -> {
             if (custom != null) {
                 customButtons.remove(custom);
+                toggleActiveControls.remove(id);
                 saveCustomButtons();
-            } else {
+            } else if (joystickButton) {
                 buttonLayouts.remove(id);
                 saveButtonLayouts();
+            } else {
+                hiddenButtons.add(id);
+                saveHiddenButtons();
+                // Keep the saved layout so restoring this default button preserves its customization.
             }
             invalidate();
             popup.dismiss();
@@ -1060,7 +1095,7 @@ final class NativeTouchControlsView extends View {
                     ? currentFunction : function.getSelectedItemPosition();
             int selectedKey = (joystickButton || inGame)
                     ? currentKey : parseKeyCode(key.getText().toString());
-            if (!joystickButton && !inGame && selectedFunction == FUNCTION_KEY
+            if (!joystickButton && !inGame && isKeyFunction(selectedFunction)
                     && selectedKey == KeyEvent.KEYCODE_UNKNOWN) {
                 Toast.makeText(activity, "Informe uma tecla válida para essa função.", Toast.LENGTH_SHORT).show();
                 return;
@@ -1090,7 +1125,7 @@ final class NativeTouchControlsView extends View {
                 updated.shape = newShape;
                 if (!joystickButton && !inGame) {
                     updated.function = selectedFunction;
-                    updated.keyCode = selectedFunction == FUNCTION_KEY ? selectedKey : KeyEvent.KEYCODE_UNKNOWN;
+                    updated.keyCode = isKeyFunction(selectedFunction) ? selectedKey : KeyEvent.KEYCODE_UNKNOWN;
                 }
                 saveButtonLayouts();
             }
@@ -1112,10 +1147,31 @@ final class NativeTouchControlsView extends View {
         panel.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
 
         android.widget.CheckBox handed = new android.widget.CheckBox(activity);
-        handed.setText("Layout canhoto (joystick à direita)");
+        handed.setText(AppLanguage.translate(activity, "Layout canhoto (joystick à direita)"));
         handed.setTextColor(0xff18213a);
         handed.setChecked(leftHanded);
         panel.addView(handed, new LinearLayout.LayoutParams(-1, -2));
+
+        android.widget.CheckBox sprint = new android.widget.CheckBox(activity);
+        sprint.setText(AppLanguage.translate(activity, "Corrida automática ao empurrar o joystick para frente"));
+        sprint.setTextColor(0xff18213a);
+        sprint.setChecked(autoSprint);
+        panel.addView(sprint, new LinearLayout.LayoutParams(-1, -2));
+
+        Button restoreButtons = new Button(activity);
+        restoreButtons.setText(AppLanguage.translate(activity, "Restaurar botões padrão removidos"));
+        restoreButtons.setAllCaps(false);
+        restoreButtons.setOnClickListener(v -> new AlertDialog.Builder(activity)
+                .setTitle(AppLanguage.translate(activity, "Restaurar botões"))
+                .setMessage(AppLanguage.translate(activity, "Mostrar novamente todos os botões padrão removidos? As posições e tamanhos salvos serão preservados."))
+                .setNegativeButton(AppLanguage.translate(activity, "Cancelar"), null)
+                .setPositiveButton(AppLanguage.translate(activity, "Restaurar"), (d, w) -> {
+                    hiddenButtons.clear();
+                    saveHiddenButtons();
+                    invalidate();
+                    Toast.makeText(activity, AppLanguage.translate(activity, "Botões padrão restaurados."), Toast.LENGTH_SHORT).show();
+                }).show());
+        panel.addView(restoreButtons, new LinearLayout.LayoutParams(-1, dpInt(38)));
 
         TextView sizeLabel = textSetting("Tamanho geral " + Math.round(scale * 100) + "%");
         SeekBar size = new SeekBar(activity);
@@ -1154,10 +1210,10 @@ final class NativeTouchControlsView extends View {
         settingsScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
 
         AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle("Ajustes dos controles")
+                .setTitle(AppLanguage.translate(activity, "Ajustes dos controles"))
                 .setView(settingsScroll)
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Salvar", null)
+                .setNegativeButton(AppLanguage.translate(activity, "Cancelar"), null)
+                .setPositiveButton(AppLanguage.translate(activity, "Salvar"), null)
                 .create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             scale = (size.getProgress() + 70) / 100f;
@@ -1165,16 +1221,19 @@ final class NativeTouchControlsView extends View {
             sensitivity = (sensitivityBar.getProgress() + 50) / 100f;
             snapGapDp = gapBar.getProgress() + 4;
             leftHanded = handed.isChecked();
+            autoSprint = sprint.isChecked();
             prefs.edit()
                     .putBoolean(KEY_ENABLED, enabled.isChecked())
                     .putBoolean(KEY_LEFT_HANDED, leftHanded)
+                    .putBoolean(KEY_AUTO_SPRINT, sprint.isChecked())
                     .putFloat(KEY_SCALE, scale)
                     .putFloat(KEY_OPACITY, opacity)
                     .putFloat(KEY_SENSITIVITY, sensitivity)
                     .putFloat(KEY_SNAP_GAP, snapGapDp)
                     .apply();
+            updateSprintState();
             invalidate();
-            Toast.makeText(activity, "Ajustes dos controles salvos.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(activity, AppLanguage.translate(activity, "Ajustes dos controles salvos."), Toast.LENGTH_SHORT).show();
             dialog.dismiss();
         }));
         dialog.show();
@@ -1194,7 +1253,7 @@ final class NativeTouchControlsView extends View {
 
     private TextView textSetting(String value) {
         TextView text = new TextView(activity);
-        text.setText(value);
+        text.setText(AppLanguage.translate(activity, value));
         text.setTextColor(0xff18213a);
         text.setTextSize(12);
         return text;
@@ -1202,6 +1261,10 @@ final class NativeTouchControlsView extends View {
 
     private void showButtonEditor(int id) {
         showButtonMiniMenu(id);
+    }
+
+    private boolean isKeyFunction(int function) {
+        return function == FUNCTION_KEY || function == FUNCTION_KEY_TOGGLE;
     }
 
     private int parseKeyCode(String value) {
@@ -1591,6 +1654,14 @@ final class NativeTouchControlsView extends View {
         setJoystickKey(KeyEvent.KEYCODE_S, down);
         setJoystickKey(KeyEvent.KEYCODE_A, left);
         setJoystickKey(KeyEvent.KEYCODE_D, right);
+        updateSprintState();
+    }
+
+    private void updateSprintState() {
+        ButtonSpec sprint = findButton(SPRINT);
+        boolean manualSprint = pressedControls.contains(SPRINT) && !hasConfiguredFunction(sprint);
+        boolean forwardSprint = autoSprint && joystickKeys.contains(KeyEvent.KEYCODE_W);
+        setKeyHeld(KeyEvent.KEYCODE_CTRL_LEFT, manualSprint || forwardSprint);
     }
 
     private void setJoystickKey(int keyCode, boolean held) {
@@ -1615,6 +1686,13 @@ final class NativeTouchControlsView extends View {
         switch (function) {
             case FUNCTION_KEY:
                 if (spec.keyCode != KeyEvent.KEYCODE_UNKNOWN) setKeyHeld(spec.keyCode, pressed);
+                break;
+            case FUNCTION_KEY_TOGGLE:
+                if (pressed && spec.keyCode != KeyEvent.KEYCODE_UNKNOWN) {
+                    boolean next = !toggleActiveControls.contains(spec.id);
+                    if (next) toggleActiveControls.add(spec.id); else toggleActiveControls.remove(spec.id);
+                    setKeyHeld(spec.keyCode, next);
+                }
                 break;
             case FUNCTION_MOUSE_LEFT:
                 setMouseButton(MotionEvent.BUTTON_PRIMARY, pressed, virtualMouseX, virtualMouseY);
@@ -1650,7 +1728,7 @@ final class NativeTouchControlsView extends View {
         switch (control) {
             case JUMP: setKeyHeld(KeyEvent.KEYCODE_SPACE, true); break;
             case SNEAK: setKeyHeld(KeyEvent.KEYCODE_SHIFT_LEFT, true); break;
-            case SPRINT: setKeyHeld(KeyEvent.KEYCODE_CTRL_LEFT, true); break;
+            case SPRINT: updateSprintState(); break;
             case INVENTORY: setKeyHeld(KeyEvent.KEYCODE_E, true); break;
             case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, true, virtualMouseX, virtualMouseY); break;
             case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, true, virtualMouseX, virtualMouseY); break;
@@ -1694,7 +1772,7 @@ final class NativeTouchControlsView extends View {
         switch (control) {
             case JUMP: setKeyHeld(KeyEvent.KEYCODE_SPACE, false); break;
             case SNEAK: setKeyHeld(KeyEvent.KEYCODE_SHIFT_LEFT, false); break;
-            case SPRINT: setKeyHeld(KeyEvent.KEYCODE_CTRL_LEFT, false); break;
+            case SPRINT: updateSprintState(); break;
             case INVENTORY: setKeyHeld(KeyEvent.KEYCODE_E, false); break;
             case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY); break;
             case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY); break;
@@ -1784,6 +1862,7 @@ final class NativeTouchControlsView extends View {
     private void releaseHeldControls() {
         for (Integer key : new HashSet<>(heldKeys)) setKeyHeld(key, false);
         joystickKeys.clear();
+        toggleActiveControls.clear();
         pressedControls.clear();
         controlPointerCounts.clear();
         // Always send button-up events too, otherwise a long press can remain held after a pause.
