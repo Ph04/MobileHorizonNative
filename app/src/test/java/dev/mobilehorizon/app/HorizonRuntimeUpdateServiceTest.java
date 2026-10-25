@@ -45,4 +45,11 @@ public final class HorizonRuntimeUpdateServiceTest {
         assertEquals(0, HorizonRuntimeUpdateService.comparePublicationDates(
                 newerDateRelease, newerDateRelease));
     }
+
+    @Test
+    public void rejectsTagsThatWouldExceedRuntimeVersionLengthLimit() {
+        String tooLong = "v1." + "1".repeat(60);
+        assertFalse(HorizonRuntimeUpdateService.isValidUpstreamTag(tooLong));
+    }
+
 }
