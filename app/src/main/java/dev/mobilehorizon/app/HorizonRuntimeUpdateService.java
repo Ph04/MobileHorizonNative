@@ -30,11 +30,15 @@ public final class HorizonRuntimeUpdateService {
     private static final String TAG = "HorizonRuntimeUpdate";
     private static final String RELEASES_URL =
             "https://api.github.com/repos/Ph04/MobileHorizonNative/releases?per_page=100";
+    private static final String OFFICIAL_RELEASE_URL =
+            "https://api.github.com/repos/ludovic111/horizon/releases/latest";
     private static final String TAG_PREFIX = "horizon-runtime-";
     private static final String ENGINE_ASSET = "horizon-runtime-arm64-v8a.so";
     private static final String TEST_FIXTURE_TAG = "horizon-runtime-update-test";
     private static final String TEST_FIXTURE_URL = "https://api.github.com/repos/Ph04/MobileHorizonNative/releases/tags/" + TEST_FIXTURE_TAG;
     private static final String PC_RELEASE_TAG = "pc_release_tag";
+    private static final String OFFICIAL_LATEST_TAG = "official_latest_tag";
+    private static final String OFFICIAL_CHECKED_AT = "official_checked_at_ms";
     private static final String TEST_SEED_DONE = "test_old_runtime_seed_done";
     private static final String PREFERENCES = "horizon_runtime_updates";
     private static final String LAST_CHECK = "last_check_ms";
@@ -114,6 +118,17 @@ public final class HorizonRuntimeUpdateService {
         return tag == null || tag.trim().isEmpty() ? BuildConfig.HORIZON_PC_RELEASE_TAG : tag;
     }
 
+    /** Last official Horizon release successfully checked against upstream GitHub. */
+    public static String latestOfficialReleaseLabel(Context context) {
+        SharedPreferences preferences = context.getApplicationContext()
+                .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        String tag = preferences.getString(OFFICIAL_LATEST_TAG, "");
+        if (tag == null || tag.trim().isEmpty()) {
+            return "Último release oficial verificado: ainda não consultado";
+        }
+        return "Último release oficial verificado: " + tag;
+    }
+
     private static void checkAndInstall(Context context, SharedPreferences preferences) throws Exception {
         if (BuildConfig.HORIZON_TEST_OLD_RUNTIME
                 && !preferences.getBoolean(TEST_SEED_DONE, false)) {
@@ -126,26 +141,98 @@ public final class HorizonRuntimeUpdateService {
             return;
         }
 
+        // The official Horizon release and the Android-native runtime are different deliverables.
+        // Read upstream directly so a new PC release is visible even before its Android runtime
+        // has been built and published in this repository.
+        OfficialRelease official = null;
+        if (!BuildConfig.HORIZON_TEST_OLD_RUNTIME) {
+            try {
+                official = latestOfficialRelease();
+                preferences.edit()
+                        .putString(OFFICIAL_LATEST_TAG, official.tag)
+                        .putLong(OFFICIAL_CHECKED_AT, System.currentTimeMillis())
+                        .apply();
+            } catch (Exception error) {
+                Log.w(TAG, "Não foi possível consultar o release oficial do Horizon.", error);
+            }
+        }
+
         String currentVersion = HorizonRuntimeManager.currentVersion(context);
         Release latest = BuildConfig.HORIZON_TEST_OLD_RUNTIME
                 ? testFixtureRuntime(BuildConfig.HORIZON_PC_RELEASE_TAG)
                 : latestRuntimeRelease();
         if (latest == null) {
-            setStatus(preferences, "Nenhum release Android do Horizon foi encontrado.");
-            return;
-        }
-        if (latest.version.equals(currentVersion)) {
-            preferences.edit().putString(PC_RELEASE_TAG, latest.upstreamTag).apply();
-            setStatus(preferences, "Horizon está atualizado — release PC " + latest.upstreamTag
-                    + " (" + currentVersion + ").");
+            if (official != null) {
+                setStatus(preferences, "Release oficial " + official.tag
+                        + " detectada, mas ainda não há um pacote Android ARM64 verificado "
+                        + "publicado no MobileHorizonNative. O aplicativo continuará verificando.");
+            } else {
+                setStatus(preferences, "Nenhum release Android do Horizon foi encontrado; "
+                        + "a consulta à versão oficial também não foi concluída.");
+            }
             return;
         }
 
-        Log.i(TAG, "Atualização de motor encontrada: PC " + latest.upstreamTag
-                + ", motor " + latest.version + "; atual " + currentVersion);
-        installRelease(context, preferences, latest);
-        setStatus(preferences, "Motor Horizon PC " + latest.upstreamTag
-                + " baixado e verificado; será ativado na próxima inicialização do jogo.");
+        boolean installNeeded = !latest.version.equals(currentVersion);
+        if (installNeeded) {
+            Log.i(TAG, "Atualização de motor encontrada: PC " + latest.upstreamTag
+                    + ", motor " + latest.version + "; atual " + currentVersion);
+            installRelease(context, preferences, latest);
+        } else {
+            preferences.edit().putString(PC_RELEASE_TAG, latest.upstreamTag).apply();
+        }
+
+        if (BuildConfig.HORIZON_TEST_OLD_RUNTIME) {
+            setStatus(preferences, "Horizon está atualizado — release PC " + latest.upstreamTag
+                    + " (" + latest.version + ").");
+            return;
+        }
+
+        if (official == null) {
+            String runtimeMessage = installNeeded
+                    ? "O runtime Android para Horizon PC " + latest.upstreamTag
+                        + " foi baixado e verificado; será ativado na próxima abertura do jogo."
+                    : "O runtime Android instalado corresponde à release PC " + latest.upstreamTag + ".";
+            setStatus(preferences, runtimeMessage
+                    + " Não foi possível consultar agora a release oficial mais recente do Horizon.");
+            return;
+        }
+
+        if (!official.tag.equals(latest.upstreamTag)) {
+            String status = "Release oficial " + official.tag
+                    + " detectada, mas o pacote Android ARM64 mais recente publicado é para "
+                    + latest.upstreamTag + ". ";
+            if (installNeeded) {
+                status += "Esse runtime foi baixado e verificado e será ativado na próxima "
+                        + "abertura do jogo. O pacote Android da release oficial mais nova ainda "
+                        + "não está disponível; o aplicativo continuará verificando automaticamente.";
+            } else {
+                status += "O runtime instalado permanece na versão " + latest.upstreamTag
+                        + " até que um pacote Android correspondente à release " + official.tag
+                        + " seja publicado. O aplicativo continuará verificando automaticamente.";
+            }
+            setStatus(preferences, status);
+            return;
+        }
+
+        if (installNeeded) {
+            setStatus(preferences, "Runtime Android verificado para o release oficial "
+                    + official.tag + "; será ativado na próxima inicialização do jogo.");
+        } else {
+            setStatus(preferences, "Horizon está atualizado — release oficial "
+                    + official.tag + " e runtime Android " + latest.version + " instalado.");
+        }
+    }
+
+    private static OfficialRelease latestOfficialRelease() throws Exception {
+        JSONObject release = new JSONObject(readUrl(OFFICIAL_RELEASE_URL, 512 * 1024));
+        String tag = release.optString("tag_name", "");
+        String publishedAt = release.optString("published_at", "");
+        if (release.optBoolean("draft", false) || release.optBoolean("prerelease", false)
+                || !isValidUpstreamTag(tag) || publishedAt.isEmpty()) {
+            throw new IOException("A API do Horizon não retornou uma release estável válida.");
+        }
+        return new OfficialRelease(tag, publishedAt);
     }
 
     private static void installRelease(Context context, SharedPreferences preferences,
@@ -453,6 +540,16 @@ public final class HorizonRuntimeUpdateService {
     private static void setStatus(SharedPreferences preferences, String status) {
         preferences.edit().putString(LAST_STATUS, status).apply();
         Log.i(TAG, status);
+    }
+
+    private static final class OfficialRelease {
+        final String tag;
+        final String publishedAt;
+
+        OfficialRelease(String tag, String publishedAt) {
+            this.tag = tag;
+            this.publishedAt = publishedAt;
+        }
     }
 
     private static final class Release {
