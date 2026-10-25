@@ -309,10 +309,13 @@ public final class MainActivity extends Activity {
         // Horizon-style hero/banner. The pixel backdrop is drawn natively, so it scales
         // cleanly and does not depend on a fixed-resolution desktop screenshot.
         heroPanel = new FrameLayout(this);
-        heroPanel.setBackground(new HorizonPixelBackdrop(this));
+        heroPanel.setBackgroundColor(0xff211744);
         LinearLayout.LayoutParams heroParams = params(-1, landscape ? 226 : 204);
         heroParams.topMargin = dp(8);
         page.addView(heroPanel, heroParams);
+        HorizonPixelBackdrop pixelBackdrop = new HorizonPixelBackdrop(this);
+        heroPanel.addView(pixelBackdrop, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         LinearLayout heroContent = new LinearLayout(this);
         heroContent.setOrientation(LinearLayout.VERTICAL);
