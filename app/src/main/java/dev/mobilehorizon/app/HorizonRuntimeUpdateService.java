@@ -82,7 +82,7 @@ public final class HorizonRuntimeUpdateService {
             return;
         }
         if (latest.version.equals(currentVersion)) {
-            setStatus(preferences, "Horizon está atualizado (" + current.activeVersion + ").");
+            setStatus(preferences, "Horizon está atualizado (" + currentVersion + ").");
             return;
         }
 
