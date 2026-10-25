@@ -335,7 +335,7 @@ jobs:
           mkdir -p "$ASSET_DIR"
           cp "$LIB" "$ASSET_DIR/libhorizon_engine.so"
           ENGINE_SHA256="$(sha256sum "$LIB" | awk '{print $1}')"
-          OVERLAY_SHA="$(cat tools/horizon-revisions.env android-native/Cargo.toml android-native/src/lib.rs tools/patch_horizon_android_touch.py tools/horizon_patches/*.py | sha256sum | awk '{print $1}' | cut -c1-8)"
+          OVERLAY_SHA="$(cat android-native/Cargo.toml android-native/src/lib.rs tools/patch_horizon_android_touch.py tools/horizon_patches/*.py | sha256sum | awk '{print $1}' | cut -c1-8)"
           python3 - "$ASSET_DIR/manifest.json" "$UPSTREAM_COMMIT" "$ENGINE_SHA256" "$OVERLAY_SHA" <<'PYMANIFEST'
           import json, sys
           manifest_path, commit, digest, overlay = sys.argv[1:]
