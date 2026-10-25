@@ -105,7 +105,12 @@ public final class HorizonRuntimeUpdateService {
 
     private static Release latestRuntimeRelease() throws Exception {
         JSONArray releases = new JSONArray(readUrl(RELEASES_URL, 4 * 1024 * 1024));
-        Release latest = null;
+        JSONObject newest = null;
+        String newestVersion = null;
+        String newestDate = "";
+
+        // Pick the newest published runtime release first. If its asset/checksum is broken,
+        // fail closed rather than silently selecting an older runtime and downgrading the engine.
         for (int i = 0; i < releases.length(); i++) {
             JSONObject release = releases.optJSONObject(i);
             if (release == null || release.optBoolean("draft", false)
@@ -117,32 +122,43 @@ public final class HorizonRuntimeUpdateService {
                 Log.w(TAG, "Release de runtime com tag inválida ignorado: " + tag);
                 continue;
             }
-
-            JSONArray assets = release.optJSONArray("assets");
-            if (assets == null) continue;
-            for (int j = 0; j < assets.length(); j++) {
-                JSONObject asset = assets.optJSONObject(j);
-                if (asset == null || !ENGINE_ASSET.equals(asset.optString("name", ""))) continue;
-                String digest = asset.optString("digest", "");
-                if (!digest.matches("(?i)sha256:[0-9a-f]{64}")) {
-                    Log.w(TAG, "Release ignorado porque o GitHub não informou SHA-256: " + tag);
-                    continue;
-                }
-                String url = asset.optString("browser_download_url", "");
-                if (!url.startsWith("https://github.com/Ph04/MobileHorizonNative/releases/download/")) {
-                    Log.w(TAG, "URL de runtime fora do repositório esperado: " + url);
-                    continue;
-                }
-                long size = asset.optLong("size", -1);
-                if (size <= 0 || size > MAX_DOWNLOAD_BYTES) continue;
-                String publishedAt = release.optString("published_at", "");
-                if (latest == null || publishedAt.compareTo(latest.publishedAt) > 0) {
-                    latest = new Release(version, digest.substring("sha256:".length()), url,
-                            size, publishedAt);
-                }
+            String publishedAt = release.optString("published_at", "");
+            if (newest == null || publishedAt.compareTo(newestDate) > 0) {
+                newest = release;
+                newestVersion = version;
+                newestDate = publishedAt;
             }
         }
-        return latest;
+        if (newest == null) return null;
+
+        JSONArray assets = newest.optJSONArray("assets");
+        if (assets == null) throw new IOException("O release mais recente não contém assets.");
+        JSONObject engine = null;
+        for (int i = 0; i < assets.length(); i++) {
+            JSONObject asset = assets.optJSONObject(i);
+            if (asset != null && ENGINE_ASSET.equals(asset.optString("name", ""))) {
+                engine = asset;
+                break;
+            }
+        }
+        if (engine == null) {
+            throw new IOException("O release mais recente não contém " + ENGINE_ASSET + ".");
+        }
+
+        String digest = engine.optString("digest", "");
+        if (!digest.matches("(?i)sha256:[0-9a-f]{64}")) {
+            throw new IOException("O GitHub não forneceu SHA-256 confiável para " + newestVersion + ".");
+        }
+        String url = engine.optString("browser_download_url", "");
+        if (!url.startsWith("https://github.com/Ph04/MobileHorizonNative/releases/download/")) {
+            throw new IOException("URL de runtime fora do repositório esperado.");
+        }
+        long size = engine.optLong("size", -1);
+        if (size <= 0 || size > MAX_DOWNLOAD_BYTES) {
+            throw new IOException("Tamanho inválido no release do runtime " + newestVersion + ".");
+        }
+        return new Release(newestVersion, digest.substring("sha256:".length()), url,
+                size, newestDate);
     }
 
     private static void download(String address, long expectedSize, File destination) throws IOException {
