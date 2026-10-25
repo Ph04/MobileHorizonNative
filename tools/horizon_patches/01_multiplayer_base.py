@@ -89,24 +89,7 @@ replace_once(remote,
 
 # Multiplayer diagnostics: log packet boundaries, custom-item component loss and
 # profile-texture lifecycle without dumping raw payloads, chat, URLs or profile blobs.
-replace_once(net,
-    """fn receive_play(
-""",
-    """fn safe_resource_pack_origin(raw: &str) -> String {
-    let Some((scheme, remainder)) = raw.split_once("://") else {
-        return "<unparsed-url>".to_owned();
-    };
-    // Keep scheme and authority only; never log query strings, paths or userinfo.
-    let authority = remainder
-        .split(|c| c == '/' || c == '?' || c == '#')
-        .next()
-        .unwrap_or("unknown");
-    let host = authority.rsplit('@').next().unwrap_or("unknown");
-    format!("{scheme}://{host}")
-}
-
-fn receive_play(
-""")
+# Native Horizon v0.2.50 owns server resource-pack URL validation and packet routing.
 
 replace_once(net,
     """                let _ = send.send(Event::DecodeError(format!("{name}: {err}")));""",
