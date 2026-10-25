@@ -295,6 +295,7 @@ public final class HorizonRuntimeManager {
             String versionsPath = versions.getCanonicalPath() + File.separator;
             if (!library.getPath().startsWith(versionsPath)) return null;
             verifyEngine(library, sha);
+            makeReadOnly(library);
             return new Active(version, sha, library);
         } catch (Exception error) {
             Log.w(TAG, "Registro de runtime ativo inválido; usando o runtime base.", error);
