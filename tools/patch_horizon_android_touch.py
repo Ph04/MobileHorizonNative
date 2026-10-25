@@ -49,14 +49,8 @@ def replace_once(path: Path, old: str, new: str) -> None:
 # to later groups without duplicating their definitions.
 patch_dir = Path(__file__).resolve().parent / "horizon_patches"
 steps = [
-    "01_multiplayer_base.py",
+    "01_offline_server_login.py",
     "02_android_native.py",
-    "03_server_resource_packs.py",
-    "04_remote_entities_and_text.py",
-    "05_resource_rendering_and_frames.py",
-    "06_resource_diagnostics.py",
-    "07_protocol_maps_and_signs.py",
-
 ]
 context = dict(globals())
 for step in steps:
