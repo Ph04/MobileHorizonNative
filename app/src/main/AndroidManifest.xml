@@ -62,6 +62,10 @@
             android:name=".MicrosoftAuthService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".HorizonRuntimeUpdateForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
     </application>
 </manifest>
