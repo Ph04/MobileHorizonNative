@@ -8,6 +8,8 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.Looper;
+import android.os.Handler;
 import android.os.SystemClock;
 
 /** Keeps Horizon runtime verification/download/install alive while the launcher is backgrounded. */
@@ -21,6 +23,7 @@ public final class HorizonRuntimeUpdateForegroundService extends Service {
 
     private final java.util.concurrent.ExecutorService executor =
             java.util.concurrent.Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private volatile boolean running;
     private volatile long lastNotificationAt;
 
@@ -57,10 +60,15 @@ public final class HorizonRuntimeUpdateForegroundService extends Service {
             String message = "Falha ao verificar atualizações do Horizon: "
                     + (error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage());
             result = new HorizonRuntimeUpdateService.CheckResult(false, false, true, message);
-        } finally {
-            running = false;
         }
+        final HorizonRuntimeUpdateService.CheckResult outcome = result;
+        // Service lifecycle and notification finalization stay on Android's main thread.
+        mainHandler.post(() -> finishCheck(outcome));
+    }
 
+    private void finishCheck(HorizonRuntimeUpdateService.CheckResult result) {
+        running = false;
+        HorizonRuntimeUpdateService.finishUpdate(getApplicationContext());
         Intent finished = new Intent(ACTION_FINISHED).setPackage(getPackageName());
         finished.putExtra("success", result.success);
         finished.putExtra("updated", result.updated);
