@@ -363,7 +363,7 @@ jobs:
       - name: Build and publish isolated updater-test fixture (previous PC release -> pinned PC release)
         if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/horizon-runtime-loader' && github.event.pull_request.head.repo.full_name == github.repository
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -442,70 +442,90 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Run compatibility tests and build debug APK
+      - name: Run compatibility tests and build APK variants
         shell: bash
         env:
-          HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
-          MOBILEHORIZON_KEYSTORE_PASSWORD: ${{ secrets.MOBILEHORIZON_KEYSTORE_PASSWORD }}
-          MOBILEHORIZON_KEY_ALIAS: ${{ secrets.MOBILEHORIZON_KEY_ALIAS }}
-          MOBILEHORIZON_KEY_PASSWORD: ${{ secrets.MOBILEHORIZON_KEY_PASSWORD }}
-          STABLE_SIGNING: ${{ steps.signing.outputs.enabled }}
+          HORIZON_MSA_CLIENT_ID: \${{ vars.HORIZON_MSA_CLIENT_ID }}
+          HORIZON_PC_RELEASE_TAG: \${{ env.HORIZON_PC_RELEASE_TAG }}
+          HORIZON_TEST_OLD_RELEASE_TAG: \${{ env.HORIZON_TEST_OLD_RELEASE_TAG }}
+          MOBILEHORIZON_KEYSTORE_PASSWORD: \${{ secrets.MOBILEHORIZON_KEYSTORE_PASSWORD }}
+          MOBILEHORIZON_KEY_ALIAS: \${{ secrets.MOBILEHORIZON_KEY_ALIAS }}
+          MOBILEHORIZON_KEY_PASSWORD: \${{ secrets.MOBILEHORIZON_KEY_PASSWORD }}
+          STABLE_SIGNING: \${{ steps.signing.outputs.enabled }}
         run: |
           set -euo pipefail
           args=("-PHORIZON_MSA_CLIENT_ID=$HORIZON_MSA_CLIENT_ID")
+          args+=("-PHORIZON_PC_RELEASE_TAG=$HORIZON_PC_RELEASE_TAG")
+          args+=("-PHORIZON_TEST_OLD_RELEASE_TAG=$HORIZON_TEST_OLD_RELEASE_TAG")
           if [[ "$STABLE_SIGNING" == "true" ]]; then
             args+=("-PMOBILEHORIZON_STORE_FILE=$RUNNER_TEMP/mobilehorizon-signing.jks")
             args+=("-PMOBILEHORIZON_STORE_PASSWORD=$MOBILEHORIZON_KEYSTORE_PASSWORD")
             args+=("-PMOBILEHORIZON_KEY_ALIAS=$MOBILEHORIZON_KEY_ALIAS")
             args+=("-PMOBILEHORIZON_KEY_PASSWORD=$MOBILEHORIZON_KEY_PASSWORD")
           fi
-          gradle --no-daemon "${args[@]}" test :app:assembleDebug
+          gradle --no-daemon "\${args[@]}" test :app:assembleStandardDebug :app:assembleUpdaterTestDebug
 
-      - name: Verify the built APK and required runtime payloads
+      - name: Verify standard and updater-test APKs
         shell: bash
         env:
-          STABLE_SIGNING: ${{ steps.signing.outputs.enabled }}
+          STABLE_SIGNING: \${{ steps.signing.outputs.enabled }}
+          HORIZON_PC_RELEASE_TAG: \${{ env.HORIZON_PC_RELEASE_TAG }}
+          HORIZON_TEST_OLD_RELEASE_TAG: \${{ env.HORIZON_TEST_OLD_RELEASE_TAG }}
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
-          unzip -tq "$APK"
-          unzip -l "$APK" > "$RUNNER_TEMP/apk-file-list.txt"
-          grep -Fq 'lib/arm64-v8a/libhorizon_android.so' "$RUNNER_TEMP/apk-file-list.txt"
-          grep -Fq 'assets/horizon-runtime/libhorizon_engine.so' "$RUNNER_TEMP/apk-file-list.txt"
-          grep -Fq 'assets/horizon-runtime/manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
-          grep -Fq 'assets/horizon-prepare/horizon-prepare-arm64' "$RUNNER_TEMP/apk-file-list.txt"
-          grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
-          if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
-            grep -F "name='dev.mobilehorizon.app.offline1' versionCode='14' versionName='0.3.11-offline1'" "$RUNNER_TEMP/apk-badging.txt"
-          else
-            grep -F "name='dev.mobilehorizon.app.offline1.test.v14' versionCode='14' versionName='0.3.11-offline1-test-v14'" "$RUNNER_TEMP/apk-badging.txt"
+          STANDARD_APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
+          TEST_APK="app/build/outputs/apk/updaterTest/debug/app-updaterTest-debug.apk"
+          for APK in "$STANDARD_APK" "$TEST_APK"; do
+            test -s "$APK"
+            unzip -tq "$APK"
+            unzip -l "$APK" > "$RUNNER_TEMP/apk-file-list.txt"
+            grep -Fq 'lib/arm64-v8a/libhorizon_android.so' "$RUNNER_TEMP/apk-file-list.txt"
+            grep -Fq 'assets/horizon-runtime/libhorizon_engine.so' "$RUNNER_TEMP/apk-file-list.txt"
+            grep -Fq 'assets/horizon-runtime/manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
+            grep -Fq 'assets/horizon-prepare/horizon-prepare-arm64' "$RUNNER_TEMP/apk-file-list.txt"
+            grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
+            "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/one-apk-badging.txt"
+            grep -F "name='dev.mobilehorizon.app" "$RUNNER_TEMP/one-apk-badging.txt"
+            grep -F "versionCode='14'" "$RUNNER_TEMP/one-apk-badging.txt"
+            sha256sum "$APK"
+            CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
+            echo "$APK signer certificate SHA-256: $CERT_SHA256"
+          done
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$STANDARD_APK" > "$RUNNER_TEMP/standard-apk-badging.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$TEST_APK" > "$RUNNER_TEMP/test-apk-badging.txt"
+          grep -Eq "versionName='0.3.11.*updater-test" "$RUNNER_TEMP/test-apk-badging.txt"
+          grep -Eq "name='dev\\.mobilehorizon\\.app[^']*updater-test[^']*'" "$RUNNER_TEMP/test-apk-badging.txt"
+          grep -Fq "upstream_tag" app/src/main/assets/horizon-runtime/manifest.json
+          grep -Fq "\\"HORIZON_TEST_OLD_RUNTIME\\", true" app/build/generated/source/buildConfig/updaterTest/debug/dev/mobilehorizon/app/BuildConfig.java
+          if [[ "$STABLE_SIGNING" != "true" ]]; then
+            echo "::warning::APK artifacts use a test signing identity and isolated package IDs; they cannot replace the stable app installation."
+            echo "Standard APK and updater-test APK are isolated test builds because persistent signing secrets are unavailable." >> "$GITHUB_STEP_SUMMARY"
           fi
-          sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
-          CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
-          echo "APK signer certificate SHA-256: $CERT_SHA256"
-          echo "APK signer certificate SHA-256: $CERT_SHA256" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${{ steps.signing.outputs.enabled }}" != "true" ]]; then
-            echo "::warning::APK is test-only and uses a separate application ID because stable signing secrets are missing. It will not overwrite the installed app or share its data."
-            echo "Version-isolated test APK published under dev.mobilehorizon.app.offline1.test.v20; the previous test package and its data remain installed separately. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
-          fi
-          echo "APK is valid, package/version match, and the pinned Horizon ARM64 runtime, Java 25 preparation runtime, official resource manifests, and launcher assets are included."
+          echo "Verified standard APK and updater-test APK. Test sequence: download $HORIZON_TEST_OLD_RELEASE_TAG first, then update to $HORIZON_PC_RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload update-safe APK
+      - name: Upload update-safe standard APK
         if: success() && steps.signing.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: mobilehorizon-native-offline1-update-safe
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/standard/debug/app-standard-debug.apk
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload isolated test APK
+      - name: Upload standard isolated test APK
         if: success() && steps.signing.outputs.enabled != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: mobilehorizon-native-offline1-test-only
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/standard/debug/app-standard-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Horizon updater test APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobilehorizon-native-horizon-updater-test
+          path: app/build/outputs/apk/updaterTest/debug/app-updaterTest-debug.apk
           if-no-files-found: error
           retention-days: 14
