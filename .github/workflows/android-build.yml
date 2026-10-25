@@ -392,6 +392,7 @@ jobs:
           "$TOOLCHAIN/llvm-readelf" -Ws "$OLD_LIB" > "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
           grep -Fq 'ANativeActivity_onCreate' "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
           grep -Fq 'android_main' "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
+          grep -Fq 'Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectCursorMove' "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
 
           FIXTURE_DIR="$RUNNER_TEMP/horizon-runtime-update-test"
           mkdir -p "$FIXTURE_DIR"
@@ -434,7 +435,11 @@ jobs:
           CURRENT_MANIFEST="$FIXTURE_DIR/horizon-runtime-$CURRENT_VERSION-manifest.json"
           NOTES="TEST ONLY: prerelease fixture for MobileHorizonNative's updater test APK. Includes Android engines built from $OLD_TAG and $CURRENT_TAG. Not used by the stable updater."
           if gh release view "$TEST_RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$TEST_RELEASE_TAG" "$OLD_BINARY" "$OLD_MANIFEST" "$CURRENT_BINARY" "$CURRENT_MANIFEST" --clobber
+            while IFS= read -r asset_name; do
+              [[ -z "$asset_name" ]] && continue
+              gh release delete-asset "$TEST_RELEASE_TAG" "$asset_name" --yes
+            done < <(gh release view "$TEST_RELEASE_TAG" --json assets --jq '.assets[].name')
+            gh release upload "$TEST_RELEASE_TAG" "$OLD_BINARY" "$OLD_MANIFEST" "$CURRENT_BINARY" "$CURRENT_MANIFEST"
           else
             gh release create "$TEST_RELEASE_TAG" "$OLD_BINARY" "$OLD_MANIFEST" "$CURRENT_BINARY" "$CURRENT_MANIFEST" --title "TEST ONLY — Horizon runtime updater fixture" --notes "$NOTES" --prerelease
           fi
