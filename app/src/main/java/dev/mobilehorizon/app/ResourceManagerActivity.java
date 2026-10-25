@@ -113,8 +113,7 @@ public final class ResourceManagerActivity extends Activity {
         getWindow().setStatusBarColor(0xff090911);
         getWindow().setNavigationBarColor(0xff090911);
         if (android.os.Build.VERSION.SDK_INT >= 23) {
-            getWindow().getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+            getWindow().getDecorView().setSystemUiVisibility(0);
         }
         buildUi();
         refreshResources();
