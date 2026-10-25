@@ -1,0 +1,256 @@
+name: Publish Android Horizon runtime
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "android-native/Cargo.toml"
+      - "tools/horizon-revisions.env"
+      - "tools/patch_horizon_android_touch.py"
+      - "tools/horizon_patches/**"
+      - ".github/workflows/horizon-runtime-release.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.resolve.outputs.build }}
+      release_exists: ${{ steps.resolve.outputs.release_exists }}
+      upstream_tag: ${{ steps.resolve.outputs.upstream_tag }}
+      upstream_commit: ${{ steps.resolve.outputs.upstream_commit }}
+      runtime_version: ${{ steps.resolve.outputs.runtime_version }}
+      runtime_tag: ${{ steps.resolve.outputs.runtime_tag }}
+      overlay_sha: ${{ steps.resolve.outputs.overlay_sha }}
+    steps:
+      - name: Checkout overlay sources
+        uses: actions/checkout@v4
+
+      - name: Resolve upstream Horizon release and runtime tag
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, urllib.error, urllib.parse, urllib.request
+
+          token = os.environ["GH_TOKEN"]
+          def get_json(url, allow_404=False):
+              request = urllib.request.Request(url, headers={
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "MobileHorizonNative-runtime-release",
+                  "Authorization": "Bearer " + token,
+              })
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.loads(response.read().decode("utf-8"))
+              except urllib.error.HTTPError as error:
+                  if allow_404 and error.code == 404:
+                      return None
+                  raise
+
+          releases = get_json("https://api.github.com/repos/ludovic111/horizon/releases?per_page=100")
+          stable = [
+              release for release in releases
+              if not release.get("draft") and not release.get("prerelease")
+              and len(release.get("tag_name", "")) > 1
+              and release["tag_name"].startswith("v")
+              and release["tag_name"][1].isdigit()
+          ]
+          if not stable:
+              raise SystemExit("No published stable Horizon release was found.")
+          latest = max(stable, key=lambda item: item.get("published_at", ""))
+          upstream_tag = latest["tag_name"]
+          encoded_tag = urllib.parse.quote(upstream_tag, safe="")
+          ref = get_json("https://api.github.com/repos/ludovic111/horizon/git/ref/tags/" + encoded_tag)
+          obj = ref["object"]
+          while obj.get("type") == "tag":
+              obj = get_json("https://api.github.com/repos/ludovic111/horizon/git/tags/" + obj["sha"])["object"]
+          if obj.get("type") != "commit":
+              raise SystemExit("Upstream tag did not resolve to a commit: " + upstream_tag)
+          upstream_commit = obj["sha"]
+
+          overlay_files = [
+              pathlib.Path("tools/horizon-revisions.env"),
+              pathlib.Path("android-native/Cargo.toml"),
+              pathlib.Path("tools/patch_horizon_android_touch.py"),
+          ] + sorted(pathlib.Path("tools/horizon_patches").glob("*.py"))
+          material = b"".join(path.read_bytes() for path in overlay_files)
+          overlay_sha = hashlib.sha256(material).hexdigest()[:8]
+          runtime_version = "horizon-" + upstream_commit[:12] + "-o" + overlay_sha
+          runtime_tag = "horizon-runtime-" + runtime_version
+
+          existing = get_json(
+              "https://api.github.com/repos/Ph04/MobileHorizonNative/releases/tags/"
+              + urllib.parse.quote(runtime_tag, safe=""),
+              allow_404=True,
+          )
+          needed_assets = {"horizon-runtime-arm64-v8a.so", "horizon-runtime-manifest.json"}
+          present_assets = {
+              asset.get("name") for asset in (existing or {}).get("assets", [])
+          }
+          release_exists = existing is not None
+          build = not needed_assets.issubset(present_assets)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"build={'true' if build else 'false'}\n")
+              out.write(f"release_exists={'true' if release_exists else 'false'}\n")
+              out.write(f"upstream_tag={upstream_tag}\n")
+              out.write(f"upstream_commit={upstream_commit}\n")
+              out.write(f"runtime_version={runtime_version}\n")
+              out.write(f"runtime_tag={runtime_tag}\n")
+              out.write(f"overlay_sha={overlay_sha}\n")
+
+          print("Upstream release:", upstream_tag)
+          print("Upstream commit:", upstream_commit)
+          print("Runtime version:", runtime_version)
+          print("Existing release is complete:", not build)
+          PY
+
+  build-runtime:
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout MobileHorizonNative overlay
+        uses: actions/checkout@v4
+
+      - name: Set up Rust for Android ARM64
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;35.0.0"
+
+      - name: Install Android NDK with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          for attempt in 1 2 3 4; do
+            rm -rf "$ANDROID_HOME/temp"
+            if "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "ndk;27.2.12479018"; then
+              break
+            fi
+            if [[ "$attempt" == 4 ]]; then
+              echo "::error::Android NDK installation failed after $attempt attempts."
+              exit 1
+            fi
+            echo "::warning::Android NDK download failed (attempt $attempt); retrying."
+          done
+          test -x "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang"
+
+      - name: Fetch and patch upstream Horizon source
+        id: source
+        env:
+          UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+          UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/horizon-runtime-source"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
+          git -C "$SOURCE" fetch --depth 1 origin "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
+          git -C "$SOURCE" checkout --detach "$UPSTREAM_TAG"
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
+          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py
+          python3 tools/patch_horizon_android_touch.py "$SOURCE"
+          echo "Prepared $UPSTREAM_TAG ($UPSTREAM_COMMIT) with the Android compatibility overlay."
+
+      - name: Test patched platform-neutral Horizon crates
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/horizon-runtime-source"
+          cargo test --manifest-path "$SOURCE/Cargo.toml" -p horizon-mods --lib --no-default-features
+          cargo test --manifest-path "$SOURCE/Cargo.toml" -p horizon-protocol --lib --no-default-features
+          cargo test --manifest-path "$SOURCE/Cargo.toml" -p horizon-client --lib --no-default-features
+
+      - name: Build Horizon engine for Android ARM64
+        env:
+          UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          SOURCE="$RUNNER_TEMP/horizon-runtime-source"
+          cargo build --release --no-default-features --manifest-path "$SOURCE/Cargo.toml" -p mobilehorizon-android --target aarch64-linux-android
+
+          LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_engine.so"
+          test -s "$LIB"
+          "$TOOLCHAIN/llvm-readelf" -h "$LIB" > "$RUNNER_TEMP/engine-header.txt"
+          grep -Fq "AArch64" "$RUNNER_TEMP/engine-header.txt"
+          "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" > "$RUNNER_TEMP/engine-symbols.txt"
+          grep -Fq "ANativeActivity_onCreate" "$RUNNER_TEMP/engine-symbols.txt"
+          grep -Fq "android_main" "$RUNNER_TEMP/engine-symbols.txt"
+          grep -Fq "Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectCursorMove" "$RUNNER_TEMP/engine-symbols.txt"
+
+          RELEASE_DIR="$RUNNER_TEMP/runtime-release"
+          mkdir -p "$RELEASE_DIR"
+          cp "$LIB" "$RELEASE_DIR/horizon-runtime-arm64-v8a.so"
+          ENGINE_SHA256="$(sha256sum "$LIB" | awk '{print $1}')"
+          python3 - "$RELEASE_DIR/horizon-runtime-manifest.json" \
+            "$UPSTREAM_COMMIT" "${{ needs.resolve.outputs.runtime_version }}" \
+            "${{ needs.resolve.outputs.overlay_sha }}" "$ENGINE_SHA256" <<'PYMANIFEST'
+          import json, sys
+          path, commit, version, overlay, digest = sys.argv[1:]
+          manifest = {
+              "format": 1,
+              "version": version,
+              "upstream_commit": commit,
+              "overlay": overlay,
+              "abi": "arm64-v8a",
+              "library": "horizon-runtime-arm64-v8a.so",
+              "sha256": digest.lower(),
+          }
+          with open(path, "w", encoding="utf-8") as stream:
+              json.dump(manifest, stream, indent=2)
+              stream.write("\n")
+          print(f"Runtime manifest: {version}, SHA-256 {digest}")
+          PYMANIFEST
+
+      - name: Publish versioned Horizon runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNTIME_TAG: ${{ needs.resolve.outputs.runtime_tag }}
+          RUNTIME_VERSION: ${{ needs.resolve.outputs.runtime_version }}
+          RELEASE_EXISTS: ${{ needs.resolve.outputs.release_exists }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_DIR="$RUNNER_TEMP/runtime-release"
+          NOTES="Android ARM64 Horizon engine built from the upstream stable release and the MobileHorizonNative compatibility overlay. SHA-256 is exposed by the GitHub release asset metadata; install is staged for the next app launch. This release is not an APK."
+          if [[ "$RELEASE_EXISTS" == "true" ]]; then
+            gh release upload "$RUNTIME_TAG" \
+              "$RELEASE_DIR/horizon-runtime-arm64-v8a.so" \
+              "$RELEASE_DIR/horizon-runtime-manifest.json" --clobber
+          else
+            gh release create "$RUNTIME_TAG" \
+              "$RELEASE_DIR/horizon-runtime-arm64-v8a.so" \
+              "$RELEASE_DIR/horizon-runtime-manifest.json" \
+              --title "$RUNTIME_VERSION" --notes "$NOTES"
+          fi
+          echo "Published Android runtime release $RUNTIME_TAG."
