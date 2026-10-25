@@ -445,13 +445,13 @@ jobs:
       - name: Run compatibility tests and build APK variants
         shell: bash
         env:
-          HORIZON_MSA_CLIENT_ID: \${{ vars.HORIZON_MSA_CLIENT_ID }}
-          HORIZON_PC_RELEASE_TAG: \${{ env.HORIZON_PC_RELEASE_TAG }}
-          HORIZON_TEST_OLD_RELEASE_TAG: \${{ env.HORIZON_TEST_OLD_RELEASE_TAG }}
-          MOBILEHORIZON_KEYSTORE_PASSWORD: \${{ secrets.MOBILEHORIZON_KEYSTORE_PASSWORD }}
-          MOBILEHORIZON_KEY_ALIAS: \${{ secrets.MOBILEHORIZON_KEY_ALIAS }}
-          MOBILEHORIZON_KEY_PASSWORD: \${{ secrets.MOBILEHORIZON_KEY_PASSWORD }}
-          STABLE_SIGNING: \${{ steps.signing.outputs.enabled }}
+          HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
+          HORIZON_PC_RELEASE_TAG: ${{ env.HORIZON_PC_RELEASE_TAG }}
+          HORIZON_TEST_OLD_RELEASE_TAG: ${{ env.HORIZON_TEST_OLD_RELEASE_TAG }}
+          MOBILEHORIZON_KEYSTORE_PASSWORD: ${{ secrets.MOBILEHORIZON_KEYSTORE_PASSWORD }}
+          MOBILEHORIZON_KEY_ALIAS: ${{ secrets.MOBILEHORIZON_KEY_ALIAS }}
+          MOBILEHORIZON_KEY_PASSWORD: ${{ secrets.MOBILEHORIZON_KEY_PASSWORD }}
+          STABLE_SIGNING: ${{ steps.signing.outputs.enabled }}
         run: |
           set -euo pipefail
           args=("-PHORIZON_MSA_CLIENT_ID=$HORIZON_MSA_CLIENT_ID")
@@ -463,14 +463,14 @@ jobs:
             args+=("-PMOBILEHORIZON_KEY_ALIAS=$MOBILEHORIZON_KEY_ALIAS")
             args+=("-PMOBILEHORIZON_KEY_PASSWORD=$MOBILEHORIZON_KEY_PASSWORD")
           fi
-          gradle --no-daemon "\${args[@]}" test :app:assembleStandardDebug :app:assembleUpdaterTestDebug
+          gradle --no-daemon "${args[@]}" test :app:assembleStandardDebug :app:assembleUpdaterTestDebug
 
       - name: Verify standard and updater-test APKs
         shell: bash
         env:
-          STABLE_SIGNING: \${{ steps.signing.outputs.enabled }}
-          HORIZON_PC_RELEASE_TAG: \${{ env.HORIZON_PC_RELEASE_TAG }}
-          HORIZON_TEST_OLD_RELEASE_TAG: \${{ env.HORIZON_TEST_OLD_RELEASE_TAG }}
+          STABLE_SIGNING: ${{ steps.signing.outputs.enabled }}
+          HORIZON_PC_RELEASE_TAG: ${{ env.HORIZON_PC_RELEASE_TAG }}
+          HORIZON_TEST_OLD_RELEASE_TAG: ${{ env.HORIZON_TEST_OLD_RELEASE_TAG }}
         run: |
           set -euo pipefail
           STANDARD_APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
