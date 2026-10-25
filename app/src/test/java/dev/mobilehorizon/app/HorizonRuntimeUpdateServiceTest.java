@@ -43,6 +43,17 @@ public final class HorizonRuntimeUpdateServiceTest {
     }
 
     @Test
+    public void onlyTreatsRuntimeForExactOfficialTagAsCurrent() {
+        String runtimeV266 = "horizon-v0.2.66-c1234abcd-o89abcdef";
+        String runtimeV265 = "horizon-v0.2.65-c1234abc0-o89abcdef";
+
+        assertTrue(HorizonRuntimeUpdateService.runtimeVersionMatchesRelease(runtimeV266, "v0.2.66"));
+        assertFalse(HorizonRuntimeUpdateService.runtimeVersionMatchesRelease(runtimeV265, "v0.2.66"));
+        assertFalse(HorizonRuntimeUpdateService.runtimeVersionMatchesRelease(runtimeV266, "v0.2.65"));
+        assertFalse(HorizonRuntimeUpdateService.runtimeVersionMatchesRelease(runtimeV266, "not-a-release"));
+    }
+
+    @Test
     public void comparesPublicationTimeInsteadOfDifferentTagSchemes() {
         String olderSemanticRelease = "2026-10-25T07:15:00Z";
         String newerDateRelease = "2026-10-25T13:47:23Z";
