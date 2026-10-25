@@ -397,16 +397,15 @@ jobs:
           mkdir -p "$FIXTURE_DIR"
           CURRENT_LIB="app/src/main/assets/horizon-runtime/libhorizon_engine.so"
           CURRENT_COMMIT="$HORIZON_RUNTIME_COMMIT"
-          cp "$CURRENT_LIB" "$FIXTURE_DIR/horizon-runtime-$CURRENT_TAG-arm64-v8a.so"
-          cp "$OLD_LIB" "$FIXTURE_DIR/horizon-runtime-$OLD_TAG-arm64-v8a.so"
           CURRENT_SHA="$(sha256sum "$CURRENT_LIB" | awk '{print $1}')"
           OLD_SHA="$(sha256sum "$OLD_LIB" | awk '{print $1}')"
-          python3 - "$FIXTURE_DIR" "$OLD_TAG" "$OLD_COMMIT" "$OVERLAY_SHA" "$OLD_SHA" "$CURRENT_TAG" "$CURRENT_COMMIT" "$CURRENT_SHA" <<'PYFIXTURE'
-          import json, pathlib, sys
-          out_dir, old_tag, old_commit, overlay, old_sha, current_tag, current_commit, current_sha = sys.argv[1:]
-          def write_manifest(tag, commit, digest):
-              binary = f"horizon-runtime-{tag}-arm64-v8a.so"
+          python3 - "$FIXTURE_DIR" "$OLD_TAG" "$OLD_COMMIT" "$OVERLAY_SHA" "$OLD_SHA" "$OLD_LIB" "$CURRENT_TAG" "$CURRENT_COMMIT" "$CURRENT_SHA" "$CURRENT_LIB" <<'PYFIXTURE'
+          import json, pathlib, shutil, sys
+          out_dir, old_tag, old_commit, overlay, old_sha, old_lib, current_tag, current_commit, current_sha, current_lib = sys.argv[1:]
+          def write_manifest(tag, commit, digest, source_library):
               version = f"horizon-{tag}-c{commit[:8]}-o{overlay}"
+              binary = f"horizon-runtime-{version}-arm64-v8a.so"
+              shutil.copy2(source_library, pathlib.Path(out_dir) / binary)
               data = {
                   "format": 1,
                   "version": version,
@@ -417,18 +416,22 @@ jobs:
                   "library": binary,
                   "sha256": digest.lower(),
               }
-              path = pathlib.Path(out_dir) / f"horizon-runtime-{tag}-manifest.json"
+              path = pathlib.Path(out_dir) / f"horizon-runtime-{version}-manifest.json"
               path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
               print(f"Prepared test updater fixture: {tag} {version} SHA-256 {digest}")
-          write_manifest(old_tag, old_commit, old_sha)
-          write_manifest(current_tag, current_commit, current_sha)
+          write_manifest(old_tag, old_commit, old_sha, old_lib)
+          write_manifest(current_tag, current_commit, current_sha, current_lib)
           PYFIXTURE
 
           TEST_RELEASE_TAG="horizon-runtime-update-test"
-          OLD_BINARY="$FIXTURE_DIR/horizon-runtime-$OLD_TAG-arm64-v8a.so"
-          OLD_MANIFEST="$FIXTURE_DIR/horizon-runtime-$OLD_TAG-manifest.json"
-          CURRENT_BINARY="$FIXTURE_DIR/horizon-runtime-$CURRENT_TAG-arm64-v8a.so"
-          CURRENT_MANIFEST="$FIXTURE_DIR/horizon-runtime-$CURRENT_TAG-manifest.json"
+          OLD_SHORT="$(printf %.8s "$OLD_COMMIT")"
+          CURRENT_SHORT="$(printf %.8s "$CURRENT_COMMIT")"
+          OLD_VERSION="horizon-$OLD_TAG-c$OLD_SHORT-o$OVERLAY_SHA"
+          CURRENT_VERSION="horizon-$CURRENT_TAG-c$CURRENT_SHORT-o$OVERLAY_SHA"
+          OLD_BINARY="$FIXTURE_DIR/horizon-runtime-$OLD_VERSION-arm64-v8a.so"
+          OLD_MANIFEST="$FIXTURE_DIR/horizon-runtime-$OLD_VERSION-manifest.json"
+          CURRENT_BINARY="$FIXTURE_DIR/horizon-runtime-$CURRENT_VERSION-arm64-v8a.so"
+          CURRENT_MANIFEST="$FIXTURE_DIR/horizon-runtime-$CURRENT_VERSION-manifest.json"
           NOTES="TEST ONLY: prerelease fixture for MobileHorizonNative's updater test APK. Includes Android engines built from $OLD_TAG and $CURRENT_TAG. Not used by the stable updater."
           if gh release view "$TEST_RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$TEST_RELEASE_TAG" "$OLD_BINARY" "$OLD_MANIFEST" "$CURRENT_BINARY" "$CURRENT_MANIFEST" --clobber
