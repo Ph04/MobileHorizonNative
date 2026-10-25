@@ -1,5 +1,10 @@
 name: Publish Android Horizon runtime
 
+# Prevent two publication runs from resolving "missing" for the same tag and racing at upload.
+concurrency:
+  group: horizon-runtime-artifact-build
+  cancel-in-progress: false
+
 on:
   schedule:
     - cron: "17 * * * *"
@@ -384,10 +389,20 @@ jobs:
             gh release upload "$RUNTIME_TAG" \
               "$RELEASE_DIR/horizon-runtime-arm64-v8a.so" \
               "$RELEASE_DIR/horizon-runtime-manifest.json" --clobber
-          else
-            gh release create "$RUNTIME_TAG" \
+          elif gh release create "$RUNTIME_TAG" \
               "$RELEASE_DIR/horizon-runtime-arm64-v8a.so" \
               "$RELEASE_DIR/horizon-runtime-manifest.json" \
-              --title "$RUNTIME_VERSION" --notes "$NOTES"
+              --title "$RUNTIME_VERSION" --notes "$NOTES"; then
+            echo "Created Android runtime release $RUNTIME_TAG."
+          elif gh release view "$RUNTIME_TAG" >/dev/null 2>&1; then
+            # A publication may have completed after the resolver checked for the tag.
+            # Recover the race by reconciling assets with the just-verified engine build.
+            echo "Runtime tag appeared during publication; reconciling its verified assets."
+            gh release upload "$RUNTIME_TAG" \
+              "$RELEASE_DIR/horizon-runtime-arm64-v8a.so" \
+              "$RELEASE_DIR/horizon-runtime-manifest.json" --clobber
+          else
+            echo "::error::Runtime release publication failed for $RUNTIME_TAG."
+            exit 1
           fi
           echo "Published Android runtime release $RUNTIME_TAG."
