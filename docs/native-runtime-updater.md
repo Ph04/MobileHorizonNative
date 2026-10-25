@@ -27,6 +27,10 @@ A release publisher must produce the manifest and binary from the same build. Th
 - The APK-provided engine is always retained as the fallback. If loading a selected engine fails and the baseline loads instead, the next launch resets selection to the bundled baseline.
 - Previous version directories are retained so a future updater/UI can offer rollback and cleanup.
 
+## Optional compatibility scope
+
+The default native engine now applies only the Android integration patch and a small offline/hybrid login patch. The experimental server visual/resource compatibility patches remain in the repository but are not compiled into this default engine. This avoids forcing unfinished server-side rendering/protocol changes on normal local startup. See `tools/horizon_patches/README.md` for the active and paused patch list.
+
 ## What is implemented in this branch
 
 - `HorizonRuntimeUpdateService` checks the project's runtime releases when the app is resumed and periodically while the home screen stays visible; a manual check button is available.
