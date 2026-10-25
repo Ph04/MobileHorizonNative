@@ -83,6 +83,8 @@ public final class MainActivity extends Activity {
     private TextView compatibilityText;
     private TextView progressDetails;
     private TextView runtimeUpdateText;
+    private ProgressBar runtimeUpdateProgressBar;
+    private TextView runtimeUpdateProgressDetails;
     private TextView runtimePcReleaseText;
     private TextView runtimeOfficialReleaseText;
     private Button runtimeUpdateButton;
@@ -144,7 +146,9 @@ public final class MainActivity extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
-            if (OfficialDownloadService.ACTION_PROGRESS.equals(intent.getAction())) {
+            if (HorizonRuntimeUpdateService.ACTION_PROGRESS.equals(intent.getAction())) {
+                handleRuntimeUpdateProgress(intent);
+            } else if (OfficialDownloadService.ACTION_PROGRESS.equals(intent.getAction())) {
                 handleDownloadProgress(intent);
             } else if (OfficialDownloadService.ACTION_FINISHED.equals(intent.getAction())) {
                 handleDownloadFinished(intent);
@@ -201,6 +205,7 @@ public final class MainActivity extends Activity {
     protected void onStart() {
         super.onStart();
         IntentFilter filter = new IntentFilter();
+        filter.addAction(HorizonRuntimeUpdateService.ACTION_PROGRESS);
         filter.addAction(OfficialDownloadService.ACTION_PROGRESS);
         filter.addAction(OfficialDownloadService.ACTION_FINISHED);
         filter.addAction(ResourcePreparationService.ACTION_PROGRESS);
@@ -237,6 +242,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        refreshRuntimeUpdateStatus();
         HorizonRuntimeUpdateService.checkInBackground(this, () -> {
             refreshRuntimeUpdateStatus();
             updateActionEnablement();
@@ -288,9 +294,11 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshRuntimeUpdateStatus() {
-        if (runtimeUpdateText != null) {
-            runtimeUpdateText.setText(HorizonRuntimeUpdateService.lastStatus(this));
-        }
+        boolean active = HorizonRuntimeUpdateService.isProgressActive(this);
+        renderRuntimeUpdateProgress(active, HorizonRuntimeUpdateService.lastStatus(this),
+                HorizonRuntimeUpdateService.progressPhase(this),
+                HorizonRuntimeUpdateService.progressBytes(this),
+                HorizonRuntimeUpdateService.progressTotal(this));
         if (runtimePcReleaseText != null) {
             runtimePcReleaseText.setText("Release de PC acompanhada: "
                     + HorizonRuntimeUpdateService.pcReleaseLabel(this));
@@ -303,13 +311,70 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
     }
 
+    private void handleRuntimeUpdateProgress(Intent intent) {
+        boolean active = intent.getBooleanExtra("active", false);
+        if (!active) {
+            refreshRuntimeUpdateStatus();
+            return;
+        }
+        renderRuntimeUpdateProgress(true, intent.getStringExtra("message"),
+                intent.getStringExtra("phase"), intent.getLongExtra("bytes", 0L),
+                intent.getLongExtra("total", -1L));
+        refreshRuntimeActionButton();
+    }
+
+    private void renderRuntimeUpdateProgress(boolean active, String message, String phase,
+                                             long bytes, long total) {
+        if (runtimeUpdateText != null && message != null && !message.trim().isEmpty()) {
+            runtimeUpdateText.setText(message);
+        }
+        if (runtimeUpdateProgressBar != null) {
+            runtimeUpdateProgressBar.setVisibility(active ? View.VISIBLE : View.GONE);
+            boolean verifying = phase != null && phase.startsWith("verify");
+            runtimeUpdateProgressBar.setIndeterminate(active && (total <= 0L || verifying));
+            if (active && total > 0L && !verifying) {
+                runtimeUpdateProgressBar.setProgress((int) Math.max(0L,
+                        Math.min(1000L, bytes * 1000L / total)));
+            }
+        }
+        if (runtimeUpdateProgressDetails != null) {
+            runtimeUpdateProgressDetails.setVisibility(active ? View.VISIBLE : View.GONE);
+            if (active) {
+                boolean verifying = phase != null && phase.startsWith("verify");
+                if (verifying) {
+                    runtimeUpdateProgressDetails.setText("Verificando a integridade do arquivo baixado…");
+                } else if (total > 0L) {
+                    int percent = (int) Math.max(0L, Math.min(100L, bytes * 100L / total));
+                    runtimeUpdateProgressDetails.setText("Transferido: " + formatBytes(bytes) + " de "
+                            + formatBytes(total) + "  •  " + percent + "%");
+                } else if ("checking-official".equals(phase)) {
+                    runtimeUpdateProgressDetails.setText("Consultando a versão oficial do Horizon…");
+                } else if ("checking-runtime".equals(phase)) {
+                    runtimeUpdateProgressDetails.setText("Procurando a runtime Android publicada…");
+                } else if ("runtime-install".equals(phase)) {
+                    runtimeUpdateProgressDetails.setText("Ativando a versão verificada…");
+                } else {
+                    runtimeUpdateProgressDetails.setText("Conectando aos servidores de atualização…");
+                }
+            } else {
+                runtimeUpdateProgressDetails.setText("");
+            }
+        }
+    }
+
     private void refreshRuntimeActionButton() {
         if (runtimeUpdateButton == null) return;
-        if (runtimeUpdateRequestBusy) {
-            runtimeUpdateButton.setText(HorizonRuntimeManager.hasActiveRuntimeMarker(this)
-                    ? "Verificando atualizações…" : "Baixando runtime…");
+        boolean installed = HorizonRuntimeManager.hasActiveRuntimeMarker(this);
+        boolean progressActive = HorizonRuntimeUpdateService.isProgressActive(this);
+        String phase = HorizonRuntimeUpdateService.progressPhase(this);
+        if (runtimeUpdateRequestBusy || progressActive) {
+            boolean downloading = phase != null && (phase.contains("download")
+                    || phase.contains("manifest") || phase.contains("install"));
+            runtimeUpdateButton.setText(downloading
+                    ? (installed ? "Atualizando runtime…" : "Baixando runtime…")
+                    : "Verificando atualizações…");
         } else {
-            runtimeUpdateButton.setText(HorizonRuntimeManager.hasActiveRuntimeMarker(this)
+            runtimeUpdateButton.setText(installed
                     ? "Verificar atualizações" : "Baixar runtime mais recente");
         }
     }
@@ -541,6 +606,24 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams runtimeUpdateTextParams = params(-1, -2);
         runtimeUpdateTextParams.topMargin = dp(5);
         runtimeCard.addView(runtimeUpdateText, runtimeUpdateTextParams);
+
+        runtimeUpdateProgressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        runtimeUpdateProgressBar.setMax(1000);
+        runtimeUpdateProgressBar.setProgressTintList(
+                android.content.res.ColorStateList.valueOf(0xff8e63ff));
+        runtimeUpdateProgressBar.setProgressBackgroundTintList(
+                android.content.res.ColorStateList.valueOf(0xff302a43));
+        runtimeUpdateProgressBar.setVisibility(View.GONE);
+        LinearLayout.LayoutParams runtimeProgressParams = params(-1, 6);
+        runtimeProgressParams.topMargin = dp(8);
+        runtimeCard.addView(runtimeUpdateProgressBar, runtimeProgressParams);
+
+        runtimeUpdateProgressDetails = text("", 11, 0xffc5aaff, false);
+        LinearLayout.LayoutParams runtimeProgressDetailsParams = params(-1, -2);
+        runtimeProgressDetailsParams.topMargin = dp(4);
+        runtimeUpdateProgressDetails.setVisibility(View.GONE);
+        runtimeCard.addView(runtimeUpdateProgressDetails, runtimeProgressDetailsParams);
+
         runtimeUpdateButton = button(
                 HorizonRuntimeManager.hasActiveRuntimeMarker(this)
                         ? "Verificar atualizações" : "Baixar runtime mais recente",
@@ -558,7 +641,8 @@ public final class MainActivity extends Activity {
                 v -> startOfficialDownload(false));
         downloadAssetsButton = button("Baixar base + todos os assets", false,
                 v -> confirmFullAssetDownload());
-        addButtonPair(setup, downloadBaseButton, downloadAssetsButton, 46, 10);
+        addSpaced(setup, downloadBaseButton, 46, 7);
+        addSpaced(setup, downloadAssetsButton, 46, 12);
 
         TextView conversionTitle = text("Preparar recursos para jogar", 14, 0xffeee9ff, true);
         addSpaced(setup, conversionTitle, -2, 13);
@@ -581,7 +665,8 @@ public final class MainActivity extends Activity {
         addSpaced(resourcesSection, resourcesManagerButton, 44, 9);
         importFolderButton = button("Importar pasta preparada", false, v -> chooseFolder());
         importZipButton = button("Importar ZIP preparado", false, v -> chooseZip());
-        addButtonPair(resourcesSection, importFolderButton, importZipButton, 44, 7);
+        addSpaced(resourcesSection, importFolderButton, 44, 6);
+        addSpaced(resourcesSection, importZipButton, 44, 6);
 
         LinearLayout accountSection = collapsibleSection(page, "Contas",
                 "Conta Microsoft opcional; o perfil offline continua disponível.", false);
@@ -1175,6 +1260,7 @@ public final class MainActivity extends Activity {
 
     private void handleDownloadProgress(Intent intent) {
         downloadBusy = true;
+        progressBar.setVisibility(View.VISIBLE);
         updateActionEnablement();
         String stage = intent.getStringExtra("stage");
         String item = intent.getStringExtra("item");
