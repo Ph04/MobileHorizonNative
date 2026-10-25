@@ -230,6 +230,8 @@ public final class MainActivity extends Activity {
         filter.addAction(MicrosoftAuthService.ACTION_PROGRESS);
         filter.addAction(MicrosoftAuthService.ACTION_DEVICE_CODE);
         filter.addAction(MicrosoftAuthService.ACTION_FINISHED);
+        filter.addAction(HorizonRuntimeUpdateForegroundService.ACTION_PROGRESS);
+        filter.addAction(HorizonRuntimeUpdateForegroundService.ACTION_FINISHED);
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
