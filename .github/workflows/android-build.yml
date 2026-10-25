@@ -41,7 +41,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android:
@@ -292,6 +292,9 @@ jobs:
           # horizon-client feature selection and uses Android's native audio backend.
           source tools/horizon-revisions.env
           UPSTREAM_COMMIT="$HORIZON_RUNTIME_COMMIT"
+          UPSTREAM_TAG="$HORIZON_RUNTIME_RELEASE_TAG"
+          echo "HORIZON_PC_RELEASE_TAG=$HORIZON_RUNTIME_RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "HORIZON_TEST_OLD_RELEASE_TAG=$HORIZON_TEST_OLD_RELEASE_TAG" >> "$GITHUB_ENV"
           SOURCE="$RUNNER_TEMP/horizon-native-upstream"
           git init "$SOURCE"
           git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
@@ -336,14 +339,16 @@ jobs:
           cp "$LIB" "$ASSET_DIR/libhorizon_engine.so"
           ENGINE_SHA256="$(sha256sum "$LIB" | awk '{print $1}')"
           OVERLAY_SHA="$(cat android-native/Cargo.toml android-native/src/lib.rs tools/patch_horizon_android_touch.py tools/horizon_patches/01_offline_server_login.py tools/horizon_patches/02_android_native.py | sha256sum | awk '{print $1}' | cut -c1-8)"
-          python3 - "$ASSET_DIR/manifest.json" "$UPSTREAM_COMMIT" "$ENGINE_SHA256" "$OVERLAY_SHA" <<'PYMANIFEST'
+          python3 - "$ASSET_DIR/manifest.json" "$UPSTREAM_COMMIT" "$UPSTREAM_TAG" "$ENGINE_SHA256" "$OVERLAY_SHA" <<'PYMANIFEST'
           import json, sys
-          manifest_path, commit, digest, overlay = sys.argv[1:]
+          manifest_path, commit, upstream_tag, digest, overlay = sys.argv[1:]
           manifest = {
               "format": 1,
-              "version": "horizon-" + commit[:12] + "-o" + overlay,
+              "version": "horizon-" + upstream_tag + "-c" + commit[:8] + "-o" + overlay,
+              "upstream_tag": upstream_tag,
               "commit": commit,
               "overlay": overlay,
+              "abi": "arm64-v8a",
               "library": "libhorizon_engine.so",
               "sha256": digest.lower(),
           }
