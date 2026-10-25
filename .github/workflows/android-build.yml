@@ -498,7 +498,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$STANDARD_APK" > "$RUNNER_TEMP/standard-apk-badging.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$TEST_APK" > "$RUNNER_TEMP/test-apk-badging.txt"
           grep -Eq "versionName='0.3.11.*updater-test" "$RUNNER_TEMP/test-apk-badging.txt"
-          grep -Eq "name='dev\\.mobilehorizon\\.app[^']*updater-test[^']*'" "$RUNNER_TEMP/test-apk-badging.txt"
+          grep -Eq "name='dev\\.mobilehorizon\\.app[^']*updatertest[^']*'" "$RUNNER_TEMP/test-apk-badging.txt"
           grep -Fq "upstream_tag" app/src/main/assets/horizon-runtime/manifest.json
           grep -Fq "HORIZON_TEST_OLD_RUNTIME = true" app/build/generated/source/buildConfig/updaterTest/debug/dev/mobilehorizon/app/BuildConfig.java
           if [[ "$STABLE_SIGNING" != "true" ]]; then
