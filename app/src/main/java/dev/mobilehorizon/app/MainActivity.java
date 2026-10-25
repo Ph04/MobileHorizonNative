@@ -83,6 +83,7 @@ public final class MainActivity extends Activity {
     private TextView runtimePcReleaseText;
     private TextView runtimeOfficialReleaseText;
     private Button runtimeUpdateButton;
+    private boolean runtimeUpdateRequestBusy;
     private Button viewLogsButton;
     private ScrollView dashboardScroll;
     private FrameLayout heroPanel;
@@ -289,7 +290,35 @@ public final class MainActivity extends Activity {
             runtimeOfficialReleaseText.setText(
                     HorizonRuntimeUpdateService.latestOfficialReleaseLabel(this));
         }
+        refreshRuntimeActionButton();
         updateActionEnablement();
+    }
+
+    private void refreshRuntimeActionButton() {
+        if (runtimeUpdateButton == null) return;
+        if (runtimeUpdateRequestBusy) {
+            runtimeUpdateButton.setText(HorizonRuntimeManager.hasActiveRuntimeMarker(this)
+                    ? "Verificando atualizações…" : "Baixando runtime…");
+        } else {
+            runtimeUpdateButton.setText(HorizonRuntimeManager.hasActiveRuntimeMarker(this)
+                    ? "Verificar atualizações" : "Baixar runtime mais recente");
+        }
+    }
+
+    private void startRuntimeUpdateAction() {
+        if (runtimeUpdateRequestBusy || isFinishing() || isDestroyed()) return;
+        runtimeUpdateRequestBusy = true;
+        boolean installed = HorizonRuntimeManager.hasActiveRuntimeMarker(this);
+        runtimeUpdateText.setText(installed
+                ? "Verificando se existe uma runtime Horizon mais recente…"
+                : "Baixando e verificando a runtime Android ARM64 mais recente…");
+        refreshRuntimeActionButton();
+        updateActionEnablement();
+        HorizonRuntimeUpdateService.checkNow(this, () -> {
+            runtimeUpdateRequestBusy = false;
+            refreshRuntimeUpdateStatus();
+            updateActionEnablement();
+        });
     }
 
     private void buildUi() {
@@ -484,15 +513,11 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams runtimeUpdateTextParams = params(-1, -2);
         runtimeUpdateTextParams.topMargin = dp(5);
         runtimeCard.addView(runtimeUpdateText, runtimeUpdateTextParams);
-        runtimeUpdateButton = button("Verificar atualizações", false, v -> {
-            runtimeUpdateButton.setEnabled(false);
-            runtimeUpdateText.setText("Verificando a versão mais recente do Horizon...");
-            HorizonRuntimeUpdateService.checkNow(this, () -> {
-                refreshRuntimeUpdateStatus();
-                runtimeUpdateButton.setEnabled(true);
-                updateActionEnablement();
-            });
-        });
+        runtimeUpdateButton = button(
+                HorizonRuntimeManager.hasActiveRuntimeMarker(this)
+                        ? "Verificar atualizações" : "Baixar runtime mais recente",
+                false, v -> startRuntimeUpdateAction());
+        refreshRuntimeActionButton();
         addSpaced(runtimeCard, runtimeUpdateButton, 40, 8);
 
         downloadSectionView = collapsibleSection(page, "Downloads e preparação",
@@ -2264,7 +2289,7 @@ public final class MainActivity extends Activity {
     private void updateActionEnablement() {
         boolean runtimeAvailable = HorizonRuntimeManager.hasActiveRuntimeMarker(this);
         boolean blocked = busy || conversionBusy || downloadBusy || authBusy || launchBusy
-                || diagnosticsBusy || runtimeInstallBusy;
+                || diagnosticsBusy || runtimeInstallBusy || runtimeUpdateRequestBusy;
         if (importFolderButton != null) importFolderButton.setEnabled(!blocked);
         if (importZipButton != null) importZipButton.setEnabled(!blocked);
         if (downloadBaseButton != null) downloadBaseButton.setEnabled(!blocked);
@@ -2279,6 +2304,11 @@ public final class MainActivity extends Activity {
                 && getSharedPreferences("microsoft_account_state", MODE_PRIVATE).getBoolean("hasAccount", false));
         if (offlineNameButton != null) offlineNameButton.setEnabled(!blocked);
         if (offlinePlayButton != null) offlinePlayButton.setEnabled(!blocked && runtimeAvailable);
+        if (runtimeUpdateButton != null) {
+            refreshRuntimeActionButton();
+            runtimeUpdateButton.setEnabled(!blocked);
+            runtimeUpdateButton.setAlpha(blocked ? 0.55f : 1f);
+        }
         if (cancelButton != null) {
             boolean cancellable = busy || conversionBusy || authBusy;
             cancelButton.setVisibility(cancellable ? View.VISIBLE : View.GONE);
