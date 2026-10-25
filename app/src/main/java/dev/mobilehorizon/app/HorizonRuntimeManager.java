@@ -150,6 +150,7 @@ public final class HorizonRuntimeManager {
         if (target.isFile()) {
             try {
                 verifyEngine(target, sha);
+                makeReadOnly(target);
             } catch (IOException wrongExistingBuild) {
                 throw new IOException("Já existe outra biblioteca para a versão " + safeVersion
                         + "; use uma versão/commit único para cada binário.", wrongExistingBuild);
