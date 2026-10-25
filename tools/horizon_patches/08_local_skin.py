@@ -19,10 +19,40 @@ replace_once(remote,
             Some((format!("mobilehorizon/local-skin/{hash}"), rgba))
         });
         let (location, rgba) = selected.as_ref()?;
-        if !self.show_skin(location) {
-            self.store_skin(location.clone(), rgba.clone());
+        if self.show_skin(location) {
+            return Some(location.clone());
         }
+        self.store_skin(location.clone(), rgba.clone());
         self.show_skin(location).then(|| location.clone())
+    }
+
+    /// Applies the selected skin on every world tick, even when the tab list is closed.
+    /// It also covers the inventory's local player preview when no remote profile exists.
+    pub(super) fn apply_mobilehorizon_local_skin(&mut self) {
+        let Some(skin) = self.mobilehorizon_local_skin() else {
+            return;
+        };
+        if let Some(model) = self.player_model.as_mut() {
+            model.skin = Some(skin.clone());
+        }
+        let Some(local) = self.remote.as_ref().map(|remote| remote.profile) else {
+            return;
+        };
+        let local_ids = self.remote.as_ref().map(|remote| {
+            remote.level_players.iter()
+                .filter_map(|(id, uuid)| (*uuid == local).then_some(*id as u32))
+                .collect::<Vec<_>>()
+        }).unwrap_or_default();
+        if let Some(remote) = self.remote.as_mut() {
+            remote.skins.insert(local, skin.clone());
+        }
+        for id in local_ids {
+            if let Some(mob) = self.mobs.iter_mut()
+                .find(|mob| mob.id == id && &*mob.kind.id == "minecraft:player")
+            {
+                mob.skin = Some(skin.clone());
+            }
+        }
     }
 
     fn update_remote_skins(&mut self) {
@@ -37,4 +67,14 @@ replace_once(remote,
             resolved.push((local, local_skin));
         }
         resolved.retain(|(_, skin)| !skin.starts_with("skins/") || self.show_skin(skin));""",
+)
+
+replace_once(game,
+    """        self.tick_advancements();
+        self.tick_player_model();
+        Ok(())""",
+    """        self.tick_advancements();
+        self.tick_player_model();
+        self.apply_mobilehorizon_local_skin();
+        Ok(())""",
 )
