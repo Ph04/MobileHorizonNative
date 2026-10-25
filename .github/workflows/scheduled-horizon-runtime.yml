@@ -6,7 +6,7 @@ concurrency:
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
   # Ensure the first publication check runs when this scheduler is added or repaired.
   push:
