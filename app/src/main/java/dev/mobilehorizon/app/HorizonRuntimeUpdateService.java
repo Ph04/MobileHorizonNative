@@ -278,14 +278,44 @@ public final class HorizonRuntimeUpdateService {
         publishProgress(context, preferences, "checking-runtime",
                 "Procurando a runtime Android ARM64 mais recente publicada…", 0L, -1L);
         String currentVersion = HorizonRuntimeManager.currentVersion(context);
-        Release latest = BuildConfig.HORIZON_TEST_OLD_RUNTIME
-                ? testFixtureRuntime(BuildConfig.HORIZON_PC_RELEASE_TAG)
-                : latestRuntimeRelease();
+        Release latest;
+        Release latestPublished = null;
+        if (BuildConfig.HORIZON_TEST_OLD_RUNTIME) {
+            latest = testFixtureRuntime(BuildConfig.HORIZON_PC_RELEASE_TAG);
+        } else if (official != null) {
+            // A stable runtime must follow the exact stable Horizon tag, not merely the newest
+            // Android artifact. Otherwise the launcher can install v0.2.65 while Horizon is on
+            // v0.2.66 and then report success without ever catching up to the official release.
+            latest = latestRuntimeRelease(official.tag);
+            if (latest == null) {
+                latestPublished = latestRuntimeRelease();
+                if (!HorizonRuntimeManager.hasActiveRuntimeMarker(context)
+                        && latestPublished != null) {
+                    // A first launch still needs a runnable engine while the newest runtime builds.
+                    latest = latestPublished;
+                } else {
+                    String available = latestPublished == null ? ""
+                            : " A runtime Android publicada mais recente é para "
+                                + latestPublished.upstreamTag + ".";
+                    setStatus(preferences, "Release oficial " + official.tag
+                            + " detectada, mas a runtime Android ARM64 correspondente ainda não "
+                            + "foi publicada." + available
+                            + " A versão instalada será mantida e o launcher continuará verificando "
+                            + "automaticamente até encontrar a runtime exata.");
+                    return;
+                }
+            }
+        } else {
+            // If GitHub's official release endpoint is temporarily unavailable, still permit a
+            // verified runtime check. As soon as the official endpoint returns, exact-tag matching
+            // resumes and prevents an older runtime from being mistaken for the current release.
+            latest = latestRuntimeRelease();
+        }
         if (latest == null) {
             if (official != null) {
                 setStatus(preferences, "Release oficial " + official.tag
-                        + " detectada, mas ainda não há um pacote Android ARM64 verificado "
-                        + "publicado no MobileHorizonNative. O aplicativo continuará verificando.");
+                        + " detectada, mas nenhum pacote Android ARM64 verificado está disponível. "
+                        + "O launcher continuará verificando automaticamente.");
             } else {
                 setStatus(preferences, "Nenhum release Android do Horizon foi encontrado; "
                         + "a consulta à versão oficial também não foi concluída.");
@@ -410,7 +440,16 @@ public final class HorizonRuntimeUpdateService {
     }
 
     private static Release latestRuntimeRelease() throws Exception {
+        return latestRuntimeRelease("");
+    }
+
+    /** Finds the most recent verified Android runtime for the required official Horizon tag. */
+    private static Release latestRuntimeRelease(String requiredUpstreamTag) throws Exception {
         Release latest = null;
+        String requiredTag = requiredUpstreamTag == null ? "" : requiredUpstreamTag.trim();
+        if (!requiredTag.isEmpty() && !isValidUpstreamTag(requiredTag)) {
+            throw new IOException("A tag oficial solicitada para a runtime não é válida.");
+        }
         // GitHub orders this endpoint newest-first. Usually page 1 is enough, but look farther
         // back if the repository has many app releases and no runtime release is on page 1.
         for (int page = 1; page <= 10; page++) {
@@ -427,6 +466,10 @@ public final class HorizonRuntimeUpdateService {
                 String upstreamTag = upstreamTagFromRuntimeVersion(version);
                 if (upstreamTag.isEmpty()) {
                     Log.w(TAG, "Ignorando release com versão de runtime inválida: " + tag);
+                    continue;
+                }
+                if (!requiredTag.isEmpty()
+                        && !runtimeVersionMatchesRelease(version, requiredTag)) {
                     continue;
                 }
                 try {
@@ -529,6 +572,11 @@ public final class HorizonRuntimeUpdateService {
         if (!matcher.matches()) return "";
         String tag = matcher.group(1);
         return isValidUpstreamTag(tag) ? tag : "";
+    }
+
+    static boolean runtimeVersionMatchesRelease(String runtimeVersion, String officialTag) {
+        return isValidUpstreamTag(officialTag)
+                && officialTag.equals(upstreamTagFromRuntimeVersion(runtimeVersion));
     }
 
     static int comparePublicationDates(String left, String right) {
