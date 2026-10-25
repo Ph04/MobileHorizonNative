@@ -230,9 +230,11 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        HorizonRuntimeUpdateService.checkInBackground(this, () -> refreshRuntimeUpdateStatus());
+        HorizonRuntimeUpdateService.checkInBackground(this);
+        refreshRuntimeUpdateStatus();
         runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
-        runtimeUpdateHandler.postDelayed(runtimeUpdatePoll, 30L * 60L * 1000L);
+        runtimeUpdateHandler.postDelayed(runtimeUpdatePoll,
+                HorizonRuntimeUpdateService.isUpdateInProgress(this) ? 1000L : 30L * 60L * 1000L);
         if (sessionEnvSet) {
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
@@ -1735,6 +1737,7 @@ public final class MainActivity extends Activity {
     }
 
     private void launchAuthenticatedClient(String resourceSummary, String refreshToken) {
+        if (blockGameLaunchDuringUpdate()) return;
         launchBusy = true;
         updateActionEnablement();
         progressBar.setVisibility(View.VISIBLE);
