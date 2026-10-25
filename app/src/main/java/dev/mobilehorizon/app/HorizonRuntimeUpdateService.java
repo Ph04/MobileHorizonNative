@@ -82,18 +82,18 @@ public final class HorizonRuntimeUpdateService {
                 if (onFinished != null) PENDING_CALLBACKS.add(onFinished);
                 return;
             }
-            if (!preferences.getBoolean("enabled", true)) {
+            // Initial installation is mandatory even if the user disabled routine auto-updates.
+            // After one verified runtime exists, the setting controls periodic update checks.
+            boolean firstInstallRequired = !HorizonRuntimeManager.hasActiveRuntimeMarker(app);
+            boolean updatesEnabled = preferences.getBoolean("enabled", true);
+            if (!updatesEnabled && !firstInstallRequired) {
+                finishImmediately = true;
+            } else if (!force && !firstInstallRequired && now - previous < CHECK_INTERVAL_MS) {
                 finishImmediately = true;
             } else {
-                // Never let the normal cooldown block the very first runtime installation.
-                boolean firstInstallRequired = !HorizonRuntimeManager.hasActiveRuntimeMarker(app);
-                if (!force && !firstInstallRequired && now - previous < CHECK_INTERVAL_MS) {
-                    finishImmediately = true;
-                } else {
-                    IN_FLIGHT.set(true);
-                    if (onFinished != null) PENDING_CALLBACKS.add(onFinished);
-                    startCheck = true;
-                }
+                IN_FLIGHT.set(true);
+                if (onFinished != null) PENDING_CALLBACKS.add(onFinished);
+                startCheck = true;
             }
         }
 

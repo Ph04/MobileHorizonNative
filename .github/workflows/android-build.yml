@@ -502,7 +502,10 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$TEST_APK" > "$RUNNER_TEMP/test-apk-badging.txt"
           grep -Eq "versionName='0.3.11.*updater-test" "$RUNNER_TEMP/test-apk-badging.txt"
           grep -Eq "name='dev\\.mobilehorizon\\.app[^']*updatertest[^']*'" "$RUNNER_TEMP/test-apk-badging.txt"
-          grep -Fq "upstream_tag" app/src/main/assets/horizon-runtime/manifest.json
+          test -s "$RUNNER_TEMP/horizon-runtime-stage/libhorizon_engine.so"
+          test -s "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
+          grep -Fq "upstream_tag" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
+          grep -Fq "sha256" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
           grep -Fq "HORIZON_TEST_OLD_RUNTIME = true" app/build/generated/source/buildConfig/updaterTest/debug/dev/mobilehorizon/app/BuildConfig.java
           if [[ "$STABLE_SIGNING" != "true" ]]; then
             echo "::warning::APK artifacts use a test signing identity and isolated package IDs; they cannot replace the stable app installation."
