@@ -145,10 +145,14 @@ public final class HorizonRuntimeUpdateService {
             setStatus(preferences, message);
             Log.w(TAG, message, error);
             return new CheckResult(false, false, true, message);
-        } finally {
-            preferences.edit().putBoolean(UPDATE_IN_PROGRESS, false)
-                    .putLong(PROGRESS_UPDATED_AT, System.currentTimeMillis()).commit();
         }
+    }
+
+    static void finishUpdate(Context context) {
+        SharedPreferences preferences = context.getApplicationContext()
+                .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        preferences.edit().putBoolean(UPDATE_IN_PROGRESS, false)
+                .putLong(PROGRESS_UPDATED_AT, System.currentTimeMillis()).commit();
     }
 
     static void publishProgress(SharedPreferences preferences, ProgressListener listener,
