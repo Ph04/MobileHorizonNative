@@ -34,7 +34,9 @@ The default native engine now applies only the Android integration patch and a s
 ## What is implemented in this branch
 
 - `HorizonRuntimeUpdateService` checks the project's runtime releases when the app is resumed and periodically while the home screen stays visible; a manual check button is available.
-- The release publisher workflow polls stable Horizon releases hourly, compiles the Android ARM64 engine from the corresponding upstream source plus the compatibility overlay, and publishes a versioned runtime release.
+- The release publisher polls stable Horizon releases hourly, compiles the Android ARM64 engine from the corresponding upstream source plus the compatibility overlay, and publishes a versioned runtime release. Its active source branch is \`feature/horizon-runtime-loader\`; a small default-branch scheduler may invoke this reusable workflow, but runtime source and compatibility patches are checked out from the active branch rather than from the older \`main\` application tree.
+- The publisher paginates upstream release history when needed and considers only published, non-draft, non-prerelease tags beginning with \`v\`. Both semantic tags (for example \`v0.2.57\`) and date-based tags (for example \`v2026.10.22.07\`) are supported.
+- The updater scans versioned MobileHorizonNative runtime releases, skips incomplete or malformed entries rather than aborting the whole scan, and selects the newest eligible runtime using the release publication timestamp. It does not compare incompatible version-string schemes to decide which runtime is newest.
 - The updater downloads both the runtime manifest and engine, checks GitHub's published asset digests, confirms that the manifest version/commit/overlay/ABI match the release, checks the local SHA-256 and ELF64/AArch64 header, and only then atomically activates the version for the next game launch.
 - The bootstrap reports startup/fallback status. The app keeps the previous engine versions and retains the APK-bundled engine as a fallback.
 
