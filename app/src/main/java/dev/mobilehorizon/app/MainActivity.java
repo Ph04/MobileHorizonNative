@@ -181,6 +181,10 @@ public final class MainActivity extends Activity {
         refreshAccountUi();
         refreshOfflineUi();
         updateActionEnablement();
+        HorizonRuntimeUpdateService.checkAtStartup(this, () -> {
+            refreshRuntimeUpdateStatus();
+            updateActionEnablement();
+        });
     }
 
     @Override
@@ -2125,7 +2129,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /** Downloads and verifies a runtime before a game or native smoke-test launch. */
+    /** Waits for the startup/runtime update check before launching the game. */
     private void ensureRuntimeInstalled(Runnable onReady) {
         if (runtimeInstallBusy || isFinishing() || isDestroyed()) return;
         runtimeInstallBusy = true;
@@ -2134,8 +2138,19 @@ public final class MainActivity extends Activity {
         progressBar.setIndeterminate(true);
         progressDetails.setText("Verificando a runtime Android…");
         setStatus("Preparando runtime Horizon",
-                "A primeira instalação precisa de internet para baixar uma runtime Android ARM64 verificada.");
+                "Verificando a versão Android mais recente disponível antes de iniciar o jogo.");
 
+        // If startup already began downloading a newer runtime, join that operation instead
+        // of launching immediately with the older installed engine.
+        HorizonRuntimeUpdateService.checkInBackground(MainActivity.this,
+                () -> verifyRuntimeForLaunch(onReady, false));
+    }
+
+    private void verifyRuntimeForLaunch(Runnable onReady, boolean retried) {
+        if (isFinishing() || isDestroyed()) {
+            finishRuntimeInstallUi();
+            return;
+        }
         executor.submit(() -> {
             String version = "";
             String inspectionError = null;
@@ -2144,55 +2159,40 @@ public final class MainActivity extends Activity {
             } catch (Exception error) {
                 inspectionError = safeMessage(error);
             }
-            final String installedVersion = version;
+            final String verifiedVersion = version;
             final String checkError = inspectionError;
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) {
                     finishRuntimeInstallUi();
                     return;
                 }
-                if (installedVersion != null && !installedVersion.isEmpty()) {
+                if (verifiedVersion != null && !verifiedVersion.isEmpty()) {
                     finishRuntimeInstallUi();
+                    setStatus("Runtime Horizon pronta",
+                            "Runtime instalada e verificada: " + verifiedVersion
+                                    + ". O jogo pode ser iniciado.");
                     onReady.run();
                     return;
                 }
 
-                progressDetails.setText("Baixando e verificando a runtime Android mais recente…");
-                setStatus("Baixando runtime Horizon",
-                        "A runtime anterior não está disponível ou não passou na verificação."
-                                + (checkError == null ? "" : "\n" + checkError));
-                HorizonRuntimeUpdateService.checkNow(MainActivity.this, () ->
-                        executor.submit(() -> {
-                            String verifiedVersion = "";
-                            String verificationError = null;
-                            try {
-                                verifiedVersion = HorizonRuntimeManager.currentVersion(MainActivity.this);
-                            } catch (Exception error) {
-                                verificationError = safeMessage(error);
-                            }
-                            final String readyVersion = verifiedVersion;
-                            final String readyError = verificationError;
-                            runOnUiThread(() -> {
-                                finishRuntimeInstallUi();
-                                refreshRuntimeUpdateStatus();
-                                if (isFinishing() || isDestroyed()) return;
-                                if (readyVersion == null || readyVersion.isEmpty()) {
-                                    showRuntimeError("Runtime Horizon indisponível",
-                                            HorizonRuntimeUpdateService.lastStatus(MainActivity.this)
-                                                    + "\n\nO jogo não será iniciado sem uma runtime "
-                                                    + "Android verificada. Confira a conexão e use "
-                                                    + "“Verificar atualizações” para tentar novamente."
-                                                    + (readyError == null ? "" : "\n\n" + readyError));
-                                    setStatus("Runtime pendente",
-                                            "Nenhuma runtime verificada está instalada; a inicialização do jogo foi bloqueada.");
-                                    return;
-                                }
-                                setStatus("Runtime Horizon pronta",
-                                        "Runtime instalada e verificada: " + readyVersion
-                                                + ". O jogo pode ser iniciado.");
-                                onReady.run();
-                            });
-                        }));
+                if (!retried) {
+                    progressDetails.setText("Baixando e verificando a runtime Android…");
+                    setStatus("Baixando runtime Horizon",
+                            "Nenhuma runtime verificada está disponível. Tentando novamente.");
+                    HorizonRuntimeUpdateService.checkNow(MainActivity.this,
+                            () -> verifyRuntimeForLaunch(onReady, true));
+                    return;
+                }
+
+                finishRuntimeInstallUi();
+                refreshRuntimeUpdateStatus();
+                showRuntimeError("Runtime Horizon indisponível",
+                        HorizonRuntimeUpdateService.lastStatus(MainActivity.this)
+                                + "\n\nO jogo não será iniciado sem uma runtime Android verificada. "
+                                + "Confira a conexão e use “Verificar atualizações” para tentar novamente."
+                                + (checkError == null ? "" : "\n\n" + checkError));
+                setStatus("Runtime pendente",
+                        "Nenhuma runtime verificada está instalada; a inicialização do jogo foi bloqueada.");
             });
         });
     }
