@@ -360,17 +360,7 @@ public final class MainActivity extends Activity {
         super.onStop();
     }
 
-    private void refreshRuntimeUpdateStatus() {
-        if (runtimeUpdateText != null) {
-            runtimeUpdateText.setText(HorizonRuntimeUpdateService.lastStatus(this));
-        }
-        if (runtimePcReleaseText != null) {
-            runtimePcReleaseText.setText("Release de PC acompanhada: "
-                    + HorizonRuntimeUpdateService.pcReleaseLabel(this));
-        }
-    }
-
-    private void buildUi() {
+private void buildUi() {
         boolean landscape = getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_LANDSCAPE
                 && getResources().getConfiguration().screenWidthDp >= 600;
@@ -2283,7 +2273,7 @@ public final class MainActivity extends Activity {
         if (microsoftSignOutButton != null) microsoftSignOutButton.setEnabled(!blocked
                 && getSharedPreferences("microsoft_account_state", MODE_PRIVATE).getBoolean("hasAccount", false));
         if (offlineNameButton != null) offlineNameButton.setEnabled(!blocked);
-        if (offlinePlayButton != null) offlinePlayButton.setEnabled(!blocked);
+        if (offlinePlayButton != null) offlinePlayButton.setEnabled(!blocked && !installingRuntime);
         if (cancelButton != null) {
             boolean cancellable = busy || conversionBusy || authBusy;
             cancelButton.setVisibility(cancellable ? View.VISIBLE : View.GONE);
