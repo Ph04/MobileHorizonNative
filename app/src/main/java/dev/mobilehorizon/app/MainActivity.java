@@ -323,7 +323,7 @@ public final class MainActivity extends Activity {
         LinearLayout badgeLine = new LinearLayout(this);
         badgeLine.setOrientation(LinearLayout.HORIZONTAL);
         badgeLine.setGravity(Gravity.CENTER_VERTICAL);
-        TextView readyBadge = text("  ■  MINECRAFT 26.3  •  READY  ", 10, 0xffb8ffd5, true);
+        TextView readyBadge = text("  ■  MINECRAFT 26.3  •  " + (resourcesPrepared() ? "READY" : "SETUP REQUIRED") + "  ", 10, 0xffb8ffd5, true);
         GradientDrawable badgeBackground = new GradientDrawable();
         badgeBackground.setColor(0xdd111420);
         badgeBackground.setCornerRadius(dp(3));
@@ -543,11 +543,14 @@ public final class MainActivity extends Activity {
         setContentView(root);
     }
 
-    private String resourceReadySummary() {
+    private boolean resourcesPrepared() {
         File resources = new File(getFilesDir(),
                 ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
-        File marker = new File(resources, "horizon-resources.json");
-        if (marker.isFile()) {
+        return new File(resources, "horizon-resources.json").isFile();
+    }
+
+    private String resourceReadySummary() {
+        if (resourcesPrepared()) {
             return "Preparado para Minecraft " + OfficialMinecraftInstaller.VERSION
                     + " • saída Horizon encontrada";
         }
@@ -630,7 +633,17 @@ public final class MainActivity extends Activity {
 
     private void scrollToSection(View target) {
         if (dashboardScroll == null || target == null) return;
-        dashboardScroll.post(() -> dashboardScroll.smoothScrollTo(0, Math.max(0, target.getTop())));
+        View anchor = target;
+        if (target.getTag() instanceof View) {
+            anchor = (View) target.getTag();
+            if (target.getVisibility() != View.VISIBLE && anchor instanceof LinearLayout) {
+                LinearLayout shell = (LinearLayout) anchor;
+                if (shell.getChildCount() > 0) shell.getChildAt(0).performClick();
+            }
+        }
+        final View scrollTarget = anchor;
+        dashboardScroll.post(() -> dashboardScroll.smoothScrollTo(
+                0, Math.max(0, scrollTarget.getTop())));
     }
 
     private void addButtonPair(LinearLayout parent, View left, View right, int heightDp, int topMarginDp) {
@@ -670,6 +683,7 @@ public final class MainActivity extends Activity {
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        body.setTag(shell);
         LinearLayout.LayoutParams bodyParams = params(-1, -2);
         bodyParams.topMargin = dp(10);
         shell.addView(body, bodyParams);
@@ -1251,8 +1265,12 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshOfflineUi() {
+        String playerName = OfflineProfile.loadName(this);
         if (offlineStatusText != null) {
-            offlineStatusText.setText("Nick offline: " + OfflineProfile.loadName(this));
+            offlineStatusText.setText("Nick offline: " + playerName);
+        }
+        if (offlineNameButton != null) {
+            offlineNameButton.setText("Nick: " + playerName);
         }
     }
 
@@ -2133,7 +2151,8 @@ public final class MainActivity extends Activity {
             float w = getWidth();
             float h = getHeight();
             if (w <= 0 || h <= 0) return;
-            float cell = Math.max(dp(5), Math.min(dp(12), w / 85f));
+            float density = getResources().getDisplayMetrics().density;
+            float cell = Math.max(5f * density, Math.min(12f * density, w / 85f));
             for (int i = 0; i < sky.length; i++) {
                 block(canvas, sky[i], 0, h * i / sky.length, w, h / sky.length + 1);
             }
