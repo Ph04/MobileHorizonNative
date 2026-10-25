@@ -246,7 +246,6 @@ public final class HorizonRuntimeManager {
         }
         try (InputStream input = context.getAssets().open(ASSET_ROOT + ENGINE_NAME);
              FileOutputStream output = new FileOutputStream(temporary)) {
-            makeReadOnly(temporary);
             byte[] buffer = new byte[64 * 1024];
             int count;
             while ((count = input.read(buffer)) != -1) {
@@ -334,7 +333,6 @@ public final class HorizonRuntimeManager {
         }
         try (InputStream input = new FileInputStream(source);
              FileOutputStream output = new FileOutputStream(target)) {
-            makeReadOnly(target);
             byte[] buffer = new byte[64 * 1024];
             int count;
             long written = 0;
