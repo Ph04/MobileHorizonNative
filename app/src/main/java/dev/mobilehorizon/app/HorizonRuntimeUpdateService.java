@@ -121,11 +121,17 @@ public final class HorizonRuntimeUpdateService {
         try {
             download(latest.manifestUrl, latest.manifestSize, latest.manifestSha256, manifestDownload);
             JSONObject manifest = new JSONObject(readSmallFile(manifestDownload, 64 * 1024));
-            if (!latest.version.equals(manifest.optString("version", ""))
+            String upstreamCommit = manifest.optString("upstream_commit", "");
+            String overlay = manifest.optString("overlay", "");
+            String expectedVersion = upstreamCommit.matches("(?i)[0-9a-f]{40}")
+                    && overlay.matches("(?i)[0-9a-f]{8}")
+                    ? "horizon-" + upstreamCommit.substring(0, 12) + "-o" + overlay : "";
+            if (manifest.optInt("format", -1) != 1
+                    || !latest.version.equals(manifest.optString("version", ""))
+                    || !latest.version.equals(expectedVersion)
                     || !"arm64-v8a".equals(manifest.optString("abi", ""))
                     || !ENGINE_ASSET.equals(manifest.optString("library", ""))
-                    || !latest.sha256.equalsIgnoreCase(manifest.optString("sha256", ""))
-                    || !manifest.optString("upstream_commit", "").matches("(?i)[0-9a-f]{40}")) {
+                    || !latest.sha256.equalsIgnoreCase(manifest.optString("sha256", ""))) {
                 throw new IOException("O manifesto do runtime não corresponde aos metadados do release.");
             }
             download(latest.url, latest.size, latest.sha256, download);
