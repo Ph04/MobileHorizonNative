@@ -95,7 +95,8 @@ public final class HorizonRuntimeManager {
         File bundledLibrary = installBundledBaseline(app, versions, bundledVersion, bundledSha);
         File status = new File(root, STATUS_NAME);
         String previousStatus = readSmallText(status);
-        if (previousStatus.startsWith("FALLBACK:") || previousStatus.startsWith("ERROR:")\n                || previousStatus.startsWith("STARTING:")) {
+        if (previousStatus.startsWith("FALLBACK:") || previousStatus.startsWith("ERROR:")
+                || previousStatus.startsWith("STARTING:")) {
             // The native bootstrap could not start the selected engine on the prior attempt.
             // Return to the APK-provided baseline before another game launch.
             writeActive(root, bundledVersion, bundledSha);
