@@ -27,8 +27,17 @@ A release publisher must produce the manifest and binary from the same build. Th
 - The APK-provided engine is always retained as the fallback. If loading a selected engine fails and the baseline loads instead, the next launch resets selection to the bundled baseline.
 - Previous version directories are retained so a future updater/UI can offer rollback and cleanup.
 
-## What is not wired up yet
+## What is implemented in this branch
 
-This is the loading and verified-install foundation, not the complete automatic updater. The branch does not yet poll releases on app start / in the background, fetch a signed runtime manifest, show update progress, or publish an Android ARM64 runtime release when upstream Horizon changes. The official Horizon launcher uses release installation for desktop assets; the Android artifact still has to be built by this repository's CI.
+- `HorizonRuntimeUpdateService` checks the project's runtime releases when the app is resumed and periodically while the home screen stays visible; a manual check button is available.
+- The release publisher workflow polls stable Horizon releases every six hours, compiles the Android ARM64 engine from the corresponding upstream source plus the compatibility overlay, and publishes a versioned runtime release.
+- The updater downloads both the runtime manifest and engine, checks GitHub's published asset digests, confirms that the manifest version/commit/overlay/ABI match the release, checks the local SHA-256 and ELF64/AArch64 header, and only then atomically activates the version for the next game launch.
+- The bootstrap reports startup/fallback status. The app keeps the previous engine versions and retains the APK-bundled engine as a fallback.
 
-Before merging, the build must be allowed to run and must verify that the CMake bootstrap exports `ANativeActivity_onCreate`, the Rust engine exports the activity and JNI entry points, the APK packages both components, and a device can load an engine from app-private storage on Android 16. This branch has not been compiled or device-tested yet.
+## Remaining production requirements
+
+The manifest is **not cryptographically signed yet**. The current trust model is HTTPS plus GitHub's published asset digests and the project's release account; it detects incomplete/corrupt downloads, but it does not protect against a compromised release account. Before treating this as production-hardened, add a project-controlled signature over the manifest and verify it in the app.
+
+The current updater targets the Horizon engine only. The `horizon-prepare` executable, JDK runtime metadata, resource data, and compatibility modules are still packaged or managed separately; their versioned updating and dependency compatibility need a subsequent phase. Detailed download progress, automatic cleanup of old versions, and a user-facing auto-update toggle are also outstanding.
+
+Before merging, the build must be authorized and then verify that the CMake bootstrap exports `ANativeActivity_onCreate`, the Rust engine exports the activity and JNI entry points, the APK packages both components, and a device can load the engine from app-private storage on Android 16. This branch has not been compiled or device-tested yet.
