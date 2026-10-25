@@ -75,19 +75,19 @@ public final class HorizonRuntimeUpdateService {
     }
 
     private static void checkAndInstall(Context context, SharedPreferences preferences) throws Exception {
-        HorizonRuntimeManager.PreparedRuntime current = HorizonRuntimeManager.prepare(context);
+        String currentVersion = HorizonRuntimeManager.currentVersion(context);
         Release latest = latestRuntimeRelease();
         if (latest == null) {
             setStatus(preferences, "Nenhum release de runtime Android foi encontrado.");
             return;
         }
-        if (latest.version.equals(current.activeVersion)) {
+        if (latest.version.equals(currentVersion)) {
             setStatus(preferences, "Horizon está atualizado (" + current.activeVersion + ").");
             return;
         }
 
         Log.i(TAG, "Nova versão do motor Horizon: " + latest.version
-                + "; atual: " + current.activeVersion);
+                + "; atual: " + currentVersion);
         File download = new File(context.getCacheDir(),
                 "horizon-runtime-" + latest.version + ".part");
         try {
