@@ -2,7 +2,7 @@
 
 ## Current architecture in this branch
 
-The APK keeps `libhorizon_android.so` as a small NativeActivity bootstrap. The Horizon client is built as `libhorizon_engine.so` and copied to `assets/horizon-runtime/` together with a build-generated `manifest.json`. At startup, `HorizonRuntimeManager` copies the bundled engine into app-private version storage, verifies SHA-256 and the ELF64/AArch64 header, and selects a version using an atomic `active.json` record.
+The APK keeps `libhorizon_android.so` as a small NativeActivity bootstrap. The Horizon client is built as `libhorizon_engine.so` and copied to `assets/horizon-runtime/` together with a build-generated `manifest.json`. The manifest records the tracked PC release tag (for example, `v0.2.50`) separately from the unique Android runtime build ID. At startup, `HorizonRuntimeManager` copies the bundled engine into app-private version storage, verifies SHA-256 and the ELF64/AArch64 header, and selects a version using an atomic `active.json` record.
 
 A downloaded engine is intended to use the same manifest fields:
 
@@ -34,9 +34,15 @@ The default native engine now applies only the Android integration patch and a s
 ## What is implemented in this branch
 
 - `HorizonRuntimeUpdateService` checks the project's runtime releases when the app is resumed and periodically while the home screen stays visible; a manual check button is available.
-- The release publisher workflow polls stable Horizon releases every six hours, compiles the Android ARM64 engine from the corresponding upstream source plus the compatibility overlay, and publishes a versioned runtime release.
+- The release publisher workflow polls stable Horizon releases hourly, compiles the Android ARM64 engine from the corresponding upstream source plus the compatibility overlay, and publishes a versioned runtime release.
 - The updater downloads both the runtime manifest and engine, checks GitHub's published asset digests, confirms that the manifest version/commit/overlay/ABI match the release, checks the local SHA-256 and ELF64/AArch64 header, and only then atomically activates the version for the next game launch.
 - The bootstrap reports startup/fallback status. The app keeps the previous engine versions and retains the APK-bundled engine as a fallback.
+
+## Updater-test APK
+
+The `updaterTestDebug` flavor is a separate package and is uploaded as `mobilehorizon-native-horizon-updater-test`. On its first launch it downloads the real Android engine built from PC release `v0.2.49`, verifies it, and selects it as the active runtime. A manual update check (or a later automatic check) then downloads the engine built from `v0.2.50` from a dedicated prerelease fixture and activates it for the next game launch. The fixture release is marked prerelease and is intentionally ignored by the standard updater.
+
+The normal `standardDebug` APK never runs the forced-old-version seed logic. The updater-test APK is specifically for validating the remote-download/hash/install/activation path; do not use its prerelease endpoint as a production update channel.
 
 ## Remaining production requirements
 
