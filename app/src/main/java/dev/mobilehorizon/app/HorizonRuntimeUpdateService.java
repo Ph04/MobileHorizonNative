@@ -162,7 +162,7 @@ public final class HorizonRuntimeUpdateService {
             String overlay = manifest.optString("overlay", "");
             String expectedVersion = upstreamCommit.matches("(?i)[0-9a-f]{40}")
                     && overlay.matches("(?i)[0-9a-f]{8}")
-                    && upstreamTag.matches("v[0-9]+\\.[0-9]+\\.[0-9]+")
+                    && isValidUpstreamTag(upstreamTag)
                     ? "horizon-" + upstreamTag + "-c" + upstreamCommit.substring(0, 8)
                         + "-o" + overlay : "";
             if (manifest.optInt("format", -1) != 1
@@ -191,26 +191,40 @@ public final class HorizonRuntimeUpdateService {
     }
 
     private static Release latestRuntimeRelease() throws Exception {
-        JSONArray releases = new JSONArray(readUrl(RELEASES_URL, 4 * 1024 * 1024));
         Release latest = null;
-        String latestPublishedAt = "";
-        for (int i = 0; i < releases.length(); i++) {
-            JSONObject release = releases.optJSONObject(i);
-            if (release == null || release.optBoolean("draft", false)
-                    || release.optBoolean("prerelease", false)) continue;
-            String tag = release.optString("tag_name", "");
-            if (!tag.startsWith(TAG_PREFIX)) continue;
-            String version = tag.substring(TAG_PREFIX.length());
-            String upstreamTag = upstreamTagFromRuntimeVersion(version);
-            if (upstreamTag.isEmpty()) continue;
-            Release candidate = releaseFromAssets(release, version, upstreamTag,
-                    ENGINE_ASSET, "horizon-runtime-manifest.json");
-            if (latest == null || comparePcReleaseTags(candidate.upstreamTag, latest.upstreamTag) > 0
-                    || (comparePcReleaseTags(candidate.upstreamTag, latest.upstreamTag) == 0
-                        && candidate.publishedAt.compareTo(latestPublishedAt) > 0)) {
-                latest = candidate;
-                latestPublishedAt = candidate.publishedAt;
+        // GitHub orders this endpoint newest-first. Usually page 1 is enough, but look farther
+        // back if the repository has many app releases and no runtime release is on page 1.
+        for (int page = 1; page <= 10; page++) {
+            JSONArray releases = new JSONArray(readUrl(RELEASES_URL + "&page=" + page,
+                    4 * 1024 * 1024));
+            if (releases.length() == 0) break;
+            for (int i = 0; i < releases.length(); i++) {
+                JSONObject release = releases.optJSONObject(i);
+                if (release == null || release.optBoolean("draft", false)
+                        || release.optBoolean("prerelease", false)) continue;
+                String tag = release.optString("tag_name", "");
+                if (!tag.startsWith(TAG_PREFIX)) continue;
+                String version = tag.substring(TAG_PREFIX.length());
+                String upstreamTag = upstreamTagFromRuntimeVersion(version);
+                if (upstreamTag.isEmpty()) {
+                    Log.w(TAG, "Ignorando release com versão de runtime inválida: " + tag);
+                    continue;
+                }
+                try {
+                    Release candidate = releaseFromAssets(release, version, upstreamTag,
+                            ENGINE_ASSET, "horizon-runtime-manifest.json");
+                    if (latest == null
+                            || comparePublicationDates(candidate.publishedAt, latest.publishedAt) > 0) {
+                        latest = candidate;
+                    }
+                } catch (Exception invalidRelease) {
+                    // A draft-like/incomplete/old release must not hide later valid runtime releases.
+                    Log.w(TAG, "Ignorando release Android incompleto: " + tag, invalidRelease);
+                }
             }
+            // Results are newest-first. If we found a valid release on this page, older pages
+            // cannot provide a more recent runtime build under the normal GitHub release ordering.
+            if (latest != null || releases.length() < 100) break;
         }
         return latest;
     }
@@ -276,29 +290,34 @@ public final class HorizonRuntimeUpdateService {
         if (size <= 0 || size > MAX_DOWNLOAD_BYTES || manifestSize <= 0 || manifestSize > 64 * 1024) {
             throw new IOException("Tamanho inválido nos assets do runtime " + upstreamTag + ".");
         }
+        String publishedAt = release.optString("published_at", "");
+        if (publishedAt.isEmpty()) publishedAt = release.optString("created_at", "");
         return new Release(version, upstreamTag, engineName, digest, url, size,
-                release.optString("published_at", ""), manifestUrl, manifestDigest, manifestSize);
+                publishedAt, manifestUrl, manifestDigest, manifestSize);
     }
 
-    private static String upstreamTagFromRuntimeVersion(String version) {
+    static boolean isValidUpstreamTag(String tag) {
+        // Horizon currently uses both semver tags (v0.2.57) and date-based tags
+        // (v2026.10.22.07). Accept only bounded, path-safe tags beginning with "v".
+        return tag != null && tag.matches("v[0-9][A-Za-z0-9._+-]{0,79}");
+    }
+
+    static String upstreamTagFromRuntimeVersion(String version) {
         if (version == null || !version.startsWith("horizon-")) return "";
-        int separator = version.indexOf("-c", "horizon-".length());
-        if (separator < 0) return "";
-        String tag = version.substring("horizon-".length(), separator);
-        return tag.matches("v[0-9]+\\.[0-9]+\\.[0-9]+") ? tag : "";
+        String body = version.substring("horizon-".length());
+        Matcher matcher = Pattern.compile("^(.+)-c[0-9a-fA-F]{8}-o[0-9a-fA-F]{8}$")
+                .matcher(body);
+        if (!matcher.matches()) return "";
+        String tag = matcher.group(1);
+        return isValidUpstreamTag(tag) ? tag : "";
     }
 
-    private static int comparePcReleaseTags(String left, String right) {
-        Pattern semantic = Pattern.compile("v([0-9]+)\\.([0-9]+)\\.([0-9]+)");
-        Matcher a = semantic.matcher(left == null ? "" : left);
-        Matcher b = semantic.matcher(right == null ? "" : right);
-        if (a.matches() && b.matches()) {
-            for (int i = 1; i <= 3; i++) {
-                int comparison = Long.compare(Long.parseLong(a.group(i)), Long.parseLong(b.group(i)));
-                if (comparison != 0) return comparison;
-            }
-        }
-        return (left == null ? "" : left).compareTo(right == null ? "" : right);
+    static int comparePublicationDates(String left, String right) {
+        String a = left == null ? "" : left.trim();
+        String b = right == null ? "" : right.trim();
+        // GitHub published_at values are RFC 3339 strings, whose normalized UTC form sorts
+        // chronologically. Do not compare version text: upstream can change tag schemes.
+        return a.compareTo(b);
     }
 
     private static void download(String address, long expectedSize, String expectedSha256,
