@@ -81,6 +81,7 @@ public final class MainActivity extends Activity {
     private TextView progressDetails;
     private TextView runtimeUpdateText;
     private TextView runtimePcReleaseText;
+    private TextView runtimeOfficialReleaseText;
     private Button runtimeUpdateButton;
     private Button viewLogsButton;
     private ScrollView dashboardScroll;
@@ -272,6 +273,10 @@ public final class MainActivity extends Activity {
             runtimePcReleaseText.setText("Release de PC acompanhada: "
                     + HorizonRuntimeUpdateService.pcReleaseLabel(this));
         }
+        if (runtimeOfficialReleaseText != null) {
+            runtimeOfficialReleaseText.setText(
+                    HorizonRuntimeUpdateService.latestOfficialReleaseLabel(this));
+        }
     }
 
     private void buildUi() {
@@ -456,6 +461,12 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams runtimePcReleaseParams = params(-1, -2);
         runtimePcReleaseParams.topMargin = dp(6);
         runtimeCard.addView(runtimePcReleaseText, runtimePcReleaseParams);
+        runtimeOfficialReleaseText = text(
+                HorizonRuntimeUpdateService.latestOfficialReleaseLabel(this),
+                12, 0xffd1c9e8, true);
+        LinearLayout.LayoutParams runtimeOfficialReleaseParams = params(-1, -2);
+        runtimeOfficialReleaseParams.topMargin = dp(4);
+        runtimeCard.addView(runtimeOfficialReleaseText, runtimeOfficialReleaseParams);
         runtimeUpdateText = text(HorizonRuntimeUpdateService.lastStatus(this), 12, 0xffb5b0cd, false);
         LinearLayout.LayoutParams runtimeUpdateTextParams = params(-1, -2);
         runtimeUpdateTextParams.topMargin = dp(5);
