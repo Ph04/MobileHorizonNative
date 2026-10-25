@@ -1749,11 +1749,15 @@ public final class MainActivity extends Activity {
         StringBuilder report = new StringBuilder();
         report.append("HORIZON LOG VIEWER\n");
         report.append("Minecraft ").append(OfficialMinecraftInstaller.VERSION).append("\n");
-        report.append("Runtime updater: ").append(HorizonRuntimeUpdateService.lastStatus(this)).append("\n\n");
+        report.append("Runtime updater: ").append(HorizonRuntimeUpdateService.lastStatus(this)).append("\n");
+        report.append("Aviso: logs podem conter endereços de servidores, nicknames e mensagens de chat.\n\n");
 
         File gameHome = new File(getFilesDir(), "horizon");
-        appendLogTail(report, "Client log: logs/latest.log",
-                new File(new File(gameHome, "logs"), "latest.log"), 96 * 1024);
+        File latestLog = new File(new File(gameHome, "logs"), "latest.log");
+        appendLogTail(report, "Client log: logs/latest.log", latestLog, 96 * 1024);
+        if (!latestLog.isFile()) {
+            report.append("O log do cliente ainda não existe; inicie o Horizon para criar o arquivo.\n");
+        }
         appendLogTail(report, "Native client startup",
                 new File(getFilesDir(), "horizon-client-result.txt"), 8 * 1024);
         appendLogTail(report, "Vulkan smoke test",
@@ -1783,7 +1787,6 @@ public final class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("Logs do Horizon")
-                .setMessage("Os logs podem incluir endereços de servidores, nicknames e mensagens de chat.")
                 .setView(scroll)
                 .setNegativeButton("Fechar", null)
                 .setNeutralButton("Exportar diagnóstico", (dialog, which) -> exportDiagnostics())
