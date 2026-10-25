@@ -81,6 +81,10 @@ Sem a chave persistente, os APKs de teste são assinados por uma chave de CI tem
 
 **Importante:** a keystore nunca deve ser enviada ao repositório, compartilhada em chats nem enviada como artifact público. Faça uma cópia segura da pasta `~/.mobilehorizon-signing`. A primeira APK com assinatura estável terá o pacote `dev.mobilehorizon.app.offline1`, diferente dos pacotes de teste antigos; ela poderá ser instalada ao lado deles. As atualizações seguintes assinadas com a mesma chave e o mesmo pacote serão instaláveis normalmente. Não desinstale a aplicação antiga antes de confirmar que a nova abre e que os recursos necessários estão acessíveis.
 
+## Horizon-style Android interface
+
+The main screen follows the Horizon launcher layout adapted to mobile: a pixel-art runtime banner and play action, readiness rows, downloads and conversion, the resource manager, offline/Microsoft profiles, local logs, Vulkan diagnostics, and runtime updates. In landscape on sufficiently wide screens it uses an instance/navigation sidebar; in portrait it becomes a single scrolling dashboard. The resource manager shares the same dark/purple visual theme.
+
 ## Native Horizon runtime updates
 
 The `feature/horizon-runtime-loader` design keeps a small `libhorizon_android.so` bootstrap inside the APK and stores each verified Horizon engine (`libhorizon_engine.so`) in a separate app-private version directory. SHA-256/ARM64 checks, an atomic active-version record, and a bundled fallback are implemented as the foundation for in-place engine updates. See [the native runtime updater notes](docs/native-runtime-updater.md).
