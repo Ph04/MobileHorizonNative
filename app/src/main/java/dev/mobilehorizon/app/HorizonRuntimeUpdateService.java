@@ -299,7 +299,7 @@ public final class HorizonRuntimeUpdateService {
     static boolean isValidUpstreamTag(String tag) {
         // Horizon currently uses both semver tags (v0.2.57) and date-based tags
         // (v2026.10.22.07). Accept only bounded, path-safe tags beginning with "v".
-        return tag != null && tag.matches("v[0-9][A-Za-z0-9._+-]{0,79}");
+        return tag != null && tag.matches("v[0-9][A-Za-z0-9._+-]{0,50}");
     }
 
     static String upstreamTagFromRuntimeVersion(String version) {
