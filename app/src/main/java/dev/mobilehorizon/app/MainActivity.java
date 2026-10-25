@@ -123,6 +123,7 @@ public final class MainActivity extends Activity {
     private boolean authBusy;
     private boolean launchBusy;
     private boolean diagnosticsBusy;
+    private boolean runtimeUpdateBusy;
     private File pendingDiagnosticsArchive;
     private boolean pendingNativeSmokeResult;
     private boolean pendingNativeClientResult;
@@ -148,60 +149,12 @@ public final class MainActivity extends Activity {
                 showMicrosoftDeviceCode(intent);
             } else if (MicrosoftAuthService.ACTION_FINISHED.equals(intent.getAction())) {
                 handleMicrosoftAuthFinished(intent);
-            } else if (HorizonRuntimeUpdateForegroundService.ACTION_PROGRESS.equals(intent.getAction())) {
-                refreshRuntimeUpdateStatus();
-            } else if (HorizonRuntimeUpdateForegroundService.ACTION_FINISHED.equals(intent.getAction())) {
-                refreshRuntimeUpdateStatus();
-                updateActionEnablement();
-                try {
-                    startService(new Intent(MainActivity.this, HorizonRuntimeUpdateForegroundService.class)
-                            .setAction(HorizonRuntimeUpdateForegroundService.ACTION_ACK));
-                } catch (Exception ignored) {
-                    // The result is also stored in SharedPreferences for the next resume.
-                }
             }
         }
     };
     private Uri pendingUri;
     private boolean pendingZip;
     private Future<?> currentJob;
-    private final Handler runtimeUpdateHandler = new Handler(Looper.getMainLooper());
-    private final Runnable runtimeUpdatePoll = new Runnable() {
-        @Override public void run() {
-            if (!HorizonRuntimeUpdateService.isUpdateInProgress(MainActivity.this)) {
-                HorizonRuntimeUpdateService.checkInBackground(MainActivity.this);
-            }
-            refreshRuntimeUpdateStatus();
-            long delay = HorizonRuntimeUpdateService.isUpdateInProgress(MainActivity.this)
-                    ? 1000L : 30L * 60L * 1000L;
-            runtimeUpdateHandler.postDelayed(this, delay);
-        }
-    };
-
-    // Request notification permission only after the launcher has completed its first resume.
-    // Automatic update checking waits for the permission result (or for the user to decline it).
-    private final Runnable runtimeUpdateStartup = new Runnable() {
-        @Override public void run() {
-            if (isFinishing() || isDestroyed()) return;
-            if (Build.VERSION.SDK_INT >= 33
-                    && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                android.content.SharedPreferences preferences =
-                        getSharedPreferences("horizon_runtime_updates", MODE_PRIVATE);
-                if (!preferences.getBoolean("notification_permission_prompted", false)) {
-                    preferences.edit().putBoolean("notification_permission_prompted", true).commit();
-                    try {
-                        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 26036);
-                        return;
-                    } catch (RuntimeException error) {
-                        // Notifications are optional; do not prevent the launcher from opening.
-                    }
-                }
-            }
-            startRuntimeUpdaterAfterPermissionFlow();
-        }
-    };
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -230,8 +183,6 @@ public final class MainActivity extends Activity {
         filter.addAction(MicrosoftAuthService.ACTION_PROGRESS);
         filter.addAction(MicrosoftAuthService.ACTION_DEVICE_CODE);
         filter.addAction(MicrosoftAuthService.ACTION_FINISHED);
-        filter.addAction(HorizonRuntimeUpdateForegroundService.ACTION_PROGRESS);
-        filter.addAction(HorizonRuntimeUpdateForegroundService.ACTION_FINISHED);
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -256,20 +207,12 @@ public final class MainActivity extends Activity {
         } catch (Exception ignored) {
             // Restoring a sign-in session is best-effort.
         }
-        try {
-            startService(new Intent(this, HorizonRuntimeUpdateForegroundService.class)
-                    .setAction(HorizonRuntimeUpdateForegroundService.ACTION_QUERY));
-        } catch (Exception ignored) {
-            // Recovering updater state is best-effort; automatic checking runs after resume.
-        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         refreshRuntimeUpdateStatus();
-        runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
-        runtimeUpdateHandler.removeCallbacks(runtimeUpdateStartup);
         if (sessionEnvSet) {
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
@@ -299,58 +242,73 @@ public final class MainActivity extends Activity {
         }
     }
 
-    @Override
-    protected void onPostResume() {
-        super.onPostResume();
-        runtimeUpdateHandler.removeCallbacks(runtimeUpdateStartup);
-        runtimeUpdateHandler.postDelayed(runtimeUpdateStartup, 250L);
-    }
-
-    private void startRuntimeUpdaterAfterPermissionFlow() {
-        if (isFinishing() || isDestroyed()) return;
-        HorizonRuntimeUpdateService.checkInBackground(this);
-        refreshRuntimeUpdateStatus();
-        runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
-        runtimeUpdateHandler.postDelayed(runtimeUpdatePoll,
-                HorizonRuntimeUpdateService.isUpdateInProgress(this) ? 1000L : 30L * 60L * 1000L);
-    }
-
     private void refreshRuntimeUpdateStatus() {
-        boolean updating = HorizonRuntimeUpdateService.isUpdateInProgress(this);
-        int percent = HorizonRuntimeUpdateService.progressPercent(this);
-        String status = HorizonRuntimeUpdateService.lastStatus(this);
-        String stage = HorizonRuntimeUpdateService.progressStage(this);
-        if (runtimeUpdateText != null) runtimeUpdateText.setText(status);
+        if (runtimeUpdateText != null) {
+            runtimeUpdateText.setText(HorizonRuntimeUpdateService.lastStatus(this));
+        }
         if (runtimePcReleaseText != null) {
             runtimePcReleaseText.setText("Release de PC acompanhada: "
                     + HorizonRuntimeUpdateService.pcReleaseLabel(this));
         }
-        if (runtimeUpdateProgressBar != null) {
-            runtimeUpdateProgressBar.setVisibility(updating ? View.VISIBLE : View.GONE);
-            runtimeUpdateProgressBar.setIndeterminate(updating && percent < 0);
-            if (percent >= 0) runtimeUpdateProgressBar.setProgress(percent);
+        if (runtimeUpdateProgressBar != null && !runtimeUpdateBusy) {
+            runtimeUpdateProgressBar.setVisibility(View.GONE);
         }
         if (runtimeUpdateProgressDetail != null) {
-            runtimeUpdateProgressDetail.setVisibility(updating ? View.VISIBLE : View.GONE);
-            runtimeUpdateProgressDetail.setText(updating
-                    ? (stage == null || stage.isEmpty() ? "Atualização em andamento…" : stage)
-                        + (percent >= 0 ? " · " + percent + "%" : "")
-                    : "");
+            runtimeUpdateProgressDetail.setVisibility(View.VISIBLE);
+            runtimeUpdateProgressDetail.setText(runtimeUpdateBusy
+                    ? "A atualização está ativa. Não saia nem feche o aplicativo até a conclusão."
+                    : "Aviso: mantenha o aplicativo aberto durante a verificação/atualização do motor Horizon.");
         }
-        if (runtimeUpdateButton != null) {
-            runtimeUpdateButton.setEnabled(!updating && !busy && !conversionBusy
-                    && !downloadBusy && !authBusy && !launchBusy && !diagnosticsBusy);
-            runtimeUpdateButton.setText(updating ? "Atualização em andamento…" : "Verificar atualizações");
-            runtimeUpdateButton.setAlpha(updating ? 0.55f : 1f);
+        if (runtimeUpdateButton != null && !runtimeUpdateBusy) {
+            runtimeUpdateButton.setEnabled(!busy && !conversionBusy && !downloadBusy
+                    && !authBusy && !launchBusy && !diagnosticsBusy);
+            runtimeUpdateButton.setText("Verificar atualizações");
+            runtimeUpdateButton.setAlpha(1f);
         }
         updateActionEnablement();
     }
 
-    @Override
-    protected void onPause() {
-        runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
-        runtimeUpdateHandler.removeCallbacks(runtimeUpdateStartup);
-        super.onPause();
+    private void confirmRuntimeUpdate() {
+        if (runtimeUpdateBusy || isFinishing() || isDestroyed()) return;
+        new AlertDialog.Builder(this)
+                .setTitle("Mantenha o aplicativo aberto")
+                .setMessage("A atualização do motor Horizon será executada enquanto esta tela permanecer aberta. Não saia do aplicativo, não force seu fechamento e não reinicie o aparelho até que a verificação termine. Se o processo for encerrado, a atualização poderá ser interrompida.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Continuar", (dialog, which) -> startRuntimeUpdate())
+                .show();
+    }
+
+    private void startRuntimeUpdate() {
+        if (runtimeUpdateBusy || isFinishing() || isDestroyed()) return;
+        runtimeUpdateBusy = true;
+        if (runtimeUpdateText != null) {
+            runtimeUpdateText.setText("Verificando a versão mais recente do Horizon…");
+        }
+        if (runtimeUpdateProgressBar != null) {
+            runtimeUpdateProgressBar.setVisibility(View.VISIBLE);
+            runtimeUpdateProgressBar.setIndeterminate(true);
+        }
+        if (runtimeUpdateProgressDetail != null) {
+            runtimeUpdateProgressDetail.setVisibility(View.VISIBLE);
+            runtimeUpdateProgressDetail.setText("Não saia do aplicativo até a verificação/atualização terminar.");
+        }
+        if (runtimeUpdateButton != null) {
+            runtimeUpdateButton.setEnabled(false);
+            runtimeUpdateButton.setText("Atualização em andamento…");
+            runtimeUpdateButton.setAlpha(0.55f);
+        }
+        updateActionEnablement();
+        // Legacy updater from working build 873: work runs on its own executor in this app process,
+        // without a foreground service that promises to keep it alive after leaving the launcher.
+        HorizonRuntimeUpdateService.checkNow(this, () -> {
+            runtimeUpdateBusy = false;
+            if (isFinishing() || isDestroyed()) return;
+            if (runtimeUpdateProgressBar != null) {
+                runtimeUpdateProgressBar.setIndeterminate(false);
+                runtimeUpdateProgressBar.setVisibility(View.GONE);
+            }
+            refreshRuntimeUpdateStatus();
+        });
     }
 
     @Override
@@ -555,16 +513,14 @@ private void buildUi() {
         LinearLayout.LayoutParams runtimeProgressParams = params(-1, 6);
         runtimeProgressParams.topMargin = dp(8);
         runtimeCard.addView(runtimeUpdateProgressBar, runtimeProgressParams);
-        runtimeUpdateProgressDetail = text("", 11, 0xffbcb6d5, false);
+        runtimeUpdateProgressDetail = text(
+                "Aviso: mantenha o aplicativo aberto durante a verificação/atualização do motor Horizon.",
+                11, 0xffffd08a, false);
         LinearLayout.LayoutParams runtimeProgressDetailParams = params(-1, -2);
         runtimeProgressDetailParams.topMargin = dp(4);
+        runtimeUpdateProgressDetail.setVisibility(View.VISIBLE);
         runtimeCard.addView(runtimeUpdateProgressDetail, runtimeProgressDetailParams);
-        runtimeUpdateButton = button("Verificar atualizações", false, v -> {
-            HorizonRuntimeUpdateService.checkNow(this);
-            refreshRuntimeUpdateStatus();
-            runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
-            runtimeUpdateHandler.postDelayed(runtimeUpdatePoll, 250L);
-        });
+        runtimeUpdateButton = button("Verificar atualizações", false, v -> confirmRuntimeUpdate());
         addSpaced(runtimeCard, runtimeUpdateButton, 40, 8);
 
         downloadSectionView = collapsibleSection(page, "Downloads e preparação",
@@ -1043,11 +999,6 @@ private void buildUi() {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == 26036) {
-            // Whether granted or denied, notification permission must never block game/launcher use.
-            startRuntimeUpdaterAfterPermissionFlow();
-            return;
-        }
         if (requestCode == 26033 && pendingPreparationPermission) {
             pendingPreparationPermission = false;
             boolean granted = grantResults.length > 0
@@ -1473,9 +1424,9 @@ private void buildUi() {
     }
 
     private boolean blockGameLaunchDuringUpdate() {
-        if (!HorizonRuntimeUpdateService.isRuntimeInstallInProgress(this)) return false;
+        if (!runtimeUpdateBusy) return false;
         showRuntimeError("Atualização do Horizon em andamento",
-                "O motor nativo está sendo baixado ou ativado. Aguarde essa etapa terminar; depois o jogo poderá ser iniciado.");
+                "Mantenha esta tela aberta até que a verificação/atualização termine; depois o jogo poderá ser iniciado.");
         return true;
     }
 
@@ -2258,8 +2209,8 @@ private void buildUi() {
 
     private void updateActionEnablement() {
         boolean blocked = busy || conversionBusy || downloadBusy || authBusy || launchBusy || diagnosticsBusy;
-        boolean installingRuntime = HorizonRuntimeUpdateService.isRuntimeInstallInProgress(this);
-        boolean updaterBusy = HorizonRuntimeUpdateService.isUpdateInProgress(this);
+        boolean installingRuntime = runtimeUpdateBusy;
+        boolean updaterBusy = runtimeUpdateBusy;
         if (importFolderButton != null) importFolderButton.setEnabled(!blocked);
         if (importZipButton != null) importZipButton.setEnabled(!blocked);
         if (downloadBaseButton != null) downloadBaseButton.setEnabled(!blocked);
