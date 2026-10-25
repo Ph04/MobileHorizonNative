@@ -12,7 +12,59 @@ def hasStableSigning = !stableStoreFile.isEmpty() && !stableStorePassword.isEmpt
 def horizonPcReleaseTag = providers.gradleProperty('HORIZON_PC_RELEASE_TAG').getOrElse('v0.2.50')
 def horizonTestOldReleaseTag = providers.gradleProperty('HORIZON_TEST_OLD_RELEASE_TAG').getOrElse('v0.2.49')
 
+// The native launcher ports the Horizon desktop design system. Fonts and their licenses are
+// fetched from a pinned upstream source revision and packaged as app assets (never as a fixed runtime).
+def horizonUiAssetsDir = layout.buildDirectory.dir('generated/horizon-ui-assets')
+def horizonUiUpstreamCommit = 'd58d26c793bf87c0961589c027a45613273d5ad4'
+def horizonUiAssetNames = [
+        'Geist-Regular.ttf', 'Geist-Medium.ttf', 'Geist-SemiBold.ttf', 'GeistMono-Regular.ttf',
+        'PixelifySans-Medium.ttf', 'PixelifySans-SemiBold.ttf', 'PixelifySans-Bold.ttf',
+        'OFL-Geist.txt', 'OFL-PixelifySans.txt'
+]
+
+def downloadHorizonUiAssets = tasks.register('downloadHorizonUiAssets') {
+    outputs.dir(horizonUiAssetsDir)
+    doLast {
+        File outputDir = horizonUiAssetsDir.get().asFile
+        if (!outputDir.isDirectory() && !outputDir.mkdirs()) {
+            throw new GradleException("Unable to create Horizon UI asset directory: ${outputDir}")
+        }
+        String baseUrl = "https://raw.githubusercontent.com/ludovic111/horizon/${horizonUiUpstreamCommit}/crates/horizon-theme/fonts/"
+        horizonUiAssetNames.each { String assetName ->
+            File destination = new File(outputDir, assetName)
+            long minimumBytes = assetName.endsWith('.ttf') ? 1000L : 100L
+            if (destination.isFile() && destination.length() >= minimumBytes) return
+            HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + assetName).openConnection()
+            connection.setConnectTimeout(20000)
+            connection.setReadTimeout(45000)
+            connection.setRequestProperty('User-Agent', 'MobileHorizonNative-UI-assets/1.0')
+            try {
+                int code = connection.getResponseCode()
+                if (code != HttpURLConnection.HTTP_OK) {
+                    throw new GradleException("Horizon UI asset download failed for ${assetName}: HTTP ${code}")
+                }
+                destination.withOutputStream { output ->
+                    connection.getInputStream().withCloseable { input -> input.transferTo(output) }
+                }
+                if (!destination.isFile() || destination.length() < minimumBytes) {
+                    destination.delete()
+                    throw new GradleException("Horizon UI asset was empty or incomplete: ${assetName}")
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }
+}
+
+tasks.named('preBuild').configure { dependsOn(downloadHorizonUiAssets) }
+
 android {
+    sourceSets {
+        main {
+            assets.srcDir(horizonUiAssetsDir)
+        }
+    }
     namespace 'dev.mobilehorizon.app'
     compileSdk 35
 
