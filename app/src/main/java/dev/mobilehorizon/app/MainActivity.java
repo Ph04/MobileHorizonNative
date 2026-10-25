@@ -11,8 +11,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.content.res.Configuration;
+import android.widget.FrameLayout;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -45,6 +50,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -75,6 +81,13 @@ public final class MainActivity extends Activity {
     private TextView progressDetails;
     private TextView runtimeUpdateText;
     private Button runtimeUpdateButton;
+    private Button viewLogsButton;
+    private ScrollView dashboardScroll;
+    private View heroPanel;
+    private View downloadSectionView;
+    private View resourcesSectionView;
+    private View logsSectionView;
+    private View runtimeUpdateSectionView;
     private ProgressBar progressBar;
     private Button importFolderButton;
     private Button importZipButton;
@@ -257,75 +270,179 @@ public final class MainActivity extends Activity {
     }
 
     private void buildUi() {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.setBackgroundColor(Color.rgb(244, 246, 251));
+        boolean landscape = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE
+                && getResources().getConfiguration().screenWidthDp >= 600;
+        final int backgroundColor = 0xff090911;
+        getWindow().setStatusBarColor(backgroundColor);
+        getWindow().setNavigationBarColor(backgroundColor);
+        if (Build.VERSION.SDK_INT >= 23) {
+            getWindow().getDecorView().setSystemUiVisibility(0);
+        }
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        root.setBackgroundColor(backgroundColor);
+
+        dashboardScroll = new ScrollView(this);
+        dashboardScroll.setFillViewport(true);
+        dashboardScroll.setClipToPadding(false);
+        dashboardScroll.setBackgroundColor(backgroundColor);
 
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(16), dp(18), dp(16), dp(24));
-        scroll.addView(page);
-        setContentView(scroll);
+        page.setPadding(dp(landscape ? 18 : 12), dp(landscape ? 16 : 12),
+                dp(landscape ? 18 : 12), dp(24));
+        dashboardScroll.addView(page);
 
-        page.addView(text("MOBILEHORIZON  /  ANDROID", 12, 0xff5363bd, true), params(-1, -2));
-        TextView title = text("Minecraft no celular", 27, 0xff17213b, true);
-        LinearLayout.LayoutParams titleParams = params(-1, -2);
-        titleParams.topMargin = dp(6);
-        page.addView(title, titleParams);
-        TextView intro = text(
-                "Jogue, prepare os recursos ou importe uma instalação que já está pronta.",
-                14, 0xff59647b, false);
-        LinearLayout.LayoutParams introParams = params(-1, -2);
-        introParams.topMargin = dp(5);
-        page.addView(intro, introParams);
+        if (!landscape) {
+            LinearLayout topBar = new LinearLayout(this);
+            topBar.setOrientation(LinearLayout.HORIZONTAL);
+            topBar.setGravity(Gravity.CENTER_VERTICAL);
+            TextView topTitle = text("HORIZON", 16, 0xfff2eeff, true);
+            topBar.addView(topTitle, new LinearLayout.LayoutParams(0, dp(28), 1f));
+            topBar.addView(text("MINECRAFT 26.3  •  ANDROID", 10, 0xffb4a8dc, true),
+                    params(-2, -2));
+            page.addView(topBar, params(-1, -2));
+        }
 
-        // State and cancellation stay visible while work is running.
+        // Horizon-style hero/banner. The pixel backdrop is drawn natively, so it scales
+        // cleanly and does not depend on a fixed-resolution desktop screenshot.
+        heroPanel = new FrameLayout(this);
+        heroPanel.setBackground(new HorizonPixelBackdrop(this));
+        LinearLayout.LayoutParams heroParams = params(-1, landscape ? 226 : 204);
+        heroParams.topMargin = dp(8);
+        page.addView(heroPanel, heroParams);
+
+        LinearLayout heroContent = new LinearLayout(this);
+        heroContent.setOrientation(LinearLayout.VERTICAL);
+        heroContent.setPadding(dp(16), dp(14), dp(16), dp(14));
+        heroPanel.addView(heroContent, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        LinearLayout badgeLine = new LinearLayout(this);
+        badgeLine.setOrientation(LinearLayout.HORIZONTAL);
+        badgeLine.setGravity(Gravity.CENTER_VERTICAL);
+        TextView readyBadge = text("  ■  MINECRAFT 26.3  •  READY  ", 10, 0xffb8ffd5, true);
+        GradientDrawable badgeBackground = new GradientDrawable();
+        badgeBackground.setColor(0xdd111420);
+        badgeBackground.setCornerRadius(dp(3));
+        readyBadge.setBackground(badgeBackground);
+        readyBadge.setPadding(dp(7), dp(5), dp(7), dp(5));
+        badgeLine.addView(readyBadge, params(-2, -2));
+        badgeLine.addView(text("   VANILLA", 10, 0xffd3c1ff, true), params(-2, -2));
+        heroContent.addView(badgeLine, params(-1, -2));
+
+        LinearLayout heroMain = new LinearLayout(this);
+        heroMain.setOrientation(LinearLayout.HORIZONTAL);
+        heroMain.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams heroMainParams = params(-1, 0);
+        heroMainParams.weight = 1f;
+        heroMainParams.topMargin = dp(6);
+        heroContent.addView(heroMain, heroMainParams);
+
+        LinearLayout heroBrand = new LinearLayout(this);
+        heroBrand.setOrientation(LinearLayout.VERTICAL);
+        heroBrand.setGravity(Gravity.CENTER_VERTICAL);
+        heroMain.addView(heroBrand, new LinearLayout.LayoutParams(0, -1, 1f));
+        heroBrand.addView(text("Horizon", landscape ? 40 : 32, 0xfff7f1ff, true),
+                params(-1, -2));
+        TextView heroDescription = text("Minecraft Java Edition", 12, 0xffe0c9f2, false);
+        LinearLayout.LayoutParams heroDescriptionParams = params(-1, -2);
+        heroDescriptionParams.topMargin = dp(1);
+        heroBrand.addView(heroDescription, heroDescriptionParams);
+
+        offlinePlayButton = button("▶  Jogar", true, v -> openOfflineClient());
+        offlinePlayButton.setTextSize(17);
+        LinearLayout.LayoutParams playButtonParams = params(landscape ? 156 : 124, 52);
+        playButtonParams.setMargins(dp(8), 0, 0, 0);
+        heroMain.addView(offlinePlayButton, playButtonParams);
+
+        LinearLayout heroActions = new LinearLayout(this);
+        heroActions.setOrientation(LinearLayout.HORIZONTAL);
+        heroActions.setGravity(Gravity.CENTER_VERTICAL);
+        offlineNameButton = button("Nick: " + OfflineProfile.loadName(this), false,
+                v -> showOfflineNameDialog());
+        touchControlsButton = button("Controles", false, v -> openTouchControlsEditor());
+        addButtonPair(heroActions, offlineNameButton, touchControlsButton, 38, 0);
+        heroContent.addView(heroActions, params(-1, -2));
+
+        TextView readyHeading = text("PRONTO PARA JOGAR", 11, 0xffc6b8ef, true);
+        LinearLayout.LayoutParams readyHeadingParams = params(-1, -2);
+        readyHeadingParams.topMargin = dp(15);
+        page.addView(readyHeading, readyHeadingParams);
+
         LinearLayout statusCard = card();
         LinearLayout.LayoutParams statusCardParams = params(-1, -2);
-        statusCardParams.topMargin = dp(16);
+        statusCardParams.topMargin = dp(8);
         page.addView(statusCard, statusCardParams);
-        statusCard.addView(text("Estado", 13, 0xff5363bd, true), params(-1, -2));
-        statusTitle = text("Pronto", 18, 0xff18213a, true);
+        LinearLayout statusHeader = new LinearLayout(this);
+        statusHeader.setOrientation(LinearLayout.HORIZONTAL);
+        statusHeader.setGravity(Gravity.CENTER_VERTICAL);
+        statusHeader.addView(text("Estado do Horizon", 15, 0xfff1edff, true),
+                new LinearLayout.LayoutParams(0, -2, 1f));
+        statusCard.addView(statusHeader, params(-1, -2));
+        statusTitle = text("Pronto", 16, 0xffc3a4ff, true);
         LinearLayout.LayoutParams statusTitleParams = params(-1, -2);
-        statusTitleParams.topMargin = dp(4);
+        statusTitleParams.topMargin = dp(6);
         statusCard.addView(statusTitle, statusTitleParams);
-        statusDetails = text("", 13, 0xff59647b, false);
+        statusDetails = text("Recursos oficiais e motor nativo são gerenciados separadamente.",
+                12, 0xffb5b0cd, false);
         LinearLayout.LayoutParams statusDetailsParams = params(-1, -2);
-        statusDetailsParams.topMargin = dp(6);
+        statusDetailsParams.topMargin = dp(4);
         statusCard.addView(statusDetails, statusDetailsParams);
 
         progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(1000);
+        progressBar.setProgressTintList(android.content.res.ColorStateList.valueOf(0xff8e63ff));
+        progressBar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff302a43));
         progressBar.setVisibility(View.GONE);
-        LinearLayout.LayoutParams progressParams = params(-1, 8);
-        progressParams.topMargin = dp(12);
+        LinearLayout.LayoutParams progressParams = params(-1, 6);
+        progressParams.topMargin = dp(10);
         statusCard.addView(progressBar, progressParams);
-        progressDetails = text("", 12, 0xff59647b, false);
+        progressDetails = text("", 11, 0xffbcb6d5, false);
         LinearLayout.LayoutParams progressTextParams = params(-1, -2);
         progressTextParams.topMargin = dp(5);
         statusCard.addView(progressDetails, progressTextParams);
-
         cancelButton = button("Cancelar operação", false, v -> cancelImport());
-        LinearLayout.LayoutParams cancelParams = params(-1, 46);
+        LinearLayout.LayoutParams cancelParams = params(-1, 42);
         cancelParams.topMargin = dp(8);
         cancelButton.setVisibility(View.GONE);
         statusCard.addView(cancelButton, cancelParams);
         cancelDownloadButton = button("Cancelar download", false, v -> cancelOfficialDownload());
-        LinearLayout.LayoutParams cancelDownloadParams = params(-1, 46);
+        LinearLayout.LayoutParams cancelDownloadParams = params(-1, 42);
         cancelDownloadParams.topMargin = dp(6);
         cancelDownloadButton.setVisibility(View.GONE);
         statusCard.addView(cancelDownloadButton, cancelDownloadParams);
 
-        LinearLayout runtimeUpdateCard = card();
-        LinearLayout.LayoutParams runtimeUpdateCardParams = params(-1, -2);
-        runtimeUpdateCardParams.topMargin = dp(10);
-        page.addView(runtimeUpdateCard, runtimeUpdateCardParams);
-        runtimeUpdateCard.addView(text("Motor Horizon", 15, 0xff18213a, true), params(-1, -2));
-        runtimeUpdateText = text(HorizonRuntimeUpdateService.lastStatus(this),
-                13, 0xff59647b, false);
+        // These rows mirror the desktop launcher's Ready to play panel while routing to
+        // functionality this Android build actually supports.
+        addDashboardRow(page, "Resources", resourceReadySummary(),
+                "Gerenciar", v -> startActivity(new Intent(this, ResourceManagerActivity.class)),
+                landscape);
+        addDashboardRow(page, "Minecraft folder",
+                "Diretório privado: files/minecraft • Downloads oficiais verificados",
+                "Downloads", v -> scrollToSection(downloadSectionView), landscape);
+        addDashboardRow(page, "Multiplayer",
+                "O menu de servidores fica dentro do Horizon. O perfil offline funciona em servidores que aceitam jogadores sem autenticação oficial.",
+                "Abrir Horizon", v -> openOfflineClient(), landscape);
+
+        runtimeUpdateSectionView = card();
+        LinearLayout runtimeCard = (LinearLayout) runtimeUpdateSectionView;
+        LinearLayout.LayoutParams runtimeParams = params(-1, -2);
+        runtimeParams.topMargin = dp(10);
+        page.addView(runtimeCard, runtimeParams);
+        LinearLayout runtimeTitleRow = new LinearLayout(this);
+        runtimeTitleRow.setOrientation(LinearLayout.HORIZONTAL);
+        runtimeTitleRow.setGravity(Gravity.CENTER_VERTICAL);
+        runtimeTitleRow.addView(text("Motor Horizon", 14, 0xfff1edff, true),
+                new LinearLayout.LayoutParams(0, -2, 1f));
+        runtimeTitleRow.addView(text("NATIVE  •  ARM64", 10, 0xffb69aff, true), params(-2, -2));
+        runtimeCard.addView(runtimeTitleRow, params(-1, -2));
+        runtimeUpdateText = text(HorizonRuntimeUpdateService.lastStatus(this), 12, 0xffb5b0cd, false);
         LinearLayout.LayoutParams runtimeUpdateTextParams = params(-1, -2);
         runtimeUpdateTextParams.topMargin = dp(5);
-        runtimeUpdateCard.addView(runtimeUpdateText, runtimeUpdateTextParams);
+        runtimeCard.addView(runtimeUpdateText, runtimeUpdateTextParams);
         runtimeUpdateButton = button("Verificar atualizações", false, v -> {
             runtimeUpdateButton.setEnabled(false);
             runtimeUpdateText.setText("Verificando a versão mais recente do Horizon...");
@@ -334,105 +451,186 @@ public final class MainActivity extends Activity {
                 runtimeUpdateButton.setEnabled(true);
             });
         });
-        addSpaced(runtimeUpdateCard, runtimeUpdateButton, 42, 8);
+        addSpaced(runtimeCard, runtimeUpdateButton, 40, 8);
 
-        // Keep the primary play action prominent and place its secondary
-        // shortcuts together so the screen is shorter without changing flows.
-        LinearLayout playCard = card();
-        LinearLayout.LayoutParams playCardParams = params(-1, -2);
-        playCardParams.topMargin = dp(12);
-        page.addView(playCard, playCardParams);
-        playCard.addView(text("Jogar", 18, 0xff18213a, true), params(-1, -2));
-        offlineStatusText = text("Perfil offline: " + OfflineProfile.loadName(this), 14, 0xff59647b, false);
-        LinearLayout.LayoutParams offlineStatusParams = params(-1, -2);
-        offlineStatusParams.topMargin = dp(5);
-        playCard.addView(offlineStatusText, offlineStatusParams);
-
-        offlinePlayButton = button("Jogar com perfil offline", true, v -> openOfflineClient());
-        addSpaced(playCard, offlinePlayButton, 52, 10);
-        offlineNameButton = button("Nick offline", false, v -> showOfflineNameDialog());
-        touchControlsButton = button("Controles de toque", false, v -> openTouchControlsEditor());
-        addButtonPair(playCard, offlineNameButton, touchControlsButton, 46, 6);
-
-        Button resourcesManagerButton = button("Gerenciador de recursos", false,
-                v -> startActivity(new Intent(this, ResourceManagerActivity.class)));
-        addSpaced(playCard, resourcesManagerButton, 46, 6);
-        TextView playHint = text(
-                "Na primeira utilização, prepare ou importe os recursos antes de iniciar.",
-                12, 0xff68728a, false);
-        addSpaced(playCard, playHint, -2, 8);
-
-        LinearLayout setup = collapsibleSection(page, "Preparar Minecraft 26.3",
-                "Downloads oficiais, validação e conversão dos recursos.", true);
+        downloadSectionView = collapsibleSection(page, "Downloads e preparação",
+                "Arquivos oficiais do Minecraft 26.3, assets e conversão para o Horizon.", true);
+        LinearLayout setup = (LinearLayout) downloadSectionView;
         setup.addView(text(
-                "Os arquivos são verificados por tamanho e SHA-1. Baixar todos os assets é opcional e pode ocupar centenas de MB.",
-                13, 0xff59647b, false), params(-1, -2));
-        downloadBaseButton = button("Baixar arquivos base", true, v -> startOfficialDownload(false));
-        downloadAssetsButton = button("Base + todos os assets", false, v -> confirmFullAssetDownload());
-        addButtonPair(setup, downloadBaseButton, downloadAssetsButton, 48, 10);
+                "Os arquivos são verificados por tamanho e SHA-1. O download completo de assets pode ocupar centenas de MB.",
+                12, 0xffb9b3d1, false), params(-1, -2));
+        downloadBaseButton = button("Baixar Minecraft (arquivos base)", true,
+                v -> startOfficialDownload(false));
+        downloadAssetsButton = button("Baixar base + todos os assets", false,
+                v -> confirmFullAssetDownload());
+        addButtonPair(setup, downloadBaseButton, downloadAssetsButton, 46, 10);
 
-        TextView conversionTitle = text("Conversão", 15, 0xff18213a, true);
-        addSpaced(setup, conversionTitle, -2, 14);
+        TextView conversionTitle = text("Preparar recursos para jogar", 14, 0xffeee9ff, true);
+        addSpaced(setup, conversionTitle, -2, 13);
         TextView conversionNote = text(
-                "Prepare as entradas ou execute a conversão completa. O progresso é mostrado nesta tela e na notificação.",
-                13, 0xff59647b, false);
+                "A conversão completa e a preparação de entradas mostram o progresso nesta tela e na notificação.",
+                12, 0xffb9b3d1, false);
         addSpaced(setup, conversionNote, -2, 4);
         prepareInputsButton = button("Preparar entradas", false, v -> prepareConversionInputs());
         fullConvertButton = button("Conversão completa", true, v -> prepareFullConversion());
-        addButtonPair(setup, prepareInputsButton, fullConvertButton, 48, 8);
+        addButtonPair(setup, prepareInputsButton, fullConvertButton, 46, 8);
 
-        LinearLayout importSection = collapsibleSection(page, "Importar recursos já preparados",
-                "Use uma pasta 26.3 ou um ZIP; não precisa de Termux.", false);
-        importSection.addView(text(
-                "Escolha uma pasta com horizon-resources.json na raiz ou um ZIP equivalente. O app valida e instala a saída no diretório privado do Horizon.",
-                13, 0xff59647b, false), params(-1, -2));
-        importFolderButton = button("Selecionar pasta", true, v -> chooseFolder());
-        importZipButton = button("Selecionar ZIP", false, v -> chooseZip());
-        addButtonPair(importSection, importFolderButton, importZipButton, 48, 10);
+        resourcesSectionView = collapsibleSection(page, "Gerenciador de recursos",
+                "Importar, inspecionar e organizar recursos já preparados.", false);
+        LinearLayout resourcesSection = (LinearLayout) resourcesSectionView;
+        resourcesSection.addView(text(
+                "Gerencie recursos compatíveis com o runtime instalado. A saída preparada do Minecraft fica no armazenamento privado do app.",
+                12, 0xffb9b3d1, false), params(-1, -2));
+        Button resourcesManagerButton = button("Abrir gerenciador de recursos", true,
+                v -> startActivity(new Intent(this, ResourceManagerActivity.class)));
+        addSpaced(resourcesSection, resourcesManagerButton, 44, 9);
+        importFolderButton = button("Importar pasta preparada", false, v -> chooseFolder());
+        importZipButton = button("Importar ZIP preparado", false, v -> chooseZip());
+        addButtonPair(resourcesSection, importFolderButton, importZipButton, 44, 7);
 
-        LinearLayout accountSection = collapsibleSection(page, "Conta Microsoft",
-                "Opcional; necessária para servidores que exigem autenticação oficial.", false);
-        accountStatusText = text("Nenhuma conta verificada neste dispositivo.", 14, 0xff59647b, false);
+        LinearLayout accountSection = collapsibleSection(page, "Contas",
+                "Conta Microsoft opcional; o perfil offline continua disponível.", false);
+        accountStatusText = text("Nenhuma conta verificada neste dispositivo.", 13, 0xffb9b3d1, false);
         accountSection.addView(accountStatusText, params(-1, -2));
         TextView accountNote = text(
-                "O login usa o fluxo oficial de código de dispositivo. O perfil offline continua disponível em servidores que o aceitam.",
-                12, 0xff68728a, false);
+                "Servidores em modo online exigem autenticação oficial. Servidores configurados para modo offline podem aceitar seu nickname local.",
+                11, 0xffa8a1c6, false);
         addSpaced(accountSection, accountNote, -2, 5);
         microsoftLoginButton = button("Entrar com Microsoft", true, v -> startMicrosoftSignIn());
-        addSpaced(accountSection, microsoftLoginButton, 48, 8);
+        addSpaced(accountSection, microsoftLoginButton, 44, 8);
         microsoftSignOutButton = button("Remover conta salva", false, v -> signOutMicrosoft());
         microsoftSignOutButton.setVisibility(View.GONE);
-        addSpaced(accountSection, microsoftSignOutButton, 44, 6);
+        addSpaced(accountSection, microsoftSignOutButton, 40, 6);
 
-        LinearLayout tools = collapsibleSection(page, "Ferramentas e diagnóstico",
-                "Verificações do cliente, teste gráfico e exportação de logs.", false);
+        logsSectionView = collapsibleSection(page, "Logs e diagnóstico",
+                "Consultar logs locais, testar o renderizador e exportar um pacote de diagnóstico.", false);
+        LinearLayout tools = (LinearLayout) logsSectionView;
         openEngineButton = button("Verificar requisitos", false, v -> openNativeClient());
         smokeTestButton = button("Testar Vulkan", false, v -> openNativeSmokeTest());
-        addButtonPair(tools, openEngineButton, smokeTestButton, 46, 0);
-
+        addButtonPair(tools, openEngineButton, smokeTestButton, 42, 0);
+        viewLogsButton = button("Abrir logs do Horizon", false, v -> showLogsDialog());
+        addSpaced(tools, viewLogsButton, 42, 7);
         TextView diagnosticNote = text(
-                "O ZIP de diagnóstico pode conter endereço do servidor, nicknames e mensagens de chat. Revise antes de compartilhar; tokens e arquivos de sessão não são incluídos.",
-                12, 0xff59647b, false);
-        addSpaced(tools, diagnosticNote, -2, 12);
-        exportDiagnosticsButton = button("Exportar diagnóstico multiplayer", true, v -> exportDiagnostics());
-        addSpaced(tools, exportDiagnosticsButton, 48, 6);
+                "Os logs podem conter endereços de servidores, nicknames e mensagens. Revise o arquivo antes de compartilhar.",
+                11, 0xffb9b3d1, false);
+        addSpaced(tools, diagnosticNote, -2, 8);
+        exportDiagnosticsButton = button("Exportar diagnóstico", true, v -> exportDiagnostics());
+        addSpaced(tools, exportDiagnosticsButton, 44, 6);
 
         LinearLayout compatibilityCard = card();
         LinearLayout.LayoutParams compatParams = params(-1, -2);
-        compatParams.topMargin = dp(12);
+        compatParams.topMargin = dp(10);
         tools.addView(compatibilityCard, compatParams);
-        compatibilityCard.addView(text("Compatibilidade do aparelho", 15, 0xff18213a, true), params(-1, -2));
-        compatibilityText = text("", 13, 0xff59647b, false);
+        compatibilityCard.addView(text("Compatibilidade do aparelho", 14, 0xfff1edff, true),
+                params(-1, -2));
+        compatibilityText = text("", 12, 0xffb9b3d1, false);
         LinearLayout.LayoutParams compatTextParams = params(-1, -2);
         compatTextParams.topMargin = dp(5);
         compatibilityCard.addView(compatibilityText, compatTextParams);
 
-        TextView footer = text(
-                "Dica: comece pelos arquivos base. Baixe todos os assets ou use a conversão completa só quando necessário.",
-                12, 0xff68728a, false);
+        TextView footer = text("MobileHorizon • Horizon engine • recursos oficiais verificados",
+                10, 0xff817a9e, false);
         LinearLayout.LayoutParams footerParams = params(-1, -2);
-        footerParams.topMargin = dp(14);
+        footerParams.topMargin = dp(16);
         page.addView(footer, footerParams);
+
+        if (landscape) {
+            root.addView(buildSidebar(dashboardScroll), params(184, -1));
+            root.addView(dashboardScroll, new LinearLayout.LayoutParams(0, -1, 1f));
+        } else {
+            root.addView(dashboardScroll, params(-1, -1));
+        }
+        setContentView(root);
+    }
+
+    private String resourceReadySummary() {
+        File resources = new File(getFilesDir(),
+                ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+        File marker = new File(resources, "horizon-resources.json");
+        if (marker.isFile()) {
+            return "Preparado para Minecraft " + OfficialMinecraftInstaller.VERSION
+                    + " • saída Horizon encontrada";
+        }
+        return "Ainda não preparado • baixe e prepare os recursos antes de jogar";
+    }
+
+    private void addDashboardRow(LinearLayout parent, String title, String description,
+                                 String actionLabel, View.OnClickListener action,
+                                 boolean landscape) {
+        LinearLayout rowCard = card();
+        LinearLayout.LayoutParams rowParams = params(-1, -2);
+        rowParams.topMargin = dp(7);
+        parent.addView(rowCard, rowParams);
+        rowCard.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+        if (landscape) {
+            rowCard.addView(info, new LinearLayout.LayoutParams(0, -2, 1f));
+        } else {
+            rowCard.addView(info, params(-1, -2));
+        }
+        info.addView(text(title, 13, 0xffeee9ff, true), params(-1, -2));
+        TextView detail = text(description, 11, 0xffb5b0cd, false);
+        detail.setLineSpacing(dp(2), 1f);
+        LinearLayout.LayoutParams detailParams = params(-1, -2);
+        detailParams.topMargin = dp(4);
+        info.addView(detail, detailParams);
+        Button actionButton = button(actionLabel, false, action);
+        LinearLayout.LayoutParams actionParams = params(landscape ? 116 : -1, 38);
+        if (landscape) actionParams.setMargins(dp(10), 0, 0, 0);
+        else actionParams.topMargin = dp(8);
+        rowCard.addView(actionButton, actionParams);
+    }
+
+    private LinearLayout buildSidebar(ScrollView scroll) {
+        LinearLayout sidebar = new LinearLayout(this);
+        sidebar.setOrientation(LinearLayout.VERTICAL);
+        sidebar.setPadding(dp(10), dp(14), dp(10), dp(14));
+        sidebar.setBackgroundColor(0xff07070d);
+        sidebar.addView(text("INSTÂNCIAS", 10, 0xff8b82aa, true), params(-1, -2));
+
+        LinearLayout instance = new LinearLayout(this);
+        instance.setOrientation(LinearLayout.HORIZONTAL);
+        instance.setGravity(Gravity.CENTER_VERTICAL);
+        instance.setPadding(dp(9), dp(9), dp(7), dp(9));
+        GradientDrawable selected = new GradientDrawable();
+        selected.setColor(0xff211c35);
+        selected.setStroke(dp(1), 0xff51406c);
+        selected.setCornerRadius(dp(4));
+        instance.setBackground(selected);
+        LinearLayout.LayoutParams instanceParams = params(-1, -2);
+        instanceParams.topMargin = dp(10);
+        sidebar.addView(instance, instanceParams);
+        View grass = new View(this);
+        grass.setBackgroundColor(0xff83a956);
+        instance.addView(grass, params(24, 24));
+        LinearLayout instanceText = new LinearLayout(this);
+        instanceText.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams instanceTextParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        instanceTextParams.setMargins(dp(7), 0, 0, 0);
+        instance.addView(instanceText, instanceTextParams);
+        instanceText.addView(text("Horizon", 12, 0xfff0ecff, true), params(-1, -2));
+        instanceText.addView(text("Vanilla • READY", 9, 0xffb8a9d8, false), params(-1, -2));
+
+        TextView navigationTitle = text("NAVEGAÇÃO", 10, 0xff8b82aa, true);
+        LinearLayout.LayoutParams navTitleParams = params(-1, -2);
+        navTitleParams.topMargin = dp(24);
+        sidebar.addView(navigationTitle, navTitleParams);
+        addSpaced(sidebar, button("Início", true, v -> scrollToSection(heroPanel)), 40, 8);
+        addSpaced(sidebar, button("Downloads", false, v -> scrollToSection(downloadSectionView)), 40, 5);
+        addSpaced(sidebar, button("Recursos", false, v -> scrollToSection(resourcesSectionView)), 40, 5);
+        addSpaced(sidebar, button("Logs", false, v -> scrollToSection(logsSectionView)), 40, 5);
+        addSpaced(sidebar, button("Atualizações", false, v -> scrollToSection(runtimeUpdateSectionView)), 40, 5);
+
+        View spacer = new View(this);
+        sidebar.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1f));
+        sidebar.addView(text("ANDROID  •  ARM64", 9, 0xff817a9e, true), params(-1, -2));
+        return sidebar;
+    }
+
+    private void scrollToSection(View target) {
+        if (dashboardScroll == null || target == null) return;
+        dashboardScroll.post(() -> dashboardScroll.smoothScrollTo(0, Math.max(0, target.getTop())));
     }
 
     private void addButtonPair(LinearLayout parent, View left, View right, int heightDp, int topMarginDp) {
@@ -1869,11 +2067,11 @@ public final class MainActivity extends Activity {
     private LinearLayout card() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setPadding(dp(13), dp(12), dp(13), dp(12));
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.WHITE);
-        background.setCornerRadius(dp(18));
-        background.setStroke(dp(1), 0xffe2e6f0);
+        background.setColor(0xff171622);
+        background.setCornerRadius(dp(5));
+        background.setStroke(dp(1), 0xff302b43);
         card.setBackground(background);
         return card;
     }
@@ -1882,15 +2080,17 @@ public final class MainActivity extends Activity {
         Button button = new Button(this);
         button.setAllCaps(false);
         button.setText(label);
-        button.setTextSize(15);
+        button.setTextSize(13);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        button.setPadding(dp(16), 0, dp(16), 0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(dp(10), 0, dp(10), 0);
         GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius(dp(14));
-        background.setColor(primary ? 0xff4259d9 : Color.WHITE);
-        if (!primary) background.setStroke(dp(1), 0xffd9dfed);
+        background.setCornerRadius(dp(4));
+        background.setColor(primary ? 0xff6042d8 : 0xff242132);
+        if (!primary) background.setStroke(dp(1), 0xff413953);
         button.setBackground(background);
-        button.setTextColor(primary ? Color.WHITE : 0xff24304c);
+        button.setTextColor(primary ? Color.WHITE : 0xffe7e0ff);
         button.setOnClickListener(click);
         return button;
     }
@@ -1899,10 +2099,102 @@ public final class MainActivity extends Activity {
         TextView text = new TextView(this);
         text.setText(value);
         text.setTextSize(sizeSp);
+        if (color == 0xff17213b || color == 0xff18213a || color == 0xff24304c) {
+            color = 0xfff1edff;
+        } else if (color == 0xff59647b || color == 0xff68728a) {
+            color = 0xffb9b3d1;
+        } else if (color == 0xff5363bd) {
+            color = 0xffb69aff;
+        }
         text.setTextColor(color);
         text.setGravity(Gravity.START);
         if (bold) text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         return text;
+    }
+
+    private static final class HorizonPixelBackdrop extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int[] sky = {
+                0xff22204c, 0xff33265b, 0xff51275e, 0xff7b365f, 0xff8d435d
+        };
+
+        HorizonPixelBackdrop(Context context) {
+            super(context);
+        }
+
+        private void block(Canvas canvas, int color, float x, float y, float width, float height) {
+            paint.setColor(color);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawRect(x, y, x + width, y + height, paint);
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float w = getWidth();
+            float h = getHeight();
+            if (w <= 0 || h <= 0) return;
+            float cell = Math.max(dp(5), Math.min(dp(12), w / 85f));
+            for (int i = 0; i < sky.length; i++) {
+                block(canvas, sky[i], 0, h * i / sky.length, w, h / sky.length + 1);
+            }
+            // Pixel clouds and stars.
+            block(canvas, 0xffa06b9b, w * .64f, h * .12f, cell * 7, cell);
+            block(canvas, 0xffa06b9b, w * .64f + cell * 2, h * .12f - cell, cell * 5, cell);
+            block(canvas, 0xff73548f, w * .72f, h * .24f, cell * 8, cell);
+            block(canvas, 0xff73548f, w * .72f + cell, h * .24f - cell, cell * 5, cell);
+            block(canvas, 0xffd3b2de, w * .08f, h * .17f, cell * 2, cell * .6f);
+            block(canvas, 0xffd3b2de, w * .10f, h * .17f - cell * .7f, cell * 3, cell * .6f);
+            block(canvas, 0xffffd88a, w * .62f, h * .21f, cell * 6, cell);
+            block(canvas, 0xffffd88a, w * .62f + cell, h * .21f - cell, cell * 4, cell);
+            block(canvas, 0xffffd88a, w * .62f + cell, h * .21f + cell, cell * 4, cell);
+            block(canvas, 0xffffd88a, w * .62f + cell * 2, h * .21f + cell * 2, cell * 2, cell);
+            for (int i = 0; i < 20; i++) {
+                float x = (i * 97f % 997f) / 997f * w;
+                float y = (i * 31f % 101f) / 101f * h * .50f;
+                block(canvas, i % 3 == 0 ? 0xffd8b4e9 : 0xff8874b1, x, y, cell * .36f, cell * .36f);
+            }
+            // Dark pixel hills; the stair-step skyline is intentional.
+            Path farHill = new Path();
+            farHill.moveTo(0, h * .72f);
+            farHill.lineTo(w * .10f, h * .68f);
+            farHill.lineTo(w * .16f, h * .70f);
+            farHill.lineTo(w * .25f, h * .58f);
+            farHill.lineTo(w * .33f, h * .61f);
+            farHill.lineTo(w * .40f, h * .55f);
+            farHill.lineTo(w * .54f, h * .69f);
+            farHill.lineTo(w * .68f, h * .63f);
+            farHill.lineTo(w * .80f, h * .70f);
+            farHill.lineTo(w * .90f, h * .59f);
+            farHill.lineTo(w, h * .65f);
+            farHill.lineTo(w, h);
+            farHill.lineTo(0, h);
+            farHill.close();
+            paint.setColor(0xff241c45);
+            canvas.drawPath(farHill, paint);
+            Path foreground = new Path();
+            foreground.moveTo(0, h * .83f);
+            foreground.lineTo(w * .15f, h * .78f);
+            foreground.lineTo(w * .26f, h * .84f);
+            foreground.lineTo(w * .42f, h * .75f);
+            foreground.lineTo(w * .54f, h * .81f);
+            foreground.lineTo(w * .70f, h * .77f);
+            foreground.lineTo(w * .84f, h * .85f);
+            foreground.lineTo(w, h * .80f);
+            foreground.lineTo(w, h);
+            foreground.lineTo(0, h);
+            foreground.close();
+            paint.setColor(0xff131429);
+            canvas.drawPath(foreground, paint);
+            // Block trees add the game's pixel-art silhouette without raster assets.
+            for (int i = 0; i < 7; i++) {
+                float x = w * (.07f + i * .137f);
+                float base = h * (.82f + (i % 2) * .035f);
+                block(canvas, 0xff111528, x, base - cell * 4, cell, cell * 5);
+                block(canvas, 0xff111528, x - cell, base - cell * 4, cell * 3, cell * 2);
+                block(canvas, 0xff111528, x - cell * 2, base - cell * 3, cell * 5, cell);
+            }
+            block(canvas, 0x663d2858, 0, h * .96f, w, h * .04f);
+        }
     }
 
     private LinearLayout.LayoutParams params(int width, int height) {
