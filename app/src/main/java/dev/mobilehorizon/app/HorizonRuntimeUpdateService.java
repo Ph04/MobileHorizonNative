@@ -30,6 +30,12 @@ import java.util.regex.Pattern;
  */
 public final class HorizonRuntimeUpdateService {
     private static final String TAG = "HorizonRuntimeUpdate";
+    static final String ACTION_PROGRESS = "dev.mobilehorizon.app.RUNTIME_UPDATE_PROGRESS";
+    private static final String PROGRESS_ACTIVE = "progress_active";
+    private static final String PROGRESS_PHASE = "progress_phase";
+    private static final String PROGRESS_MESSAGE = "progress_message";
+    private static final String PROGRESS_BYTES = "progress_bytes";
+    private static final String PROGRESS_TOTAL = "progress_total";
     private static final String RELEASES_URL =
             "https://api.github.com/repos/Ph04/MobileHorizonNative/releases?per_page=100";
     private static final String OFFICIAL_RELEASE_URL =
@@ -112,6 +118,11 @@ public final class HorizonRuntimeUpdateService {
         }
         if (!startCheck) return;
         preferences.edit().putLong(LAST_CHECK, now).apply();
+        publishProgress(app, preferences, "checking",
+                HorizonRuntimeManager.hasActiveRuntimeMarker(app)
+                        ? "Verificando releases e atualizações da runtime Horizon…"
+                        : "Procurando e baixando a runtime Horizon para Android ARM64…",
+                0L, -1L);
 
         EXECUTOR.execute(() -> {
             try {
@@ -121,6 +132,7 @@ public final class HorizonRuntimeUpdateService {
                 preferences.edit().putString(LAST_STATUS, message).apply();
                 Log.w(TAG, message, error);
             } finally {
+                finishProgress(app, preferences);
                 List<Runnable> callbacks;
                 synchronized (CHECK_LOCK) {
                     IN_FLIGHT.set(false);
@@ -144,8 +156,67 @@ public final class HorizonRuntimeUpdateService {
     }
 
     public static String lastStatus(Context context) {
+        SharedPreferences preferences = context.getApplicationContext()
+                .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        if (preferences.getBoolean(PROGRESS_ACTIVE, false)) {
+            String progress = preferences.getString(PROGRESS_MESSAGE, "");
+            if (progress != null && !progress.trim().isEmpty()) return progress;
+        }
+        return preferences.getString(LAST_STATUS, "Ainda não foi verificada uma atualização do Horizon.");
+    }
+
+    public static boolean isProgressActive(Context context) {
         return context.getApplicationContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .getString(LAST_STATUS, "Ainda não foi verificada uma atualização do Horizon.");
+                .getBoolean(PROGRESS_ACTIVE, false);
+    }
+
+    public static String progressPhase(Context context) {
+        return context.getApplicationContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getString(PROGRESS_PHASE, "");
+    }
+
+    public static long progressBytes(Context context) {
+        return context.getApplicationContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getLong(PROGRESS_BYTES, 0L);
+    }
+
+    public static long progressTotal(Context context) {
+        return context.getApplicationContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getLong(PROGRESS_TOTAL, -1L);
+    }
+
+    private static void publishProgress(Context context, SharedPreferences preferences,
+                                        String phase, String message, long bytes, long total) {
+        preferences.edit().putBoolean(PROGRESS_ACTIVE, true)
+                .putString(PROGRESS_PHASE, phase)
+                .putString(PROGRESS_MESSAGE, message)
+                .putLong(PROGRESS_BYTES, bytes)
+                .putLong(PROGRESS_TOTAL, total)
+                .apply();
+        Intent event = new Intent(ACTION_PROGRESS).setPackage(context.getPackageName());
+        event.putExtra("active", true);
+        event.putExtra("phase", phase);
+        event.putExtra("message", message);
+        event.putExtra("bytes", bytes);
+        event.putExtra("total", total);
+        context.sendBroadcast(event);
+    }
+
+    private static void finishProgress(Context context, SharedPreferences preferences) {
+        String message = preferences.getString(LAST_STATUS, "Verificação concluída.");
+        preferences.edit().putBoolean(PROGRESS_ACTIVE, false)
+                .putString(PROGRESS_PHASE, "finished")
+                .putString(PROGRESS_MESSAGE, message)
+                .putLong(PROGRESS_BYTES, 0L)
+                .putLong(PROGRESS_TOTAL, -1L)
+                .apply();
+        Intent event = new Intent(ACTION_PROGRESS).setPackage(context.getPackageName());
+        event.putExtra("active", false);
+        event.putExtra("phase", "finished");
+        event.putExtra("message", message);
+        event.putExtra("bytes", 0L);
+        event.putExtra("total", -1L);
+        context.sendBroadcast(event);
     }
 
     /** The PC release tag represented by the installed runtime, for the launcher UI. */
@@ -190,6 +261,8 @@ public final class HorizonRuntimeUpdateService {
         // has been built and published in this repository.
         OfficialRelease official = null;
         if (!BuildConfig.HORIZON_TEST_OLD_RUNTIME) {
+            publishProgress(context, preferences, "checking-official",
+                    "Consultando o release oficial mais recente do Horizon…", 0L, -1L);
             try {
                 official = latestOfficialRelease();
                 preferences.edit()
@@ -201,6 +274,8 @@ public final class HorizonRuntimeUpdateService {
             }
         }
 
+        publishProgress(context, preferences, "checking-runtime",
+                "Procurando a runtime Android ARM64 mais recente publicada…", 0L, -1L);
         String currentVersion = HorizonRuntimeManager.currentVersion(context);
         Release latest = BuildConfig.HORIZON_TEST_OLD_RUNTIME
                 ? testFixtureRuntime(BuildConfig.HORIZON_PC_RELEASE_TAG)
@@ -286,7 +361,13 @@ public final class HorizonRuntimeUpdateService {
         File download = new File(context.getCacheDir(),
                 "horizon-runtime-" + release.version + ".part");
         try {
-            download(release.manifestUrl, release.manifestSize, release.manifestSha256, manifestDownload);
+            publishProgress(context, preferences, "manifest",
+                    "Baixando manifesto e metadados da runtime…", 0L, release.manifestSize);
+            download(context, preferences, "manifest", "Baixando manifesto da runtime…",
+                    release.manifestUrl, release.manifestSize, release.manifestSha256, manifestDownload);
+            publishProgress(context, preferences, "verify-manifest",
+                    "Validando o manifesto e a versão da runtime…",
+                    manifestDownload.length(), Math.max(1L, manifestDownload.length()));
             JSONObject manifest = new JSONObject(readSmallFile(manifestDownload, 64 * 1024));
             String upstreamCommit = manifest.optString("upstream_commit", "");
             String upstreamTag = manifest.optString("upstream_tag", "");
@@ -306,7 +387,13 @@ public final class HorizonRuntimeUpdateService {
                 throw new IOException("O manifesto do runtime não corresponde à versão PC "
                         + release.upstreamTag + " e aos metadados do release.");
             }
-            download(release.url, release.size, release.sha256, download);
+            publishProgress(context, preferences, "runtime-download",
+                    "Baixando a runtime Horizon Android ARM64…", 0L, release.size);
+            download(context, preferences, "runtime-download", "Baixando runtime Horizon…",
+                    release.url, release.size, release.sha256, download);
+            publishProgress(context, preferences, "runtime-install",
+                    "Download concluído. Instalando a runtime verificada…",
+                    release.size, release.size);
             HorizonRuntimeManager.installAndActivate(context, download, release.version, release.sha256);
             preferences.edit().putString(PC_RELEASE_TAG, release.upstreamTag).apply();
             Log.i(TAG, "Runtime ativado para a próxima inicialização: PC "
@@ -451,8 +538,9 @@ public final class HorizonRuntimeUpdateService {
         return a.compareTo(b);
     }
 
-    private static void download(String address, long expectedSize, String expectedSha256,
-                                 File destination) throws IOException {
+    private static void download(Context context, SharedPreferences preferences,
+                                 String phase, String progressLabel, String address,
+                                 long expectedSize, String expectedSha256, File destination) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
         connection.setRequestMethod("GET");
         connection.setConnectTimeout(20000);
@@ -477,24 +565,37 @@ public final class HorizonRuntimeUpdateService {
                  FileOutputStream output = new FileOutputStream(destination)) {
                 byte[] buffer = new byte[64 * 1024];
                 long written = 0;
+                long lastReportedBytes = 0L;
+                long lastReportedAt = android.os.SystemClock.elapsedRealtime();
                 int count;
+                publishProgress(context, preferences, phase, progressLabel, 0L, expectedSize);
                 while ((count = input.read(buffer)) != -1) {
                     written += count;
                     if (written > MAX_DOWNLOAD_BYTES || written > expectedSize) {
                         throw new IOException("O download excedeu o tamanho esperado.");
                     }
                     output.write(buffer, 0, count);
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    if (now - lastReportedAt >= 250L || written - lastReportedBytes >= 1024L * 1024L) {
+                        publishProgress(context, preferences, phase, progressLabel, written, expectedSize);
+                        lastReportedAt = now;
+                        lastReportedBytes = written;
+                    }
                 }
                 output.getFD().sync();
                 if (written != expectedSize) {
                     throw new IOException("Download incompleto: recebido " + written
                             + " bytes, esperado " + expectedSize + ".");
                 }
+                publishProgress(context, preferences, "verify-" + phase,
+                        "Download concluído. Verificando SHA-256…", written, expectedSize);
             }
             String downloadedDigest = sha256(destination);
             if (!downloadedDigest.equalsIgnoreCase(expectedSha256)) {
                 throw new IOException("SHA-256 do asset baixado não confere.");
             }
+            publishProgress(context, preferences, phase,
+                    "Arquivo baixado e SHA-256 verificado.", expectedSize, expectedSize);
         } finally {
             connection.disconnect();
         }
