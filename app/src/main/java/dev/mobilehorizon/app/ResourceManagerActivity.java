@@ -766,7 +766,7 @@ public final class ResourceManagerActivity extends Activity {
                         refreshResources();
                     }).show());
             remove.setTextSize(11);
-            LinearLayout.LayoutParams removeParams = params(-1, 36);
+            LinearLayout.LayoutParams removeParams = params(-1, dp(42));
             removeParams.topMargin = dp(4);
             details.addView(remove, removeParams);
         }
