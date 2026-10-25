@@ -25,7 +25,7 @@ def horizonUiAssetNames = [
 def downloadHorizonUiAssets = tasks.register('downloadHorizonUiAssets') {
     outputs.dir(horizonUiAssetsDir)
     doLast {
-        File outputDir = horizonUiAssetsDir.get().asFile
+        File outputDir = new File(horizonUiAssetsDir.get().asFile, 'horizon-ui')
         if (!outputDir.isDirectory() && !outputDir.mkdirs()) {
             throw new GradleException("Unable to create Horizon UI asset directory: ${outputDir}")
         }
