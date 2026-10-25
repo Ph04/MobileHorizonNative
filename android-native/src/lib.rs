@@ -161,6 +161,14 @@ fn run_vulkan_smoke_test() -> std::result::Result<String, String> {
 
 #[unsafe(no_mangle)]
 fn android_main(app: winit::platform::android::activity::AndroidApp) {
+    // Confirm that the dynamically selected engine reached its Rust entry point. Leave a
+    // fallback marker untouched so the Java manager can reset the selected version next launch.
+    if std::env::var("HORIZON_RUNTIME_USING_FALLBACK").ok().as_deref() != Some("1") {
+        if let Ok(status_path) = std::env::var("HORIZON_RUNTIME_STATUS_FILE") {
+            let _ = std::fs::write(status_path, "RUNNING:libhorizon_engine.so\\n");
+        }
+    }
+
     // winit's android-activity glue initializes ndk-context before android_main and
     // releases it after this function returns. Do not initialize it a second time:
     // ndk-context asserts on duplicate initialization and both game/Vulkan launch crash.
