@@ -215,13 +215,14 @@ jobs:
           ENGINE_SHA256="$(sha256sum "$LIB" | awk '{print $1}')"
           python3 - "$RELEASE_DIR/horizon-runtime-manifest.json" \
             "$UPSTREAM_COMMIT" "${{ needs.resolve.outputs.runtime_version }}" \
-            "${{ needs.resolve.outputs.overlay_sha }}" "$ENGINE_SHA256" <<'PYMANIFEST'
+            "${{ needs.resolve.outputs.upstream_tag }}" "${{ needs.resolve.outputs.overlay_sha }}" \
+            "$ENGINE_SHA256" <<'PYMANIFEST'
           import json, sys
-          path, commit, version, overlay, digest = sys.argv[1:]
+          path, commit, version, upstream_tag, overlay, digest = sys.argv[1:]
           manifest = {
               "format": 1,
               "version": version,
-              "upstream_tag": "${{ needs.resolve.outputs.upstream_tag }}",
+              "upstream_tag": upstream_tag,
               "upstream_commit": commit,
               "overlay": overlay,
               "abi": "arm64-v8a",
