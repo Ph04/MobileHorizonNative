@@ -50,6 +50,9 @@ public final class HorizonRuntimeUpdateService {
 
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final AtomicBoolean IN_FLIGHT = new AtomicBoolean(false);
+    // Forces one latest-runtime check when this app process first initializes. Activity resumes
+    // still use the normal cooldown, so rotating/recreating the UI cannot cause repeated requests.
+    private static final AtomicBoolean STARTUP_CHECK_REQUESTED = new AtomicBoolean(false);
     private static final Object CHECK_LOCK = new Object();
     private static final List<Runnable> PENDING_CALLBACKS = new ArrayList<>();
 
@@ -62,6 +65,12 @@ public final class HorizonRuntimeUpdateService {
     /** Checks immediately when the player requests it, bypassing only the normal cooldown. */
     public static void checkNow(Context context, Runnable onFinished) {
         checkInBackground(context, onFinished, true);
+    }
+
+    /** Forces a freshness check once per app process, bypassing the prior-process cooldown. */
+    public static void checkAtStartup(Context context, Runnable onFinished) {
+        boolean force = STARTUP_CHECK_REQUESTED.compareAndSet(false, true);
+        checkInBackground(context, onFinished, force);
     }
 
     public static void checkInBackground(Context context, Runnable onFinished) {
