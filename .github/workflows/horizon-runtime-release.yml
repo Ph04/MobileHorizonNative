@@ -20,7 +20,7 @@ on:
   push:
     branches: ["feature/horizon-runtime-loader"]
     paths:
-      - "android-native/Cargo.toml"
+      - "android-native/**"
       - "tools/horizon-revisions.env"
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
@@ -57,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib, json, os, pathlib, urllib.error, urllib.parse, urllib.request
+          import hashlib, json, os, pathlib, subprocess, urllib.error, urllib.parse, urllib.request
 
           token = os.environ["GH_TOKEN"]
           def get_json(url, allow_404=False):
@@ -107,15 +107,34 @@ jobs:
               raise SystemExit("Upstream tag did not resolve to a commit: " + upstream_tag)
           upstream_commit = obj["sha"]
 
-          overlay_files = [
-              pathlib.Path("android-native/Cargo.toml"),
-              pathlib.Path("android-native/src/lib.rs"),
-              pathlib.Path("tools/patch_horizon_android_touch.py"),
-              pathlib.Path("tools/horizon_patches/01_offline_server_login.py"),
-              pathlib.Path("tools/horizon_patches/02_android_native.py"),
-          ]
-          material = b"".join(path.read_bytes() for path in overlay_files)
-          overlay_sha = hashlib.sha256(material).hexdigest()[:8]
+          # Hash every tracked build input, not a hard-coded patch list. This includes
+          # newly added patch groups and any Android Rust source/config file that affects the
+          # native engine; otherwise a complete old release could suppress a required rebuild.
+          exact_inputs = {
+              b"tools/patch_horizon_android_touch.py",
+              b"tools/horizon-revisions.env",
+              b".github/workflows/horizon-runtime-release.yml",
+          }
+          tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=".", text=False)
+          tracked_paths = [entry for entry in tracked.split(b"\\0") if entry]
+          overlay_paths = sorted(
+              entry for entry in tracked_paths
+              if entry in exact_inputs
+              or entry.startswith(b"android-native/")
+              or entry.startswith(b"tools/horizon_patches/")
+          )
+          if not overlay_paths:
+              raise SystemExit("No tracked Android runtime build inputs were found.")
+          overlay_digest = hashlib.sha256()
+          for raw_path in overlay_paths:
+              source_path = pathlib.Path(os.fsdecode(raw_path))
+              if not source_path.is_file():
+                  raise SystemExit("Missing runtime build input: " + str(source_path))
+              overlay_digest.update(raw_path)
+              overlay_digest.update(b"\\0")
+              overlay_digest.update(source_path.read_bytes())
+              overlay_digest.update(b"\\0")
+          overlay_sha = overlay_digest.hexdigest()[:8]
           runtime_version = "horizon-" + upstream_tag + "-c" + upstream_commit[:8] + "-o" + overlay_sha
           runtime_tag = "horizon-runtime-" + runtime_version
 
@@ -124,12 +143,64 @@ jobs:
               + urllib.parse.quote(runtime_tag, safe=""),
               allow_404=True,
           )
-          needed_assets = {"horizon-runtime-arm64-v8a.so", "horizon-runtime-manifest.json"}
-          present_assets = {
-              asset.get("name") for asset in (existing or {}).get("assets", [])
-          }
           release_exists = existing is not None
-          build = not needed_assets.issubset(present_assets)
+          build = True
+          if existing is not None:
+              assets = existing.get("assets", [])
+              engine_asset = next(
+                  (asset for asset in assets
+                   if asset.get("name") == "horizon-runtime-arm64-v8a.so"), None
+              )
+              manifest_asset = next(
+                  (asset for asset in assets
+                   if asset.get("name") == "horizon-runtime-manifest.json"), None
+              )
+              try:
+                  if engine_asset is None or manifest_asset is None:
+                      raise ValueError("the ARM64 engine or runtime manifest is missing")
+                  engine_digest = engine_asset.get("digest", "")
+                  manifest_digest = manifest_asset.get("digest", "")
+                  if (not engine_digest.startswith("sha256:")
+                          or not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", engine_digest)
+                          or not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", manifest_digest)):
+                      raise ValueError("GitHub has not supplied valid SHA-256 asset digests")
+                  if (int(engine_asset.get("size", 0)) <= 0
+                          or int(engine_asset.get("size", 0)) > 300 * 1024 * 1024
+                          or int(manifest_asset.get("size", 0)) <= 0
+                          or int(manifest_asset.get("size", 0)) > 64 * 1024):
+                      raise ValueError("runtime release asset size is invalid")
+
+                  manifest_url = manifest_asset.get("browser_download_url", "")
+                  if not manifest_url.startswith(
+                          "https://github.com/Ph04/MobileHorizonNative/releases/download/"):
+                      raise ValueError("runtime manifest URL is invalid")
+                  request = urllib.request.Request(manifest_url, headers={
+                      "User-Agent": "MobileHorizonNative-runtime-release",
+                      "Accept": "application/octet-stream",
+                  })
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      manifest_bytes = response.read(64 * 1024 + 1)
+                  if len(manifest_bytes) > 64 * 1024:
+                      raise ValueError("runtime manifest is too large")
+                  manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+                  if manifest_sha.lower() != manifest_digest.split(":", 1)[1].lower():
+                      raise ValueError("runtime manifest SHA-256 does not match GitHub metadata")
+                  manifest = json.loads(manifest_bytes.decode("utf-8"))
+                  expected_engine_sha = engine_digest.split(":", 1)[1].lower()
+                  if (manifest.get("format") != 1
+                          or manifest.get("version") != runtime_version
+                          or manifest.get("upstream_tag") != upstream_tag
+                          or manifest.get("upstream_commit") != upstream_commit
+                          or manifest.get("overlay") != overlay_sha
+                          or manifest.get("abi") != "arm64-v8a"
+                          or manifest.get("library") != "horizon-runtime-arm64-v8a.so"
+                          or str(manifest.get("sha256", "")).lower() != expected_engine_sha):
+                      raise ValueError("existing manifest does not match the selected Horizon source/overlay")
+                  build = False
+              except Exception as error:
+                  print("Existing runtime release is incomplete or stale; rebuilding: " + str(error),
+                        flush=True)
+
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"build={'true' if build else 'false'}\n")
@@ -143,7 +214,8 @@ jobs:
           print("Upstream release:", upstream_tag)
           print("Upstream commit:", upstream_commit)
           print("Runtime version:", runtime_version)
-          print("Existing release is complete:", not build)
+          print("Existing runtime release is verified and complete:", not build)
+          print("Runtime build required:", build)
           PY
 
   build-runtime:
