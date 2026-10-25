@@ -48,37 +48,13 @@ pack_patch("crates/horizon-client/src/net.rs", '''        let (id, payload) = re
         }
         let packet = match cfg::Clientbound::decode(id, &payload) {''', "trace configuration resource and registry packet receipt")
 
-pack_patch("crates/horizon-client/src/net.rs", '''    let mut registries = Dynamic::default();
-    let reply = |p: cfg::Serverbound| -> Result<(), String> {''', '''    let mut registries = Dynamic::default();
-    let mut diagnostic_pack_offers = 0usize;
-    let reply = |p: cfg::Serverbound| -> Result<(), String> {''', "count configuration phase resource-pack offers")
+# Removed: the v0.2.50 upstream pack manager now owns offer, cache and status state.
 
-pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::ResourcePackPush(p) => {
-                let id = p.id;
-                let url = p.url;
-                let hash = p.hash;
-                let required = p.required;
-                let supported_url = supported_pack_url(&url);
-                log::info!("Horizon: server resource-pack offer id={id:032x} state=configuration required={required} hash_present={} origin={}", !hash.is_empty(), safe_resource_pack_origin(&url));''', '''            cfg::Clientbound::ResourcePackPush(p) => {
-                diagnostic_pack_offers += 1;
-                let id = p.id;
-                let url = p.url;
-                let hash = p.hash;
-                let required = p.required;
-                let supported_url = supported_pack_url(&url);
-                log::info!("HorizonDiag: resource_pack_offer_decoded phase=configuration offer_number={} id={id:032x} required={required} hash_present={} origin={}", diagnostic_pack_offers, !hash.is_empty(), safe_resource_pack_origin(&url));''', "log configuration resource-pack offer count")
 
-pack_patch("crates/horizon-client/src/net.rs", '''            cfg::Clientbound::FinishConfiguration(_) => {
-                reply(cfg::Serverbound::FinishConfiguration(Empty))?;
-                return Ok(registries);
-            }''', '''            cfg::Clientbound::FinishConfiguration(_) => {
-                log::info!(
-                    "HorizonDiag: configuration_phase_complete resource_pack_offers={}",
-                    diagnostic_pack_offers
-                );
-                reply(cfg::Serverbound::FinishConfiguration(Empty))?;
-                return Ok(registries);
-            }''', "summarize configuration resource offers and registries")
+# Removed: the v0.2.50 upstream pack manager now owns offer, cache and status state.
+
+
+pack_patch("crates/horizon-client/src/net.rs", "            cfg::Clientbound::FinishConfiguration(_) => {\n                reply(cfg::Serverbound::FinishConfiguration(Empty))?;\n                return Ok(registries);\n            }", "            cfg::Clientbound::FinishConfiguration(_) => {\n                log::info!(\"HorizonDiag: configuration_phase_complete\");\n                reply(cfg::Serverbound::FinishConfiguration(Empty))?;\n                return Ok(registries);\n            }", "summarize configuration resource offers and registries")
 
 # Entity metadata is logged after decode, including item IDs and component IDs,
 # while text previews are short and escaped. No NBT, texture URLs or profile blobs.
@@ -398,15 +374,7 @@ pack_patch("crates/horizon-client/src/game/names.rs", '''            if let Some
 
 # Trace overlay sources and reload stages so an absent pack offer is distinct
 # from a downloaded pack which failed validation, overlay construction or reload.
-pack_patch("crates/horizon-client/src/game/packs.rs", '''    let all = packs::discover(vanilla, &packs_dir());
-    let mut enabled = packs::enabled(&all, selected);
-    for (id, path) in server_packs {''', '''    let all = packs::discover(vanilla, &packs_dir());
-    let mut enabled = packs::enabled(&all, selected);
-    log::info!(
-        "HorizonDiag: resource_overlay_build_start discovered_client_packs={} selected_client_packs={} server_pack_layers={}",
-        all.len(), selected.len(), server_packs.len()
-    );
-    for (id, path) in server_packs {''', "trace active overlay inputs")
+pack_patch("crates/horizon-client/src/game/packs.rs", "    let all = packs::discover(vanilla, &packs_dir());\n    let mut enabled = packs::enabled(&all, selected);\n    enabled.extend_from_slice(server);", "    let all = packs::discover(vanilla, &packs_dir());\n    let mut enabled = packs::enabled(&all, selected);\n    log::info!(\n        \"HorizonDiag: resource_overlay_build_start discovered_client_packs={} selected_client_packs={} server_pack_layers={}\",\n        all.len(), selected.len(), server.len()\n    );\n    enabled.extend_from_slice(server);", "trace active overlay inputs")
 
 pack_patch("crates/horizon-client/src/game/packs.rs", '''    packs::resource_root(vanilla, &enabled, &cache_dir())
 }''', '''    for (id, path) in server_packs {
@@ -517,15 +485,8 @@ pack_patch("crates/horizon-client/src/game/packs.rs", '''        self.streaming.
             self.gui.atlas.sprites.len()
         );''', "log completed streaming resource refresh")
 
-pack_patch("crates/horizon-client/src/game/remote.rs", '''        log::info!("Horizon: applying server resource pack id={id:032x} required={required}");
-        self.pending_server_pack_responses.push((id, phase));''', '''        log::info!(
-            "HorizonDiag: server_resource_pack_activation id={id:032x} required={required} phase={:?} cache_file={} zip_bytes={} active_server_pack_layers={}",
-            phase,
-            path.file_name().and_then(|value| value.to_str()).unwrap_or("unknown"),
-            std::fs::metadata(&path).map(|metadata| metadata.len()).unwrap_or(0),
-            remote.server_packs.len()
-        );
-        self.pending_server_pack_responses.push((id, phase));''', "trace server pack activation and cache metadata")
+# Removed: the v0.2.50 upstream pack manager now owns offer, cache and status state.
+
 
 
 
