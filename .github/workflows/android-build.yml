@@ -11,6 +11,7 @@ on:
       - "app/**"
       - "core/**"
       - "android-native/**"
+      - "android-bootstrap/**"
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
       - "tools/tests/**"
@@ -26,6 +27,7 @@ on:
       - "app/**"
       - "core/**"
       - "android-native/**"
+      - "android-bootstrap/**"
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
       - "tools/tests/**"
@@ -39,7 +41,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android:
@@ -62,7 +64,7 @@ jobs:
       - name: Install Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: "platforms;android-35 build-tools;35.0.0"
+          packages: "platforms;android-35 build-tools;35.0.0 cmake;3.22.1"
 
       - name: Install Android NDK with download retry
         shell: bash
@@ -82,47 +84,6 @@ jobs:
             echo "::warning::Android NDK download failed (attempt $attempt); retrying."
           done
           test -x "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang"
-
-      # Reuse the previous repo's committed source bundle only as a source for the
-      # native runtime. Both the archive and shared-library hashes are pinned below.
-      # The runtime is not compiled on the player's phone and is not pulled from an
-      # unverified release URL.
-      - name: Fetch and verify pinned ARM64 Horizon runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          TEMP_DIR="$RUNNER_TEMP/mobilehorizon-legacy"
-          mkdir -p "$TEMP_DIR"
-          BASE="https://raw.githubusercontent.com/Ph04/MobileHorizon/main"
-          for part in 00 01 02; do
-            curl --fail --location --retry 3 --retry-all-errors \
-              "$BASE/HorizonAndroidPrep_0.9.7_with_native.zip.part-$part" \
-              --output "$TEMP_DIR/source.zip.part-$part"
-          done
-          cat "$TEMP_DIR"/source.zip.part-* > "$TEMP_DIR/source.zip"
-          echo "c3e8de14e3beacbff203f2134afabe3fb801bea8eda7de42491aacfe00a2b302  $TEMP_DIR/source.zip" | sha256sum --check -
-          unzip -tq "$TEMP_DIR/source.zip"
-          mkdir -p "$TEMP_DIR/unpacked"
-          unzip -q "$TEMP_DIR/source.zip" -d "$TEMP_DIR/unpacked"
-          LIB="$TEMP_DIR/unpacked/HorizonAndroidPrep/prebuilt/android/arm64-v8a/libhorizon_android.so"
-          test -s "$LIB"
-          echo "9d564adb67e7aa9b36c5ae66f4e6cf1a74549746216220bc5a1cba235421ab82  $LIB" | sha256sum --check -
-          # Write tool output to files before grep; grep -q on a pipe can close
-          # early and make readelf/strings fail under the workflow's pipefail.
-          readelf -h "$LIB" > "$TEMP_DIR/lib-header.txt"
-          grep -Fq "AArch64" "$TEMP_DIR/lib-header.txt"
-          readelf -Ws "$LIB" > "$TEMP_DIR/lib-symbols.txt"
-          grep -Fq "ANativeActivity_onCreate" "$TEMP_DIR/lib-symbols.txt"
-          grep -Fq "android_main" "$TEMP_DIR/lib-symbols.txt"
-          strings "$LIB" > "$TEMP_DIR/lib-strings.txt"
-          if grep -Fq "HORIZON_PLAYER_NAME" "$TEMP_DIR/lib-strings.txt"; then
-            echo "Native runtime contains HORIZON_PLAYER_NAME; offline nickname handoff is available."
-          else
-            echo "::warning::Pinned native runtime does not advertise HORIZON_PLAYER_NAME; offline launch will use its built-in/default name until the runtime is rebuilt."
-          fi
-          mkdir -p app/src/main/jniLibs/arm64-v8a
-          cp "$LIB" app/src/main/jniLibs/arm64-v8a/libhorizon_android.so
-          echo "Verified and staged libhorizon_android.so for arm64-v8a."
 
       - name: Set up Rust toolchain for Android ARM64
         uses: dtolnay/rust-toolchain@stable
@@ -331,6 +292,9 @@ jobs:
           # horizon-client feature selection and uses Android's native audio backend.
           source tools/horizon-revisions.env
           UPSTREAM_COMMIT="$HORIZON_RUNTIME_COMMIT"
+          UPSTREAM_TAG="$HORIZON_RUNTIME_RELEASE_TAG"
+          echo "HORIZON_PC_RELEASE_TAG=$HORIZON_RUNTIME_RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "HORIZON_TEST_OLD_RELEASE_TAG=$HORIZON_TEST_OLD_RELEASE_TAG" >> "$GITHUB_ENV"
           SOURCE="$RUNNER_TEMP/horizon-native-upstream"
           git init "$SOURCE"
           git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
@@ -352,31 +316,141 @@ jobs:
           export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
           export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
           cargo build --release --no-default-features --manifest-path "$SOURCE/Cargo.toml" -p mobilehorizon-android --target aarch64-linux-android
-          LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_android.so"
+          LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_engine.so"
           test -s "$LIB"
-          # Avoid grep -q closing a pipe early: with pipefail this can return
-          # a nonzero status even though the symbol was found.
-          "$TOOLCHAIN/llvm-readelf" -h "$LIB" > "$RUNNER_TEMP/horizon-elf-header.txt"
-          grep -Fq 'AArch64' "$RUNNER_TEMP/horizon-elf-header.txt"
-          "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" > "$RUNNER_TEMP/horizon-elf-symbols.txt"
-          grep -Fq 'ANativeActivity_onCreate' "$RUNNER_TEMP/horizon-elf-symbols.txt" || {
-            echo "::error::The native library is missing ANativeActivity_onCreate."
+          # Keep the APK entry library small and stable; this is the independently updatable engine.
+          "$TOOLCHAIN/llvm-readelf" -h "$LIB" > "$RUNNER_TEMP/horizon-engine-elf-header.txt"
+          grep -Fq 'AArch64' "$RUNNER_TEMP/horizon-engine-elf-header.txt"
+          "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" > "$RUNNER_TEMP/horizon-engine-elf-symbols.txt"
+          grep -Fq 'ANativeActivity_onCreate' "$RUNNER_TEMP/horizon-engine-elf-symbols.txt" || {
+            echo "::error::The native engine is missing ANativeActivity_onCreate."
             exit 1
           }
-          grep -Fq 'android_main' "$RUNNER_TEMP/horizon-elf-symbols.txt" || {
-            echo "::error::The native library is missing android_main."
+          grep -Fq 'android_main' "$RUNNER_TEMP/horizon-engine-elf-symbols.txt" || {
+            echo "::error::The native engine is missing android_main."
             exit 1
           }
-          cp "$LIB" app/src/main/jniLibs/arm64-v8a/libhorizon_android.so
-          echo "Built and staged the patched NativeActivity client with Android touch translated to mouse input."
-          sha256sum app/src/main/jniLibs/arm64-v8a/libhorizon_android.so | tee "$RUNNER_TEMP/horizon-android-sha256.txt"
+          grep -Fq 'Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectCursorMove' "$RUNNER_TEMP/horizon-engine-elf-symbols.txt" || {
+            echo "::error::The native engine is missing the touch/mouse JNI bridge."
+            exit 1
+          }
+          ASSET_DIR="app/src/main/assets/horizon-runtime"
+          mkdir -p "$ASSET_DIR"
+          cp "$LIB" "$ASSET_DIR/libhorizon_engine.so"
+          ENGINE_SHA256="$(sha256sum "$LIB" | awk '{print $1}')"
+          OVERLAY_SHA="$(cat android-native/Cargo.toml android-native/src/lib.rs tools/patch_horizon_android_touch.py tools/horizon_patches/01_offline_server_login.py tools/horizon_patches/02_android_native.py | sha256sum | awk '{print $1}' | cut -c1-8)"
+          python3 - "$ASSET_DIR/manifest.json" "$UPSTREAM_COMMIT" "$UPSTREAM_TAG" "$ENGINE_SHA256" "$OVERLAY_SHA" <<'PYMANIFEST'
+          import json, sys
+          manifest_path, commit, upstream_tag, digest, overlay = sys.argv[1:]
+          manifest = {
+              "format": 1,
+              "version": "horizon-" + upstream_tag + "-c" + commit[:8] + "-o" + overlay,
+              "upstream_tag": upstream_tag,
+              "upstream_commit": commit,
+              "overlay": overlay,
+              "abi": "arm64-v8a",
+              "library": "libhorizon_engine.so",
+              "sha256": digest.lower(),
+          }
+          with open(manifest_path, "w", encoding="utf-8") as stream:
+              json.dump(manifest, stream, indent=2)
+              stream.write("\n")
+          print(f"Staged Android Horizon engine {manifest['version']} with SHA-256 {digest}")
+          PYMANIFEST
+          echo "Built the Horizon engine separately from the stable APK bootstrap."
+          sha256sum "$ASSET_DIR/libhorizon_engine.so" | tee "$RUNNER_TEMP/horizon-engine-sha256.txt"
+
+      - name: Build and publish isolated updater-test fixture (previous PC release -> pinned PC release)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/horizon-runtime-loader' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source tools/horizon-revisions.env
+          OLD_TAG="$HORIZON_TEST_OLD_RELEASE_TAG"
+          CURRENT_TAG="$HORIZON_RUNTIME_RELEASE_TAG"
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          OVERLAY_SHA="$(cat android-native/Cargo.toml android-native/src/lib.rs tools/patch_horizon_android_touch.py tools/horizon_patches/01_offline_server_login.py tools/horizon_patches/02_android_native.py | sha256sum | awk '{print $1}' | cut -c1-8)"
+          SOURCE_OLD="$RUNNER_TEMP/horizon-update-test-old"
+          git init "$SOURCE_OLD"
+          git -C "$SOURCE_OLD" remote add origin https://github.com/ludovic111/horizon.git
+          git -C "$SOURCE_OLD" fetch --depth 1 origin "refs/tags/$OLD_TAG:refs/tags/$OLD_TAG"
+          git -C "$SOURCE_OLD" checkout --detach "$OLD_TAG"
+          OLD_COMMIT="$(git -C "$SOURCE_OLD" rev-parse HEAD)"
+          python3 tools/patch_horizon_android_touch.py "$SOURCE_OLD"
+          cargo build --release --no-default-features --manifest-path "$SOURCE_OLD/Cargo.toml" -p mobilehorizon-android --target aarch64-linux-android
+          OLD_LIB="$SOURCE_OLD/target/aarch64-linux-android/release/libhorizon_engine.so"
+          test -s "$OLD_LIB"
+          "$TOOLCHAIN/llvm-readelf" -h "$OLD_LIB" > "$RUNNER_TEMP/horizon-old-engine-header.txt"
+          grep -Fq 'AArch64' "$RUNNER_TEMP/horizon-old-engine-header.txt"
+          "$TOOLCHAIN/llvm-readelf" -Ws "$OLD_LIB" > "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
+          grep -Fq 'ANativeActivity_onCreate' "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
+          grep -Fq 'android_main' "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
+          grep -Fq 'Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectCursorMove' "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
+
+          FIXTURE_DIR="$RUNNER_TEMP/horizon-runtime-update-test"
+          mkdir -p "$FIXTURE_DIR"
+          CURRENT_LIB="app/src/main/assets/horizon-runtime/libhorizon_engine.so"
+          CURRENT_COMMIT="$HORIZON_RUNTIME_COMMIT"
+          CURRENT_SHA="$(sha256sum "$CURRENT_LIB" | awk '{print $1}')"
+          OLD_SHA="$(sha256sum "$OLD_LIB" | awk '{print $1}')"
+          python3 - "$FIXTURE_DIR" "$OLD_TAG" "$OLD_COMMIT" "$OVERLAY_SHA" "$OLD_SHA" "$OLD_LIB" "$CURRENT_TAG" "$CURRENT_COMMIT" "$CURRENT_SHA" "$CURRENT_LIB" <<'PYFIXTURE'
+          import json, pathlib, shutil, sys
+          out_dir, old_tag, old_commit, overlay, old_sha, old_lib, current_tag, current_commit, current_sha, current_lib = sys.argv[1:]
+          def write_manifest(tag, commit, digest, source_library):
+              version = f"horizon-{tag}-c{commit[:8]}-o{overlay}"
+              binary = f"horizon-runtime-{version}-arm64-v8a.so"
+              shutil.copy2(source_library, pathlib.Path(out_dir) / binary)
+              data = {
+                  "format": 1,
+                  "version": version,
+                  "upstream_tag": tag,
+                  "upstream_commit": commit,
+                  "overlay": overlay,
+                  "abi": "arm64-v8a",
+                  "library": binary,
+                  "sha256": digest.lower(),
+              }
+              path = pathlib.Path(out_dir) / f"horizon-runtime-{version}-manifest.json"
+              path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+              print(f"Prepared test updater fixture: {tag} {version} SHA-256 {digest}")
+          write_manifest(old_tag, old_commit, old_sha, old_lib)
+          write_manifest(current_tag, current_commit, current_sha, current_lib)
+          PYFIXTURE
+
+          TEST_RELEASE_TAG="horizon-runtime-update-test"
+          OLD_SHORT="$(printf %.8s "$OLD_COMMIT")"
+          CURRENT_SHORT="$(printf %.8s "$CURRENT_COMMIT")"
+          OLD_VERSION="horizon-$OLD_TAG-c$OLD_SHORT-o$OVERLAY_SHA"
+          CURRENT_VERSION="horizon-$CURRENT_TAG-c$CURRENT_SHORT-o$OVERLAY_SHA"
+          OLD_BINARY="$FIXTURE_DIR/horizon-runtime-$OLD_VERSION-arm64-v8a.so"
+          OLD_MANIFEST="$FIXTURE_DIR/horizon-runtime-$OLD_VERSION-manifest.json"
+          CURRENT_BINARY="$FIXTURE_DIR/horizon-runtime-$CURRENT_VERSION-arm64-v8a.so"
+          CURRENT_MANIFEST="$FIXTURE_DIR/horizon-runtime-$CURRENT_VERSION-manifest.json"
+          NOTES="TEST ONLY: prerelease fixture for MobileHorizonNative's updater test APK. Includes Android engines built from $OLD_TAG and $CURRENT_TAG. Not used by the stable updater."
+          if gh release view "$TEST_RELEASE_TAG" >/dev/null 2>&1; then
+            while IFS= read -r asset_name; do
+              [[ -z "$asset_name" ]] && continue
+              gh release delete-asset "$TEST_RELEASE_TAG" "$asset_name" --yes
+            done < <(gh release view "$TEST_RELEASE_TAG" --json assets --jq '.assets[].name')
+            gh release upload "$TEST_RELEASE_TAG" "$OLD_BINARY" "$OLD_MANIFEST" "$CURRENT_BINARY" "$CURRENT_MANIFEST"
+          else
+            gh release create "$TEST_RELEASE_TAG" "$OLD_BINARY" "$OLD_MANIFEST" "$CURRENT_BINARY" "$CURRENT_MANIFEST" --title "TEST ONLY — Horizon runtime updater fixture" --notes "$NOTES" --prerelease
+          fi
+          echo "Published prerelease updater fixture $TEST_RELEASE_TAG ($OLD_TAG -> $CURRENT_TAG)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
-      - name: Run compatibility tests and build debug APK
+      - name: Run compatibility tests and build APK variants
         shell: bash
         env:
           HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
@@ -387,57 +461,75 @@ jobs:
         run: |
           set -euo pipefail
           args=("-PHORIZON_MSA_CLIENT_ID=$HORIZON_MSA_CLIENT_ID")
+          args+=("-PHORIZON_PC_RELEASE_TAG=$HORIZON_PC_RELEASE_TAG")
+          args+=("-PHORIZON_TEST_OLD_RELEASE_TAG=$HORIZON_TEST_OLD_RELEASE_TAG")
           if [[ "$STABLE_SIGNING" == "true" ]]; then
             args+=("-PMOBILEHORIZON_STORE_FILE=$RUNNER_TEMP/mobilehorizon-signing.jks")
             args+=("-PMOBILEHORIZON_STORE_PASSWORD=$MOBILEHORIZON_KEYSTORE_PASSWORD")
             args+=("-PMOBILEHORIZON_KEY_ALIAS=$MOBILEHORIZON_KEY_ALIAS")
             args+=("-PMOBILEHORIZON_KEY_PASSWORD=$MOBILEHORIZON_KEY_PASSWORD")
           fi
-          gradle --no-daemon "${args[@]}" test :app:assembleDebug
+          gradle --no-daemon "${args[@]}" test :app:assembleStandardDebug :app:assembleUpdaterTestDebug
 
-      - name: Verify the built APK and required runtime payloads
+      - name: Verify standard and updater-test APKs
         shell: bash
         env:
           STABLE_SIGNING: ${{ steps.signing.outputs.enabled }}
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
-          unzip -tq "$APK"
-          unzip -l "$APK" > "$RUNNER_TEMP/apk-file-list.txt"
-          grep -Fq 'lib/arm64-v8a/libhorizon_android.so' "$RUNNER_TEMP/apk-file-list.txt"
-          grep -Fq 'assets/horizon-prepare/horizon-prepare-arm64' "$RUNNER_TEMP/apk-file-list.txt"
-          grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
-          if [[ "${{ steps.signing.outputs.enabled }}" == "true" ]]; then
-            grep -F "name='dev.mobilehorizon.app.offline1' versionCode='14' versionName='0.3.11-offline1'" "$RUNNER_TEMP/apk-badging.txt"
-          else
-            grep -F "name='dev.mobilehorizon.app.offline1.test.v14' versionCode='14' versionName='0.3.11-offline1-test-v14'" "$RUNNER_TEMP/apk-badging.txt"
+          STANDARD_APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
+          TEST_APK="app/build/outputs/apk/updaterTest/debug/app-updaterTest-debug.apk"
+          for APK in "$STANDARD_APK" "$TEST_APK"; do
+            test -s "$APK"
+            unzip -tq "$APK"
+            unzip -l "$APK" > "$RUNNER_TEMP/apk-file-list.txt"
+            grep -Fq 'lib/arm64-v8a/libhorizon_android.so' "$RUNNER_TEMP/apk-file-list.txt"
+            grep -Fq 'assets/horizon-runtime/libhorizon_engine.so' "$RUNNER_TEMP/apk-file-list.txt"
+            grep -Fq 'assets/horizon-runtime/manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
+            grep -Fq 'assets/horizon-prepare/horizon-prepare-arm64' "$RUNNER_TEMP/apk-file-list.txt"
+            grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
+            "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/one-apk-badging.txt"
+            grep -F "name='dev.mobilehorizon.app" "$RUNNER_TEMP/one-apk-badging.txt"
+            grep -F "versionCode='14'" "$RUNNER_TEMP/one-apk-badging.txt"
+            sha256sum "$APK"
+            CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
+            echo "$APK signer certificate SHA-256: $CERT_SHA256"
+          done
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$STANDARD_APK" > "$RUNNER_TEMP/standard-apk-badging.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$TEST_APK" > "$RUNNER_TEMP/test-apk-badging.txt"
+          grep -Eq "versionName='0.3.11.*updater-test" "$RUNNER_TEMP/test-apk-badging.txt"
+          grep -Eq "name='dev\\.mobilehorizon\\.app[^']*updatertest[^']*'" "$RUNNER_TEMP/test-apk-badging.txt"
+          grep -Fq "upstream_tag" app/src/main/assets/horizon-runtime/manifest.json
+          grep -Fq "HORIZON_TEST_OLD_RUNTIME = true" app/build/generated/source/buildConfig/updaterTest/debug/dev/mobilehorizon/app/BuildConfig.java
+          if [[ "$STABLE_SIGNING" != "true" ]]; then
+            echo "::warning::APK artifacts use a test signing identity and isolated package IDs; they cannot replace the stable app installation."
+            echo "Standard APK and updater-test APK are isolated test builds because persistent signing secrets are unavailable." >> "$GITHUB_STEP_SUMMARY"
           fi
-          sha256sum "$APK" | tee "$RUNNER_TEMP/apk-sha256.txt"
-          CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
-          echo "APK signer certificate SHA-256: $CERT_SHA256"
-          echo "APK signer certificate SHA-256: $CERT_SHA256" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${{ steps.signing.outputs.enabled }}" != "true" ]]; then
-            echo "::warning::APK is test-only and uses a separate application ID because stable signing secrets are missing. It will not overwrite the installed app or share its data."
-            echo "Version-isolated test APK published under dev.mobilehorizon.app.offline1.test.v20; the previous test package and its data remain installed separately. Configure stable signing secrets for update-safe APKs." >> "$GITHUB_STEP_SUMMARY"
-          fi
-          echo "APK is valid, package/version match, and the pinned Horizon ARM64 runtime, Java 25 preparation runtime, official resource manifests, and launcher assets are included."
+          echo "Verified standard APK and updater-test APK. Test sequence: download $HORIZON_TEST_OLD_RELEASE_TAG first, then update to $HORIZON_PC_RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload update-safe APK
+      - name: Upload update-safe standard APK
         if: success() && steps.signing.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: mobilehorizon-native-offline1-update-safe
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/standard/debug/app-standard-debug.apk
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload isolated test APK
+      - name: Upload standard isolated test APK
         if: success() && steps.signing.outputs.enabled != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: mobilehorizon-native-offline1-test-only
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/standard/debug/app-standard-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Horizon updater test APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobilehorizon-native-horizon-updater-test
+          path: app/build/outputs/apk/updaterTest/debug/app-updaterTest-debug.apk
           if-no-files-found: error
           retention-days: 14

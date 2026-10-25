@@ -165,6 +165,14 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
     // releases it after this function returns. Do not initialize it a second time:
     // ndk-context asserts on duplicate initialization and both game/Vulkan launch crash.
     horizon_client::set_android_app(app);
+
+    // The native activity and Winit have reached the engine entry point. Preserve fallback
+    // markers so the Java manager can select the bundled runtime on the next launch.
+    if std::env::var("HORIZON_RUNTIME_USING_FALLBACK").ok().as_deref() != Some("1") {
+        if let Ok(status_path) = std::env::var("HORIZON_RUNTIME_STATUS_FILE") {
+            let _ = std::fs::write(status_path, "RUNNING:libhorizon_engine.so\n");
+        }
+    }
     horizon_client::telemetry::mark_start();
 
     let home = horizon_client::logging::game_home();

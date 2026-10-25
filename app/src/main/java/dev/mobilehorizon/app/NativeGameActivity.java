@@ -48,6 +48,17 @@ public final class NativeGameActivity extends NativeActivity {
             if (!gameRoot.isDirectory() && !gameRoot.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório privado do jogo.");
             }
+
+            // Choose and verify a versioned Horizon engine before NativeActivity resolves the
+            // stable libhorizon_android.so bootstrap. The selected engine is never overwritten
+            // in place; the APK-provided engine remains the fallback.
+            HorizonRuntimeManager.PreparedRuntime runtime = HorizonRuntimeManager.prepare(this);
+            android.system.Os.setenv("HORIZON_RUNTIME_HOME", runtime.root.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_RUNTIME_LIBRARY", runtime.activeLibrary.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_RUNTIME_FALLBACK_LIBRARY", runtime.bundledLibrary.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_RUNTIME_STATUS_FILE", runtime.statusFile.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_RUNTIME_VERSION", runtime.activeVersion, true);
+
             java.io.File home = new java.io.File(gameRoot, "horizon");
             if (!home.isDirectory() && !home.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório de dados Horizon.");

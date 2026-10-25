@@ -110,11 +110,10 @@ public final class ResourceManagerActivity extends Activity {
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
-        getWindow().setNavigationBarColor(Color.rgb(244, 246, 251));
+        getWindow().setStatusBarColor(0xff090911);
+        getWindow().setNavigationBarColor(0xff090911);
         if (android.os.Build.VERSION.SDK_INT >= 23) {
-            getWindow().getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+            getWindow().getDecorView().setSystemUiVisibility(0);
         }
         buildUi();
         refreshResources();
@@ -123,7 +122,7 @@ public final class ResourceManagerActivity extends Activity {
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(0xfff4f6fb);
+        scroll.setBackgroundColor(0xff090911);
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(dp(16), dp(18), dp(16), dp(24));
@@ -1031,7 +1030,16 @@ public final class ResourceManagerActivity extends Activity {
 
     private TextView text(String value, float size, int color, boolean bold) {
         TextView view = new TextView(this);
-        view.setText(value); view.setTextSize(size); view.setTextColor(color);
+        view.setText(value);
+        view.setTextSize(size);
+        if (color == 0xff17213b || color == 0xff18213a || color == 0xff26324d) {
+            color = 0xfff1edff;
+        } else if (color == 0xff59647b || color == 0xff68728a) {
+            color = 0xffb9b3d1;
+        } else if (color == 0xff5363bd) {
+            color = 0xffb69aff;
+        }
+        view.setTextColor(color);
         if (bold) view.setTypeface(null, android.graphics.Typeface.BOLD);
         return view;
     }
@@ -1041,7 +1049,7 @@ public final class ResourceManagerActivity extends Activity {
         view.setOrientation(LinearLayout.VERTICAL);
         view.setPadding(dp(13), dp(12), dp(13), dp(12));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.WHITE); bg.setCornerRadius(dp(13)); bg.setStroke(dp(1), 0xffe0e5ef);
+        bg.setColor(0xff171622); bg.setCornerRadius(dp(5)); bg.setStroke(dp(1), 0xff302b43);
         view.setBackground(bg);
         return view;
     }
@@ -1055,10 +1063,12 @@ public final class ResourceManagerActivity extends Activity {
         view.setMaxLines(2);
         view.setGravity(Gravity.CENTER);
         view.setPadding(dp(12), dp(8), dp(12), dp(8));
-        view.setMinHeight(dp(56));
-        view.setTextColor(primary ? Color.WHITE : 0xff26324d);
+        view.setMinHeight(dp(48));
+        view.setTextColor(primary ? Color.WHITE : 0xffe7e0ff);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(primary ? 0xff5363bd : 0xffe9edf6); bg.setCornerRadius(dp(10));
+        bg.setColor(primary ? 0xff6042d8 : 0xff242132);
+        bg.setCornerRadius(dp(4));
+        if (!primary) bg.setStroke(dp(1), 0xff413953);
         view.setBackground(bg); view.setOnClickListener(listener);
         return view;
     }

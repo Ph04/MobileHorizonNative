@@ -80,3 +80,17 @@ Sem a chave persistente, os APKs de teste são assinados por uma chave de CI tem
 3. O script cria a keystore no diretório privado `~/.mobilehorizon-signing`, cadastra os quatro GitHub Actions secrets e dispara uma compilação assinada. Acompanhe-a em [GitHub Actions](https://github.com/Ph04/MobileHorizonNative/actions).
 
 **Importante:** a keystore nunca deve ser enviada ao repositório, compartilhada em chats nem enviada como artifact público. Faça uma cópia segura da pasta `~/.mobilehorizon-signing`. A primeira APK com assinatura estável terá o pacote `dev.mobilehorizon.app.offline1`, diferente dos pacotes de teste antigos; ela poderá ser instalada ao lado deles. As atualizações seguintes assinadas com a mesma chave e o mesmo pacote serão instaláveis normalmente. Não desinstale a aplicação antiga antes de confirmar que a nova abre e que os recursos necessários estão acessíveis.
+
+## Horizon-style Android interface
+
+The main screen follows the Horizon launcher layout adapted to mobile: a pixel-art runtime banner and play action, readiness rows, downloads and conversion, the resource manager, offline/Microsoft profiles, local logs, Vulkan diagnostics, and runtime updates. In landscape on sufficiently wide screens it uses an instance/navigation sidebar; in portrait it becomes a single scrolling dashboard. The resource manager shares the same dark/purple visual theme.
+
+## Horizon PC release and updater test
+
+The launcher shows the PC Horizon release tag (currently pinned to `v0.2.50`) separately from the unique Android engine build. The stable runtime publisher checks upstream releases hourly. A separate `updaterTestDebug` APK is built for the upgrade path: first it downloads the previous engine (`v0.2.49`), then the normal manual/automatic check can upgrade to `v0.2.50`. The test APK is distributed as the `mobilehorizon-native-horizon-updater-test` Actions artifact and uses a dedicated prerelease fixture ignored by the standard updater.
+
+## Native Horizon runtime updates
+
+The `feature/horizon-runtime-loader` design keeps a small `libhorizon_android.so` bootstrap inside the APK and stores each verified Horizon engine (`libhorizon_engine.so`) in a separate app-private version directory. SHA-256/ARM64 checks, an atomic active-version record, and a bundled fallback are implemented as the foundation for in-place engine updates. See [the native runtime updater notes](docs/native-runtime-updater.md).
+
+This branch also adds a release-checking service and a scheduled workflow that builds/publishes versioned Android ARM64 engines. Signed-manifest verification, detailed download progress, updates for the preparer/resource modules, and device validation remain outstanding. This work has not yet been compiled or tested on-device.

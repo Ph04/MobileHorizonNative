@@ -69,36 +69,11 @@ replace_once(remote,
                 );
                 self.send(S::ContainerClose(play::ContainerClose {""")
 
-replace_once(net,
-    """            play::Clientbound::ResourcePackPush(p) => {
-                // Declined: Horizon has no server resource packs.
-                reply(play::Serverbound::ResourcePack(cfg::ResourcePackResponse {""",
-    """            play::Clientbound::ResourcePackPush(p) => {
-                // Resource-pack handling is not implemented yet. Keep the reason visible:
-                // servers that require a pack may disconnect this client after the decline.
-                log::warn!(
-                    "Horizon: declined server resource pack in play (required={}, hash_present={}); download and application are not implemented yet",
-                    p.required, !p.hash.is_empty()
-                );
-                reply(play::Serverbound::ResourcePack(cfg::ResourcePackResponse {""")
+# Removed: Horizon v0.2.50 now handles these packets in its native server_packs manager.
 
-replace_once(net,
-    """            cfg::Clientbound::ResourcePackPush(p) => {
-                reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse {
-                    id: p.id,
-                    action: 1,
-                }))?
-            }""",
-    """            cfg::Clientbound::ResourcePackPush(p) => {
-                log::warn!(
-                    "Horizon: declined server resource pack during configuration (required={}, hash_present={}); download and application are not implemented yet",
-                    p.required, !p.hash.is_empty()
-                );
-                reply(cfg::Serverbound::ResourcePack(cfg::ResourcePackResponse {
-                    id: p.id,
-                    action: 1,
-                }))?
-            }""")
+
+# Removed: Horizon v0.2.50 now handles these packets in its native server_packs manager.
+
 
 
 replace_once(remote,
@@ -114,24 +89,7 @@ replace_once(remote,
 
 # Multiplayer diagnostics: log packet boundaries, custom-item component loss and
 # profile-texture lifecycle without dumping raw payloads, chat, URLs or profile blobs.
-replace_once(net,
-    """fn receive_play(
-""",
-    """fn safe_resource_pack_origin(raw: &str) -> String {
-    let Some((scheme, remainder)) = raw.split_once("://") else {
-        return "<unparsed-url>".to_owned();
-    };
-    // Keep scheme and authority only; never log query strings, paths or userinfo.
-    let authority = remainder
-        .split(|c| c == '/' || c == '?' || c == '#')
-        .next()
-        .unwrap_or("unknown");
-    let host = authority.rsplit('@').next().unwrap_or("unknown");
-    format!("{scheme}://{host}")
-}
-
-fn receive_play(
-""")
+# Native Horizon v0.2.50 owns server resource-pack URL validation and packet routing.
 
 replace_once(net,
     """                let _ = send.send(Event::DecodeError(format!("{name}: {err}")));""",
@@ -140,33 +98,11 @@ replace_once(net,
                     payload.len()
                 )));""")
 
-replace_once(net,
-    """            play::Clientbound::ResourcePackPush(p) => {
-                // Resource-pack handling is not implemented yet. Keep the reason visible:
-                // servers that require a pack may disconnect this client after the decline.
-                log::warn!(
-                    "Horizon: declined server resource pack in play (required={}, hash_present={}); download and application are not implemented yet",
-                    p.required, !p.hash.is_empty()
-                );""",
-    """            play::Clientbound::ResourcePackPush(p) => {
-                log::warn!(
-                    "HorizonDiag: server_resource_pack phase=play decision=decline id={} required={} hash_present={} hash_len={} origin={}",
-                    p.id, p.required, !p.hash.is_empty(), p.hash.len(),
-                    safe_resource_pack_origin(&p.url)
-                );""")
+# Removed: Horizon v0.2.50 now handles these packets in its native server_packs manager.
 
-replace_once(net,
-    """            cfg::Clientbound::ResourcePackPush(p) => {
-                log::warn!(
-                    "Horizon: declined server resource pack during configuration (required={}, hash_present={}); download and application are not implemented yet",
-                    p.required, !p.hash.is_empty()
-                );""",
-    """            cfg::Clientbound::ResourcePackPush(p) => {
-                log::warn!(
-                    "HorizonDiag: server_resource_pack phase=configuration decision=decline id={} required={} hash_present={} hash_len={} origin={}",
-                    p.id, p.required, !p.hash.is_empty(), p.hash.len(),
-                    safe_resource_pack_origin(&p.url)
-                );""")
+
+# Removed: Horizon v0.2.50 now handles these packets in its native server_packs manager.
+
 
 replace_once(net,
     """        let (id, payload) = reader.recv().map_err(|e| e.to_string())?;

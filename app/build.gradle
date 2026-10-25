@@ -9,6 +9,9 @@ def stableKeyPassword = providers.gradleProperty('MOBILEHORIZON_KEY_PASSWORD').g
 def hasStableSigning = !stableStoreFile.isEmpty() && !stableStorePassword.isEmpty()
         && !stableKeyAlias.isEmpty() && !stableKeyPassword.isEmpty()
 
+def horizonPcReleaseTag = providers.gradleProperty('HORIZON_PC_RELEASE_TAG').getOrElse('v0.2.50')
+def horizonTestOldReleaseTag = providers.gradleProperty('HORIZON_TEST_OLD_RELEASE_TAG').getOrElse('v0.2.49')
+
 android {
     namespace 'dev.mobilehorizon.app'
     compileSdk 35
@@ -18,9 +21,24 @@ android {
     }
 
     defaultConfig {
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++17'
+                arguments '-DANDROID_STL=c++_static'
+            }
+        }
+
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+
         def msaClientId = providers.gradleProperty('HORIZON_MSA_CLIENT_ID').getOrElse('')
         buildConfigField 'String', 'HORIZON_MSA_CLIENT_ID',
                 '"' + msaClientId.replace('\\', '\\\\').replace('"', '\\"') + '"'
+        buildConfigField 'String', 'HORIZON_PC_RELEASE_TAG',
+                '"' + horizonPcReleaseTag.replace('\\', '\\\\').replace('"', '\\"') + '"'
+        buildConfigField 'String', 'HORIZON_TEST_OLD_RELEASE_TAG',
+                '"' + horizonTestOldReleaseTag.replace('\\', '\\\\').replace('"', '\\"') + '"'
         applicationId 'dev.mobilehorizon.app'
         minSdk 26
         targetSdk 35
@@ -39,6 +57,13 @@ android {
         }
     }
 
+    externalNativeBuild {
+        cmake {
+            path file("../android-bootstrap/CMakeLists.txt")
+            version "3.22.1"
+        }
+    }
+
     signingConfigs {
         stable {
             if (hasStableSigning) {
@@ -47,6 +72,21 @@ android {
                 keyAlias stableKeyAlias
                 keyPassword stableKeyPassword
             }
+        }
+    }
+
+    flavorDimensions 'runtimeUpdater'
+
+    productFlavors {
+        standard {
+            dimension 'runtimeUpdater'
+            buildConfigField 'boolean', 'HORIZON_TEST_OLD_RUNTIME', 'false'
+        }
+        updaterTest {
+            dimension 'runtimeUpdater'
+            applicationIdSuffix '.updatertest'
+            versionNameSuffix '-updater-test'
+            buildConfigField 'boolean', 'HORIZON_TEST_OLD_RUNTIME', 'true'
         }
     }
 
