@@ -1745,6 +1745,80 @@ public final class MainActivity extends Activity {
         return target;
     }
 
+    private void showLogsDialog() {
+        StringBuilder report = new StringBuilder();
+        report.append("HORIZON LOG VIEWER\\n");
+        report.append("Minecraft ").append(OfficialMinecraftInstaller.VERSION).append("\\n");
+        report.append("Runtime updater: ").append(HorizonRuntimeUpdateService.lastStatus(this)).append("\\n\\n");
+
+        File gameHome = new File(getFilesDir(), "horizon");
+        appendLogTail(report, "Client log: logs/latest.log",
+                new File(new File(gameHome, "logs"), "latest.log"), 96 * 1024);
+        appendLogTail(report, "Native client startup",
+                new File(getFilesDir(), "horizon-client-result.txt"), 8 * 1024);
+        appendLogTail(report, "Vulkan smoke test",
+                new File(getFilesDir(), "horizon-native-smoke-result.txt"), 8 * 1024);
+
+        File crashDir = new File(gameHome, "crash-reports");
+        File[] crashes = crashDir.listFiles(File::isFile);
+        if (crashes != null && crashes.length > 0) {
+            java.util.Arrays.sort(crashes, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+            appendLogTail(report, "Latest crash report: " + crashes[0].getName(),
+                    crashes[0], 48 * 1024);
+        } else {
+            report.append("\\n--- Crash reports ---\\nNenhum crash-report encontrado.\\n");
+        }
+        if (report.length() < 100) {
+            report.append("\\nAinda não existem logs. Abra o Horizon ou execute o teste Vulkan primeiro.\\n");
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        TextView logText = text(report.toString(), 11, 0xffe2dcf8, false);
+        logText.setTypeface(Typeface.MONOSPACE);
+        logText.setTextIsSelectable(true);
+        logText.setPadding(dp(12), dp(12), dp(12), dp(12));
+        scroll.addView(logText, params(-1, -2));
+        scroll.setBackgroundColor(0xff100f1a);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Logs do Horizon")
+                .setMessage("Os logs podem incluir endereços de servidores, nicknames e mensagens de chat.")
+                .setView(scroll)
+                .setNegativeButton("Fechar", null)
+                .setNeutralButton("Exportar diagnóstico", (dialog, which) -> exportDiagnostics())
+                .show();
+    }
+
+    private void appendLogTail(StringBuilder output, String title, File file, int maxBytes) {
+        output.append("\\n--- ").append(title).append(" ---\\n");
+        if (!file.isFile()) {
+            output.append("Arquivo não encontrado: ").append(file.getAbsolutePath()).append("\\n");
+            return;
+        }
+        try (RandomAccessFile input = new RandomAccessFile(file, "r")) {
+            long length = input.length();
+            long start = Math.max(0L, length - maxBytes);
+            if (start > 0) {
+                output.append("[exibindo os últimos ").append(maxBytes)
+                        .append(" bytes de ").append(length).append("]\\n");
+            }
+            input.seek(start);
+            byte[] buffer = new byte[(int) Math.min((long) maxBytes, length - start)];
+            input.readFully(buffer);
+            output.append(new String(buffer, StandardCharsets.UTF_8));
+            if (output.length() > 180_000) {
+                output.setLength(180_000);
+                output.append("\\n[visualização limitada para preservar memória]\\n");
+            }
+            if (output.length() > 0 && output.charAt(output.length() - 1) != '\\n') {
+                output.append('\\n');
+            }
+        } catch (Exception error) {
+            output.append("Falha ao ler log: ").append(safeMessage(error)).append("\\n");
+        }
+    }
+
     private void exportDiagnostics() {
         if (busy || conversionBusy || downloadBusy || authBusy || launchBusy || diagnosticsBusy) {
             showRuntimeError("Ação indisponível",
