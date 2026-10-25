@@ -380,6 +380,39 @@ public final class HorizonRuntimeUpdateService {
         }
     }
 
+    private static String requireDigest(String value, String label) throws IOException {
+        if (value == null || !value.matches("(?i)sha256:[0-9a-f]{64}")) {
+            throw new IOException("O GitHub não forneceu SHA-256 válido para o " + label + ".");
+        }
+        return value.substring("sha256:".length()).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static String requireReleaseAssetUrl(String url) throws IOException {
+        if (url == null || !url.startsWith(
+                "https://github.com/Ph04/MobileHorizonNative/releases/download/")) {
+            throw new IOException("URL de asset fora dos releases esperados do MobileHorizonNative.");
+        }
+        return url;
+    }
+
+    private static String readSmallFile(File file, int maximumBytes) throws IOException {
+        if (file == null || !file.isFile() || file.length() > maximumBytes) {
+            throw new IOException("Manifesto baixado ausente ou grande demais.");
+        }
+        try (InputStream input = new java.io.FileInputStream(file);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                if (output.size() + count > maximumBytes) {
+                    throw new IOException("Manifesto baixado excedeu o limite.");
+                }
+                output.write(buffer, 0, count);
+            }
+            return output.toString(StandardCharsets.UTF_8.name());
+        }
+    }
+
     private static String sha256(File file) throws IOException {
         final java.security.MessageDigest digest;
         try {
