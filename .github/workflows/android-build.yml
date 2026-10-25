@@ -347,7 +347,7 @@ jobs:
           }
           with open(manifest_path, "w", encoding="utf-8") as stream:
               json.dump(manifest, stream, indent=2)
-              stream.write("\\n")
+              stream.write("\n")
           print(f"Staged Android Horizon engine {manifest['version']} with SHA-256 {digest}")
           PYMANIFEST
           echo "Built the Horizon engine separately from the stable APK bootstrap."
