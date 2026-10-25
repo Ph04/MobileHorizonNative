@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [lib]
-name = "horizon_android"
+name = "horizon_engine"
 crate-type = ["cdylib"]
 
 [dependencies]
