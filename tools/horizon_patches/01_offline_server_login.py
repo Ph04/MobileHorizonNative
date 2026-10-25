@@ -3,7 +3,7 @@
 # to the default runtime while they are being developed separately.
 replace_once(net,
     'pub const NOT_SIGNED_IN: &str = "This server is in online mode. Sign in with your Microsoft account in the Horizon launcher to join it.";',
-    'pub const NOT_SIGNED_IN: &str = "This server requires official online authentication. Sign in with a verified account to join it; servers configured for offline mode still accept an offline nickname.";',
+    'pub const NOT_SIGNED_IN: &str = "This server is in online mode and requires official Microsoft/Minecraft authentication. Sign in with a verified account to join it.";',
 )
 
 replace_once(net,
