@@ -13,6 +13,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
@@ -57,6 +60,17 @@ public final class HorizonRuntimeManager {
         }
     }
 
+    /** Read the selected version without copying assets; safe for the updater's background check. */
+    public static synchronized String currentVersion(Context context) throws IOException {
+        Context app = context.getApplicationContext();
+        File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
+        File versions = new File(root, "versions");
+        Active active = readValidActive(versions);
+        if (active != null) return active.version;
+        JSONObject manifest = readBundledManifest(app);
+        return requireVersion(manifest.optString("version", ""));
+    }
+
     /** Ensures the bundled baseline exists, repairs a failed previous switch, and selects a runtime. */
     public static synchronized PreparedRuntime prepare(Context context) throws IOException {
         Context app = context.getApplicationContext();
@@ -66,6 +80,10 @@ public final class HorizonRuntimeManager {
             throw new IOException("Não foi possível criar " + versions);
         }
 
+        try (FileChannel lockChannel = FileChannel.open(
+                     new File(root, ".runtime-manager.lock").toPath(),
+                     StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+             FileLock ignoredLock = lockChannel.lock()) {
         JSONObject manifest = readBundledManifest(app);
         String bundledVersion = requireVersion(manifest.optString("version", ""));
         String bundledSha = requireSha256(manifest.optString("sha256", ""));
@@ -100,6 +118,7 @@ public final class HorizonRuntimeManager {
         return new PreparedRuntime(root, active.library.getCanonicalFile(),
                 bundledLibrary.getCanonicalFile(), status.getCanonicalFile(),
                 active.version, bundledVersion);
+        }
     }
 
     /**
@@ -107,7 +126,7 @@ public final class HorizonRuntimeManager {
      * then atomically selects it for the next NativeActivity launch. The caller must obtain
      * expectedSha256 from a trusted, authenticated update manifest.
      */
-    public static synchronized PreparedRuntime installAndActivate(
+    public static synchronized void installAndActivate(
             Context context, File downloadedLibrary, String version, String expectedSha256)
             throws IOException {
         Context app = context.getApplicationContext();
@@ -122,6 +141,10 @@ public final class HorizonRuntimeManager {
             throw new IOException("O arquivo do runtime baixado não existe.");
         }
 
+        try (FileChannel lockChannel = FileChannel.open(
+                     new File(root, ".runtime-manager.lock").toPath(),
+                     StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+             FileLock ignoredLock = lockChannel.lock()) {
         File versionDir = new File(versions, safeVersion);
         File target = new File(versionDir, ENGINE_NAME);
         if (target.isFile()) {
@@ -151,13 +174,7 @@ public final class HorizonRuntimeManager {
         }
 
         writeActive(root, safeVersion, sha);
-        Active selected = new Active(safeVersion, sha, target.getCanonicalFile());
-        File bundled = installBundledBaseline(app, versions,
-                requireVersion(readBundledManifest(app).optString("version", "")),
-                requireSha256(readBundledManifest(app).optString("sha256", "")));
-        File status = new File(root, STATUS_NAME);
-        return new PreparedRuntime(root, selected.library, bundled, status,
-                selected.version, bundled.getParentFile().getName());
+        }
     }
 
     /** Force the next launch to use the engine shipped in the APK. */
@@ -171,8 +188,13 @@ public final class HorizonRuntimeManager {
         if (!versions.isDirectory() && !versions.mkdirs()) {
             throw new IOException("Não foi possível criar " + versions);
         }
-        installBundledBaseline(app, versions, version, sha);
-        writeActive(root, version, sha);
+        try (FileChannel lockChannel = FileChannel.open(
+                     new File(root, ".runtime-manager.lock").toPath(),
+                     StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+             FileLock ignoredLock = lockChannel.lock()) {
+            installBundledBaseline(app, versions, version, sha);
+            writeActive(root, version, sha);
+        }
     }
 
     private static JSONObject readBundledManifest(Context context) throws IOException {
