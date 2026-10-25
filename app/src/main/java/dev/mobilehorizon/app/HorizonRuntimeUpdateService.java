@@ -114,15 +114,29 @@ public final class HorizonRuntimeUpdateService {
 
         Log.i(TAG, "Nova versão do motor Horizon: " + latest.version
                 + "; atual: " + currentVersion);
+        File manifestDownload = new File(context.getCacheDir(),
+                "horizon-runtime-" + latest.version + ".manifest.part");
         File download = new File(context.getCacheDir(),
                 "horizon-runtime-" + latest.version + ".part");
         try {
-            download(latest.url, latest.size, download);
+            download(latest.manifestUrl, latest.manifestSize, latest.manifestSha256, manifestDownload);
+            JSONObject manifest = new JSONObject(readSmallFile(manifestDownload, 64 * 1024));
+            if (!latest.version.equals(manifest.optString("version", ""))
+                    || !"arm64-v8a".equals(manifest.optString("abi", ""))
+                    || !ENGINE_ASSET.equals(manifest.optString("library", ""))
+                    || !latest.sha256.equalsIgnoreCase(manifest.optString("sha256", ""))
+                    || !manifest.optString("upstream_commit", "").matches("(?i)[0-9a-f]{40}")) {
+                throw new IOException("O manifesto do runtime não corresponde aos metadados do release.");
+            }
+            download(latest.url, latest.size, latest.sha256, download);
             HorizonRuntimeManager.installAndActivate(context, download, latest.version, latest.sha256);
             setStatus(preferences, "Horizon " + latest.version
                     + " foi verificado e será ativado na próxima inicialização do jogo.");
             Log.i(TAG, "Runtime instalado e ativado para a próxima inicialização: " + latest.version);
         } finally {
+            if (manifestDownload.exists() && !manifestDownload.delete()) {
+                Log.w(TAG, "Não foi possível apagar o manifesto temporário " + manifestDownload);
+            }
             if (download.exists() && !download.delete()) {
                 Log.w(TAG, "Não foi possível apagar o download temporário " + download);
             }
@@ -160,34 +174,65 @@ public final class HorizonRuntimeUpdateService {
         JSONArray assets = newest.optJSONArray("assets");
         if (assets == null) throw new IOException("O release mais recente não contém assets.");
         JSONObject engine = null;
+        JSONObject manifestAsset = null;
         for (int i = 0; i < assets.length(); i++) {
             JSONObject asset = assets.optJSONObject(i);
-            if (asset != null && ENGINE_ASSET.equals(asset.optString("name", ""))) {
-                engine = asset;
-                break;
-            }
+            if (asset == null) continue;
+            String name = asset.optString("name", "");
+            if (ENGINE_ASSET.equals(name)) engine = asset;
+            if ("horizon-runtime-manifest.json".equals(name)) manifestAsset = asset;
         }
-        if (engine == null) {
-            throw new IOException("O release mais recente não contém " + ENGINE_ASSET + ".");
+        if (engine == null || manifestAsset == null) {
+            throw new IOException("O release mais recente precisa conter o motor ARM64 e o manifesto.");
         }
 
-        String digest = engine.optString("digest", "");
-        if (!digest.matches("(?i)sha256:[0-9a-f]{64}")) {
-            throw new IOException("O GitHub não forneceu SHA-256 confiável para " + newestVersion + ".");
-        }
-        String url = engine.optString("browser_download_url", "");
-        if (!url.startsWith("https://github.com/Ph04/MobileHorizonNative/releases/download/")) {
-            throw new IOException("URL de runtime fora do repositório esperado.");
-        }
+        String digest = requireDigest(engine.optString("digest", ""), "motor");
+        String manifestDigest = requireDigest(manifestAsset.optString("digest", ""), "manifesto");
+        String url = requireReleaseAssetUrl(engine.optString("browser_download_url", ""));
+        String manifestUrl = requireReleaseAssetUrl(manifestAsset.optString("browser_download_url", ""));
         long size = engine.optLong("size", -1);
-        if (size <= 0 || size > MAX_DOWNLOAD_BYTES) {
-            throw new IOException("Tamanho inválido no release do runtime " + newestVersion + ".");
+        long manifestSize = manifestAsset.optLong("size", -1);
+        if (size <= 0 || size > MAX_DOWNLOAD_BYTES || manifestSize <= 0 || manifestSize > 64 * 1024) {
+            throw new IOException("Tamanho inválido nos assets do runtime " + newestVersion + ".");
         }
-        return new Release(newestVersion, digest.substring("sha256:".length()), url,
-                size, newestDate);
+        return new Release(newestVersion, digest, url, size, newestDate,
+                manifestUrl, manifestDigest, manifestSize);
     }
 
-    private static void download(String address, long expectedSize, File destination) throws IOException {
+    private static String requireDigest(String value, String label) throws IOException {
+        if (!value.matches("(?i)sha256:[0-9a-f]{64}")) {
+            throw new IOException("O GitHub não forneceu SHA-256 confiável para o " + label + ".");
+        }
+        return value.substring("sha256:".length()).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static String requireReleaseAssetUrl(String url) throws IOException {
+        if (!url.startsWith("https://github.com/Ph04/MobileHorizonNative/releases/download/")) {
+            throw new IOException("URL de asset fora dos releases esperados do MobileHorizonNative.");
+        }
+        return url;
+    }
+
+    private static String readSmallFile(File file, int maximumBytes) throws IOException {
+        if (!file.isFile() || file.length() > maximumBytes) {
+            throw new IOException("Manifesto baixado ausente ou grande demais.");
+        }
+        try (InputStream input = new java.io.FileInputStream(file);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                if (output.size() + count > maximumBytes) {
+                    throw new IOException("Manifesto baixado excedeu o limite.");
+                }
+                output.write(buffer, 0, count);
+            }
+            return output.toString(StandardCharsets.UTF_8.name());
+        }
+    }
+
+    private static void download(String address, long expectedSize, String expectedSha256,
+                                 File destination) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
         connection.setRequestMethod("GET");
         connection.setConnectTimeout(20000);
@@ -226,6 +271,10 @@ public final class HorizonRuntimeUpdateService {
                             + " bytes, esperado " + expectedSize + ".");
                 }
             }
+            String downloadedDigest = sha256(destination);
+            if (!downloadedDigest.equalsIgnoreCase(expectedSha256)) {
+                throw new IOException("SHA-256 do asset baixado não confere.");
+            }
         } finally {
             connection.disconnect();
         }
@@ -261,6 +310,24 @@ public final class HorizonRuntimeUpdateService {
         }
     }
 
+    private static String sha256(File file) throws IOException {
+        final java.security.MessageDigest digest;
+        try {
+            digest = java.security.MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IOException("SHA-256 não está disponível.", impossible);
+        }
+        try (InputStream input = new java.io.FileInputStream(file)) {
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count);
+        }
+        StringBuilder text = new StringBuilder(64);
+        for (byte value : digest.digest()) text.append(String.format(java.util.Locale.ROOT,
+                "%02x", value & 0xff));
+        return text.toString();
+    }
+
     private static void setStatus(SharedPreferences preferences, String status) {
         preferences.edit().putString(LAST_STATUS, status).apply();
         Log.i(TAG, status);
@@ -272,13 +339,20 @@ public final class HorizonRuntimeUpdateService {
         final String url;
         final long size;
         final String publishedAt;
+        final String manifestUrl;
+        final String manifestSha256;
+        final long manifestSize;
 
-        Release(String version, String sha256, String url, long size, String publishedAt) {
+        Release(String version, String sha256, String url, long size, String publishedAt,
+                String manifestUrl, String manifestSha256, long manifestSize) {
             this.version = version;
             this.sha256 = sha256;
             this.url = url;
             this.size = size;
             this.publishedAt = publishedAt;
+            this.manifestUrl = manifestUrl;
+            this.manifestSha256 = manifestSha256;
+            this.manifestSize = manifestSize;
         }
     }
 }
