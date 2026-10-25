@@ -85,6 +85,10 @@ Sem a chave persistente, os APKs de teste são assinados por uma chave de CI tem
 
 The main screen follows the Horizon launcher layout adapted to mobile: a pixel-art runtime banner and play action, readiness rows, downloads and conversion, the resource manager, offline/Microsoft profiles, local logs, Vulkan diagnostics, and runtime updates. In landscape on sufficiently wide screens it uses an instance/navigation sidebar; in portrait it becomes a single scrolling dashboard. The resource manager shares the same dark/purple visual theme.
 
+## Horizon PC release and updater test
+
+The launcher shows the PC Horizon release tag (currently pinned to `v0.2.50`) separately from the unique Android engine build. The stable runtime publisher checks upstream releases hourly. A separate `updaterTestDebug` APK is built for the upgrade path: first it downloads the previous engine (`v0.2.49`), then the normal manual/automatic check can upgrade to `v0.2.50`. The test APK is distributed as the `mobilehorizon-native-horizon-updater-test` Actions artifact and uses a dedicated prerelease fixture ignored by the standard updater.
+
 ## Native Horizon runtime updates
 
 The `feature/horizon-runtime-loader` design keeps a small `libhorizon_android.so` bootstrap inside the APK and stores each verified Horizon engine (`libhorizon_engine.so`) in a separate app-private version directory. SHA-256/ARM64 checks, an atomic active-version record, and a bundled fallback are implemented as the foundation for in-place engine updates. See [the native runtime updater notes](docs/native-runtime-updater.md).
