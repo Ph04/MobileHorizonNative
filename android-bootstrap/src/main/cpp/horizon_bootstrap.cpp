@@ -94,9 +94,14 @@ bool start_engine(const std::string &path, ANativeActivity *activity,
     g_engine_handle = handle;
     g_engine_path = path;
     char state[PATH_MAX + 32];
-    snprintf(state, sizeof(state), "%s:%s", fallback ? "FALLBACK" : "OK",
+    snprintf(state, sizeof(state), "%s:%s", fallback ? "FALLBACK" : "STARTING",
              path.c_str());
     write_status(status_path, state);
+    if (fallback) {
+        setenv("HORIZON_RUNTIME_USING_FALLBACK", "1", 1);
+    } else {
+        unsetenv("HORIZON_RUNTIME_USING_FALLBACK");
+    }
     LOGI("Iniciando Horizon runtime: %s%s", path.c_str(),
          fallback ? " (fallback do APK)" : "");
     entry(activity, saved_state, saved_state_size);
