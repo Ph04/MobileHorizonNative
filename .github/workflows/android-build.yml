@@ -360,6 +360,83 @@ jobs:
           echo "Built the Horizon engine separately from the stable APK bootstrap."
           sha256sum "$ASSET_DIR/libhorizon_engine.so" | tee "$RUNNER_TEMP/horizon-engine-sha256.txt"
 
+      - name: Build and publish isolated updater-test fixture (previous PC release -> pinned PC release)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/horizon-runtime-loader' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: \${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source tools/horizon-revisions.env
+          OLD_TAG="$HORIZON_TEST_OLD_RELEASE_TAG"
+          CURRENT_TAG="$HORIZON_RUNTIME_RELEASE_TAG"
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          OVERLAY_SHA="$(cat android-native/Cargo.toml android-native/src/lib.rs tools/patch_horizon_android_touch.py tools/horizon_patches/01_offline_server_login.py tools/horizon_patches/02_android_native.py | sha256sum | awk '{print $1}' | cut -c1-8)"
+          SOURCE_OLD="$RUNNER_TEMP/horizon-update-test-old"
+          git init "$SOURCE_OLD"
+          git -C "$SOURCE_OLD" remote add origin https://github.com/ludovic111/horizon.git
+          git -C "$SOURCE_OLD" fetch --depth 1 origin "refs/tags/$OLD_TAG:refs/tags/$OLD_TAG"
+          git -C "$SOURCE_OLD" checkout --detach "$OLD_TAG"
+          OLD_COMMIT="$(git -C "$SOURCE_OLD" rev-parse HEAD)"
+          python3 tools/patch_horizon_android_touch.py "$SOURCE_OLD"
+          cargo build --release --no-default-features --manifest-path "$SOURCE_OLD/Cargo.toml" -p mobilehorizon-android --target aarch64-linux-android
+          OLD_LIB="$SOURCE_OLD/target/aarch64-linux-android/release/libhorizon_engine.so"
+          test -s "$OLD_LIB"
+          "$TOOLCHAIN/llvm-readelf" -h "$OLD_LIB" > "$RUNNER_TEMP/horizon-old-engine-header.txt"
+          grep -Fq 'AArch64' "$RUNNER_TEMP/horizon-old-engine-header.txt"
+          "$TOOLCHAIN/llvm-readelf" -Ws "$OLD_LIB" > "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
+          grep -Fq 'ANativeActivity_onCreate' "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
+          grep -Fq 'android_main' "$RUNNER_TEMP/horizon-old-engine-symbols.txt"
+
+          FIXTURE_DIR="$RUNNER_TEMP/horizon-runtime-update-test"
+          mkdir -p "$FIXTURE_DIR"
+          CURRENT_LIB="app/src/main/assets/horizon-runtime/libhorizon_engine.so"
+          CURRENT_COMMIT="$HORIZON_RUNTIME_COMMIT"
+          cp "$CURRENT_LIB" "$FIXTURE_DIR/horizon-runtime-$CURRENT_TAG-arm64-v8a.so"
+          cp "$OLD_LIB" "$FIXTURE_DIR/horizon-runtime-$OLD_TAG-arm64-v8a.so"
+          CURRENT_SHA="$(sha256sum "$CURRENT_LIB" | awk '{print $1}')"
+          OLD_SHA="$(sha256sum "$OLD_LIB" | awk '{print $1}')"
+          python3 - "$FIXTURE_DIR" "$OLD_TAG" "$OLD_COMMIT" "$OVERLAY_SHA" "$OLD_SHA" "$CURRENT_TAG" "$CURRENT_COMMIT" "$CURRENT_SHA" <<'PYFIXTURE'
+          import json, pathlib, sys
+          out_dir, old_tag, old_commit, overlay, old_sha, current_tag, current_commit, current_sha = sys.argv[1:]
+          def write_manifest(tag, commit, digest):
+              binary = f"horizon-runtime-{tag}-arm64-v8a.so"
+              version = f"horizon-{tag}-c{commit[:8]}-o{overlay}"
+              data = {
+                  "format": 1,
+                  "version": version,
+                  "upstream_tag": tag,
+                  "upstream_commit": commit,
+                  "overlay": overlay,
+                  "abi": "arm64-v8a",
+                  "library": binary,
+                  "sha256": digest.lower(),
+              }
+              path = pathlib.Path(out_dir) / f"horizon-runtime-{tag}-manifest.json"
+              path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+              print(f"Prepared test updater fixture: {tag} {version} SHA-256 {digest}")
+          write_manifest(old_tag, old_commit, old_sha)
+          write_manifest(current_tag, current_commit, current_sha)
+          PYFIXTURE
+
+          TEST_RELEASE_TAG="horizon-runtime-update-test"
+          OLD_BINARY="$FIXTURE_DIR/horizon-runtime-$OLD_TAG-arm64-v8a.so"
+          OLD_MANIFEST="$FIXTURE_DIR/horizon-runtime-$OLD_TAG-manifest.json"
+          CURRENT_BINARY="$FIXTURE_DIR/horizon-runtime-$CURRENT_TAG-arm64-v8a.so"
+          CURRENT_MANIFEST="$FIXTURE_DIR/horizon-runtime-$CURRENT_TAG-manifest.json"
+          NOTES="TEST ONLY: prerelease fixture for MobileHorizonNative's updater test APK. Includes Android engines built from $OLD_TAG and $CURRENT_TAG. Not used by the stable updater."
+          if gh release view "$TEST_RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$TEST_RELEASE_TAG" "$OLD_BINARY" "$OLD_MANIFEST" "$CURRENT_BINARY" "$CURRENT_MANIFEST" --clobber
+          else
+            gh release create "$TEST_RELEASE_TAG" "$OLD_BINARY" "$OLD_MANIFEST" "$CURRENT_BINARY" "$CURRENT_MANIFEST" --title "TEST ONLY — Horizon runtime updater fixture" --notes "$NOTES" --prerelease
+          fi
+          echo "Published prerelease updater fixture $TEST_RELEASE_TAG ($OLD_TAG -> $CURRENT_TAG)." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
