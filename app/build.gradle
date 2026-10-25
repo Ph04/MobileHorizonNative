@@ -84,7 +84,7 @@ android {
         }
         updaterTest {
             dimension 'runtimeUpdater'
-            applicationIdSuffix '.updater-test'
+            applicationIdSuffix '.updatertest'
             versionNameSuffix '-updater-test'
             buildConfigField 'boolean', 'HORIZON_TEST_OLD_RUNTIME', 'true'
         }
