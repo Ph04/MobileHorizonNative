@@ -84,7 +84,9 @@ jobs:
               pathlib.Path("android-native/Cargo.toml"),
               pathlib.Path("android-native/src/lib.rs"),
               pathlib.Path("tools/patch_horizon_android_touch.py"),
-          ] + sorted(pathlib.Path("tools/horizon_patches").glob("*.py"))
+              pathlib.Path("tools/horizon_patches/01_offline_server_login.py"),
+              pathlib.Path("tools/horizon_patches/02_android_native.py"),
+          ]
           material = b"".join(path.read_bytes() for path in overlay_files)
           overlay_sha = hashlib.sha256(material).hexdigest()[:8]
           runtime_version = "horizon-" + upstream_commit[:12] + "-o" + overlay_sha
