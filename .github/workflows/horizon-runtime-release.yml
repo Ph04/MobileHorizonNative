@@ -2,7 +2,7 @@ name: Publish Android Horizon runtime
 
 on:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
   push:
     branches: ["main"]
@@ -89,7 +89,7 @@ jobs:
           ]
           material = b"".join(path.read_bytes() for path in overlay_files)
           overlay_sha = hashlib.sha256(material).hexdigest()[:8]
-          runtime_version = "horizon-" + upstream_commit[:12] + "-o" + overlay_sha
+          runtime_version = "horizon-" + upstream_tag + "-c" + upstream_commit[:8] + "-o" + overlay_sha
           runtime_tag = "horizon-runtime-" + runtime_version
 
           existing = get_json(
@@ -221,6 +221,7 @@ jobs:
           manifest = {
               "format": 1,
               "version": version,
+              "upstream_tag": "${{ needs.resolve.outputs.upstream_tag }}",
               "upstream_commit": commit,
               "overlay": overlay,
               "abi": "arm64-v8a",
