@@ -80,6 +80,7 @@ public final class MainActivity extends Activity {
     private TextView compatibilityText;
     private TextView progressDetails;
     private TextView runtimeUpdateText;
+    private TextView runtimePcReleaseText;
     private Button runtimeUpdateButton;
     private Button viewLogsButton;
     private ScrollView dashboardScroll;
@@ -267,6 +268,10 @@ public final class MainActivity extends Activity {
         if (runtimeUpdateText != null) {
             runtimeUpdateText.setText(HorizonRuntimeUpdateService.lastStatus(this));
         }
+        if (runtimePcReleaseText != null) {
+            runtimePcReleaseText.setText("Release de PC acompanhada: "
+                    + HorizonRuntimeUpdateService.pcReleaseLabel(this));
+        }
     }
 
     private void buildUi() {
@@ -446,6 +451,11 @@ public final class MainActivity extends Activity {
                 new LinearLayout.LayoutParams(0, -2, 1f));
         runtimeTitleRow.addView(text("NATIVE  •  ARM64", 10, 0xffb69aff, true), params(-2, -2));
         runtimeCard.addView(runtimeTitleRow, params(-1, -2));
+        runtimePcReleaseText = text("Release de PC acompanhada: "
+                + HorizonRuntimeUpdateService.pcReleaseLabel(this), 12, 0xffc5aaff, true);
+        LinearLayout.LayoutParams runtimePcReleaseParams = params(-1, -2);
+        runtimePcReleaseParams.topMargin = dp(6);
+        runtimeCard.addView(runtimePcReleaseText, runtimePcReleaseParams);
         runtimeUpdateText = text(HorizonRuntimeUpdateService.lastStatus(this), 12, 0xffb5b0cd, false);
         LinearLayout.LayoutParams runtimeUpdateTextParams = params(-1, -2);
         runtimeUpdateTextParams.topMargin = dp(5);
