@@ -125,7 +125,9 @@ final class HorizonPixelBackdrop extends View {
         }
 
         int r = (int) (h * 0.2f);
-        int cx = 149;
+        // Desktop art fixes the sun at texel 149; on a phone, move it into the visible
+        // two-thirds point so the signature remains present at narrower aspect ratios.
+        int cx = Math.min(149, Math.max(r + 2, Math.round(w * 0.68f)));
         int cy = horizon - (int) (h * 0.11f);
         for (int dy = -r; dy <= 0; dy++) {
             int half = Math.round((float) Math.sqrt(r * r - dy * dy));
