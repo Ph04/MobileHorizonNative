@@ -869,10 +869,16 @@ pub(super) fn player_type_variant(root: &Path, slim: bool) -> Option<Arc<MobType
     };
     if slim && !has_dedicated_slim_mesh {
         // Horizon's exported player mesh currently exposes the wide player layer only.
-        // Match PlayerModel's slim silhouette by narrowing both arm parts around their
-        // local horizontal centers. If a future resource set exports #slim, use it as-is.
+        // Match PlayerModel's slim silhouette and 3-pixel face UVs for arms and sleeves. If a
+        // future resource set exports #slim, use it as-is.
         fn narrow_slim_arms(part: &mut horizon_client::mobs::Part) {
-            if part.name == "left_arm" || part.name == "right_arm" {
+            let front_u = match part.name.as_str() {
+                "right_arm" | "right_sleeve" => Some(44.0f32),
+                "left_arm" => Some(36.0f32),
+                "left_sleeve" => Some(52.0f32),
+                _ => None,
+            };
+            if let Some(front_u) = front_u {
                 let mut min_x = f32::INFINITY;
                 let mut max_x = f32::NEG_INFINITY;
                 for polygon in &part.polygons {
@@ -884,8 +890,27 @@ pub(super) fn player_type_variant(root: &Path, slim: bool) -> Option<Arc<MobType
                 if min_x.is_finite() && max_x.is_finite() && max_x - min_x > 0.1 {
                     let center = (min_x + max_x) * 0.5;
                     for polygon in &mut part.polygons {
+                        let min_u = polygon.vertices.iter()
+                            .map(|vertex| vertex[3])
+                            .fold(f32::INFINITY, f32::min);
+                        let side_face = polygon.normal[0].abs() > 0.5;
+                        let shift_u = if side_face {
+                            if min_u >= front_u + 3.5 { -1.0 } else { 0.0 }
+                        } else if polygon.normal[2] > 0.5 || polygon.normal[1] < -0.5 {
+                            -1.0
+                        } else {
+                            0.0
+                        };
                         for vertex in &mut polygon.vertices {
                             vertex[0] = center + (vertex[0] - center) * 0.75;
+                            if side_face {
+                                // Alex keeps four-pixel side faces; the side next to the
+                                // front is shifted left to match the 3-pixel-wide layout.
+                                vertex[3] += shift_u;
+                            } else {
+                                // Front/back and top/bottom faces use three-pixel UV widths.
+                                vertex[3] = min_u + shift_u + (vertex[3] - min_u) * 0.75;
+                            }
                         }
                     }
                 }
