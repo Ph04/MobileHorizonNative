@@ -803,3 +803,141 @@ shutil.copyfile(repo_root / "android-native/src/lib.rs", dst / "src/lib.rs")
 print("Patched Horizon Android touch input and created the NativeActivity cdylib target.")
 
 
+
+# Skin manager integration: allow the active local PNG as a skin texture, while
+# overriding only the connected player's own profile (not every player's skin).
+# The Android skin manager stores imported 64x64 PNGs in app-private storage.
+# Treat a file:// texture URL as a trusted local file, sharing the normal PNG decoder/cache.
+replace_once(skins,
+    """fn http_get(url: &str) -> Option<Vec<u8>> {
+    use std::io::Read;""",
+    """fn http_get(url: &str) -> Option<Vec<u8>> {
+    if let Some(path) = url.strip_prefix("file://") {
+        return std::fs::read(path).ok();
+    }
+    use std::io::Read;""")
+
+# When the local profile is present in PlayerInfo, replace only its SKIN texture.
+# Add a synthetic entry if the server did not provide texture metadata for that UUID.
+replace_once(remote,
+    """        let entries: Vec<(u128, horizon_client::skins::Textures)> = r
+            .skin_textures
+            .iter()
+            .map(|(uuid, textures)| (*uuid, textures.clone()))
+            .collect();
+        let mut resolved: Vec<(u128, String)> = Vec::new();""",
+    """        let mut entries: Vec<(u128, horizon_client::skins::Textures)> = r
+            .skin_textures
+            .iter()
+            .map(|(uuid, textures)| (*uuid, textures.clone()))
+            .collect();
+        let custom_skin = std::env::var_os("HORIZON_CUSTOM_SKIN")
+            .filter(|path| std::path::Path::new(path).is_file())
+            .map(|path| format!("file://{}", path.to_string_lossy()));
+        if let Some(url) = custom_skin {
+            if let Some((_, textures)) = entries.iter_mut().find(|(uuid, _)| *uuid == local) {
+                textures.skin = Some(url);
+            } else {
+                entries.push((local, horizon_client::skins::Textures {
+                    skin: Some(url),
+                    ..Default::default()
+                }));
+            }
+        }
+        let mut resolved: Vec<(u128, String)> = Vec::new();""")
+
+# Expose a model-key variant only for the local player's own third-person/inventory model.
+# If this Horizon resource set does not contain a slim model key, fall back to the regular model.
+let perspective = root / "crates/horizon-client/src/game/perspective.rs"
+if not perspective.is_file():
+    raise SystemExit(f"Missing Horizon perspective source: {perspective}")
+replace_once(perspective,
+    """pub(super) fn player_type(root: &Path) -> Option<Arc<MobType>> {
+    horizon_client::mobs::load_model(root, "minecraft:player#main").map(|model| {
+        Arc::new(MobType {""",
+    """pub(super) fn player_type(root: &Path) -> Option<Arc<MobType>> {
+    player_type_variant(root, false)
+}
+pub(super) fn player_type_variant(root: &Path, slim: bool) -> Option<Arc<MobType>> {
+    let model = if slim {
+        horizon_client::mobs::load_model(root, "minecraft:player#slim")
+    } else {
+        None
+    }.or_else(|| horizon_client::mobs::load_model(root, "minecraft:player#main"))?;
+    Some(Arc::new(MobType {""")
+replace_once(perspective,
+    """            sounds: [
+                "entity.player.hurt",
+                "entity.player.hurt",
+                "entity.player.death",
+            ],
+            step_sound: None,
+            food: Arc::from([]),
+            tempt: Arc::from([]),
+        })
+    })
+}
+fn wrap(d: f32) -> f32 {""",
+    """            sounds: [
+                "entity.player.hurt",
+                "entity.player.hurt",
+                "entity.player.death",
+            ],
+            step_sound: None,
+            food: Arc::from([]),
+            tempt: Arc::from([]),
+        }))
+}
+fn wrap(d: f32) {""")
+# The local first-/third-person model selects the requested geometry when supported.
+replace_once(perspective,
+    """        if self.player_model.is_none() {
+            let Some(kind) = self.res.player_type().clone() else {
+                return;
+            };
+            self.player_model = Some(Mob::new(0, kind, p.position, self.yaw));
+        }""",
+    """        if self.player_model.is_none() {
+            let slim = std::env::var("HORIZON_CUSTOM_SKIN_MODEL")
+                .is_ok_and(|value| value == "slim")
+                && std::env::var_os("HORIZON_CUSTOM_SKIN").is_some();
+            let custom_kind = if slim {
+                std::env::var_os("HORIZON_RESOURCES")
+                    .and_then(|root| player_type_variant(std::path::Path::new(&root), true))
+            } else {
+                None
+            };
+            let Some(kind) = custom_kind.or_else(|| self.res.player_type().clone()) else {
+                return;
+            };
+            self.player_model = Some(Mob::new(0, kind, p.position, self.yaw));
+        }""")
+
+# The remote entity that represents our own player uses the same selected model,
+# but the remaining players continue to use the normal shared player type.
+replace_once(remote,
+    """        let mob_type = if kind == "minecraft:player" {
+            self.remote.as_ref().and_then(|r| r.player_type.clone())
+        } else {
+            self.res.mob_types().get(kind).cloned()
+        };""",
+    """        let mob_type = if kind == "minecraft:player" {
+            self.remote.as_ref().and_then(|r| {
+                let is_local = r.level_players.get(&id).is_some_and(|uuid| *uuid == r.profile);
+                let use_slim = is_local
+                    && std::env::var("HORIZON_CUSTOM_SKIN_MODEL")
+                        .is_ok_and(|value| value == "slim")
+                    && std::env::var_os("HORIZON_CUSTOM_SKIN").is_some();
+                if use_slim {
+                    std::env::var_os("HORIZON_RESOURCES")
+                        .and_then(|root| super::perspective::player_type_variant(
+                            std::path::Path::new(&root), true,
+                        ))
+                        .or_else(|| r.player_type.clone())
+                } else {
+                    r.player_type.clone()
+                }
+            })
+        } else {
+            self.res.mob_types().get(kind).cloned()
+        };""")

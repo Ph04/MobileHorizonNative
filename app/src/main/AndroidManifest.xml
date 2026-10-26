@@ -30,6 +30,12 @@
             android:label="Gerenciador de recursos" />
 
         <activity
+            android:name=".SkinManagerActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="Gerenciador de skins" />
+
+        <activity
             android:name=".TouchControlsEditorActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"

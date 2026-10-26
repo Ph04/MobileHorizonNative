@@ -625,6 +625,10 @@ public final class MainActivity extends Activity {
                 "Gerenciar", v -> startActivity(new Intent(this, ResourceManagerActivity.class)),
                 landscape);
 
+        addDashboardRow(page, "Gerenciador de skins",
+                "Importe skins PNG, escolha Steve (clássico) ou Alex (slim) e gire uma pré-visualização do personagem.",
+                "Abrir", v -> startActivity(new Intent(this, SkinManagerActivity.class)), landscape);
+
         downloadSectionView = collapsibleSection(page, "Downloads e preparação",
                 "Arquivos oficiais do Minecraft 26.3, assets e conversão para o Horizon.", true);
         LinearLayout setup = (LinearLayout) downloadSectionView;

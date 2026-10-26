@@ -49,6 +49,18 @@ public final class NativeGameActivity extends NativeActivity {
                 throw new java.io.IOException("Não foi possível criar o diretório privado do jogo.");
             }
 
+            // Pass the explicitly selected local skin to the native engine process.
+            // The file is app-private and validated by the skin manager; no world or account data is changed.
+            java.io.File customSkin = SkinManagerActivity.activeSkinFile(this);
+            if (customSkin != null && customSkin.isFile()) {
+                android.system.Os.setenv("HORIZON_CUSTOM_SKIN", customSkin.getCanonicalPath(), true);
+                android.system.Os.setenv("HORIZON_CUSTOM_SKIN_MODEL",
+                        SkinManagerActivity.activeSkinModel(this), true);
+            } else {
+                android.system.Os.unsetenv("HORIZON_CUSTOM_SKIN");
+                android.system.Os.unsetenv("HORIZON_CUSTOM_SKIN_MODEL");
+            }
+
             // Select only a downloaded, hash-verified engine. During upgrades, the previous
             // downloaded version is kept as a fallback; no game engine binary is bundled in the APK.
             HorizonRuntimeManager.PreparedRuntime runtime = HorizonRuntimeManager.prepare(this);

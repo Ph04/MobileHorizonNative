@@ -66,7 +66,7 @@ final class NativeTouchControlsView extends View {
     private static final String KEY_FLOAT_MENU_Y = "floating_menu_y";
     private static final String KEY_VISUAL_DEFAULTS_VERSION = "visual_defaults_version";
     private static final String KEY_CLASSIC_BUTTONS = "classic_buttons";
-    private static final float SPRINT_TRIGGER_THRESHOLD = 0.80f;
+    private static final float SPRINT_TRIGGER_THRESHOLD = 0.84f;
     private static final float JOYSTICK_MAX_REACH = 0.85f;
     private static final PorterDuffColorFilter CLASSIC_PRESSED_FILTER =
             new PorterDuffColorFilter(0xff989898, PorterDuff.Mode.MULTIPLY);
@@ -2097,7 +2097,10 @@ final class NativeTouchControlsView extends View {
             setJoystickSprint(false);
             return;
         }
-        float dx = x - joystickX, dy = y - joystickY, radius = joystickSpec.radius;
+        float rawDx = x - joystickX, rawDy = y - joystickY, radius = joystickSpec.radius;
+        float rawForward = -rawDy / radius;
+        float rawSide = rawDx / radius;
+        float dx = rawDx, dy = rawDy;
         float max = radius * JOYSTICK_MAX_REACH;
         float len = (float) Math.sqrt(dx * dx + dy * dy);
         if (len > max && len > 0f) {
@@ -2105,13 +2108,14 @@ final class NativeTouchControlsView extends View {
             dx *= factor;
             dy *= factor;
         }
-        // Always decide from the current, clamped finger position. This releases Ctrl
-        // as soon as the finger recedes below the threshold instead of retaining a
-        // sprint state based on the previous farthest reach.
+        // Movement uses the bounded joystick vector, but sprint activation uses the
+        // live finger position before clamping. Otherwise an out-of-range finger stays
+        // pinned at the sprint threshold and Ctrl cannot release when the user recedes.
         float forward = -dy / radius;
         boolean up = forward > 0.25f;
         boolean down = dy / radius > 0.25f;
-        boolean sprint = up && forward >= SPRINT_TRIGGER_THRESHOLD;
+        boolean sprint = rawForward >= SPRINT_TRIGGER_THRESHOLD
+                && Math.abs(rawSide) <= 1.0f;
         setJoystickDirections(up, down, dx / radius < -0.25f,
                 dx / radius > 0.25f, sprint);
     }
