@@ -873,7 +873,7 @@ final class NativeTouchControlsView extends View {
         panel.addView(toggle, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle("Adicionar botão")
-                .setMessage("O botão mantém a tecla pressionada enquanto você segura.")
+                .setMessage("Escolha entre manter a tecla pressionada enquanto segura ou alternar entre ativar e desativar.")
                 .setView(panel)
                 .setNegativeButton("Cancelar", (d, which) -> { })
                 .setPositiveButton("Adicionar", null)
