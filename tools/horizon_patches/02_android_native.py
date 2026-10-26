@@ -921,6 +921,53 @@ fn wrap(d: f32) -> f32 {""",
         }))
 }
 fn wrap(d: f32) {""")
+# Apply the selected local skin in singleplayer as well as multiplayer. This queues
+# the same verified PNG decoder/cache independently of whether the player list is open.
+replace_once(perspective,
+    """    pub(super) fn tick_player_model(&mut self) {""",
+    """    fn refresh_android_custom_skin(&mut self) {
+        let Some(path) = std::env::var_os("HORIZON_CUSTOM_SKIN") else {
+            return;
+        };
+        if !std::path::Path::new(&path).is_file() {
+            return;
+        }
+        let url = format!("file://{}", path.to_string_lossy());
+        let textures = horizon_client::skins::Textures {
+            skin: Some(url),
+            ..Default::default()
+        };
+        let location = {
+            let mut downloads = self.skin_downloads.borrow_mut();
+            horizon_client::skins::lookup(&textures, false, |kind, url| {
+                downloads.state(kind, url)
+            })
+        };
+        // Drain completed skin downloads every tick; don't require opening the Tab list.
+        let ready = self.skin_downloads.borrow_mut().take_ready();
+        for (location, rgba) in ready {
+            self.store_skin(location, rgba);
+        }
+        if let Some(location) = location
+            && self.gui.atlas.sprites.contains_key(&location)
+        {
+            if let Some(model) = self.player_model.as_mut() {
+                model.skin = Some(location.clone());
+            }
+            let local_entity = self.remote.as_ref().and_then(|remote| {
+                remote.level_players.iter()
+                    .find(|(_, uuid)| **uuid == remote.profile)
+                    .map(|(id, _)| *id as u32)
+            });
+            if let Some(id) = local_entity
+                && let Some(mob) = self.mobs.iter_mut().find(|mob| mob.id == id)
+            {
+                mob.skin = Some(location);
+            }
+        }
+    }
+
+    pub(super) fn tick_player_model(&mut self) {""")
 # The local first-/third-person model selects the requested geometry when supported.
 replace_once(perspective,
     """        if self.player_model.is_none() {
@@ -943,7 +990,9 @@ replace_once(perspective,
                 return;
             };
             self.player_model = Some(Mob::new(0, kind, p.position, self.yaw));
-        }""")
+        }
+        self.refresh_android_custom_skin();
+        """)
 
 # The remote entity that represents our own player uses the same selected model,
 # but the remaining players continue to use the normal shared player type.
