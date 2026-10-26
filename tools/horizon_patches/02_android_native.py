@@ -819,7 +819,15 @@ replace_once(skins,
     use std::io::Read;""",
     """fn http_get(url: &str) -> Option<Vec<u8>> {
     if let Some(path) = url.strip_prefix("file://") {
-        return std::fs::read(path).ok();
+        // Only the explicitly selected, app-private skin may use the local-file path.
+        // Server/account-provided texture URLs continue through Horizon's URI validation.
+        let active = std::env::var_os("HORIZON_CUSTOM_SKIN")?;
+        let active = std::path::Path::new(&active).canonicalize().ok()?;
+        let requested = std::path::Path::new(path).canonicalize().ok()?;
+        if requested != active {
+            return None;
+        }
+        return std::fs::read(active).ok();
     }
     use std::io::Read;""")
 
