@@ -326,7 +326,7 @@ public final class SkinManagerActivity extends Activity {
         return width == 64 && (height == 64 || height == 32);
     }
 
-    /** Expands a legacy 64×32 skin to 64×64, mirroring the missing left limbs. */
+    /** Expands a legacy 64×32 skin using the same per-face mirrors as Horizon's decoder. */
     private Bitmap normalizeLegacySkin(Bitmap source) {
         Bitmap result = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(result);
@@ -335,27 +335,62 @@ public final class SkinManagerActivity extends Activity {
         pixels.setDither(false);
         canvas.drawBitmap(source, new Rect(0, 0, 64, 32),
                 new Rect(0, 0, 64, 32), pixels);
-        copyMirroredRegion(source, result, 0, 16, 16, 32, 16, 48);
-        copyMirroredRegion(source, result, 40, 16, 56, 32, 32, 48);
-        // Vanilla keeps the base layers opaque while leaving the outer layer transparent.
-        for (int y = 0; y < 64; y++) {
-            for (int x = 0; x < 64; x++) {
-                boolean base = (y < 16 && x < 32)
-                        || (y >= 16 && y < 32)
-                        || (y >= 48 && x >= 16 && x < 48);
-                if (base) result.setPixel(x, y, result.getPixel(x, y) | 0xff000000);
+
+        // Source x/y, destination x offset from source x, destination y, width, height.
+        int[][] mirroredFaces = {
+                {4, 16, 16, 32, 4, 4},
+                {8, 16, 16, 32, 4, 4},
+                {0, 20, 24, 32, 4, 12},
+                {4, 20, 16, 32, 4, 12},
+                {8, 20, 8, 32, 4, 12},
+                {12, 20, 16, 32, 4, 12},
+                {44, 16, -8, 32, 4, 4},
+                {48, 16, -8, 32, 4, 4},
+                {40, 20, 0, 32, 4, 12},
+                {44, 20, -8, 32, 4, 12},
+                {48, 20, -16, 32, 4, 12},
+                {52, 20, -8, 32, 4, 12}
+        };
+        for (int[] face : mirroredFaces) {
+            int sx = face[0], sy = face[1], dxOffset = face[2], dy = face[3];
+            int width = face[4], height = face[5];
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    int src = source.getPixel(sx + x, sy + y);
+                    int dstX = sx + dxOffset + width - 1 - x;
+                    result.setPixel(dstX, dy + y, src);
+                }
             }
         }
+
+        // Base skin parts are opaque in legacy skins; the outer hat layer is preserved when it
+        // actually contains transparency. Match the decoder's legacy opaque-hat workaround.
+        forceOpaque(result, 0, 0, 32, 16);
+        boolean opaqueHat = true;
+        for (int x = 32; x < 64 && opaqueHat; x++) {
+            for (int y = 0; y < 32; y++) {
+                if (Color.alpha(result.getPixel(x, y)) < 128) {
+                    opaqueHat = false;
+                    break;
+                }
+            }
+        }
+        if (opaqueHat) {
+            for (int x = 32; x < 64; x++) {
+                for (int y = 0; y < 32; y++) {
+                    result.setPixel(x, y, result.getPixel(x, y) & 0x00ffffff);
+                }
+            }
+        }
+        forceOpaque(result, 0, 16, 64, 32);
+        forceOpaque(result, 16, 48, 48, 64);
         return result;
     }
 
-    private void copyMirroredRegion(Bitmap source, Bitmap destination, int left, int top,
-                                    int right, int bottom, int destLeft, int destTop) {
-        int width = right - left;
-        for (int y = top; y < bottom; y++) {
-            for (int x = 0; x < width; x++) {
-                destination.setPixel(destLeft + width - 1 - x, destTop + (y - top),
-                        source.getPixel(left + x, y));
+    private void forceOpaque(Bitmap bitmap, int x0, int y0, int x1, int y1) {
+        for (int x = x0; x < x1; x++) {
+            for (int y = y0; y < y1; y++) {
+                bitmap.setPixel(x, y, bitmap.getPixel(x, y) | 0xff000000);
             }
         }
     }
