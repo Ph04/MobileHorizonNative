@@ -370,7 +370,7 @@ final class NativeTouchControlsView extends View {
 
         drawJoystickBase(canvas, cx, cy, radius, spec.shape, effectiveOpacity, spec.color);
         if (autoSprintEnabled) {
-            drawJoystickSprintZone(canvas, cx, cy, radius, effectiveOpacity, spec.color);
+            drawJoystickSprintZone(canvas, cx, cy, radius, effectiveOpacity, spec.color, spec.shape);
         }
         circle(canvas, knobX, knobY, radius * 0.37f, false, 0.94f, effectiveOpacity, spec.color);
         circle(canvas, knobX, knobY, radius * 0.37f, true, 1f, effectiveOpacity, spec.color);
@@ -390,19 +390,25 @@ final class NativeTouchControlsView extends View {
     }
 
     private void drawJoystickSprintZone(Canvas canvas, float cx, float cy, float radius,
-                                        float effectiveOpacity, int color) {
-        // The small front cap reflects the same threshold used by updateJoystick().
+                                        float effectiveOpacity, int color, int shape) {
+        // The activation region is a narrow top strip. Shape-aware hit-testing below
+        // uses the same threshold/side boundary, so color and input never disagree.
         float threshold = radius * SPRINT_TRIGGER_THRESHOLD;
-        float halfWidth = (float) Math.sqrt(radius * radius - threshold * threshold);
-        RectF circleBounds = new RectF(cx - radius, cy - radius, cx + radius, cy + radius);
         Path sprintZone = new Path();
-        float startAngle = (float) Math.toDegrees(Math.atan2(-threshold, -halfWidth));
-        float endAngle = (float) Math.toDegrees(Math.atan2(-threshold, halfWidth));
-        if (startAngle < 0) startAngle += 360f;
-        if (endAngle < 0) endAngle += 360f;
-        sprintZone.moveTo(cx - halfWidth, cy - threshold);
-        sprintZone.arcTo(circleBounds, startAngle, endAngle - startAngle);
-        sprintZone.close();
+        if (classicButtonsEnabled || shape == 2) {
+            sprintZone.addRect(cx - radius, cy - radius, cx + radius, cy - threshold,
+                    Path.Direction.CW);
+        } else {
+            float halfWidth = (float) Math.sqrt(radius * radius - threshold * threshold);
+            RectF circleBounds = new RectF(cx - radius, cy - radius, cx + radius, cy + radius);
+            float startAngle = (float) Math.toDegrees(Math.atan2(-threshold, -halfWidth));
+            float endAngle = (float) Math.toDegrees(Math.atan2(-threshold, halfWidth));
+            if (startAngle < 0) startAngle += 360f;
+            if (endAngle < 0) endAngle += 360f;
+            sprintZone.moveTo(cx - halfWidth, cy - threshold);
+            sprintZone.arcTo(circleBounds, startAngle, endAngle - startAngle);
+            sprintZone.close();
+        }
 
         int selectedColor = buttonPaletteColor(color, false);
         int darkerColor = blendColor(selectedColor, Color.BLACK, 0.38f);
@@ -1074,13 +1080,16 @@ final class NativeTouchControlsView extends View {
     }
 
     private float buttonHalfWidth(ButtonSpec spec) {
+        if (classicButtonsEnabled) return spec.radius;
         snapMeasurePaint.setTextSize(Math.max(dp(8), spec.radius * 0.48f));
         snapMeasurePaint.setFakeBoldText(true);
         return Math.max(spec.radius * 0.86f,
                 snapMeasurePaint.measureText(spec.label) / 2f + dp(7));
     }
 
-    private float buttonHalfHeight(ButtonSpec spec) { return spec.radius * 0.76f; }
+    private float buttonHalfHeight(ButtonSpec spec) {
+        return classicButtonsEnabled ? spec.radius : spec.radius * 0.76f;
+    }
 
     /**
      * Magnetic alignment deliberately chooses whole neighbour positions instead of
@@ -1952,6 +1961,18 @@ final class NativeTouchControlsView extends View {
         invalidate();
     }
 
+    private boolean isInsideButtonHitArea(ButtonSpec spec, float x, float y) {
+        float dx = Math.abs(x - spec.x);
+        float dy = Math.abs(y - spec.y);
+        float padding = dp(13);
+        if (classicButtonsEnabled) {
+            // Classic button art is square, so its corners remain part of the active area.
+            return dx <= spec.radius + padding && dy <= spec.radius + padding;
+        }
+        float hit = spec.radius + padding;
+        return dx * dx + dy * dy <= hit * hit;
+    }
+
     private int hitControl(float x, float y) {
         if (!previewOnly && distanceSquared(x, y, floatingMenuPixelX(), floatingMenuPixelY()) <= dp(25) * dp(25)) return FLOATING_MENU;
         if (previewOnly) {
@@ -1963,8 +1984,11 @@ final class NativeTouchControlsView extends View {
             ButtonSpec best = null;
             float bestDistance = Float.MAX_VALUE;
             for (ButtonSpec spec : buttonSpecs()) {
-                float d = distanceSquared(x, y, spec.x, spec.y), hit = spec.radius + dp(13);
-                if (d <= hit * hit && d < bestDistance) { best = spec; bestDistance = d; }
+                float d = distanceSquared(x, y, spec.x, spec.y);
+                if (isInsideButtonHitArea(spec, x, y) && d < bestDistance) {
+                    best = spec;
+                    bestDistance = d;
+                }
             }
             return best == null ? NONE : best.id;
         }
@@ -1978,8 +2002,11 @@ final class NativeTouchControlsView extends View {
         }
         ButtonSpec best = null; float bestDistance = Float.MAX_VALUE;
         for (ButtonSpec spec : buttonSpecs()) {
-            float d = distanceSquared(x, y, spec.x, spec.y), hit = spec.radius + dp(13);
-            if (d <= hit * hit && d < bestDistance) { best = spec; bestDistance = d; }
+            float d = distanceSquared(x, y, spec.x, spec.y);
+            if (isInsideButtonHitArea(spec, x, y) && d < bestDistance) {
+                best = spec;
+                bestDistance = d;
+            }
         }
         // While editing, prefer the visible button over the joystick hit region so
         // custom buttons can be dragged anywhere on screen.
@@ -2137,8 +2164,12 @@ final class NativeTouchControlsView extends View {
         float forward = -dy / radius;
         boolean up = forward > 0.25f;
         boolean down = dy / radius > 0.25f;
+        boolean rectangularZone = classicButtonsEnabled || joystickSpec.shape == 2;
+        float lateralLimit = rectangularZone ? 1.0f
+                : (float) Math.sqrt(Math.max(0f,
+                        1f - SPRINT_TRIGGER_THRESHOLD * SPRINT_TRIGGER_THRESHOLD));
         boolean sprint = rawForward >= SPRINT_TRIGGER_THRESHOLD
-                && Math.abs(rawSide) <= 1.0f;
+                && Math.abs(rawSide) <= lateralLimit;
         setJoystickDirections(up, down, dx / radius < -0.25f,
                 dx / radius > 0.25f, sprint);
     }
