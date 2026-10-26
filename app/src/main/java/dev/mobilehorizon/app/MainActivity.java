@@ -567,18 +567,6 @@ public final class MainActivity extends Activity {
         cancelDownloadButton.setVisibility(View.GONE);
         statusCard.addView(cancelDownloadButton, cancelDownloadParams);
 
-        // These rows mirror the desktop launcher's Ready to play panel while routing to
-        // functionality this Android build actually supports.
-        addDashboardRow(page, "Resources", resourceReadySummary(),
-                "Gerenciar", v -> startActivity(new Intent(this, ResourceManagerActivity.class)),
-                landscape);
-        addDashboardRow(page, "Minecraft folder",
-                "Diretório privado: files/minecraft • Downloads oficiais verificados",
-                "Downloads", v -> scrollToSection(downloadSectionView), landscape);
-        addDashboardRow(page, "Multiplayer",
-                "O menu de servidores fica dentro do Horizon. O perfil offline funciona em servidores que aceitam jogadores sem autenticação oficial.",
-                "Abrir Horizon", v -> openOfflineClient(), landscape);
-
         runtimeUpdateSectionView = card();
         LinearLayout runtimeCard = (LinearLayout) runtimeUpdateSectionView;
         LinearLayout.LayoutParams runtimeParams = params(-1, -2);
@@ -630,6 +618,12 @@ public final class MainActivity extends Activity {
                 false, v -> startRuntimeUpdateAction());
         refreshRuntimeActionButton();
         addSpaced(runtimeCard, runtimeUpdateButton, 40, 8);
+
+        // Atalhos redundantes para Multiplayer e Minecraft folder foram removidos:
+        // jogar/servidores são acessados pelo botão principal e downloads pela seção abaixo.
+        addDashboardRow(page, "Resources", resourceReadySummary(),
+                "Gerenciar", v -> startActivity(new Intent(this, ResourceManagerActivity.class)),
+                landscape);
 
         downloadSectionView = collapsibleSection(page, "Downloads e preparação",
                 "Arquivos oficiais do Minecraft 26.3, assets e conversão para o Horizon.", true);
