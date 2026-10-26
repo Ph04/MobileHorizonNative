@@ -11,6 +11,7 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
@@ -462,6 +463,9 @@ final class NativeTouchControlsView extends View {
             cleanPaint.setFilterBitmap(false);
             // Reconstruct the translucent floor where the supplied sprite had its
             // built-in stationary knob. The moving knob is drawn separately above it.
+            cleanPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+            baseCanvas.drawRect(left, top, right, bottom, cleanPaint);
+            cleanPaint.setXfermode(null);
             cleanPaint.setColor(Color.argb(64, 208, 209, 212));
             baseCanvas.drawRect(left, top, right, bottom, cleanPaint);
         } catch (RuntimeException error) {
