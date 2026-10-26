@@ -1007,15 +1007,18 @@ final class NativeTouchControlsView extends View {
         panel.addView(shapeLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
         panel.addView(shapeButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
 
-        TextView colorLabel = miniLabel("Cor", 11, false);
-        Spinner colorSpinner = new Spinner(activity);
-        ArrayAdapter<String> colorAdapter = new ArrayAdapter<>(activity,
-                android.R.layout.simple_spinner_item, BUTTON_COLOR_NAMES);
-        colorAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        colorSpinner.setAdapter(colorAdapter);
-        colorSpinner.setSelection(currentColor);
+        final int[] chosenColor = {currentColor};
+        Button colorButton = new Button(activity);
+        colorButton.setText("Cor: " + BUTTON_COLOR_NAMES[chosenColor[0]]);
+        colorButton.setTextSize(11);
+        colorButton.setMinHeight(dpInt(34));
+        colorButton.setOnClickListener(v -> {
+            chosenColor[0] = (chosenColor[0] + 1) % BUTTON_COLOR_NAMES.length;
+            colorButton.setText("Cor: " + BUTTON_COLOR_NAMES[chosenColor[0]]);
+        });
+        TextView colorLabel = miniLabel("Cor do botão", 11, false);
         panel.addView(colorLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
-        panel.addView(colorSpinner, new LinearLayout.LayoutParams(-1, dpInt(34)));
+        panel.addView(colorButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
 
         android.widget.CheckBox toggleMode = new android.widget.CheckBox(activity);
         toggleMode.setText("Alternância: ativar/desativar");
@@ -1187,7 +1190,7 @@ final class NativeTouchControlsView extends View {
             float newScale = (size.getProgress() + 60) / 100f;
             float newOpacity = (alpha.getProgress() + 20) / 100f;
             int newShape = clampShape(chosenShape[0]);
-            int newColor = clampButtonColor(colorSpinner.getSelectedItemPosition());
+            int newColor = clampButtonColor(chosenColor[0]);
             boolean newToggle = !joystickButton && toggleMode.isChecked();
             if (joystickButton) {
                 autoSprintEnabled = autoSprint.isChecked();
