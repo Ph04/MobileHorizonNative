@@ -428,6 +428,11 @@ final class NativeTouchControlsView extends View {
         bitmapPaint.setColorFilter(null);
         canvas.drawBitmap(classicJoystickBase, null, base, bitmapPaint);
 
+        // Preserve the PE sprite while exposing the sprint activation strip.
+        // The strip uses a darker shade of the existing gray button, with no
+        // separate RUN label or green accent; the movable knob is drawn above it.
+        if (autoSprintEnabled) drawClassicSprintZone(canvas, cx, cy, radius, alpha);
+
         float knobSize = radius * 1.0625f; // 68 of 128 source pixels, scaled with the base.
         RectF knob = new RectF(knobX - knobSize / 2f, knobY - knobSize / 2f,
                 knobX + knobSize / 2f, knobY + knobSize / 2f);
@@ -438,6 +443,22 @@ final class NativeTouchControlsView extends View {
         canvas.restore();
         bitmapPaint.setColorFilter(null);
         return true;
+    }
+
+    private void drawClassicSprintZone(Canvas canvas, float cx, float cy,
+                                         float radius, float alpha) {
+        float thresholdY = cy - radius * SPRINT_TRIGGER_THRESHOLD;
+        RectF base = new RectF(cx - radius, cy - radius, cx + radius, cy + radius);
+        Path rounded = new Path();
+        rounded.addRoundRect(base, radius * 0.10f, radius * 0.10f, Path.Direction.CW);
+        canvas.save();
+        canvas.clipPath(rounded);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(withAlpha(Color.BLACK,
+                Math.round(255f * clamp(alpha * 0.24f, 0f, 1f))));
+        canvas.drawRect(base.left, base.top, base.right, thresholdY, paint);
+        canvas.restore();
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void ensureClassicJoystickBitmaps() {
