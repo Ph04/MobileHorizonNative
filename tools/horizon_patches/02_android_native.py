@@ -859,11 +859,43 @@ replace_once(perspective,
     player_type_variant(root, false)
 }
 pub(super) fn player_type_variant(root: &Path, slim: bool) -> Option<Arc<MobType>> {
-    let model = (if slim {
-        horizon_client::mobs::load_model(root, "minecraft:player#slim")
+    let (mut model, has_dedicated_slim_mesh) = if slim {
+        match horizon_client::mobs::load_model(root, "minecraft:player#slim") {
+            Some(model) => (model, true),
+            None => (horizon_client::mobs::load_model(root, "minecraft:player#main")?, false),
+        }
     } else {
-        None
-    }).or_else(|| horizon_client::mobs::load_model(root, "minecraft:player#main"))?;
+        (horizon_client::mobs::load_model(root, "minecraft:player#main")?, false)
+    };
+    if slim && !has_dedicated_slim_mesh {
+        // Horizon's exported player mesh currently exposes the wide player layer only.
+        // Match PlayerModel's slim silhouette by narrowing both arm parts around their
+        // local horizontal centers. If a future resource set exports #slim, use it as-is.
+        fn narrow_slim_arms(part: &mut horizon_client::mobs::Part) {
+            if part.name == "left_arm" || part.name == "right_arm" {
+                let mut min_x = f32::INFINITY;
+                let mut max_x = f32::NEG_INFINITY;
+                for polygon in &part.polygons {
+                    for vertex in &polygon.vertices {
+                        min_x = min_x.min(vertex[0]);
+                        max_x = max_x.max(vertex[0]);
+                    }
+                }
+                if min_x.is_finite() && max_x.is_finite() && max_x - min_x > 0.1 {
+                    let center = (min_x + max_x) * 0.5;
+                    for polygon in &mut part.polygons {
+                        for vertex in &mut polygon.vertices {
+                            vertex[0] = center + (vertex[0] - center) * 0.75;
+                        }
+                    }
+                }
+            }
+            for child in &mut part.children {
+                narrow_slim_arms(child);
+            }
+        }
+        narrow_slim_arms(&mut model);
+    }
     Some(Arc::new(MobType {""")
 replace_once(perspective,
     """            sounds: [
