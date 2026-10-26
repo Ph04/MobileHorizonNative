@@ -678,15 +678,15 @@ public final class SkinManagerActivity extends Activity {
             float armOffset = 4f + armWidth / 2f;
             drawPart(canvas, center - armOffset * unit, baseY - 24f * unit, armWidth, 12, 4,
                     new Rect(36, 52, 36 + (int) armWidth, 64),
-                    new Rect(32, 52, 36, 64), new Rect(36 + (int) armWidth, 52, 40, 64),
+                    new Rect(32, 52, 36, 64), new Rect(36 + (int) armWidth, 52, 40 + (int) armWidth, 64),
                     new Rect(52, 52, 52 + (int) armWidth, 64),
-                    new Rect(48, 52, 52, 64), new Rect(52 + (int) armWidth, 52, 56, 64),
+                    new Rect(48, 52, 52, 64), new Rect(52 + (int) armWidth, 52, 56 + (int) armWidth, 64),
                     unit, frontRatio, sideRatio, yaw);
             drawPart(canvas, center + armOffset * unit, baseY - 24f * unit, armWidth, 12, 4,
                     new Rect(44, 20, 44 + (int) armWidth, 32),
-                    new Rect(40, 20, 44, 32), new Rect(44 + (int) armWidth, 20, 48, 32),
+                    new Rect(40, 20, 44, 32), new Rect(44 + (int) armWidth, 20, 48 + (int) armWidth, 32),
                     new Rect(44, 36, 44 + (int) armWidth, 48),
-                    new Rect(40, 36, 44, 48), new Rect(44 + (int) armWidth, 36, 48, 48),
+                    new Rect(40, 36, 44, 48), new Rect(44 + (int) armWidth, 36, 48 + (int) armWidth, 48),
                     unit, frontRatio, sideRatio, yaw);
 
             drawPart(canvas, center, baseY - 32f * unit, 8, 8, 8,
