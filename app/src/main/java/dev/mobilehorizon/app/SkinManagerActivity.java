@@ -150,6 +150,13 @@ public final class SkinManagerActivity extends Activity {
         statusParams.bottomMargin = dp(8);
         root.addView(statusText, statusParams);
 
+        TextView localOnlyNote = label(
+                "Uso local: a skin muda apenas a aparência neste cliente. O PNG não é enviado à sua conta nem ao servidor.",
+                11, 0xff9189ad, false);
+        LinearLayout.LayoutParams localOnlyParams = new LinearLayout.LayoutParams(-1, -2);
+        localOnlyParams.bottomMargin = dp(8);
+        root.addView(localOnlyNote, localOnlyParams);
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
         scroll.setClipToPadding(false);
