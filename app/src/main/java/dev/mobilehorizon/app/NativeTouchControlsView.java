@@ -3,11 +3,17 @@ package dev.mobilehorizon.app;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
+import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
@@ -58,6 +64,13 @@ final class NativeTouchControlsView extends View {
     private static final String KEY_FLOAT_MENU_X = "floating_menu_x";
     private static final String KEY_FLOAT_MENU_Y = "floating_menu_y";
     private static final String KEY_VISUAL_DEFAULTS_VERSION = "visual_defaults_version";
+    private static final String KEY_CLASSIC_BUTTONS = "classic_buttons";
+    private static final float SPRINT_TRIGGER_THRESHOLD = 0.80f;
+    private static final float JOYSTICK_MAX_REACH = 0.85f;
+    private static final PorterDuffColorFilter CLASSIC_PRESSED_FILTER =
+            new PorterDuffColorFilter(0xff989898, PorterDuff.Mode.MULTIPLY);
+    private static final PorterDuffColorFilter CLASSIC_TEXT_FILTER =
+            new PorterDuffColorFilter(Color.BLACK, PorterDuff.Mode.SRC_IN);
 
     private static final long LONG_PRESS_TIMEOUT_MS = 430L;
     private static final long DOUBLE_TAP_TIMEOUT_MS = 300L;
@@ -80,6 +93,16 @@ final class NativeTouchControlsView extends View {
     private final NativeGameActivity gameActivity;
     private final boolean previewOnly;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint bitmapPaint = new Paint();
+    private final Paint classicEditPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Map<String, Bitmap> classicBitmapCache = new HashMap<>();
+    private Bitmap classicJoystickBase;
+    private Bitmap classicJoystickKnob;
+    private Bitmap minecraftFontAtlas;
+    private final Rect[] minecraftGlyphRects = new Rect[256];
+    private final float[] minecraftGlyphAdvances = new float[256];
+    private Typeface fallbackMinecraftTypeface;
+    private boolean minecraftFontAttempted;
     private final Paint snapMeasurePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path cursorPath = new Path();
     private final Map<Integer, PointerTrack> pointers = new HashMap<>();
@@ -117,6 +140,7 @@ final class NativeTouchControlsView extends View {
     private float sensitivity;
     private boolean leftHanded;
     private boolean autoSprintEnabled;
+    private boolean classicButtonsEnabled;
     private boolean joystickSprintActive;
     private boolean controlsVisible = true;
     private long lastHotbarTapTime;
@@ -219,6 +243,9 @@ final class NativeTouchControlsView extends View {
         sensitivity = clamp(prefs.getFloat(KEY_SENSITIVITY, 1f), 0.50f, 2f);
         leftHanded = prefs.getBoolean(KEY_LEFT_HANDED, false);
         autoSprintEnabled = prefs.getBoolean(KEY_AUTO_SPRINT, false);
+        classicButtonsEnabled = prefs.getBoolean(KEY_CLASSIC_BUTTONS, false);
+        bitmapPaint.setFilterBitmap(false);
+        bitmapPaint.setDither(false);
         snapGapDp = clamp(prefs.getFloat(KEY_SNAP_GAP, 12f), 4f, 32f);
         loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
         loadCustomButtons(prefs.getString(KEY_CUSTOM_BUTTONS, ""));
@@ -320,18 +347,29 @@ final class NativeTouchControlsView extends View {
         float cy = joystickPointer == -1 ? joystickHomeY() : joystickY;
         float radius = spec.radius;
         float effectiveOpacity = opacity * clamp(spec.opacity, 0.20f, 1f);
-        int shape = spec.shape;
-        drawJoystickBase(canvas, cx, cy, radius, shape, effectiveOpacity, spec.color);
-        if (autoSprintEnabled) drawJoystickSprintZone(canvas, cx, cy, radius, effectiveOpacity, spec.color);
         float knobX = cx, knobY = cy;
         if (joystickPointer != -1) {
             PointerTrack track = pointers.get(joystickPointer);
             if (track != null) {
                 float dx = track.lastX - cx, dy = track.lastY - cy;
-                float len = (float) Math.sqrt(dx * dx + dy * dy), max = radius * 0.66f;
+                // In classic mode the extracted square knob occupies a little over half
+                // the pad, so limit its travel to keep its edges inside the bitmap base.
+                float max = radius * (classicButtonsEnabled ? 0.46f : 0.66f);
+                float len = (float) Math.sqrt(dx * dx + dy * dy);
                 if (len > max && len > 0) { dx *= max / len; dy *= max / len; }
-                knobX += dx; knobY += dy;
+                knobX += dx;
+                knobY += dy;
             }
+        }
+
+        if (classicButtonsEnabled && drawClassicJoystick(canvas, cx, cy, radius,
+                knobX, knobY, effectiveOpacity, joystickPointer != -1)) {
+            return;
+        }
+
+        drawJoystickBase(canvas, cx, cy, radius, spec.shape, effectiveOpacity, spec.color);
+        if (autoSprintEnabled) {
+            drawJoystickSprintZone(canvas, cx, cy, radius, effectiveOpacity, spec.color);
         }
         circle(canvas, knobX, knobY, radius * 0.37f, false, 0.94f, effectiveOpacity, spec.color);
         circle(canvas, knobX, knobY, radius * 0.37f, true, 1f, effectiveOpacity, spec.color);
@@ -352,14 +390,17 @@ final class NativeTouchControlsView extends View {
 
     private void drawJoystickSprintZone(Canvas canvas, float cx, float cy, float radius,
                                         float effectiveOpacity, int color) {
-        // Shade the forward-most cap that crosses the same 0.70 threshold used by
-        // updateJoystick(). This uses the button's selected color, not a separate accent.
-        float threshold = radius * 0.70f;
+        // The small front cap reflects the same threshold used by updateJoystick().
+        float threshold = radius * SPRINT_TRIGGER_THRESHOLD;
         float halfWidth = (float) Math.sqrt(radius * radius - threshold * threshold);
         RectF circleBounds = new RectF(cx - radius, cy - radius, cx + radius, cy + radius);
         Path sprintZone = new Path();
+        float startAngle = (float) Math.toDegrees(Math.atan2(-threshold, -halfWidth));
+        float endAngle = (float) Math.toDegrees(Math.atan2(-threshold, halfWidth));
+        if (startAngle < 0) startAngle += 360f;
+        if (endAngle < 0) endAngle += 360f;
         sprintZone.moveTo(cx - halfWidth, cy - threshold);
-        sprintZone.arcTo(circleBounds, 224.427f, 91.146f);
+        sprintZone.arcTo(circleBounds, startAngle, endAngle - startAngle);
         sprintZone.close();
 
         int selectedColor = buttonPaletteColor(color, false);
@@ -377,6 +418,78 @@ final class NativeTouchControlsView extends View {
         else canvas.drawRoundRect(bounds, radius * 0.88f, radius * 0.88f, paint);
     }
 
+    private boolean drawClassicJoystick(Canvas canvas, float cx, float cy, float radius,
+                                        float knobX, float knobY, float alpha, boolean pressed) {
+        ensureClassicJoystickBitmaps();
+        if (classicJoystickBase == null || classicJoystickKnob == null) return false;
+        RectF base = new RectF(cx - radius, cy - radius, cx + radius, cy + radius);
+        bitmapPaint.setAlpha(Math.round(255 * clamp(alpha, 0f, 1f)));
+        bitmapPaint.setColorFilter(null);
+        canvas.drawBitmap(classicJoystickBase, null, base, bitmapPaint);
+
+        float knobSize = radius * 1.0625f; // 68 of 128 source pixels, scaled with the base.
+        RectF knob = new RectF(knobX - knobSize / 2f, knobY - knobSize / 2f,
+                knobX + knobSize / 2f, knobY + knobSize / 2f);
+        canvas.save();
+        if (pressed) canvas.translate(0, dp(1.2f));
+        bitmapPaint.setColorFilter(pressed ? CLASSIC_PRESSED_FILTER : null);
+        canvas.drawBitmap(classicJoystickKnob, null, knob, bitmapPaint);
+        canvas.restore();
+        bitmapPaint.setColorFilter(null);
+        return true;
+    }
+
+    private void ensureClassicJoystickBitmaps() {
+        if (classicJoystickBase != null && classicJoystickKnob != null) return;
+        Bitmap original = classicBitmap("joystick.png");
+        if (original == null || original.getWidth() < 100 || original.getHeight() < 100) return;
+        int left = Math.round(original.getWidth() * 30f / 128f);
+        int top = Math.round(original.getHeight() * 30f / 128f);
+        int right = Math.round(original.getWidth() * 98f / 128f);
+        int bottom = Math.round(original.getHeight() * 98f / 128f);
+        try {
+            classicJoystickKnob = Bitmap.createBitmap(original, left, top,
+                    right - left, bottom - top);
+            classicJoystickBase = original.copy(Bitmap.Config.ARGB_8888, true);
+            if (classicJoystickBase == null) {
+                classicJoystickKnob.recycle();
+                classicJoystickKnob = null;
+                return;
+            }
+            Canvas baseCanvas = new Canvas(classicJoystickBase);
+            Paint cleanPaint = new Paint();
+            cleanPaint.setAntiAlias(false);
+            cleanPaint.setFilterBitmap(false);
+            // Reconstruct the translucent floor where the supplied sprite had its
+            // built-in stationary knob. The moving knob is drawn separately above it.
+            cleanPaint.setColor(Color.argb(64, 208, 209, 212));
+            baseCanvas.drawRect(left, top, right, bottom, cleanPaint);
+        } catch (RuntimeException error) {
+            android.util.Log.w("MobileHorizonTouch", "Não foi possível separar a alavanca clássica.", error);
+            if (classicJoystickBase != null) classicJoystickBase.recycle();
+            if (classicJoystickKnob != null) classicJoystickKnob.recycle();
+            classicJoystickBase = null;
+            classicJoystickKnob = null;
+        }
+    }
+
+    private Bitmap classicBitmap(String fileName) {
+        Bitmap cached = classicBitmapCache.get(fileName);
+        if (cached != null && !cached.isRecycled()) return cached;
+        try (java.io.InputStream input = activity.getAssets().open(
+                "touch-controls/classic/" + fileName)) {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inScaled = false;
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap decoded = BitmapFactory.decodeStream(input, null, options);
+            if (decoded != null) classicBitmapCache.put(fileName, decoded);
+            return decoded;
+        } catch (Exception error) {
+            android.util.Log.w("MobileHorizonTouch", "Asset clássico indisponível: " + fileName, error);
+            return null;
+        }
+    }
+
     /** Cyan guides show the axes/edges to which the dragged control is snapping. */
     private void drawSnapGuides(Canvas canvas) {
         if (!editingControls || (Float.isNaN(snapGuideX) && Float.isNaN(snapGuideY))) return;
@@ -392,6 +505,8 @@ final class NativeTouchControlsView extends View {
         boolean pressed = pressedControls.contains(spec.id);
         float r = spec.radius;
         float buttonOpacity = opacity * clamp(spec.opacity, 0.20f, 1f);
+        if (classicButtonsEnabled && drawClassicButton(canvas, spec, pressed, buttonOpacity)) return;
+
         paint.setStyle(Paint.Style.FILL);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTextSize(Math.max(dp(8), r * 0.48f));
@@ -421,6 +536,183 @@ final class NativeTouchControlsView extends View {
         Paint.FontMetrics metrics = paint.getFontMetrics();
         canvas.drawText(spec.label, spec.x, spec.y - (metrics.ascent + metrics.descent) / 2f, paint);
         paint.setFakeBoldText(false);
+    }
+
+    private boolean drawClassicButton(Canvas canvas, ButtonSpec spec, boolean pressed, float alpha) {
+        String assetName = classicButtonAsset(spec);
+        Bitmap bitmap = classicBitmap(assetName);
+        if (bitmap == null) return false;
+        float r = spec.radius;
+        RectF bounds = new RectF(spec.x - r, spec.y - r, spec.x + r, spec.y + r);
+        canvas.save();
+        if (pressed) canvas.translate(0, dp(1.2f));
+        bitmapPaint.setAlpha(Math.round(255 * clamp(alpha, 0f, 1f)));
+        bitmapPaint.setColorFilter(pressed ? CLASSIC_PRESSED_FILTER : null);
+        canvas.drawBitmap(bitmap, null, bounds, bitmapPaint);
+        bitmapPaint.setColorFilter(null);
+
+        if (classicButtonNeedsLabel(spec)) {
+            drawMinecraftLabel(canvas, spec.label, spec.x, spec.y,
+                    r * 1.55f, r * 0.78f, alpha);
+        }
+        canvas.restore();
+
+        if (editingControls) {
+            classicEditPaint.setStyle(Paint.Style.STROKE);
+            classicEditPaint.setStrokeWidth(dp(1.5f));
+            classicEditPaint.setColor(Color.argb(215, 115, 205, 255));
+            canvas.drawRect(bounds.left - dp(3), bounds.top - dp(3),
+                    bounds.right + dp(3), bounds.bottom + dp(3), classicEditPaint);
+            classicEditPaint.setStyle(Paint.Style.FILL);
+        }
+        return true;
+    }
+
+    private String classicButtonAsset(ButtonSpec spec) {
+        if (spec.custom) return "blank.png";
+        switch (spec.id) {
+            case JUMP: return "jump.png";
+            case SNEAK: return "sneak.png";
+            case SPRINT: return "sprint.png";
+            case ATTACK: return "attack.png";
+            case USE: return "interact.png";
+            default: return "blank.png";
+        }
+    }
+
+    private boolean classicButtonNeedsLabel(ButtonSpec spec) {
+        if (spec.custom) return true;
+        switch (spec.id) {
+            case JOYSTICK:
+            case JUMP:
+            case SNEAK:
+            case SPRINT:
+            case ATTACK:
+            case USE:
+                return false;
+            default:
+                return true;
+        }
+    }
+
+    private void ensureMinecraftFont() {
+        if (minecraftFontAttempted) return;
+        minecraftFontAttempted = true;
+        java.io.File resourceRoot = new java.io.File(activity.getFilesDir(),
+                ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+        java.io.File[] candidates = {
+                new java.io.File(resourceRoot, "assets/minecraft/textures/font/ascii.png"),
+                new java.io.File(new java.io.File(activity.getFilesDir(), "horizon"),
+                        "assets/minecraft/textures/font/ascii.png")
+        };
+        for (java.io.File candidate : candidates) {
+            if (!candidate.isFile()) continue;
+            Bitmap decoded = BitmapFactory.decodeFile(candidate.getAbsolutePath());
+            if (decoded == null || decoded.getWidth() < 128 || decoded.getHeight() < 128) {
+                if (decoded != null) decoded.recycle();
+                continue;
+            }
+            minecraftFontAtlas = decoded;
+            buildMinecraftGlyphTable();
+            break;
+        }
+        if (minecraftFontAtlas == null) {
+            try {
+                fallbackMinecraftTypeface = Typeface.createFromAsset(
+                        activity.getAssets(), "horizon-ui/PixelifySans-Medium.ttf");
+            } catch (Exception error) {
+                fallbackMinecraftTypeface = Typeface.create("sans-serif", Typeface.BOLD);
+                android.util.Log.w("MobileHorizonTouch",
+                        "Fonte Minecraft ainda não preparada; usando fonte pixelada alternativa.", error);
+            }
+        }
+    }
+
+    private void buildMinecraftGlyphTable() {
+        for (int code = 0; code < minecraftGlyphRects.length; code++) {
+            int cellX = (code & 15) * 8;
+            int cellY = (code >>> 4) * 8;
+            int minX = 8, maxX = -1;
+            for (int y = 0; y < 8; y++) {
+                for (int x = 0; x < 8; x++) {
+                    if (Color.alpha(minecraftFontAtlas.getPixel(cellX + x, cellY + y)) > 24) {
+                        minX = Math.min(minX, x);
+                        maxX = Math.max(maxX, x);
+                    }
+                }
+            }
+            if (maxX >= minX) {
+                minecraftGlyphRects[code] = new Rect(cellX + minX, cellY,
+                        cellX + maxX + 1, cellY + 8);
+                minecraftGlyphAdvances[code] = Math.max(1, maxX - minX + 1) + 1f;
+            } else {
+                minecraftGlyphRects[code] = null;
+                minecraftGlyphAdvances[code] = code == ' ' ? 4f : 0f;
+            }
+        }
+    }
+
+    private void drawMinecraftLabel(Canvas canvas, String value, float centerX, float centerY,
+                                    float maxWidth, float maxHeight, float alpha) {
+        String label = value == null ? "" : value;
+        if (label.isEmpty()) return;
+        ensureMinecraftFont();
+        boolean ascii = minecraftFontAtlas != null;
+        for (int i = 0; i < label.length(); i++) {
+            if (label.charAt(i) >= 256) { ascii = false; break; }
+        }
+        if (!ascii) {
+            drawFallbackMinecraftLabel(canvas, label, centerX, centerY, maxWidth, maxHeight, alpha);
+            return;
+        }
+        float units = 0f;
+        for (int i = 0; i < label.length(); i++) {
+            float advance = minecraftGlyphAdvances[label.charAt(i)];
+            units += advance > 0f ? advance : 4f;
+        }
+        if (units <= 0f) return;
+        float glyphScale = Math.min(maxHeight / 8f, maxWidth / units);
+        if (glyphScale <= 0f) return;
+        float totalWidth = units * glyphScale;
+        float penX = centerX - totalWidth / 2f;
+        float top = centerY - 4f * glyphScale;
+        bitmapPaint.setAlpha(Math.round(255 * clamp(alpha, 0f, 1f)));
+        bitmapPaint.setColorFilter(CLASSIC_TEXT_FILTER);
+        for (int i = 0; i < label.length(); i++) {
+            char c = label.charAt(i);
+            Rect src = minecraftGlyphRects[c];
+            float advance = minecraftGlyphAdvances[c];
+            if (advance <= 0f) advance = 4f;
+            if (src != null) {
+                RectF dst = new RectF(penX, top, penX + src.width() * glyphScale,
+                        top + 8f * glyphScale);
+                canvas.drawBitmap(minecraftFontAtlas, src, dst, bitmapPaint);
+            }
+            penX += advance * glyphScale;
+        }
+        bitmapPaint.setColorFilter(null);
+    }
+
+    private void drawFallbackMinecraftLabel(Canvas canvas, String label, float centerX, float centerY,
+                                            float maxWidth, float maxHeight, float alpha) {
+        paint.setStyle(Paint.Style.FILL);
+        paint.setTypeface(fallbackMinecraftTypeface == null
+                ? Typeface.create("sans-serif", Typeface.BOLD) : fallbackMinecraftTypeface);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setFakeBoldText(false);
+        float textSize = maxHeight;
+        paint.setTextSize(textSize);
+        float measured = paint.measureText(label);
+        if (measured > maxWidth && measured > 0f) {
+            paint.setTextScaleX(maxWidth / measured);
+        } else {
+            paint.setTextScaleX(1f);
+        }
+        paint.setColor(Color.argb(Math.round(255 * clamp(alpha, 0f, 1f)), 24, 24, 24));
+        Paint.FontMetrics metrics = paint.getFontMetrics();
+        canvas.drawText(label, centerX, centerY - (metrics.ascent + metrics.descent) / 2f, paint);
+        paint.setTextScaleX(1f);
+        paint.setTypeface(Typeface.DEFAULT);
     }
 
     private static final String[] BUTTON_COLOR_NAMES = {
@@ -1001,31 +1293,33 @@ final class NativeTouchControlsView extends View {
             @Override public void onStopTrackingTouch(SeekBar bar) { }
         });
 
-        TextView shapeLabel = miniLabel("Formato", 11, false);
-        String[] shapeNames = new String[]{"Retângulo arredondado", "Círculo / oval", "Quadrado"};
-        Button shapeButton = new Button(activity);
-        shapeButton.setTextSize(11);
-        shapeButton.setMinHeight(dpInt(34));
-        shapeButton.setText("Formato: " + shapeNames[chosenShape[0]]);
-        shapeButton.setOnClickListener(v -> {
-            chosenShape[0] = (chosenShape[0] + 1) % shapeNames.length;
-            shapeButton.setText("Formato: " + shapeNames[chosenShape[0]]);
-        });
-        panel.addView(shapeLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
-        panel.addView(shapeButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
-
         final int[] chosenColor = {currentColor};
-        Button colorButton = new Button(activity);
-        colorButton.setText("Cor: " + BUTTON_COLOR_NAMES[chosenColor[0]]);
-        colorButton.setTextSize(11);
-        colorButton.setMinHeight(dpInt(34));
-        colorButton.setOnClickListener(v -> {
-            chosenColor[0] = (chosenColor[0] + 1) % BUTTON_COLOR_NAMES.length;
+        if (!classicButtonsEnabled) {
+            TextView shapeLabel = miniLabel("Formato", 11, false);
+            String[] shapeNames = new String[]{"Retângulo arredondado", "Círculo / oval", "Quadrado"};
+            Button shapeButton = new Button(activity);
+            shapeButton.setTextSize(11);
+            shapeButton.setMinHeight(dpInt(34));
+            shapeButton.setText("Formato: " + shapeNames[chosenShape[0]]);
+            shapeButton.setOnClickListener(v -> {
+                chosenShape[0] = (chosenShape[0] + 1) % shapeNames.length;
+                shapeButton.setText("Formato: " + shapeNames[chosenShape[0]]);
+            });
+            panel.addView(shapeLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
+            panel.addView(shapeButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
+
+            Button colorButton = new Button(activity);
             colorButton.setText("Cor: " + BUTTON_COLOR_NAMES[chosenColor[0]]);
-        });
-        TextView colorLabel = miniLabel("Cor do botão", 11, false);
-        panel.addView(colorLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
-        panel.addView(colorButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
+            colorButton.setTextSize(11);
+            colorButton.setMinHeight(dpInt(34));
+            colorButton.setOnClickListener(v -> {
+                chosenColor[0] = (chosenColor[0] + 1) % BUTTON_COLOR_NAMES.length;
+                colorButton.setText("Cor: " + BUTTON_COLOR_NAMES[chosenColor[0]]);
+            });
+            TextView colorLabel = miniLabel("Cor do botão", 11, false);
+            panel.addView(colorLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
+            panel.addView(colorButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
+        }
 
         android.widget.CheckBox toggleMode = new android.widget.CheckBox(activity);
         toggleMode.setText("Alternância: ativar/desativar");
@@ -1093,7 +1387,7 @@ final class NativeTouchControlsView extends View {
             label.setTextSize(12);
             label.setTextColor(Color.WHITE);
             label.setHintTextColor(0xffaeb9cb);
-            label.setHint("Texto do botão");
+            label.setHint(classicButtonsEnabled ? "Texto em fonte Minecraft" : "Texto do botão");
             label.setPadding(dpInt(7), 0, dpInt(7), 0);
             label.setText(custom.label);
             label.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff7e91ad));
@@ -1262,6 +1556,12 @@ final class NativeTouchControlsView extends View {
         handed.setChecked(leftHanded);
         panel.addView(handed, new LinearLayout.LayoutParams(-1, -2));
 
+        android.widget.CheckBox classicButtons = new android.widget.CheckBox(activity);
+        classicButtons.setText("Botões Clássicos");
+        classicButtons.setTextColor(0xff18213a);
+        classicButtons.setChecked(classicButtonsEnabled);
+        panel.addView(classicButtons, new LinearLayout.LayoutParams(-1, -2));
+
         TextView sizeLabel = textSetting("Tamanho geral " + Math.round(scale * 100) + "%");
         SeekBar size = new SeekBar(activity);
         size.setMax(60);
@@ -1315,9 +1615,11 @@ final class NativeTouchControlsView extends View {
             sensitivity = (sensitivityBar.getProgress() + 50) / 100f;
             snapGapDp = gapBar.getProgress() + 4;
             leftHanded = handed.isChecked();
+            classicButtonsEnabled = classicButtons.isChecked();
             prefs.edit()
                     .putBoolean(KEY_ENABLED, enabled.isChecked())
                     .putBoolean(KEY_LEFT_HANDED, leftHanded)
+                    .putBoolean(KEY_CLASSIC_BUTTONS, classicButtonsEnabled)
                     .putFloat(KEY_SCALE, scale)
                     .putFloat(KEY_OPACITY, opacity)
                     .putFloat(KEY_SENSITIVITY, sensitivity)
@@ -1586,6 +1888,7 @@ final class NativeTouchControlsView extends View {
         } else if (track.control == JOYSTICK) {
             joystickPointer = -1;
             setJoystickDirections(false, false, false, false, false);
+            setJoystickSprint(false);
         } else if (track.control == NONE) {
             if (track.longPressFired) {
                 if (track.longPressButton != 0) {
@@ -1765,17 +2068,27 @@ final class NativeTouchControlsView extends View {
         PointerTrack track = pointers.get(joystickPointer);
         if (track == null) return;
         ButtonSpec joystickSpec = findButton(JOYSTICK);
-        if (joystickSpec == null) return;
+        if (joystickSpec == null) {
+            setJoystickSprint(false);
+            return;
+        }
         float dx = x - joystickX, dy = y - joystickY, radius = joystickSpec.radius;
-        // Sprint follows the vertical reach of the finger, matching the shaded top cap.
-        float rawForward = -dy / radius;
-        float max = radius * 0.85f, len = (float) Math.sqrt(dx * dx + dy * dy);
-        if (len > max && len > 0) { dx *= max / len; dy *= max / len; }
+        float max = radius * JOYSTICK_MAX_REACH;
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        if (len > max && len > 0f) {
+            float factor = max / len;
+            dx *= factor;
+            dy *= factor;
+        }
+        // Always decide from the current, clamped finger position. This releases Ctrl
+        // as soon as the finger recedes below the threshold instead of retaining a
+        // sprint state based on the previous farthest reach.
         float forward = -dy / radius;
         boolean up = forward > 0.25f;
-        boolean sprint = rawForward >= 0.70f;
-        setJoystickDirections(up, dy / radius > 0.25f,
-                dx / radius < -0.25f, dx / radius > 0.25f, sprint);
+        boolean down = dy / radius > 0.25f;
+        boolean sprint = up && forward >= SPRINT_TRIGGER_THRESHOLD;
+        setJoystickDirections(up, down, dx / radius < -0.25f,
+                dx / radius > 0.25f, sprint);
     }
 
     private void setJoystickDirections(boolean up, boolean down, boolean left, boolean right, boolean sprint) {
