@@ -364,7 +364,7 @@ final class NativeTouchControlsView extends View {
         }
 
         if (classicButtonsEnabled && drawClassicJoystick(canvas, cx, cy, radius,
-                knobX, knobY, effectiveOpacity, joystickPointer != -1)) {
+                knobX, knobY, effectiveOpacity, spec.color, joystickPointer != -1)) {
             return;
         }
 
@@ -420,13 +420,15 @@ final class NativeTouchControlsView extends View {
     }
 
     private boolean drawClassicJoystick(Canvas canvas, float cx, float cy, float radius,
-                                        float knobX, float knobY, float alpha, boolean pressed) {
+                                        float knobX, float knobY, float alpha, int color,
+                                        boolean pressed) {
         ensureClassicJoystickBitmaps();
         if (classicJoystickBase == null || classicJoystickKnob == null) return false;
         RectF base = new RectF(cx - radius, cy - radius, cx + radius, cy + radius);
         bitmapPaint.setAlpha(Math.round(255 * clamp(alpha, 0f, 1f)));
-        bitmapPaint.setColorFilter(null);
+        bitmapPaint.setColorFilter(classicButtonFilter(color, false));
         canvas.drawBitmap(classicJoystickBase, null, base, bitmapPaint);
+        bitmapPaint.setColorFilter(null);
 
         // Preserve the PE sprite while exposing the sprint activation strip.
         // The strip uses a darker shade of the existing gray button, with no
@@ -438,7 +440,7 @@ final class NativeTouchControlsView extends View {
                 knobX + knobSize / 2f, knobY + knobSize / 2f);
         canvas.save();
         if (pressed) canvas.translate(0, dp(1.2f));
-        bitmapPaint.setColorFilter(pressed ? CLASSIC_PRESSED_FILTER : null);
+        bitmapPaint.setColorFilter(classicButtonFilter(color, pressed));
         canvas.drawBitmap(classicJoystickKnob, null, knob, bitmapPaint);
         canvas.restore();
         bitmapPaint.setColorFilter(null);
@@ -572,7 +574,7 @@ final class NativeTouchControlsView extends View {
         canvas.save();
         if (pressed) canvas.translate(0, dp(1.2f));
         bitmapPaint.setAlpha(Math.round(255 * clamp(alpha, 0f, 1f)));
-        bitmapPaint.setColorFilter(pressed ? CLASSIC_PRESSED_FILTER : null);
+        bitmapPaint.setColorFilter(classicButtonFilter(spec.color, pressed));
         canvas.drawBitmap(bitmap, null, bounds, bitmapPaint);
         bitmapPaint.setColorFilter(null);
 
@@ -747,6 +749,27 @@ final class NativeTouchControlsView extends View {
             0xff28669b, 0xff7449b8, 0xff23845a, 0xffb96724,
             0xffb43c45, 0xffb34380, 0xff168a9a, 0xff666666
     };
+    // Base sprite art stays neutral by default; selected colors tint its pixel shading.
+    // A second filter per palette color gives a distinct pressed-state response without extra bitmaps.
+    private static final PorterDuffColorFilter[] CLASSIC_BUTTON_FILTERS = buildClassicButtonFilters();
+
+    private static PorterDuffColorFilter[] buildClassicButtonFilters() {
+        PorterDuffColorFilter[] filters = new PorterDuffColorFilter[BUTTON_PALETTE.length * 2];
+        for (int i = 0; i < BUTTON_PALETTE.length; i++) {
+            int tint = i == 7 ? Color.WHITE : BUTTON_PALETTE[i];
+            filters[i * 2] = new PorterDuffColorFilter(tint, PorterDuff.Mode.MULTIPLY);
+            int pressed = Color.rgb(
+                    Color.red(tint) * 0x98 / 255,
+                    Color.green(tint) * 0x98 / 255,
+                    Color.blue(tint) * 0x98 / 255);
+            filters[i * 2 + 1] = new PorterDuffColorFilter(pressed, PorterDuff.Mode.MULTIPLY);
+        }
+        return filters;
+    }
+
+    private static PorterDuffColorFilter classicButtonFilter(int color, boolean pressed) {
+        return CLASSIC_BUTTON_FILTERS[clampButtonColor(color) * 2 + (pressed ? 1 : 0)];
+    }
     private static final int[] MANAGED_BUTTON_IDS = {
             JOYSTICK, MOUSE_LEFT, MOUSE_RIGHT, JUMP, SNEAK, SPRINT, INVENTORY,
             DROP, SWAP, ATTACK, USE, PICK, PERSPECTIVE, CHAT, TAB, ENTER, ESCAPE
