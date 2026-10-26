@@ -53,7 +53,7 @@ public final class TouchControlsEditorActivity extends Activity {
         root.addView(settingsButton, settingsParams);
 
         TextView hint = new TextView(this);
-        hint.setText("Arraste os botões · toque para editar tamanho, cor e alternância · + adiciona · ✓ salva");
+        hint.setText("Arraste para mover · toque para editar · + adiciona · ✓ salva");
         hint.setTextColor(Color.WHITE);
         hint.setTextSize(12);
         hint.setGravity(Gravity.CENTER);
