@@ -808,6 +808,12 @@ print("Patched Horizon Android touch input and created the NativeActivity cdylib
 # overriding only the connected player's own profile (not every player's skin).
 # The Android skin manager stores imported 64x64 PNGs in app-private storage.
 # Treat a file:// texture URL as a trusted local file, sharing the normal PNG decoder/cache.
+# Expose the local player entity map to sibling game code so its skin uses the same
+# cached Horizon texture without making any other player's skin mutable.
+replace_once(remote,
+    """    level_players: HashMap<i32, u128>,""",
+    """    pub(super) level_players: HashMap<i32, u128>,""")
+
 replace_once(skins,
     """fn http_get(url: &str) -> Option<Vec<u8>> {
     use std::io::Read;""",
@@ -981,7 +987,7 @@ replace_once(perspective,
             }
             let local_entity = self.remote.as_ref().and_then(|remote| {
                 remote.level_players.iter()
-                    .find(|(_, uuid)| **uuid == remote.profile)
+                    .find(|(_, uuid)| **uuid == remote.profile())
                     .map(|(id, _)| *id as u32)
             });
             if let Some(id) = local_entity
@@ -1016,8 +1022,12 @@ replace_once(perspective,
             };
             self.player_model = Some(Mob::new(0, kind, p.position, self.yaw));
         }
-        self.refresh_android_custom_skin();
         """)
+
+replace_once(perspective,
+    """        let hurt = p.health.hurt_animation_time;""",
+    """        let hurt = p.health.hurt_animation_time;
+        self.refresh_android_custom_skin();""")
 
 # The remote entity that represents our own player uses the same selected model,
 # but the remaining players continue to use the normal shared player type.
