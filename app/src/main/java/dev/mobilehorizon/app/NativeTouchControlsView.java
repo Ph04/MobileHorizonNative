@@ -53,6 +53,7 @@ final class NativeTouchControlsView extends View {
     static final String KEY_LAYOUT = "button_layout_v2";
     static final String KEY_CUSTOM_BUTTONS = "custom_buttons_v1";
     static final String KEY_SNAP_GAP = "snap_gap_dp";
+    static final String KEY_AUTO_SPRINT = "auto_sprint_from_joystick";
     private static final String KEY_UNIFORM_SIZE_VERSION = "uniform_button_size_version";
     private static final String KEY_FLOAT_MENU_X = "floating_menu_x";
     private static final String KEY_FLOAT_MENU_Y = "floating_menu_y";
@@ -84,6 +85,7 @@ final class NativeTouchControlsView extends View {
     private final Set<Integer> heldKeys = new HashSet<>();
     private final Set<Integer> pressedControls = new HashSet<>();
     private final Set<Integer> joystickKeys = new HashSet<>();
+    private final Set<Integer> latchedControls = new HashSet<>();
     private final Map<Integer, Integer> controlPointerCounts = new HashMap<>();
     private final Map<Integer, ButtonLayout> buttonLayouts = new HashMap<>();
     private final List<CustomButton> customButtons = new ArrayList<>();
@@ -113,6 +115,8 @@ final class NativeTouchControlsView extends View {
     private float opacity;
     private float sensitivity;
     private boolean leftHanded;
+    private boolean autoSprintEnabled;
+    private boolean joystickSprintActive;
     private boolean controlsVisible = true;
     private long lastHotbarTapTime;
     private int lastHotbarTapSlot = -1;
@@ -151,6 +155,8 @@ final class NativeTouchControlsView extends View {
         float opacity = 1f;
         int shape = 0;
         int function = FUNCTION_DEFAULT;
+        boolean toggle;
+        int color;
         ButtonSpec(int id, String label, float x, float y, float radius) {
             this(id, label, x, y, radius, false, 0);
         }
@@ -168,6 +174,9 @@ final class NativeTouchControlsView extends View {
         int shape = 0; // 0 rounded rectangle, 1 circle/oval, 2 square
         int function = FUNCTION_DEFAULT;
         int keyCode = KeyEvent.KEYCODE_UNKNOWN;
+        boolean visible = true;
+        boolean toggle;
+        int color;
     }
 
     private static final class CustomButton {
@@ -178,6 +187,8 @@ final class NativeTouchControlsView extends View {
         float opacity = 1f;
         int shape = 0;
         int function = FUNCTION_KEY;
+        boolean toggle;
+        int color;
         CustomButton(int id, String label, int keyCode, float x, float y, float scale) {
             this.id = id; this.label = label; this.keyCode = keyCode;
             this.x = x; this.y = y; this.scale = scale;
@@ -200,6 +211,7 @@ final class NativeTouchControlsView extends View {
         opacity = clamp(prefs.getFloat(KEY_OPACITY, 0.82f), 0.35f, 1f);
         sensitivity = clamp(prefs.getFloat(KEY_SENSITIVITY, 1f), 0.50f, 2f);
         leftHanded = prefs.getBoolean(KEY_LEFT_HANDED, false);
+        autoSprintEnabled = prefs.getBoolean(KEY_AUTO_SPRINT, false);
         snapGapDp = clamp(prefs.getFloat(KEY_SNAP_GAP, 12f), 4f, 32f);
         loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
         loadCustomButtons(prefs.getString(KEY_CUSTOM_BUTTONS, ""));
@@ -233,7 +245,7 @@ final class NativeTouchControlsView extends View {
         super.onDraw(canvas);
         if (controlsVisible) {
             drawSnapGuides(canvas);
-            drawJoystick(canvas);
+            if (findButton(JOYSTICK) != null) drawJoystick(canvas);
             for (ButtonSpec spec : buttonSpecs()) {
                 if (spec.id != JOYSTICK) drawButton(canvas, spec);
             }
@@ -295,13 +307,15 @@ final class NativeTouchControlsView extends View {
     }
 
     private void drawJoystick(Canvas canvas) {
+        ButtonSpec spec = findButton(JOYSTICK);
+        if (spec == null) return;
         float cx = joystickPointer == -1 ? joystickHomeX() : joystickX;
         float cy = joystickPointer == -1 ? joystickHomeY() : joystickY;
-        ButtonSpec spec = findButton(JOYSTICK);
-        float radius = spec == null ? dp(67) * scale : spec.radius;
-        float effectiveOpacity = opacity * (spec == null ? 1f : clamp(spec.opacity, 0.20f, 1f));
-        int shape = spec == null ? 0 : spec.shape;
-        drawJoystickBase(canvas, cx, cy, radius, shape, effectiveOpacity);
+        float radius = spec.radius;
+        float effectiveOpacity = opacity * clamp(spec.opacity, 0.20f, 1f);
+        int shape = spec.shape;
+        drawJoystickBase(canvas, cx, cy, radius, shape, effectiveOpacity, spec.color);
+        if (autoSprintEnabled) drawJoystickSprintZone(canvas, cx, cy, radius, effectiveOpacity);
         float knobX = cx, knobY = cy;
         if (joystickPointer != -1) {
             PointerTrack track = pointers.get(joystickPointer);
@@ -312,20 +326,39 @@ final class NativeTouchControlsView extends View {
                 knobX += dx; knobY += dy;
             }
         }
-        circle(canvas, knobX, knobY, radius * 0.37f, false, 0.94f, effectiveOpacity);
-        circle(canvas, knobX, knobY, radius * 0.37f, true, 1f, effectiveOpacity);
+        circle(canvas, knobX, knobY, radius * 0.37f, false, 0.94f, effectiveOpacity, spec.color);
+        circle(canvas, knobX, knobY, radius * 0.37f, true, 1f, effectiveOpacity, spec.color);
     }
 
-    private void drawJoystickBase(Canvas canvas, float cx, float cy, float radius, int shape, float effectiveOpacity) {
+    private void drawJoystickBase(Canvas canvas, float cx, float cy, float radius, int shape,
+                                  float effectiveOpacity, int color) {
         RectF bounds = new RectF(cx - radius, cy - radius, cx + radius, cy + radius);
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.argb(Math.round(255 * effectiveOpacity * 0.60f), 18, 26, 44));
+        paint.setColor(withAlpha(buttonPaletteColor(color, false), Math.round(255 * effectiveOpacity * 0.60f)));
         drawJoystickShape(canvas, bounds, radius, shape);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(1.4f));
-        paint.setColor(Color.argb(Math.round(255 * effectiveOpacity * 0.85f), 228, 236, 255));
+        paint.setColor(withAlpha(buttonBorderColor(color), Math.round(255 * effectiveOpacity * 0.90f)));
         drawJoystickShape(canvas, bounds, radius, shape);
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void drawJoystickSprintZone(Canvas canvas, float cx, float cy, float radius, float effectiveOpacity) {
+        RectF zone = new RectF(cx - radius * 0.78f, cy - radius * 0.78f,
+                cx + radius * 0.78f, cy + radius * 0.78f);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(3f));
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setColor(Color.argb(Math.round(220 * effectiveOpacity), 113, 244, 156));
+        canvas.drawArc(zone, 238f, 64f, false, paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(Math.max(dp(8), radius * 0.20f));
+        paint.setFakeBoldText(true);
+        paint.setColor(Color.argb(Math.round(245 * effectiveOpacity), 175, 255, 197));
+        Paint.FontMetrics fm = paint.getFontMetrics();
+        canvas.drawText("RUN", cx, cy - radius * 0.47f - (fm.ascent + fm.descent) / 2f, paint);
+        paint.setFakeBoldText(false);
     }
 
     private void drawJoystickShape(Canvas canvas, RectF bounds, float radius, int shape) {
@@ -358,13 +391,13 @@ final class NativeTouchControlsView extends View {
         RectF bounds = new RectF(spec.x - halfWidth, spec.y - halfHeight,
                 spec.x + halfWidth, spec.y + halfHeight);
         float corner = Math.min(dp(10), halfHeight * 0.55f);
-        paint.setColor(Color.argb(Math.round(255 * buttonOpacity * (pressed ? 0.94f : 0.72f)),
-                pressed ? 54 : 25, pressed ? 91 : 31, pressed ? 116 : 39));
+        paint.setColor(withAlpha(buttonPaletteColor(spec.color, pressed),
+                Math.round(255 * buttonOpacity * (pressed ? 0.96f : 0.76f))));
         drawButtonShape(canvas, bounds, corner, spec.shape);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(editingControls ? 2.2f : 1.5f));
-        paint.setColor(Color.argb(Math.round(255 * buttonOpacity * (pressed ? 1f : 0.86f)),
-                pressed ? 157 : 155, pressed ? 211 : 166, pressed ? 245 : 187));
+        paint.setColor(withAlpha(buttonBorderColor(spec.color),
+                Math.round(255 * buttonOpacity * (pressed ? 1f : 0.88f))));
         drawButtonShape(canvas, bounds, corner, spec.shape);
         if (editingControls) {
             RectF selection = new RectF(bounds.left - dp(3), bounds.top - dp(3),
@@ -378,6 +411,46 @@ final class NativeTouchControlsView extends View {
         Paint.FontMetrics metrics = paint.getFontMetrics();
         canvas.drawText(spec.label, spec.x, spec.y - (metrics.ascent + metrics.descent) / 2f, paint);
         paint.setFakeBoldText(false);
+    }
+
+    private static final String[] BUTTON_COLOR_NAMES = {
+            "Azul", "Roxo", "Verde", "Laranja", "Vermelho", "Rosa", "Ciano", "Cinza"
+    };
+    private static final int[] BUTTON_PALETTE = {
+            0xff28669b, 0xff7449b8, 0xff23845a, 0xffb96724,
+            0xffb43c45, 0xffb34380, 0xff168a9a, 0xff535d6d
+    };
+    private static final int[] MANAGED_BUTTON_IDS = {
+            JOYSTICK, MOUSE_LEFT, MOUSE_RIGHT, JUMP, SNEAK, SPRINT, INVENTORY,
+            DROP, SWAP, ATTACK, USE, PICK, PERSPECTIVE, CHAT, HOTBAR_PREV,
+            HOTBAR_NEXT, TAB, ENTER, ESCAPE
+    };
+    private static final String[] MANAGED_BUTTON_NAMES = {
+            "Joystick", "Clique esquerdo", "Clique direito", "Pular", "Agachar",
+            "Corrida (Ctrl)", "Inventário", "Soltar item", "Mão secundária",
+            "Atacar", "Usar / colocar", "Selecionar bloco", "Perspectiva",
+            "Chat", "Slot anterior", "Próximo slot", "Tab", "Enter", "Esc"
+    };
+    private static int clampButtonColor(int color) {
+        return Math.max(0, Math.min(BUTTON_PALETTE.length - 1, color));
+    }
+    private int buttonPaletteColor(int color, boolean pressed) {
+        int base = BUTTON_PALETTE[clampButtonColor(color)];
+        return pressed ? blendColor(base, Color.WHITE, 0.25f) : base;
+    }
+    private int buttonBorderColor(int color) {
+        return blendColor(BUTTON_PALETTE[clampButtonColor(color)], Color.WHITE, 0.55f);
+    }
+    private int blendColor(int from, int to, float amount) {
+        float t = clamp(amount, 0f, 1f);
+        return Color.rgb(
+                Math.round(Color.red(from) * (1f - t) + Color.red(to) * t),
+                Math.round(Color.green(from) * (1f - t) + Color.green(to) * t),
+                Math.round(Color.blue(from) * (1f - t) + Color.blue(to) * t));
+    }
+    private int withAlpha(int color, int alpha) {
+        return Color.argb(Math.max(0, Math.min(255, alpha)),
+                Color.red(color), Color.green(color), Color.blue(color));
     }
 
     private void drawButtonShape(Canvas canvas, RectF bounds, float corner, int shape) {
@@ -483,6 +556,8 @@ final class NativeTouchControlsView extends View {
             spec.opacity = custom.opacity;
             spec.shape = custom.shape;
             spec.function = custom.function;
+            spec.toggle = custom.toggle;
+            spec.color = clampButtonColor(custom.color);
             specs.add(spec);
         }
         return specs.toArray(new ButtonSpec[0]);
@@ -490,6 +565,7 @@ final class NativeTouchControlsView extends View {
 
     private void addButtonSpec(List<ButtonSpec> specs, int id, String label, float x, float y, float legacyRadius) {
         ButtonLayout layout = buttonLayouts.get(id);
+        if (layout != null && !layout.visible) return;
         float baseRadius = id == JOYSTICK ? dp(67) * scale : dp(24) * scale;
         float defaultScale = id == JOYSTICK ? 1f
                 : clamp(legacyRadius / Math.max(1f, dp(24) * scale), 0.60f, 2.40f);
@@ -502,6 +578,8 @@ final class NativeTouchControlsView extends View {
             spec.shape = layout.shape;
             spec.function = layout.function;
             spec.keyCode = layout.keyCode;
+            spec.toggle = layout.toggle;
+            spec.color = clampButtonColor(layout.color);
         }
         specs.add(spec);
     }
@@ -547,6 +625,9 @@ final class NativeTouchControlsView extends View {
                 layout.shape = clampShape(item.optInt("shape", 0));
                 layout.function = clampFunction(item.optInt("function", FUNCTION_DEFAULT));
                 layout.keyCode = item.optInt("keyCode", KeyEvent.KEYCODE_UNKNOWN);
+                layout.visible = item.optBoolean("visible", true);
+                layout.toggle = item.optBoolean("toggle", false);
+                layout.color = clampButtonColor(item.optInt("color", 0));
                 buttonLayouts.put(item.optInt("id", -1), layout);
             }
         } catch (Exception error) {
@@ -572,6 +653,8 @@ final class NativeTouchControlsView extends View {
                 custom.opacity = clamp((float) item.optDouble("opacity", 1), 0.20f, 1f);
                 custom.shape = clampShape(item.optInt("shape", 0));
                 custom.function = clampFunction(item.optInt("function", FUNCTION_KEY));
+                custom.toggle = item.optBoolean("toggle", false);
+                custom.color = clampButtonColor(item.optInt("color", 0));
                 customButtons.add(custom);
             }
         } catch (Exception error) {
@@ -592,6 +675,9 @@ final class NativeTouchControlsView extends View {
                 item.put("shape", entry.getValue().shape);
                 item.put("function", entry.getValue().function);
                 item.put("keyCode", entry.getValue().keyCode);
+                item.put("visible", entry.getValue().visible);
+                item.put("toggle", entry.getValue().toggle);
+                item.put("color", entry.getValue().color);
                 items.put(item);
             }
             activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
@@ -615,6 +701,8 @@ final class NativeTouchControlsView extends View {
                 item.put("opacity", custom.opacity);
                 item.put("shape", custom.shape);
                 item.put("function", custom.function);
+                item.put("toggle", custom.toggle);
+                item.put("color", custom.color);
                 items.put(item);
             }
             activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
@@ -774,11 +862,15 @@ final class NativeTouchControlsView extends View {
         key.setSingleLine(true);
         key.setHint("Tecla (ex.: G, SPACE, F6)");
         key.setText("G");
+        android.widget.CheckBox toggle = new android.widget.CheckBox(activity);
+        toggle.setText("Alternância: ativar/desativar");
+        toggle.setTextColor(0xffeaf0ff);
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding((int) dp(20), (int) dp(8), (int) dp(20), (int) dp(4));
         panel.addView(label, new LinearLayout.LayoutParams(-1, -2));
         panel.addView(key, new LinearLayout.LayoutParams(-1, -2));
+        panel.addView(toggle, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle("Adicionar botão")
                 .setMessage("O botão mantém a tecla pressionada enquanto você segura.")
@@ -797,8 +889,10 @@ final class NativeTouchControlsView extends View {
             for (CustomButton item : customButtons) id = Math.max(id, item.id + 1);
             float x = 0.62f + (customButtons.size() % 3) * 0.055f;
             float y = 0.50f + (customButtons.size() % 4) * 0.055f;
-            customButtons.add(new CustomButton(id, caption, keyCode,
-                    clamp(x, 0.10f, 0.90f), clamp(y, 0.15f, 0.85f), 1f));
+            CustomButton created = new CustomButton(id, caption, keyCode,
+                    clamp(x, 0.10f, 0.90f), clamp(y, 0.15f, 0.85f), 1f);
+            created.toggle = toggle.isChecked();
+            customButtons.add(created);
             saveCustomButtons();
             invalidate();
             dialog.dismiss();
@@ -868,10 +962,11 @@ final class NativeTouchControlsView extends View {
         float currentOpacity = custom != null ? custom.opacity : (saved == null ? 1f : saved.opacity);
         int currentShape = custom != null ? custom.shape : (saved == null ? 0 : saved.shape);
         int savedFunction = custom != null ? custom.function : (saved == null ? 0 : saved.function);
-        // Keep the normalized value final: the Save click listener captures it.
         final int currentFunction = custom != null && savedFunction == FUNCTION_DEFAULT
                 ? FUNCTION_KEY : savedFunction;
         int currentKey = custom != null ? custom.keyCode : (saved == null ? KeyEvent.KEYCODE_UNKNOWN : saved.keyCode);
+        boolean currentToggle = custom != null ? custom.toggle : (saved != null && saved.toggle);
+        int currentColor = clampButtonColor(custom != null ? custom.color : (saved == null ? 0 : saved.color));
         boolean joystickButton = id == JOYSTICK;
         boolean inGame = gameActivity != null && !previewOnly;
         final int[] chosenShape = {clampShape(currentShape)};
@@ -911,6 +1006,28 @@ final class NativeTouchControlsView extends View {
         });
         panel.addView(shapeLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
         panel.addView(shapeButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
+
+        TextView colorLabel = miniLabel("Cor", 11, false);
+        Spinner colorSpinner = new Spinner(activity);
+        ArrayAdapter<String> colorAdapter = new ArrayAdapter<>(activity,
+                android.R.layout.simple_spinner_item, BUTTON_COLOR_NAMES);
+        colorAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        colorSpinner.setAdapter(colorAdapter);
+        colorSpinner.setSelection(currentColor);
+        panel.addView(colorLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
+        panel.addView(colorSpinner, new LinearLayout.LayoutParams(-1, dpInt(34)));
+
+        android.widget.CheckBox toggleMode = new android.widget.CheckBox(activity);
+        toggleMode.setText("Alternância: ativar/desativar");
+        toggleMode.setTextColor(0xffeaf0ff);
+        toggleMode.setChecked(currentToggle);
+        if (!joystickButton) panel.addView(toggleMode, new LinearLayout.LayoutParams(-1, dpInt(36)));
+
+        android.widget.CheckBox autoSprint = new android.widget.CheckBox(activity);
+        autoSprint.setText("Corrida automática ao empurrar até a frente");
+        autoSprint.setTextColor(0xffeaf0ff);
+        autoSprint.setChecked(autoSprintEnabled);
+        if (joystickButton) panel.addView(autoSprint, new LinearLayout.LayoutParams(-1, dpInt(42)));
 
         TextView opacityLabel = miniLabel("Opacidade " + Math.round(currentOpacity * 100) + "%", 11, false);
         SeekBar alpha = new SeekBar(activity);
@@ -980,7 +1097,7 @@ final class NativeTouchControlsView extends View {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         Button reset = new Button(activity);
-        reset.setText(custom != null ? "Excluir" : "Padrão");
+        reset.setText("Excluir");
         reset.setTextSize(10);
         Button cancel = new Button(activity);
         cancel.setText("Fechar");
@@ -1048,9 +1165,11 @@ final class NativeTouchControlsView extends View {
                 customButtons.remove(custom);
                 saveCustomButtons();
             } else {
-                buttonLayouts.remove(id);
+                ButtonLayout hidden = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
+                hidden.visible = false;
                 saveButtonLayouts();
             }
+            releaseHeldControls();
             invalidate();
             popup.dismiss();
         });
@@ -1068,6 +1187,14 @@ final class NativeTouchControlsView extends View {
             float newScale = (size.getProgress() + 60) / 100f;
             float newOpacity = (alpha.getProgress() + 20) / 100f;
             int newShape = clampShape(chosenShape[0]);
+            int newColor = clampButtonColor(colorSpinner.getSelectedItemPosition());
+            boolean newToggle = !joystickButton && toggleMode.isChecked();
+            if (joystickButton) {
+                autoSprintEnabled = autoSprint.isChecked();
+                activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+                        .putBoolean(KEY_AUTO_SPRINT, autoSprintEnabled).apply();
+                if (!autoSprintEnabled) setJoystickSprint(false);
+            }
             if (custom != null) {
                 String caption = customLabel == null ? custom.label : customLabel.getText().toString().trim();
                 if (caption.isEmpty() || caption.length() > 7) {
@@ -1082,12 +1209,17 @@ final class NativeTouchControlsView extends View {
                 custom.scale = newScale;
                 custom.opacity = newOpacity;
                 custom.shape = newShape;
+                custom.color = newColor;
+                custom.toggle = newToggle;
                 saveCustomButtons();
             } else {
                 ButtonLayout updated = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
                 updated.scale = newScale;
                 updated.opacity = newOpacity;
                 updated.shape = newShape;
+                updated.color = newColor;
+                updated.toggle = newToggle;
+                updated.visible = true;
                 if (!joystickButton && !inGame) {
                     updated.function = selectedFunction;
                     updated.keyCode = selectedFunction == FUNCTION_KEY ? selectedKey : KeyEvent.KEYCODE_UNKNOWN;
@@ -1138,6 +1270,11 @@ final class NativeTouchControlsView extends View {
         panel.addView(sensitivityLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(sensitivityBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
+        Button manageButtons = new Button(activity);
+        manageButtons.setText("Gerenciar / restaurar botões predefinidos");
+        manageButtons.setOnClickListener(v -> showButtonVisibilityManager());
+        panel.addView(manageButtons, new LinearLayout.LayoutParams(-1, dpInt(42)));
+
         TextView gapLabel = textSetting("Distância de encaixe " + Math.round(snapGapDp) + " dp");
         SeekBar gapBar = new SeekBar(activity);
         gapBar.setMax(28);
@@ -1180,6 +1317,37 @@ final class NativeTouchControlsView extends View {
         dialog.show();
     }
 
+    private void showButtonVisibilityManager() {
+        boolean[] visible = new boolean[MANAGED_BUTTON_IDS.length];
+        for (int i = 0; i < MANAGED_BUTTON_IDS.length; i++) {
+            ButtonLayout layout = buttonLayouts.get(MANAGED_BUTTON_IDS[i]);
+            visible[i] = layout == null || layout.visible;
+        }
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle("Botões predefinidos")
+                .setMessage("Desmarque para excluir da tela. Marque novamente para restaurar. Posições e cores salvas são mantidas.")
+                .setMultiChoiceItems(MANAGED_BUTTON_NAMES, visible, (d, which, checked) -> {
+                    int id = MANAGED_BUTTON_IDS[which];
+                    ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
+                    layout.visible = checked;
+                    if (!checked) releaseHeldControls();
+                    saveButtonLayouts();
+                    invalidate();
+                })
+                .setNegativeButton("Restaurar todos", (d, which) -> {
+                    for (int id : MANAGED_BUTTON_IDS) {
+                        ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
+                        layout.visible = true;
+                    }
+                    saveButtonLayouts();
+                    invalidate();
+                    Toast.makeText(activity, "Botões predefinidos restaurados.", Toast.LENGTH_SHORT).show();
+                })
+                .setPositiveButton("Fechar", null)
+                .create();
+        dialog.show();
+    }
+
     private interface SeekValueChanged { void onChanged(int progress); }
 
     private SeekBar.OnSeekBarChangeListener simpleSeek(SeekValueChanged callback) {
@@ -1212,11 +1380,14 @@ final class NativeTouchControlsView extends View {
         return result == KeyEvent.KEYCODE_UNKNOWN ? KeyEvent.KEYCODE_UNKNOWN : result;
     }
 
-    private void circle(Canvas canvas, float x, float y, float radius, boolean stroke, float alpha, float effectiveOpacity) {
+    private void circle(Canvas canvas, float x, float y, float radius, boolean stroke, float alpha,
+                        float effectiveOpacity, int color) {
         paint.setStyle(stroke ? Paint.Style.STROKE : Paint.Style.FILL);
         paint.setStrokeWidth(dp(1.4f));
         int a = Math.round(255 * effectiveOpacity * alpha);
-        paint.setColor(stroke ? Color.argb(a, 228, 236, 255) : Color.argb(a, 18, 26, 44));
+        int tint = stroke ? buttonBorderColor(color)
+                : blendColor(BUTTON_PALETTE[clampButtonColor(color)], Color.BLACK, 0.52f);
+        paint.setColor(withAlpha(tint, a));
         canvas.drawCircle(x, y, radius, paint);
         paint.setStyle(Paint.Style.FILL);
     }
@@ -1401,7 +1572,7 @@ final class NativeTouchControlsView extends View {
             // Two-finger swipe is a scroll gesture in menus; it must not click the GUI.
         } else if (track.control == JOYSTICK) {
             joystickPointer = -1;
-            setJoystickDirections(false, false, false, false);
+            setJoystickDirections(false, false, false, false, false);
         } else if (track.control == NONE) {
             if (track.longPressFired) {
                 if (track.longPressButton != 0) {
@@ -1449,8 +1620,10 @@ final class NativeTouchControlsView extends View {
         // While editing, prefer the visible button over the joystick hit region so
         // custom buttons can be dragged anywhere on screen.
         if (editingControls && best != null) return best.id;
-        float jx = joystickHomeX(), jy = joystickHomeY(), jr = dp(82) * scale;
-        if (distanceSquared(x, y, jx, jy) <= jr * jr) return JOYSTICK;
+        if (findButton(JOYSTICK) != null) {
+            float jx = joystickHomeX(), jy = joystickHomeY(), jr = dp(82) * scale;
+            if (distanceSquared(x, y, jx, jy) <= jr * jr) return JOYSTICK;
+        }
         return best == null ? NONE : best.id;
     }
 
@@ -1579,18 +1752,37 @@ final class NativeTouchControlsView extends View {
         PointerTrack track = pointers.get(joystickPointer);
         if (track == null) return;
         ButtonSpec joystickSpec = findButton(JOYSTICK);
-        float dx = x - joystickX, dy = y - joystickY, radius = joystickSpec == null ? dp(67) * scale : joystickSpec.radius;
+        if (joystickSpec == null) return;
+        float dx = x - joystickX, dy = y - joystickY, radius = joystickSpec.radius;
         float max = radius * 0.85f, len = (float) Math.sqrt(dx * dx + dy * dy);
         if (len > max && len > 0) { dx *= max / len; dy *= max / len; }
-        setJoystickDirections(dy / radius < -0.25f, dy / radius > 0.25f,
-                dx / radius < -0.25f, dx / radius > 0.25f);
+        float forward = -dy / radius;
+        boolean up = forward > 0.25f;
+        boolean sprint = forward >= 0.70f;
+        setJoystickDirections(up, dy / radius > 0.25f,
+                dx / radius < -0.25f, dx / radius > 0.25f, sprint);
     }
 
-    private void setJoystickDirections(boolean up, boolean down, boolean left, boolean right) {
+    private void setJoystickDirections(boolean up, boolean down, boolean left, boolean right, boolean sprint) {
         setJoystickKey(KeyEvent.KEYCODE_W, up);
         setJoystickKey(KeyEvent.KEYCODE_S, down);
         setJoystickKey(KeyEvent.KEYCODE_A, left);
         setJoystickKey(KeyEvent.KEYCODE_D, right);
+        setJoystickSprint(autoSprintEnabled && up && sprint);
+    }
+
+    private void setJoystickSprint(boolean active) {
+        if (joystickSprintActive == active) return;
+        joystickSprintActive = active;
+        setSprintKeyState();
+    }
+
+    private void setSprintKeyState() {
+        ButtonSpec sprintButton = findButton(SPRINT);
+        boolean sprintButtonDefault = sprintButton == null || !hasConfiguredFunction(sprintButton);
+        boolean sprintButtonHeld = sprintButtonDefault
+                && (pressedControls.contains(SPRINT) || latchedControls.contains(SPRINT));
+        setKeyHeld(KeyEvent.KEYCODE_CTRL_LEFT, joystickSprintActive || sprintButtonHeld);
     }
 
     private void setJoystickKey(int keyCode, boolean held) {
@@ -1642,6 +1834,19 @@ final class NativeTouchControlsView extends View {
             return;
         }
         ButtonSpec configured = findButton(control);
+        if (configured != null && configured.toggle) {
+            boolean active = !latchedControls.contains(control);
+            if (active) {
+                latchedControls.add(control);
+                pressedControls.add(control);
+            } else {
+                latchedControls.remove(control);
+                pressedControls.remove(control);
+            }
+            applyButtonAction(configured, active);
+            invalidate();
+            return;
+        }
         if (hasConfiguredFunction(configured)) {
             applyConfiguredFunction(configured, true);
             invalidate();
@@ -1650,7 +1855,7 @@ final class NativeTouchControlsView extends View {
         switch (control) {
             case JUMP: setKeyHeld(KeyEvent.KEYCODE_SPACE, true); break;
             case SNEAK: setKeyHeld(KeyEvent.KEYCODE_SHIFT_LEFT, true); break;
-            case SPRINT: setKeyHeld(KeyEvent.KEYCODE_CTRL_LEFT, true); break;
+            case SPRINT: setSprintKeyState(); break;
             case INVENTORY: setKeyHeld(KeyEvent.KEYCODE_E, true); break;
             case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, true, virtualMouseX, virtualMouseY); break;
             case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, true, virtualMouseX, virtualMouseY); break;
@@ -1684,8 +1889,14 @@ final class NativeTouchControlsView extends View {
             return;
         }
         controlPointerCounts.remove(control);
-        pressedControls.remove(control);
         ButtonSpec configured = findButton(control);
+        if (configured != null && configured.toggle) {
+            if (latchedControls.contains(control)) pressedControls.add(control);
+            else pressedControls.remove(control);
+            invalidate();
+            return;
+        }
+        pressedControls.remove(control);
         if (hasConfiguredFunction(configured)) {
             applyConfiguredFunction(configured, false);
             invalidate();
@@ -1694,7 +1905,7 @@ final class NativeTouchControlsView extends View {
         switch (control) {
             case JUMP: setKeyHeld(KeyEvent.KEYCODE_SPACE, false); break;
             case SNEAK: setKeyHeld(KeyEvent.KEYCODE_SHIFT_LEFT, false); break;
-            case SPRINT: setKeyHeld(KeyEvent.KEYCODE_CTRL_LEFT, false); break;
+            case SPRINT: setSprintKeyState(); break;
             case INVENTORY: setKeyHeld(KeyEvent.KEYCODE_E, false); break;
             case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY); break;
             case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY); break;
@@ -1717,6 +1928,37 @@ final class NativeTouchControlsView extends View {
                 break;
         }
         invalidate();
+    }
+
+    private void applyButtonAction(ButtonSpec spec, boolean pressed) {
+        if (spec == null) return;
+        if (hasConfiguredFunction(spec)) {
+            applyConfiguredFunction(spec, pressed);
+            return;
+        }
+        switch (spec.id) {
+            case JUMP: setKeyHeld(KeyEvent.KEYCODE_SPACE, pressed); break;
+            case SNEAK: setKeyHeld(KeyEvent.KEYCODE_SHIFT_LEFT, pressed); break;
+            case SPRINT: setSprintKeyState(); break;
+            case INVENTORY: setKeyHeld(KeyEvent.KEYCODE_E, pressed); break;
+            case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, pressed, virtualMouseX, virtualMouseY); break;
+            case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, pressed, virtualMouseX, virtualMouseY); break;
+            case ESCAPE: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, pressed); break;
+            case DROP: setKeyHeld(KeyEvent.KEYCODE_Q, pressed); break;
+            case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, pressed); break;
+            case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, pressed, virtualMouseX, virtualMouseY); break;
+            case MOUSE_LEFT: setMouseButton(MotionEvent.BUTTON_PRIMARY, pressed, virtualMouseX, virtualMouseY); break;
+            case MOUSE_RIGHT: setMouseButton(MotionEvent.BUTTON_SECONDARY, pressed, virtualMouseX, virtualMouseY); break;
+            case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, pressed); break;
+            case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, pressed); break;
+            case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, pressed); break;
+            case ENTER: setKeyHeld(KeyEvent.KEYCODE_ENTER, pressed); break;
+            case HOTBAR_PREV: if (pressed) sendMouseScroll(1f); break;
+            case HOTBAR_NEXT: if (pressed) sendMouseScroll(-1f); break;
+            default:
+                if (spec.custom && spec.keyCode != KeyEvent.KEYCODE_UNKNOWN) setKeyHeld(spec.keyCode, pressed);
+                break;
+        }
     }
 
     private void setKeyHeld(int keyCode, boolean held) {
@@ -1782,6 +2024,8 @@ final class NativeTouchControlsView extends View {
     }
 
     private void releaseHeldControls() {
+        joystickSprintActive = false;
+        latchedControls.clear();
         for (Integer key : new HashSet<>(heldKeys)) setKeyHeld(key, false);
         joystickKeys.clear();
         pressedControls.clear();
