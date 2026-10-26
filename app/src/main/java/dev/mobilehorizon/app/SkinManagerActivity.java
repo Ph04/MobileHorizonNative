@@ -748,12 +748,15 @@ public final class SkinManagerActivity extends Activity {
             float left = centerX - frontWidth / 2f + shift;
             float height = heightUnits * unit;
             RectF frontDst = new RectF(left, topY, left + frontWidth, topY + height);
+            RectF sideDst = null;
+            Rect sideSource = showRightSide ? sideRight : sideLeft;
+            Rect overlaySideSource = showRightSide ? overlayRight : overlayLeft;
             if (sideWidth > 0.8f * density) {
-                RectF sideDst = showRightSide
+                sideDst = showRightSide
                         ? new RectF(frontDst.right, topY, frontDst.right + sideWidth, topY + height)
                         : new RectF(frontDst.left - sideWidth, topY, frontDst.left, topY + height);
                 bitmapPaint.setColorFilter(sidePaint.getColorFilter());
-                canvas.drawBitmap(skin, showRightSide ? sideRight : sideLeft, sideDst, bitmapPaint);
+                canvas.drawBitmap(skin, sideSource, sideDst, bitmapPaint);
                 bitmapPaint.setColorFilter(null);
             }
             canvas.drawBitmap(skin, front, frontDst, bitmapPaint);
@@ -763,6 +766,13 @@ public final class SkinManagerActivity extends Activity {
                 RectF overlayDst = new RectF(frontDst.left - inflate, frontDst.top - inflate,
                         frontDst.right + inflate, frontDst.bottom + inflate);
                 canvas.drawBitmap(skin, overlayFront, overlayDst, bitmapPaint);
+                if (sideDst != null && overlaySideSource != null) {
+                    RectF overlaySideDst = new RectF(sideDst.left - inflate, sideDst.top - inflate,
+                            sideDst.right + inflate, sideDst.bottom + inflate);
+                    bitmapPaint.setColorFilter(sidePaint.getColorFilter());
+                    canvas.drawBitmap(skin, overlaySideSource, overlaySideDst, bitmapPaint);
+                    bitmapPaint.setColorFilter(null);
+                }
             }
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(0.45f * density);
