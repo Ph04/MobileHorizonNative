@@ -859,11 +859,11 @@ replace_once(perspective,
     player_type_variant(root, false)
 }
 pub(super) fn player_type_variant(root: &Path, slim: bool) -> Option<Arc<MobType>> {
-    let model = if slim {
+    let model = (if slim {
         horizon_client::mobs::load_model(root, "minecraft:player#slim")
     } else {
         None
-    }.or_else(|| horizon_client::mobs::load_model(root, "minecraft:player#main"))?;
+    }).or_else(|| horizon_client::mobs::load_model(root, "minecraft:player#main"))?;
     Some(Arc::new(MobType {""")
 replace_once(perspective,
     """            sounds: [
