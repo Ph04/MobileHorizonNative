@@ -61,8 +61,8 @@ for step in steps:
     context.update(result)
 
 
-# Horizon v0.2.73 removed Game::extras_key from the extras subsystem. The
-# Android-injected key path still feeds vanilla key mappings below; remove only
+# Horizon v0.2.73 and v0.2.74 removed Game::extras_key from the extras subsystem.
+# The Android-injected key path still feeds vanilla key mappings below; remove only
 # the now-obsolete extras hook call so the pinned upstream API compiles cleanly.
 legacy_extras_hook = "                    self.extras_key(key, pressed, false);\n"
 patched_game = game.read_text(encoding="utf-8")
