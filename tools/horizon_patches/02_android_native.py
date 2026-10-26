@@ -920,7 +920,7 @@ fn wrap(d: f32) -> f32 {""",
             tempt: Arc::from([]),
         }))
 }
-fn wrap(d: f32) {""")
+fn wrap(d: f32) -> f32 {""")
 # Apply the selected local skin in singleplayer as well as multiplayer. This queues
 # the same verified PNG decoder/cache independently of whether the player list is open.
 replace_once(perspective,
