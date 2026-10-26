@@ -1853,38 +1853,7 @@ final class NativeTouchControlsView extends View {
             invalidate();
             return;
         }
-        if (hasConfiguredFunction(configured)) {
-            applyConfiguredFunction(configured, true);
-            invalidate();
-            return;
-        }
-        switch (control) {
-            case JUMP: setKeyHeld(KeyEvent.KEYCODE_SPACE, true); break;
-            case SNEAK: setKeyHeld(KeyEvent.KEYCODE_SHIFT_LEFT, true); break;
-            case SPRINT: setSprintKeyState(); break;
-            case INVENTORY: setKeyHeld(KeyEvent.KEYCODE_E, true); break;
-            case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, true, virtualMouseX, virtualMouseY); break;
-            case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, true, virtualMouseX, virtualMouseY); break;
-            case ESCAPE: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, true); break;
-            case DROP: setKeyHeld(KeyEvent.KEYCODE_Q, true); break;
-            case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, true); break;
-            case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, true, virtualMouseX, virtualMouseY); break;
-            case MOUSE_LEFT:
-                sendMouseMotion(virtualMouseX, virtualMouseY);
-                setMouseButton(MotionEvent.BUTTON_PRIMARY, true, virtualMouseX, virtualMouseY);
-                break;
-            case MOUSE_RIGHT: setMouseButton(MotionEvent.BUTTON_SECONDARY, true, virtualMouseX, virtualMouseY); break;
-            case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, true); break;
-            case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, true); break;
-            case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, true); break;
-            case ENTER: setKeyHeld(KeyEvent.KEYCODE_ENTER, true); break;
-            case HOTBAR_PREV: sendMouseScroll(1f); break;
-            case HOTBAR_NEXT: sendMouseScroll(-1f); break;
-            default:
-                ButtonSpec custom = findButton(control);
-                if (custom != null && custom.custom) setKeyHeld(custom.keyCode, true);
-                break;
-        }
+        if (configured != null) applyButtonAction(configured, true);
         invalidate();
     }
 
@@ -1903,36 +1872,7 @@ final class NativeTouchControlsView extends View {
             return;
         }
         pressedControls.remove(control);
-        if (hasConfiguredFunction(configured)) {
-            applyConfiguredFunction(configured, false);
-            invalidate();
-            return;
-        }
-        switch (control) {
-            case JUMP: setKeyHeld(KeyEvent.KEYCODE_SPACE, false); break;
-            case SNEAK: setKeyHeld(KeyEvent.KEYCODE_SHIFT_LEFT, false); break;
-            case SPRINT: setSprintKeyState(); break;
-            case INVENTORY: setKeyHeld(KeyEvent.KEYCODE_E, false); break;
-            case ATTACK: setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY); break;
-            case USE: setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY); break;
-            case ESCAPE: setKeyHeld(KeyEvent.KEYCODE_ESCAPE, false); break;
-            case DROP: setKeyHeld(KeyEvent.KEYCODE_Q, false); break;
-            case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, false); break;
-            case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, false, virtualMouseX, virtualMouseY); break;
-            case MOUSE_LEFT: setMouseButton(MotionEvent.BUTTON_PRIMARY, false, virtualMouseX, virtualMouseY); break;
-            case MOUSE_RIGHT: setMouseButton(MotionEvent.BUTTON_SECONDARY, false, virtualMouseX, virtualMouseY); break;
-            case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, false); break;
-            case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, false); break;
-            case TAB: setKeyHeld(KeyEvent.KEYCODE_TAB, false); break;
-            case ENTER: setKeyHeld(KeyEvent.KEYCODE_ENTER, false); break;
-            case HOTBAR_PREV:
-            case HOTBAR_NEXT:
-                break;
-            default:
-                ButtonSpec custom = findButton(control);
-                if (custom != null && custom.custom) setKeyHeld(custom.keyCode, false);
-                break;
-        }
+        if (configured != null) applyButtonAction(configured, false);
         invalidate();
     }
 
@@ -1953,7 +1893,10 @@ final class NativeTouchControlsView extends View {
             case DROP: setKeyHeld(KeyEvent.KEYCODE_Q, pressed); break;
             case SWAP: setKeyHeld(KeyEvent.KEYCODE_F, pressed); break;
             case PICK: setMouseButton(MotionEvent.BUTTON_TERTIARY, pressed, virtualMouseX, virtualMouseY); break;
-            case MOUSE_LEFT: setMouseButton(MotionEvent.BUTTON_PRIMARY, pressed, virtualMouseX, virtualMouseY); break;
+            case MOUSE_LEFT:
+                if (pressed) sendMouseMotion(virtualMouseX, virtualMouseY);
+                setMouseButton(MotionEvent.BUTTON_PRIMARY, pressed, virtualMouseX, virtualMouseY);
+                break;
             case MOUSE_RIGHT: setMouseButton(MotionEvent.BUTTON_SECONDARY, pressed, virtualMouseX, virtualMouseY); break;
             case PERSPECTIVE: setKeyHeld(KeyEvent.KEYCODE_F5, pressed); break;
             case CHAT: setKeyHeld(KeyEvent.KEYCODE_T, pressed); break;
