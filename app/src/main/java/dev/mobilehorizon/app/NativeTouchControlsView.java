@@ -1198,6 +1198,9 @@ final class NativeTouchControlsView extends View {
                         .putBoolean(KEY_AUTO_SPRINT, autoSprintEnabled).apply();
                 if (!autoSprintEnabled) setJoystickSprint(false);
             }
+            // If a latched button is changed back to hold-to-press mode, release
+            // its action immediately instead of keeping an unreachable key held.
+            if (!newToggle && latchedControls.contains(id)) releaseHeldControls();
             if (custom != null) {
                 String caption = customLabel == null ? custom.label : customLabel.getText().toString().trim();
                 if (caption.isEmpty() || caption.length() > 7) {
