@@ -848,7 +848,7 @@ replace_once(remote,
 
 # Expose a model-key variant only for the local player's own third-person/inventory model.
 # If this Horizon resource set does not contain a slim model key, fall back to the regular model.
-let perspective = root / "crates/horizon-client/src/game/perspective.rs"
+perspective = root / "crates/horizon-client/src/game/perspective.rs"
 if not perspective.is_file():
     raise SystemExit(f"Missing Horizon perspective source: {perspective}")
 replace_once(perspective,
