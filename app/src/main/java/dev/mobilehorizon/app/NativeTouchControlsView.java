@@ -1767,11 +1767,13 @@ final class NativeTouchControlsView extends View {
         ButtonSpec joystickSpec = findButton(JOYSTICK);
         if (joystickSpec == null) return;
         float dx = x - joystickX, dy = y - joystickY, radius = joystickSpec.radius;
+        // Sprint follows the vertical reach of the finger, matching the shaded top cap.
+        float rawForward = -dy / radius;
         float max = radius * 0.85f, len = (float) Math.sqrt(dx * dx + dy * dy);
         if (len > max && len > 0) { dx *= max / len; dy *= max / len; }
         float forward = -dy / radius;
         boolean up = forward > 0.25f;
-        boolean sprint = forward >= 0.70f;
+        boolean sprint = rawForward >= 0.70f;
         setJoystickDirections(up, dy / radius > 0.25f,
                 dx / radius < -0.25f, dx / radius > 0.25f, sprint);
     }
