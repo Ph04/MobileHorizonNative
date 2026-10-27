@@ -2474,8 +2474,11 @@ public final class MainActivity extends Activity {
     }
 
     private void showRuntimeError(String title, String message) {
-        new AlertDialog.Builder(this).setTitle(title).setMessage(message)
-                .setPositiveButton(UiLanguage.translate(this, "Entendi"), null).show();
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this, title))
+                .setMessage(UiLanguage.translate(this, message))
+                .setPositiveButton(UiLanguage.translate(this, "Entendi"), null)
+                .show();
     }
 
     private void clearPendingImport() {
