@@ -345,7 +345,7 @@ public final class MainActivity extends Activity {
                     runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Verificando a integridade do arquivo baixado…"));
                 } else if (total > 0L) {
                     int percent = (int) Math.max(0L, Math.min(100L, bytes * 100L / total));
-                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Transferido: ") + formatBytes(bytes) + " de "
+                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Transferido: ") + formatBytes(bytes) + UiLanguage.translate(this, " de ") + 
                             + formatBytes(total) + "  •  " + percent + "%");
                 } else if ("checking-official".equals(phase)) {
                     runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Consultando a versão oficial do Horizon…"));
