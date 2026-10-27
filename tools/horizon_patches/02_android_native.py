@@ -537,12 +537,38 @@ replace_once(chat,
         horizon_client::set_android_chat_open(true);
         horizon_client::set_android_chat_draft(initial);
         self.ui.chat_opened = Some(std::time::Instant::now());""")
-replace_once(chat,
-    """    pub(super) fn close_chat(&mut self) {
+# The upstream chat close path gained a wake-up guard for the Leave Bed screen.
+# Insert the keyboard state transition at the same point the chat screen is cleared,
+# while retaining support for older Horizon releases that clear it immediately.
+close_chat_anchors = [
+    (
+        """    pub(super) fn close_chat(&mut self) {
         self.ui.chat_screen = None;""",
-    """    pub(super) fn close_chat(&mut self) {
+        """    pub(super) fn close_chat(&mut self) {
         horizon_client::set_android_chat_open(false);
-        self.ui.chat_screen = None;""")
+        self.ui.chat_screen = None;""",
+    ),
+    (
+        """        if self.ui.in_bed_chat && self.sleeping.is_some() {
+            self.wake_up();
+            return;
+        }
+        self.ui.chat_screen = None;""",
+        """        if self.ui.in_bed_chat && self.sleeping.is_some() {
+            self.wake_up();
+            return;
+        }
+        horizon_client::set_android_chat_open(false);
+        self.ui.chat_screen = None;""",
+    ),
+]
+chat_content = chat.read_text(encoding="utf-8")
+matched_close_chat = [pair for pair in close_chat_anchors if chat_content.count(pair[0]) == 1]
+if len(matched_close_chat) != 1:
+    raise SystemExit(
+        f"{chat}: expected one known close_chat layout, found {len(matched_close_chat)}"
+    )
+replace_once(chat, *matched_close_chat[0])
 replace_once(chat,
     """                if let Some(text) = typed_text
                     && !ctrl
