@@ -729,7 +729,8 @@ public final class ResourceManagerActivity extends Activity {
         row.addView(actions, actionsParams);
 
         CheckBox active = new CheckBox(this);
-        active.setText(item.kind == Kind.DATA_PACK ? "Por mundo" : item.active ? "Ativo" : "Ativar");
+        active.setText(UiLanguage.translate(this,
+                item.kind == Kind.DATA_PACK ? "Por mundo" : item.active ? "Ativo" : "Ativar"));
         active.setTextSize(13);
         active.setTextColor(0xff283550);
         active.setMinHeight(dp(38));
@@ -739,14 +740,14 @@ public final class ResourceManagerActivity extends Activity {
         active.setOnCheckedChangeListener((button, checked) -> {
             try {
                 setActive(item, checked);
-                button.setText(checked ? "Ativo" : "Ativar");
+                button.setText(UiLanguage.translate(this, checked ? "Ativo" : "Ativar"));
                 showStatus(item.name + (checked ? " ativado" : " desativado")
                         + ". A mudança será aplicada quando o Minecraft iniciar novamente.");
                 refreshResources();
             } catch (Exception error) {
                 button.setOnCheckedChangeListener(null);
                 button.setChecked(item.active);
-                button.setText(item.active ? "Ativo" : "Ativar");
+                button.setText(UiLanguage.translate(this, item.active ? "Ativo" : "Ativar"));
                 button.setOnCheckedChangeListener((b, value) -> {
                     try {
                         setActive(item, value);
