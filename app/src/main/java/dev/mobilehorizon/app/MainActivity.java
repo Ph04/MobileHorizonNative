@@ -345,7 +345,7 @@ public final class MainActivity extends Activity {
                     runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Verificando a integridade do arquivo baixado…"));
                 } else if (total > 0L) {
                     int percent = (int) Math.max(0L, Math.min(100L, bytes * 100L / total));
-                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Transferido: ") + + formatBytes(bytes) + " de "
+                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Transferido: ") + formatBytes(bytes) + " de "
                             + formatBytes(total) + "  •  " + percent + "%");
                 } else if ("checking-official".equals(phase)) {
                     runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Consultando a versão oficial do Horizon…"));
@@ -986,7 +986,7 @@ public final class MainActivity extends Activity {
                     EnumSet.of(BackendCapability.IMPORT_OUTPUT, BackendCapability.REPORT_PROGRESS),
                     null);
             CompatibilityReport report = CompatibilityChecker.INSTANCE.check(device, importer);
-            compatibilityText.setText(UiLanguage.translate(this, "Estado: ") + + report.getStatus().name()
+            compatibilityText.setText(UiLanguage.translate(this, "Estado: ") + report.getStatus().name()
                     + "\nAndroid API: " + Build.VERSION.SDK_INT
                     + "\nABIs reportadas: " + String.join(", ", Build.SUPPORTED_ABIS)
                     + "\n\nA verificação cobre esta etapa de importação. Ela não certifica compatibilidade gráfica nem inicialização de um motor.");
@@ -1170,7 +1170,7 @@ public final class MainActivity extends Activity {
                 : "";
         new AlertDialog.Builder(this)
                 .setTitle(UiLanguage.translate(this, "Baixar arquivos oficiais do Minecraft?"))
-                .setMessage(UiLanguage.translate(this, "Este fluxo baixa arquivos oficiais da Mojang, verifica tamanho e SHA-1, mas não autentica uma conta nem concede uma licença. Prossiga apenas se você tiver uma licença válida de Minecraft Java Edition.") + + extra)
+                .setMessage(UiLanguage.translate(this, "Este fluxo baixa arquivos oficiais da Mojang, verifica tamanho e SHA-1, mas não autentica uma conta nem concede uma licença. Prossiga apenas se você tiver uma licença válida de Minecraft Java Edition.") + extra)
                 .setNegativeButton(UiLanguage.translate(this, "Voltar"), null)
                 .setPositiveButton(UiLanguage.translate(this, "Continuar"), (dialog, which) -> startOfficialDownloadNow(allAssets))
                 .show();
@@ -1330,7 +1330,7 @@ public final class MainActivity extends Activity {
         if (success) {
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setProgress(1000);
-            progressDetails.setText(UiLanguage.translate(this, "Destino: files/minecraft\nBibliotecas: ") + + libraries
+            progressDetails.setText(UiLanguage.translate(this, "Destino: files/minecraft\nBibliotecas: ") + libraries
                     + (assets > 0 ? "\nAssets baixados: " + assets : "\nAssets completos: ainda não baixados")
                     + (manifestSha1 == null || manifestSha1.isEmpty() ? "" : "\nSHA-1 do JSON: " + manifestSha1));
             setStatus("Download oficial concluído", message == null ? "Arquivos verificados." : message);
@@ -1707,12 +1707,12 @@ public final class MainActivity extends Activity {
         panel.addView(size, params(-1, -2));
         size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                sizeLabel.setText(UiLanguage.translate(this, "Tamanho dos controles: ") + + (70 + progress) + "%");
+                sizeLabel.setText(UiLanguage.translate(this, "Tamanho dos controles: ") + (70 + progress) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
         });
-        sizeLabel.setText(UiLanguage.translate(this, "Tamanho dos controles: ") + + (70 + size.getProgress()) + "%");
+        sizeLabel.setText(UiLanguage.translate(this, "Tamanho dos controles: ") + (70 + size.getProgress()) + "%");
 
         TextView opacityLabel = text("", 14, 0xff59647b, false);
         LinearLayout.LayoutParams opacityParams = params(-1, -2);
@@ -1725,12 +1725,12 @@ public final class MainActivity extends Activity {
         panel.addView(opacity, params(-1, -2));
         opacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                opacityLabel.setText(UiLanguage.translate(this, "Opacidade: ") + + (35 + progress) + "%");
+                opacityLabel.setText(UiLanguage.translate(this, "Opacidade: ") + (35 + progress) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
         });
-        opacityLabel.setText(UiLanguage.translate(this, "Opacidade: ") + + (35 + opacity.getProgress()) + "%");
+        opacityLabel.setText(UiLanguage.translate(this, "Opacidade: ") + (35 + opacity.getProgress()) + "%");
 
         TextView sensitivityLabel = text("", 14, 0xff59647b, false);
         LinearLayout.LayoutParams sensitivityParams = params(-1, -2);
@@ -1743,12 +1743,12 @@ public final class MainActivity extends Activity {
         panel.addView(sensitivity, params(-1, -2));
         sensitivity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                sensitivityLabel.setText(UiLanguage.translate(this, "Sensibilidade da câmera: ") + + (50 + progress) + "%");
+                sensitivityLabel.setText(UiLanguage.translate(this, "Sensibilidade da câmera: ") + (50 + progress) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
         });
-        sensitivityLabel.setText(UiLanguage.translate(this, "Sensibilidade da câmera: ") + + (50 + sensitivity.getProgress()) + "%");
+        sensitivityLabel.setText(UiLanguage.translate(this, "Sensibilidade da câmera: ") + (50 + sensitivity.getProgress()) + "%");
 
         new AlertDialog.Builder(this)
                 .setTitle(UiLanguage.translate(this, "Controles Touch"))
