@@ -286,6 +286,9 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onStop() {
+        // Do not retain this Activity through a repeating Handler while it is not visible.
+        // onResume schedules a fresh poll when the launcher returns to the foreground.
+        runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
         if (receiverRegistered) {
             try { unregisterReceiver(downloadReceiver); } catch (IllegalArgumentException ignored) {}
             receiverRegistered = false;
