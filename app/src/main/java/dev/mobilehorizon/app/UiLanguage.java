@@ -375,6 +375,21 @@ final class UiLanguage {
         pair("Texturas, mods Horizon, data packs e shaders compatíveis. As mudanças entram em vigor ao reiniciar o Minecraft.", "Compatible textures, Horizon mods, data packs, and shaders. Changes take effect after restarting Minecraft.");
         pair("MOBILEHORIZON  /  RECURSOS", "MOBILEHORIZON  /  RESOURCES");
         pair("Voltar à tela principal", "Back to main screen");
+        // Background notification wording.
+        pair("Baixando Minecraft ", "Downloading Minecraft ");
+        pair("Download concluído", "Download complete");
+        pair("Download cancelado", "Download canceled");
+        pair("Download não concluído", "Download incomplete");
+        pair("Download oficial", "Official download");
+        pair("Downloads do Minecraft", "Minecraft downloads");
+        pair("Progresso, cancelamento e conclusão dos downloads oficiais de Minecraft.", "Progress, cancellation, and completion of official Minecraft downloads.");
+        pair("Preparando recursos para Minecraft 26.3", "Preparing Minecraft 26.3 resources");
+        pair("Preparação concluída", "Preparation complete");
+        pair("Preparação cancelada", "Preparation canceled");
+        pair("Preparação não concluída", "Preparation incomplete");
+        pair("Preparação de recursos vanilla", "Vanilla resource preparation");
+        pair("Preparação de recursos", "Resource preparation");
+        pair("Progresso, cancelamento e conclusão da preparação de recursos vanilla.", "Progress, cancellation, and completion of vanilla resource preparation.");
     private UiLanguage() { }
 
     private static void pair(String portuguese, String english) {
