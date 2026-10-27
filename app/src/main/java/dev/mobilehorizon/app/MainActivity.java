@@ -953,12 +953,14 @@ public final class MainActivity extends Activity {
             boolean show = body.getVisibility() != View.VISIBLE;
             body.setVisibility(show ? View.VISIBLE : View.GONE);
             heading.setText((show ? "▾  " : "▸  ") + title);
-            header.setContentDescription((show ? "Recolher " : "Expandir ") + title);
+            header.setContentDescription(UiLanguage.translate(this,
+                    (show ? "Recolher " : "Expandir ") + title));
         };
         header.setOnClickListener(toggle);
         heading.setOnClickListener(toggle);
         summary.setOnClickListener(toggle);
-        header.setContentDescription((expanded ? "Recolher " : "Expandir ") + title);
+        header.setContentDescription(UiLanguage.translate(this,
+                (expanded ? "Recolher " : "Expandir ") + title));
         return body;
     }
 
@@ -1058,7 +1060,8 @@ public final class MainActivity extends Activity {
         progressBar.setIndeterminate(isZip);
         progressBar.setProgress(0);
         progressBar.setVisibility(View.VISIBLE);
-        progressDetails.setText(isZip ? "Preparando leitura do arquivo ZIP…" : "Analisando a pasta selecionada…");
+        progressDetails.setText(UiLanguage.translate(this,
+                isZip ? "Preparando leitura do arquivo ZIP…" : "Analisando a pasta selecionada…"));
         setStatus("Importação em andamento", "Os dados estão sendo copiados para uma área temporária. Você pode cancelar sem substituir a importação anterior.");
         currentJob = executor.submit(() -> {
             try {
@@ -1092,7 +1095,9 @@ public final class MainActivity extends Activity {
         String files = progress.completedFiles + (progress.totalFiles > 0 ? " / " + progress.totalFiles : "");
         String bytes = formatBytes(progress.bytesProcessed);
         if (progress.totalBytes > 0) bytes += " / " + formatBytes(progress.totalBytes);
-        progressDetails.setText(progress.stage + "\nArquivos: " + files + "\nDados copiados: " + bytes);
+        progressDetails.setText(UiLanguage.translate(this, progress.stage)
+                + "\n" + UiLanguage.translate(this, "Arquivos: ") + files
+                + "\n" + UiLanguage.translate(this, "Dados copiados: ") + bytes);
     }
 
     private void finishImport(PreparedResourceImporter.ImportSummary summary, Exception error) {
@@ -1309,11 +1314,11 @@ public final class MainActivity extends Activity {
         if (itemTotalBytes > 0) bytes += " / " + formatBytes(itemTotalBytes);
         String aggregate = formatBytes(completedBytes);
         if (totalBytes > 0) aggregate += " / " + formatBytes(totalBytes);
-        progressDetails.setText((stage == null ? "Download" : stage)
-                + (item == null || item.isEmpty() ? "" : "\nItem: " + item)
-                + "\nContagem: " + fileCount
-                + "\nArquivo atual: " + bytes
-                + "\nTotal conhecido: " + aggregate);
+        progressDetails.setText(UiLanguage.translate(this, stage == null ? "Download" : stage)
+                + (item == null || item.isEmpty() ? "" : "\n" + UiLanguage.translate(this, "Item: ") + item)
+                + "\n" + UiLanguage.translate(this, "Contagem: ") + fileCount
+                + "\n" + UiLanguage.translate(this, "Arquivo atual: ") + bytes
+                + "\n" + UiLanguage.translate(this, "Total conhecido: ") + aggregate);
         setStatus("Download oficial em andamento", "O serviço pode continuar mesmo se você sair desta tela. O sistema também mostra uma notificação de progresso.");
     }
 
@@ -1331,8 +1336,10 @@ public final class MainActivity extends Activity {
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setProgress(1000);
             progressDetails.setText(UiLanguage.translate(this, "Destino: files/minecraft\nBibliotecas: ") + libraries
-                    + (assets > 0 ? "\nAssets baixados: " + assets : "\nAssets completos: ainda não baixados")
-                    + (manifestSha1 == null || manifestSha1.isEmpty() ? "" : "\nSHA-1 do JSON: " + manifestSha1));
+                    + UiLanguage.translate(this, assets > 0 ? "\nAssets baixados: " : "\nAssets completos: ainda não baixados")
+                    + (assets > 0 ? assets : "")
+                    + (manifestSha1 == null || manifestSha1.isEmpty() ? ""
+                    : UiLanguage.translate(this, "\nSHA-1 do JSON: ") + manifestSha1));
             setStatus("Download oficial concluído", message == null ? "Arquivos verificados." : message);
         } else {
             progressBar.setVisibility(View.GONE);
@@ -1431,9 +1438,9 @@ public final class MainActivity extends Activity {
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(total <= 0);
         if (total > 0) progressBar.setProgress((int) Math.min(1000, completed * 1000L / total));
-        progressDetails.setText((stage == null ? "Preparação" : stage)
-                + (detail == null || detail.isEmpty() ? "" : "\n" + detail)
-                + (total > 0 ? "\nEtapa: " + completed + " / " + total : ""));
+        progressDetails.setText(UiLanguage.translate(this, stage == null ? "Preparação" : stage)
+                + (detail == null || detail.isEmpty() ? "" : "\n" + UiLanguage.translate(this, detail))
+                + (total > 0 ? "\n" + UiLanguage.translate(this, "Etapa: ") + completed + " / " + total : ""));
         setStatus("Preparação em andamento", "Você pode sair da tela. O serviço continua no primeiro plano e envia uma notificação de progresso.");
     }
 
@@ -1778,11 +1785,11 @@ public final class MainActivity extends Activity {
         android.content.SharedPreferences prefs = getSharedPreferences("microsoft_account_state", MODE_PRIVATE);
         boolean signedIn = prefs.getBoolean("hasAccount", false);
         String name = prefs.getString("accountName", "");
-        accountStatusText.setText(signedIn && !name.isEmpty()
+        accountStatusText.setText(UiLanguage.translate(this, signedIn && !name.isEmpty()
                 ? "Conta verificada: " + name + "\nA licença foi verificada durante o último login."
-                : "Nenhuma conta verificada neste dispositivo.");
-        if (microsoftLoginButton != null) microsoftLoginButton.setText(signedIn
-                ? "Atualizar sessão Microsoft" : "Entrar com Microsoft");
+                : "Nenhuma conta verificada neste dispositivo."));
+        if (microsoftLoginButton != null) microsoftLoginButton.setText(UiLanguage.translate(this, signedIn
+                ? "Atualizar sessão Microsoft" : "Entrar com Microsoft"));
         if (microsoftSignOutButton != null) microsoftSignOutButton.setVisibility(signedIn ? View.VISIBLE : View.GONE);
         updateActionEnablement();
     }
@@ -1833,8 +1840,8 @@ public final class MainActivity extends Activity {
         String detail = intent.getStringExtra("detail");
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
-        progressDetails.setText((stage == null ? "Login Microsoft" : stage)
-                + (detail == null || detail.isEmpty() ? "" : "\n" + detail));
+        progressDetails.setText(UiLanguage.translate(this, stage == null ? "Login Microsoft" : stage)
+                + (detail == null || detail.isEmpty() ? "" : "\n" + UiLanguage.translate(this, detail)));
         setStatus("Login Microsoft em andamento",
                 "A autenticação e a checagem de licença estão sendo feitas pelos serviços oficiais.");
     }
