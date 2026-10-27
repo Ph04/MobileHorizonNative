@@ -593,7 +593,7 @@ final class NativeTouchControlsView extends View {
         bitmapPaint.setColorFilter(null);
 
         if (classicButtonNeedsLabel(spec)) {
-            drawMinecraftLabel(canvas, spec.label, spec.x, spec.y,
+            drawMinecraftLabel(canvas, spec.custom ? spec.label : UiLanguage.translate(activity, spec.label), spec.x, spec.y,
                     r * 1.55f, r * 0.78f, alpha);
         }
         canvas.restore();
@@ -1747,7 +1747,8 @@ final class NativeTouchControlsView extends View {
             Button shapeButton = new Button(activity);
             shapeButton.setTextSize(11);
             shapeButton.setMinHeight(dpInt(34));
-            shapeButton.setText(UiLanguage.translate(activity, "Formato: ") + shapeNames[chosenShape[0]]);
+            shapeButton.setText(UiLanguage.translate(activity, "Formato: ")
+                    + UiLanguage.translate(activity, shapeNames[chosenShape[0]]));
             shapeButton.setOnClickListener(v -> {
                 chosenShape[0] = (chosenShape[0] + 1) % shapeNames.length;
                 shapeButton.setText(UiLanguage.translate(activity, "Formato: ") + shapeNames[chosenShape[0]]);
@@ -1756,7 +1757,8 @@ final class NativeTouchControlsView extends View {
             panel.addView(shapeButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
 
             Button colorButton = new Button(activity);
-            colorButton.setText(UiLanguage.translate(activity, "Cor: ") + BUTTON_COLOR_NAMES[chosenColor[0]]);
+            colorButton.setText(UiLanguage.translate(activity, "Cor: ")
+                    + UiLanguage.translate(activity, BUTTON_COLOR_NAMES[chosenColor[0]]));
             colorButton.setTextSize(11);
             colorButton.setMinHeight(dpInt(34));
             colorButton.setOnClickListener(v -> {
