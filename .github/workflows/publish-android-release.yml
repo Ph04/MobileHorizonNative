@@ -25,6 +25,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       SOURCE_RUN_ID: "40445823390"
       SOURCE_SHA: "14edcae430b876261432ff5719a920fce3e28c25"
+      RELEASE_TARGET_SHA: "72313e898ab7a65d17db640a3f40b9220f01fe9b"
       RELEASE_TAG: "v0.3.24"
       ARTIFACT_NAME: "mobilehorizon-native-offline1-update-safe"
     steps:
@@ -64,17 +65,17 @@ jobs:
           # Create the tag independently so the release API can bind to this exact commit
           # without asking GITHUB_TOKEN to target a commit that changes workflow files.
           if TAG_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha' 2>/dev/null)"; then
-            [[ "${TAG_SHA}" == "${SOURCE_SHA}" ]] || {
+            [[ "${TAG_SHA}" == "${RELEASE_TARGET_SHA}" ]] || {
               echo "::error::Tag ${RELEASE_TAG} already points at unexpected commit ${TAG_SHA}."
               exit 1
             }
           else
             gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
               -f "ref=refs/tags/${RELEASE_TAG}" \
-              -f "sha=${SOURCE_SHA}" >/dev/null
+              -f "sha=${RELEASE_TARGET_SHA}" >/dev/null
           fi
 
-          echo "Verified successful source build ${SOURCE_RUN_ID} for ${SOURCE_SHA}; tag ${RELEASE_TAG} points to this exact commit."
+          echo "Verified successful source build ${SOURCE_RUN_ID} for ${SOURCE_SHA}; release snapshot is ${RELEASE_TARGET_SHA}."
 
       - name: Download APK from the verified source build
         shell: bash
