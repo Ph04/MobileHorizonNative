@@ -294,6 +294,56 @@ final class UiLanguage {
         pair("Quadrado", "Square");
     }
 
+        // Final pass for launcher progress and diagnostics copy.
+        pair("▶  Jogar", "▶  Play");
+        pair("Controles", "Controls");
+        pair("Os logs podem conter endereços de servidores, nicknames e mensagens. Revise o arquivo antes de compartilhar.", "Logs may contain server addresses, nicknames, and messages. Review the file before sharing.");
+        pair("Código: ", "Code: ");
+        pair("MOBILEHORIZON  /  RECURSOS", "MOBILEHORIZON  /  RESOURCES");
+        pair("Texturas, mods Horizon, data packs e shaders compatíveis. As mudanças entram em vigor ao reiniciar o Minecraft.", "Compatible textures, Horizon mods, data packs, and shaders. Changes take effect after restarting Minecraft.");
+        pair("Voltar à tela principal", "Back to main screen");
+        pair("Baixe os arquivos oficiais do Minecraft 26.3, prepare as entradas para conversão ou importe uma saída Horizon já preparada.", "Download official Minecraft 26.3 files, prepare inputs for conversion, or import an already-prepared Horizon output.");
+        pair("Teste Vulkan terminou sem relatório", "Vulkan test ended without a report");
+        pair("A atividade nativa voltou sem gravar o resultado do teste. Isso pode indicar uma falha antes do início do código nativo ou encerramento do processo; ainda não identifica a causa. Confira os registros Android se puder.", "The native activity returned without saving a test result. This may indicate a failure before native code started or that the process ended; it does not identify the cause. Check Android logs if possible.");
+        pair("Cliente nativo encerrou sem relatório", "Native client ended without a report");
+        pair("A atividade do jogo voltou sem entregar um relatório de inicialização. Isso sugere que o processo nativo terminou antes de registrar o resultado; ainda não é possível atribuir a causa ao Vulkan ou aos recursos do Minecraft.", "The game activity returned without a startup report. The native process may have ended before recording a result; the cause cannot yet be attributed to Vulkan or Minecraft resources.");
+        pair("O download completo de assets pode ocupar centenas de MB.", "A full asset download can use hundreds of MB.");
+        pair("Este fluxo baixa arquivos oficiais da Mojang, verifica tamanho e SHA-1, mas não autentica uma conta nem concede uma licença. Prossiga apenas se você tiver uma licença válida de Minecraft Java Edition.", "This process downloads official Mojang files and verifies size and SHA-1, but does not authenticate an account or grant a license. Continue only if you have a valid Minecraft Java Edition license.");
+        pair("A preparação pode continuar, mas o Android talvez não mostre a notificação na área de notificações. Você pode permitir isso nas configurações do app.", "Preparation can continue, but Android might not show a notification. You can allow notifications in app settings.");
+        pair("A conversão pode continuar, mas o progresso e a conclusão talvez não apareçam na área de notificações.", "Conversion can continue, but progress and completion may not appear in notifications.");
+        pair("O login pode continuar, mas o Android talvez não mostre a notificação na área de notificações.", "Sign-in can continue, but Android might not show a notification.");
+        pair("O download pode continuar em segundo plano, mas o progresso talvez não apareça na área de notificações. Você pode permitir notificações nas configurações do Android.", "The download can continue in the background, but progress may not appear in notifications. You can allow notifications in Android settings.");
+        pair("Use de 3 a 16 letras, números ou sublinhados.", "Use 3–16 letters, numbers, or underscores.");
+        pair("O token de renovação criptografado e os dados públicos da conta serão removidos deste dispositivo.", "The encrypted refresh token and public account data will be removed from this device.");
+        pair("Será criado um ZIP com latest.log, até três logs arquivados recentes, o relatório de falha mais recente e metadados do aparelho/build. O relatório não inclui arquivos de sessão ou tokens de autenticação. O log pode conter o endereço do servidor, nicknames e mensagens de chat; compartilhe somente depois de revisar.", "A ZIP will be created with latest.log, up to three recent archived logs, the latest crash report, and device/build metadata. It excludes session files and authentication tokens. Logs may contain server addresses, nicknames, and chat messages; review them before sharing.");
+        pair("O jogo só inicia após a confirmação oficial da conta e da licença.", "The game starts only after the account and license are officially verified.");
+        pair("A primeira abertura pode ter pequenas pausas enquanto o renderer inicializa e cria caches. O perfil não autentica uma conta Microsoft nem concede licença online.", "The first launch may pause briefly while the renderer initializes and creates caches. The profile does not authenticate a Microsoft account or grant an online license.");
+        pair("O APK precisa conter o carregador nativo libhorizon_android.so para ARM64.", "The APK must include the native libhorizon_android.so loader for ARM64.");
+        pair("A sessão oficial foi verificada. A inicialização ainda depende de recursos derivados completos e validação real de gameplay.", "The official session was verified. Startup still requires complete derived resources and real gameplay validation.");
+        pair("Este APK foi compilado sem HORIZON_MSA_CLIENT_ID. O mantenedor precisa criar um registro Microsoft próprio com contas pessoais e fluxo de código de dispositivo, depois solicitar aprovação de acesso às APIs do Minecraft. O ID de outro launcher não pode ser reutilizado.", "This APK was built without HORIZON_MSA_CLIENT_ID. The maintainer must create a Microsoft app registration for personal accounts and device-code flow, then request access to Minecraft APIs. Another launcher's ID cannot be reused.");
+        pair("O login continuará em segundo plano. O aplicativo salva somente o token de renovação criptografado no Android Keystore.", "Sign-in will continue in the background. The app stores only the encrypted refresh token in Android Keystore.");
+        pair("A validação continua em segundo plano para manter a interface responsiva.", "Validation continues in the background to keep the interface responsive.");
+        pair("O teste de renderer requer ARM64.", "The renderer test requires ARM64.");
+        pair("Este teste cria uma superfície WGPU, solicita um adaptador Vulkan e tenta apresentar um frame de cor simples; não carrega os recursos do Minecraft.", "This test creates a WGPU surface, requests a Vulkan adapter, and tries to present a simple color frame; it does not load Minecraft resources.");
+        pair("Verificando a versão Android disponível antes de iniciar o jogo.", "Checking the available Android runtime before starting the game.");
+        pair("A primeira instalação exige uma runtime Android ARM64 verificada.", "First install requires a verified Android ARM64 runtime.");
+        pair("Runtime instalada e verificada: ", "Runtime installed and verified: ");
+        pair("O jogo não será iniciado sem uma runtime Android verificada.", "The game will not start without a verified Android runtime.");
+        pair("Nenhuma runtime verificada está instalada; a inicialização do jogo foi bloqueada.", "No verified runtime is installed; game startup was blocked.");
+        pair("A sessão será renovada e a licença será checada novamente.", "The session will be renewed and the license checked again.");
+        pair("O serviço continuará em segundo plano, com notificação de andamento e conclusão. Esta etapa ainda prepara as entradas vanilla, não os recursos derivados finais do Horizon.", "The service continues in the background with progress and completion notifications. This step prepares vanilla inputs, not final derived Horizon resources.");
+        pair("O processo continuará em segundo plano, com notificação de andamento e conclusão. Esta etapa ainda prepara as entradas vanilla, não os recursos derivados finais do Horizon.", "The process continues in the background with progress and completion notifications. This step prepares vanilla inputs, not final derived Horizon resources.");
+        pair("A preparação pode continuar, mas o Android talvez não mostre a notificação na área de notificações. Você pode permitir isso nas configurações do app.", "Preparation can continue, but Android may not show notifications. You can allow notifications in app settings.");
+        pair("Destino: files/minecraft\nBibliotecas: ", "Destination: files/minecraft\nLibraries: ");
+        pair("Plano: .local/horizon-input/26.3/conversion-plan.json", "Plan: .local/horizon-input/26.3/conversion-plan.json");
+        pair("Cancelamento solicitado ao login Microsoft…", "Cancellation requested for Microsoft sign-in…");
+        pair("Cancelamento solicitado ao serviço. A operação vai parar em um ponto seguro…", "Cancellation requested. The service will stop at a safe point…");
+        pair("Cancelamento solicitado. A operação vai parar em um ponto seguro…", "Cancellation requested. The operation will stop at a safe point…");
+        pair("Preparando Java 25 ARM64 e iniciando o exportador completo…", "Preparing Java 25 ARM64 and starting the full exporter…");
+        pair("Iniciando serviço de download em segundo plano…", "Starting background download service…");
+        pair("Iniciando serviço de preparação em segundo plano…", "Starting background preparation service…");
+        pair("Saída validada: .local/horizon-client/26.3", "Validated output: .local/horizon-client/26.3");
+        pair("Arquivos parciais não verificados serão descartados.", "Unverified partial files will be discarded.");
     private UiLanguage() { }
 
     private static void pair(String portuguese, String english) {
