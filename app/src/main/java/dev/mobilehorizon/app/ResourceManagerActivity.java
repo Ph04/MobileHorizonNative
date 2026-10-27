@@ -799,10 +799,10 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     private void confirmDelete(ResourceItem item) {
-        new AlertDialog.Builder(this).setTitle("Excluir recurso?")
-                .setMessage("O arquivo " + item.name + " será removido do armazenamento do jogo. Essa ação não pode ser desfeita.")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Excluir", (dialog, which) -> {
+        new AlertDialog.Builder(this).setTitle(UiLanguage.translate(this, "Excluir recurso?"))
+                .setMessage(UiLanguage.translate(this, "O arquivo ") + + item.name + " será removido do armazenamento do jogo. Essa ação não pode ser desfeita.")
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Excluir"), (dialog, which) -> {
                     try {
                         if (item.kind != Kind.DATA_PACK) setActive(item, false);
                         deleteRecursively(item.path);
@@ -1025,12 +1025,12 @@ public final class ResourceManagerActivity extends Activity {
     }
 
     private void showStatus(String value) {
-        if (status != null) status.setText(value == null ? "" : value);
+        if (status != null) status.setText(UiLanguage.translate(this, value == null ? "" : value));
     }
 
     private TextView text(String value, float size, int color, boolean bold) {
         TextView view = new TextView(this);
-        view.setText(value);
+        view.setText(UiLanguage.translate(this, value));
         view.setTextSize(size);
         if (color == 0xff17213b || color == 0xff18213a || color == 0xff26324d) {
             color = 0xfff1edff;
@@ -1056,7 +1056,7 @@ public final class ResourceManagerActivity extends Activity {
 
     private Button button(String label, boolean primary, View.OnClickListener listener) {
         Button view = new Button(this);
-        view.setText(label);
+        view.setText(UiLanguage.translate(this, label));
         view.setTextSize(14);
         view.setAllCaps(false);
         view.setSingleLine(false);
