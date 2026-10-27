@@ -300,7 +300,7 @@ public final class MainActivity extends Activity {
                 HorizonRuntimeUpdateService.progressBytes(this),
                 HorizonRuntimeUpdateService.progressTotal(this));
         if (runtimePcReleaseText != null) {
-            runtimePcReleaseText.setText("Release de PC acompanhada: "
+            runtimePcReleaseText.setText(UiLanguage.translate(this, "Release de PC acompanhada: ") +
                     + HorizonRuntimeUpdateService.pcReleaseLabel(this));
         }
         if (runtimeOfficialReleaseText != null) {
@@ -326,7 +326,7 @@ public final class MainActivity extends Activity {
     private void renderRuntimeUpdateProgress(boolean active, String message, String phase,
                                              long bytes, long total) {
         if (runtimeUpdateText != null && message != null && !message.trim().isEmpty()) {
-            runtimeUpdateText.setText(message);
+            runtimeUpdateText.setText(UiLanguage.translate(this, message));
         }
         if (runtimeUpdateProgressBar != null) {
             runtimeUpdateProgressBar.setVisibility(active ? View.VISIBLE : View.GONE);
@@ -342,22 +342,22 @@ public final class MainActivity extends Activity {
             if (active) {
                 boolean verifying = phase != null && phase.startsWith("verify");
                 if (verifying) {
-                    runtimeUpdateProgressDetails.setText("Verificando a integridade do arquivo baixado…");
+                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Verificando a integridade do arquivo baixado…"));
                 } else if (total > 0L) {
                     int percent = (int) Math.max(0L, Math.min(100L, bytes * 100L / total));
-                    runtimeUpdateProgressDetails.setText("Transferido: " + formatBytes(bytes) + " de "
+                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Transferido: ") + + formatBytes(bytes) + " de "
                             + formatBytes(total) + "  •  " + percent + "%");
                 } else if ("checking-official".equals(phase)) {
-                    runtimeUpdateProgressDetails.setText("Consultando a versão oficial do Horizon…");
+                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Consultando a versão oficial do Horizon…"));
                 } else if ("checking-runtime".equals(phase)) {
-                    runtimeUpdateProgressDetails.setText("Procurando a runtime Android publicada…");
+                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Procurando a runtime Android publicada…"));
                 } else if ("runtime-install".equals(phase)) {
-                    runtimeUpdateProgressDetails.setText("Ativando a versão verificada…");
+                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Ativando a versão verificada…"));
                 } else {
-                    runtimeUpdateProgressDetails.setText("Conectando aos servidores de atualização…");
+                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Conectando aos servidores de atualização…"));
                 }
             } else {
-                runtimeUpdateProgressDetails.setText("");
+                runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, ""));
             }
         }
     }
@@ -374,8 +374,8 @@ public final class MainActivity extends Activity {
                     ? (installed ? "Atualizando runtime…" : "Baixando runtime…")
                     : "Verificando atualizações…");
         } else {
-            runtimeUpdateButton.setText(installed
-                    ? "Verificar atualizações" : "Baixar runtime mais recente");
+            runtimeUpdateButton.setText(UiLanguage.translate(this, installed
+                    ? "Verificar atualizações" : "Baixar runtime mais recente"));
         }
     }
 
@@ -474,7 +474,7 @@ public final class MainActivity extends Activity {
         LinearLayout badgeLine = new LinearLayout(this);
         badgeLine.setOrientation(LinearLayout.HORIZONTAL);
         badgeLine.setGravity(Gravity.CENTER_VERTICAL);
-        TextView readyBadge = text("  ■  MINECRAFT 26.3  •  " + (resourcesPrepared() ? "READY" : "SETUP REQUIRED") + "  ", 10, 0xffb8ffd5, true);
+        TextView readyBadge = text("  ■  MINECRAFT 26.3  •  " + (UiLanguage.translate(this, resourcesPrepared() ? "READY" : "SETUP REQUIRED")) + "  ", 10, 0xffb8ffd5, true);
         GradientDrawable badgeBackground = new GradientDrawable();
         badgeBackground.setColor(0xdd111420);
         badgeBackground.setCornerRadius(0);
@@ -482,6 +482,14 @@ public final class MainActivity extends Activity {
         readyBadge.setPadding(dp(7), dp(5), dp(7), dp(5));
         badgeLine.addView(readyBadge, params(-2, -2));
         badgeLine.addView(text("   VANILLA", 10, 0xffd3c1ff, true), params(-2, -2));
+        Button languageButton = button(UiLanguage.switchLabel(this), false,
+                v -> UiLanguage.toggle(this));
+        languageButton.setTextSize(10);
+        languageButton.setPadding(dp(4), 0, dp(4), 0);
+        languageButton.setContentDescription(UiLanguage.switchDescription(this));
+        LinearLayout.LayoutParams languageParams = params(64, 28);
+        languageParams.leftMargin = dp(6);
+        badgeLine.addView(languageButton, languageParams);
         heroContent.addView(badgeLine, params(-1, -2));
 
         LinearLayout heroMain = new LinearLayout(this);
@@ -915,6 +923,8 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout collapsibleSection(LinearLayout parent, String title, String description, boolean expanded) {
+        title = UiLanguage.translate(this, title);
+        description = UiLanguage.translate(this, description);
         LinearLayout shell = card();
         LinearLayout.LayoutParams shellParams = params(-1, -2);
         shellParams.topMargin = dp(10);
@@ -976,12 +986,12 @@ public final class MainActivity extends Activity {
                     EnumSet.of(BackendCapability.IMPORT_OUTPUT, BackendCapability.REPORT_PROGRESS),
                     null);
             CompatibilityReport report = CompatibilityChecker.INSTANCE.check(device, importer);
-            compatibilityText.setText("Estado: " + report.getStatus().name()
+            compatibilityText.setText(UiLanguage.translate(this, "Estado: ") + + report.getStatus().name()
                     + "\nAndroid API: " + Build.VERSION.SDK_INT
                     + "\nABIs reportadas: " + String.join(", ", Build.SUPPORTED_ABIS)
                     + "\n\nA verificação cobre esta etapa de importação. Ela não certifica compatibilidade gráfica nem inicialização de um motor.");
         } catch (Throwable error) {
-            compatibilityText.setText("A verificação detalhada da camada de compatibilidade não foi concluída: "
+            compatibilityText.setText(UiLanguage.translate(this, "A verificação detalhada da camada de compatibilidade não foi concluída: ") +
                     + safeMessage(error));
         }
     }
@@ -1027,10 +1037,10 @@ public final class MainActivity extends Activity {
         File active = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
         if (active.exists()) {
             new AlertDialog.Builder(this)
-                    .setTitle("Substituir importação atual?")
-                    .setMessage("A importação nova só será ativada depois de terminar e passar pela validação inicial. A cópia anterior será preservada se ocorrer uma falha.")
-                    .setNegativeButton("Manter atual", (dialog, which) -> clearPendingImport())
-                    .setPositiveButton("Substituir", (dialog, which) -> beginImport())
+                    .setTitle(UiLanguage.translate(this, "Substituir importação atual?"))
+                    .setMessage(UiLanguage.translate(this, "A importação nova só será ativada depois de terminar e passar pela validação inicial. A cópia anterior será preservada se ocorrer uma falha."))
+                    .setNegativeButton(UiLanguage.translate(this, "Manter atual"), (dialog, which) -> clearPendingImport())
+                    .setPositiveButton(UiLanguage.translate(this, "Substituir"), (dialog, which) -> beginImport())
                     .show();
         } else {
             beginImport();
@@ -1099,7 +1109,7 @@ public final class MainActivity extends Activity {
                     + "\n\nOs arquivos anteriores só foram substituídos depois da conclusão da importação.");
         } else {
             progressBar.setVisibility(View.GONE);
-            progressDetails.setText("");
+            progressDetails.setText(UiLanguage.translate(this, ""));
             if (error instanceof InterruptedException || cancelRequested.get()) {
                 setStatus("Importação cancelada", "A pasta temporária foi descartada. A importação anterior, se existia, não foi substituída.");
             } else {
@@ -1114,7 +1124,7 @@ public final class MainActivity extends Activity {
             try {
                 startService(new Intent(this, MicrosoftAuthService.class)
                         .setAction(MicrosoftAuthService.ACTION_CANCEL));
-                progressDetails.setText("Cancelamento solicitado ao login Microsoft…");
+                progressDetails.setText(UiLanguage.translate(this, "Cancelamento solicitado ao login Microsoft…"));
             } catch (Exception error) {
                 setStatus("Falha ao solicitar cancelamento", safeMessage(error));
             }
@@ -1123,7 +1133,7 @@ public final class MainActivity extends Activity {
         if (!busy && !conversionBusy) return;
         if (conversionBusy && !busy) {
             cancelButton.setEnabled(false);
-            progressDetails.setText("Cancelamento solicitado ao serviço. A operação vai parar em um ponto seguro…");
+            progressDetails.setText(UiLanguage.translate(this, "Cancelamento solicitado ao serviço. A operação vai parar em um ponto seguro…"));
             try {
                 startService(new Intent(this, ResourcePreparationService.class)
                         .setAction(ResourcePreparationService.ACTION_CANCEL));
@@ -1134,7 +1144,7 @@ public final class MainActivity extends Activity {
         }
         cancelRequested.set(true);
         cancelButton.setEnabled(false);
-        progressDetails.setText("Cancelamento solicitado. A operação vai parar em um ponto seguro…");
+        progressDetails.setText(UiLanguage.translate(this, "Cancelamento solicitado. A operação vai parar em um ponto seguro…"));
     }
 
     private void confirmFullAssetDownload() {
@@ -1159,10 +1169,10 @@ public final class MainActivity extends Activity {
                 ? "\\n\\nEsta opção baixa milhares de objetos e pode usar centenas de MB."
                 : "";
         new AlertDialog.Builder(this)
-                .setTitle("Baixar arquivos oficiais do Minecraft?")
-                .setMessage("Este fluxo baixa arquivos oficiais da Mojang, verifica tamanho e SHA-1, mas não autentica uma conta nem concede uma licença. Prossiga apenas se você tiver uma licença válida de Minecraft Java Edition." + extra)
-                .setNegativeButton("Voltar", null)
-                .setPositiveButton("Continuar", (dialog, which) -> startOfficialDownloadNow(allAssets))
+                .setTitle(UiLanguage.translate(this, "Baixar arquivos oficiais do Minecraft?"))
+                .setMessage(UiLanguage.translate(this, "Este fluxo baixa arquivos oficiais da Mojang, verifica tamanho e SHA-1, mas não autentica uma conta nem concede uma licença. Prossiga apenas se você tiver uma licença válida de Minecraft Java Edition.") + + extra)
+                .setNegativeButton(UiLanguage.translate(this, "Voltar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Continuar"), (dialog, which) -> startOfficialDownloadNow(allAssets))
                 .show();
     }
 
@@ -1177,10 +1187,10 @@ public final class MainActivity extends Activity {
                 startBackgroundPreparationNow();
             } else {
                 new AlertDialog.Builder(this)
-                        .setTitle("Notificações desativadas")
-                        .setMessage("A preparação pode continuar, mas o Android talvez não mostre a notificação na área de notificações. Você pode permitir isso nas configurações do app.")
-                        .setNegativeButton("Cancelar", null)
-                        .setPositiveButton("Continuar mesmo assim", (dialog, which) -> startBackgroundPreparationNow())
+                        .setTitle(UiLanguage.translate(this, "Notificações desativadas"))
+                        .setMessage(UiLanguage.translate(this, "A preparação pode continuar, mas o Android talvez não mostre a notificação na área de notificações. Você pode permitir isso nas configurações do app."))
+                        .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                        .setPositiveButton(UiLanguage.translate(this, "Continuar mesmo assim"), (dialog, which) -> startBackgroundPreparationNow())
                         .show();
             }
             return;
@@ -1193,10 +1203,10 @@ public final class MainActivity extends Activity {
                 startFullConversionNow();
             } else {
                 new AlertDialog.Builder(this)
-                        .setTitle("Notificações desativadas")
-                        .setMessage("A conversão pode continuar, mas o progresso e a conclusão talvez não apareçam na área de notificações.")
-                        .setNegativeButton("Cancelar", null)
-                        .setPositiveButton("Continuar sem notificações", (dialog, which) -> startFullConversionNow())
+                        .setTitle(UiLanguage.translate(this, "Notificações desativadas"))
+                        .setMessage(UiLanguage.translate(this, "A conversão pode continuar, mas o progresso e a conclusão talvez não apareçam na área de notificações."))
+                        .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                        .setPositiveButton(UiLanguage.translate(this, "Continuar sem notificações"), (dialog, which) -> startFullConversionNow())
                         .show();
             }
             return;
@@ -1209,10 +1219,10 @@ public final class MainActivity extends Activity {
                 startMicrosoftSignInNow();
             } else {
                 new AlertDialog.Builder(this)
-                        .setTitle("Notificações desativadas")
-                        .setMessage("O login pode continuar, mas o Android talvez não mostre a notificação na área de notificações.")
-                        .setNegativeButton("Cancelar", null)
-                        .setPositiveButton("Continuar sem notificações", (dialog, which) -> startMicrosoftSignInNow())
+                        .setTitle(UiLanguage.translate(this, "Notificações desativadas"))
+                        .setMessage(UiLanguage.translate(this, "O login pode continuar, mas o Android talvez não mostre a notificação na área de notificações."))
+                        .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                        .setPositiveButton(UiLanguage.translate(this, "Continuar sem notificações"), (dialog, which) -> startMicrosoftSignInNow())
                         .show();
             }
             return;
@@ -1228,10 +1238,10 @@ public final class MainActivity extends Activity {
             return;
         }
         new AlertDialog.Builder(this)
-                .setTitle("Notificações desativadas")
-                .setMessage("O download pode continuar em segundo plano, mas o progresso talvez não apareça na área de notificações. Você pode permitir notificações nas configurações do Android.")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Continuar sem notificações", (dialog, which) -> confirmOfficialDownload(allAssets))
+                .setTitle(UiLanguage.translate(this, "Notificações desativadas"))
+                .setMessage(UiLanguage.translate(this, "O download pode continuar em segundo plano, mas o progresso talvez não apareça na área de notificações. Você pode permitir notificações nas configurações do Android."))
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Continuar sem notificações"), (dialog, which) -> confirmOfficialDownload(allAssets))
                 .show();
     }
 
@@ -1241,7 +1251,7 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
-        progressDetails.setText("Iniciando serviço de download em segundo plano…");
+        progressDetails.setText(UiLanguage.translate(this, "Iniciando serviço de download em segundo plano…"));
         setStatus(allAssets ? "Baixando Minecraft e assets completos" : "Baixando arquivos base oficiais",
                 "Destino privado: files/minecraft. Arquivos só são ativados depois da verificação SHA-1 e tamanho.");
         try {
@@ -1261,7 +1271,7 @@ public final class MainActivity extends Activity {
     private void cancelOfficialDownload() {
         if (!downloadBusy) return;
         cancelDownloadButton.setEnabled(false);
-        progressDetails.setText("Cancelamento solicitado. Arquivos parciais não verificados serão descartados.");
+        progressDetails.setText(UiLanguage.translate(this, "Cancelamento solicitado. Arquivos parciais não verificados serão descartados."));
         try {
             startService(new Intent(this, OfficialDownloadService.class)
                     .setAction(OfficialDownloadService.ACTION_CANCEL));
@@ -1320,13 +1330,13 @@ public final class MainActivity extends Activity {
         if (success) {
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setProgress(1000);
-            progressDetails.setText("Destino: files/minecraft\nBibliotecas: " + libraries
+            progressDetails.setText(UiLanguage.translate(this, "Destino: files/minecraft\nBibliotecas: ") + + libraries
                     + (assets > 0 ? "\nAssets baixados: " + assets : "\nAssets completos: ainda não baixados")
                     + (manifestSha1 == null || manifestSha1.isEmpty() ? "" : "\nSHA-1 do JSON: " + manifestSha1));
             setStatus("Download oficial concluído", message == null ? "Arquivos verificados." : message);
         } else {
             progressBar.setVisibility(View.GONE);
-            progressDetails.setText("");
+            progressDetails.setText(UiLanguage.translate(this, ""));
             setStatus("Download não concluído", message == null ? "Verifique a conexão e tente novamente." : message);
         }
         try {
@@ -1358,7 +1368,7 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
-        progressDetails.setText("Preparando Java 25 ARM64 e iniciando o exportador completo…");
+        progressDetails.setText(UiLanguage.translate(this, "Preparando Java 25 ARM64 e iniciando o exportador completo…"));
         setStatus("Conversão completa em andamento",
                 "Na primeira execução serão baixados os pacotes do runtime Java 25. Use “Baixar base + todos os assets” antes de começar. A conversão pode levar bastante tempo e precisa de espaço livre.");
         try {
@@ -1395,7 +1405,7 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
-        progressDetails.setText("Iniciando serviço de preparação em segundo plano…");
+        progressDetails.setText(UiLanguage.translate(this, "Iniciando serviço de preparação em segundo plano…"));
         setStatus("Preparação em andamento", "O processo continuará em segundo plano, com notificação de andamento e conclusão. Esta etapa ainda prepara as entradas vanilla, não os recursos derivados finais do Horizon.");
         try {
             Intent intent = new Intent(this, ResourcePreparationService.class)
@@ -1442,13 +1452,13 @@ public final class MainActivity extends Activity {
                 progressBar.setVisibility(View.VISIBLE);
                 progressBar.setIndeterminate(false);
                 progressBar.setProgress(1000);
-                progressDetails.setText("Saída validada: .local/horizon-client/26.3");
+                progressDetails.setText(UiLanguage.translate(this, "Saída validada: .local/horizon-client/26.3"));
                 setStatus("Conversão Horizon completa validada",
                         (message == null ? "O serviço concluiu e validou a árvore de recursos." : message)
                                 + "\n\nA validação foi feita em segundo plano. Agora teste “Iniciar com conta offline”.");
             } else {
                 progressBar.setVisibility(View.GONE);
-                progressDetails.setText("");
+                progressDetails.setText(UiLanguage.translate(this, ""));
                 setStatus(wasCancelled ? "Conversão completa cancelada" : "Conversão completa falhou",
                         message == null ? "Nenhum detalhe do preparador foi retornado." : message);
             }
@@ -1495,7 +1505,7 @@ public final class MainActivity extends Activity {
         if (error == null && report != null) {
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setProgress(1000);
-            progressDetails.setText("Plano: .local/horizon-input/26.3/conversion-plan.json"
+            progressDetails.setText(UiLanguage.translate(this, "Plano: .local/horizon-input/26.3/conversion-plan.json") +
                     + "\nExportações diretas: .local/horizon-input/26.3/direct-export"
                     + "\nBibliotecas SHA-1 verificadas: " + report.verifiedLibraries
                     + "\nAssets íntegros: " + report.presentAssetObjects + " / " + report.uniqueAssets
@@ -1508,7 +1518,7 @@ public final class MainActivity extends Activity {
                     + "\n\nForam gerados apenas 3 mapas JSON diretos em .local/horizon-input/26.3/direct-export. Isso ainda não produz .local/horizon-client/26.3 nem torna o jogo jogável. Faltam os oráculos Java 25 e a geração de registries, gameplay, render, colisão e worldgen.");
         } else {
             progressBar.setVisibility(View.GONE);
-            progressDetails.setText("");
+            progressDetails.setText(UiLanguage.translate(this, ""));
             if (error instanceof InterruptedException || cancelRequested.get()) {
                 setStatus("Preparação cancelada", safeMessage(error));
             } else {
@@ -1520,10 +1530,10 @@ public final class MainActivity extends Activity {
     private void refreshOfflineUi() {
         String playerName = OfflineProfile.loadName(this);
         if (offlineStatusText != null) {
-            offlineStatusText.setText("Nick offline: " + playerName);
+            offlineStatusText.setText(UiLanguage.translate(this, "Nick offline: ") + playerName);
         }
         if (offlineNameButton != null) {
-            offlineNameButton.setText("Nick: " + playerName);
+            offlineNameButton.setText(UiLanguage.translate(this, "Nick: ") + playerName);
         }
     }
 
@@ -1535,11 +1545,11 @@ public final class MainActivity extends Activity {
         input.setText(OfflineProfile.loadName(this));
         input.setSelection(input.length());
         new AlertDialog.Builder(this)
-                .setTitle("Nick offline")
-                .setMessage("Use de 3 a 16 letras, números ou sublinhados.")
+                .setTitle(UiLanguage.translate(this, "Nick offline"))
+                .setMessage(UiLanguage.translate(this, "Use de 3 a 16 letras, números ou sublinhados."))
                 .setView(input)
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Salvar", (dialog, which) -> {
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Salvar"), (dialog, which) -> {
                     try {
                         String name = OfflineProfile.saveName(this, input.getText().toString());
                         refreshOfflineUi();
@@ -1561,7 +1571,7 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
-        progressDetails.setText("Verificando a saída Horizon em segundo plano…");
+        progressDetails.setText(UiLanguage.translate(this, "Verificando a saída Horizon em segundo plano…"));
         setStatus("Verificando recursos do jogo",
                 "A validação continua em segundo plano para manter a interface responsiva.");
         File resources = new File(getFilesDir(), ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
@@ -1582,13 +1592,13 @@ public final class MainActivity extends Activity {
                 progressBar.setIndeterminate(false);
                 if (validationFailure != null) {
                     progressBar.setVisibility(View.GONE);
-                    progressDetails.setText("");
+                    progressDetails.setText(UiLanguage.translate(this, ""));
                     showRuntimeError("Recursos Horizon inválidos",
                             validationFailure + "\n\nNenhum jogo foi iniciado.");
                     return;
                 }
                 progressBar.setVisibility(View.GONE);
-                progressDetails.setText("Recursos Horizon validados.");
+                progressDetails.setText(UiLanguage.translate(this, "Recursos Horizon validados."));
                 callback.onValidated(validatedSummary);
             });
         });
@@ -1677,13 +1687,13 @@ public final class MainActivity extends Activity {
         panel.setPadding(dp(8), dp(6), dp(8), dp(4));
 
         CheckBox enabled = new CheckBox(this);
-        enabled.setText("Ativar controles na tela do jogo");
+        enabled.setText(UiLanguage.translate(this, "Ativar controles na tela do jogo"));
         enabled.setTextColor(0xff18213a);
         enabled.setChecked(prefs.getBoolean(NativeTouchControlsView.KEY_ENABLED, true));
         panel.addView(enabled, params(-1, -2));
 
         CheckBox leftHanded = new CheckBox(this);
-        leftHanded.setText("Layout canhoto (joystick à direita)");
+        leftHanded.setText(UiLanguage.translate(this, "Layout canhoto (joystick à direita)"));
         leftHanded.setTextColor(0xff18213a);
         leftHanded.setChecked(prefs.getBoolean(NativeTouchControlsView.KEY_LEFT_HANDED, false));
         panel.addView(leftHanded, params(-1, -2));
@@ -1697,12 +1707,12 @@ public final class MainActivity extends Activity {
         panel.addView(size, params(-1, -2));
         size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                sizeLabel.setText("Tamanho dos controles: " + (70 + progress) + "%");
+                sizeLabel.setText(UiLanguage.translate(this, "Tamanho dos controles: ") + + (70 + progress) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
         });
-        sizeLabel.setText("Tamanho dos controles: " + (70 + size.getProgress()) + "%");
+        sizeLabel.setText(UiLanguage.translate(this, "Tamanho dos controles: ") + + (70 + size.getProgress()) + "%");
 
         TextView opacityLabel = text("", 14, 0xff59647b, false);
         LinearLayout.LayoutParams opacityParams = params(-1, -2);
@@ -1715,12 +1725,12 @@ public final class MainActivity extends Activity {
         panel.addView(opacity, params(-1, -2));
         opacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                opacityLabel.setText("Opacidade: " + (35 + progress) + "%");
+                opacityLabel.setText(UiLanguage.translate(this, "Opacidade: ") + + (35 + progress) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
         });
-        opacityLabel.setText("Opacidade: " + (35 + opacity.getProgress()) + "%");
+        opacityLabel.setText(UiLanguage.translate(this, "Opacidade: ") + + (35 + opacity.getProgress()) + "%");
 
         TextView sensitivityLabel = text("", 14, 0xff59647b, false);
         LinearLayout.LayoutParams sensitivityParams = params(-1, -2);
@@ -1733,19 +1743,19 @@ public final class MainActivity extends Activity {
         panel.addView(sensitivity, params(-1, -2));
         sensitivity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                sensitivityLabel.setText("Sensibilidade da câmera: " + (50 + progress) + "%");
+                sensitivityLabel.setText(UiLanguage.translate(this, "Sensibilidade da câmera: ") + + (50 + progress) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
         });
-        sensitivityLabel.setText("Sensibilidade da câmera: " + (50 + sensitivity.getProgress()) + "%");
+        sensitivityLabel.setText(UiLanguage.translate(this, "Sensibilidade da câmera: ") + + (50 + sensitivity.getProgress()) + "%");
 
         new AlertDialog.Builder(this)
-                .setTitle("Controles Touch")
-                .setMessage("Joystick, câmera por arrasto e botões de ação. Há layout canhoto, tamanho, opacidade e sensibilidade ajustáveis. Durante o jogo, toque no ícone superior para ocultar ou mostrar os controles.")
+                .setTitle(UiLanguage.translate(this, "Controles Touch"))
+                .setMessage(UiLanguage.translate(this, "Joystick, câmera por arrasto e botões de ação. Há layout canhoto, tamanho, opacidade e sensibilidade ajustáveis. Durante o jogo, toque no ícone superior para ocultar ou mostrar os controles."))
                 .setView(panel)
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Salvar", (dialog, which) -> {
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Salvar"), (dialog, which) -> {
                     float selectedScale = (70 + size.getProgress()) / 100f;
                     float selectedOpacity = (35 + opacity.getProgress()) / 100f;
                     float selectedSensitivity = (50 + sensitivity.getProgress()) / 100f;
@@ -1801,7 +1811,7 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
-        progressDetails.setText("Iniciando autenticação Microsoft…");
+        progressDetails.setText(UiLanguage.translate(this, "Iniciando autenticação Microsoft…"));
         setStatus("Login Microsoft em andamento",
                 "O login continuará em segundo plano. O aplicativo salva somente o token de renovação criptografado no Android Keystore.");
         try {
@@ -1843,23 +1853,23 @@ public final class MainActivity extends Activity {
                 16, 0xff24304c, false);
         instructions.setTextIsSelectable(true);
         new AlertDialog.Builder(this)
-                .setTitle("Entre com a Microsoft")
+                .setTitle(UiLanguage.translate(this, "Entre com a Microsoft"))
                 .setView(instructions)
-                .setPositiveButton("Abrir página", (dialog, which) -> {
+                .setPositiveButton(UiLanguage.translate(this, "Abrir página"), (dialog, which) -> {
                     try {
                         startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(verificationUri)));
                     } catch (Exception error) {
                         showRuntimeError("Não foi possível abrir o navegador", safeMessage(error));
                     }
                 })
-                .setNeutralButton("Copiar código", (dialog, which) -> {
+                .setNeutralButton(UiLanguage.translate(this, "Copiar código"), (dialog, which) -> {
                     ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                     if (clipboard != null) {
                         clipboard.setPrimaryClip(ClipData.newPlainText("Código de login Microsoft", code));
                         setStatus("Código copiado", "Conclua o login na página oficial da Microsoft.");
                     }
                 })
-                .setNegativeButton("Fechar", null)
+                .setNegativeButton(UiLanguage.translate(this, "Fechar"), null)
                 .show();
     }
 
@@ -1891,10 +1901,10 @@ public final class MainActivity extends Activity {
     private void signOutMicrosoft() {
         if (authBusy || launchBusy) return;
         new AlertDialog.Builder(this)
-                .setTitle("Remover conta salva?")
-                .setMessage("O token de renovação criptografado e os dados públicos da conta serão removidos deste dispositivo.")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Remover", (dialog, which) -> {
+                .setTitle(UiLanguage.translate(this, "Remover conta salva?"))
+                .setMessage(UiLanguage.translate(this, "O token de renovação criptografado e os dados públicos da conta serão removidos deste dispositivo."))
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Remover"), (dialog, which) -> {
                     try {
                         EncryptedRefreshTokenStore.clear(this);
                         getSharedPreferences("microsoft_account_state", MODE_PRIVATE).edit().clear().commit();
@@ -1911,7 +1921,7 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
-        progressDetails.setText("Renovando sessão Microsoft e verificando a licença…");
+        progressDetails.setText(UiLanguage.translate(this, "Renovando sessão Microsoft e verificando a licença…"));
         setStatus("Verificando sessão antes de iniciar",
                 resourceSummary + "\n\nA sessão será renovada e a licença será checada novamente.");
         executor.submit(() -> {
@@ -2039,10 +2049,10 @@ public final class MainActivity extends Activity {
         scroll.setBackgroundColor(0xff100f1a);
 
         new AlertDialog.Builder(this)
-                .setTitle("Logs do Horizon")
+                .setTitle(UiLanguage.translate(this, "Logs do Horizon"))
                 .setView(scroll)
-                .setNegativeButton("Fechar", null)
-                .setNeutralButton("Exportar diagnóstico", (dialog, which) -> exportDiagnostics())
+                .setNegativeButton(UiLanguage.translate(this, "Fechar"), null)
+                .setNeutralButton(UiLanguage.translate(this, "Exportar diagnóstico"), (dialog, which) -> exportDiagnostics())
                 .show();
     }
 
@@ -2082,10 +2092,10 @@ public final class MainActivity extends Activity {
             return;
         }
         new AlertDialog.Builder(this)
-                .setTitle("Exportar diagnóstico multiplayer?")
-                .setMessage("Será criado um ZIP com latest.log, até três logs arquivados recentes, o relatório de falha mais recente e metadados do aparelho/build. O relatório não inclui arquivos de sessão ou tokens de autenticação. O log pode conter o endereço do servidor, nicknames e mensagens de chat; compartilhe somente depois de revisar.")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Preparar ZIP", (dialog, which) -> buildDiagnosticArchive())
+                .setTitle(UiLanguage.translate(this, "Exportar diagnóstico multiplayer?"))
+                .setMessage(UiLanguage.translate(this, "Será criado um ZIP com latest.log, até três logs arquivados recentes, o relatório de falha mais recente e metadados do aparelho/build. O relatório não inclui arquivos de sessão ou tokens de autenticação. O log pode conter o endereço do servidor, nicknames e mensagens de chat; compartilhe somente depois de revisar."))
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Preparar ZIP"), (dialog, which) -> buildDiagnosticArchive())
                 .show();
     }
 
@@ -2344,7 +2354,7 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
-        progressDetails.setText("Verificando a runtime Android…");
+        progressDetails.setText(UiLanguage.translate(this, "Verificando a runtime Android…"));
         setStatus("Preparando runtime Horizon",
                 "Verificando a versão Android disponível antes de iniciar o jogo.");
 
@@ -2369,7 +2379,7 @@ public final class MainActivity extends Activity {
                     // A missing/invalid runtime always gets a forced attempt, independent of the
                     // automatic-update toggle or cooldown. If startup is already checking, the
                     // service joins that in-flight request rather than starting a second download.
-                    progressDetails.setText("Baixando e verificando a runtime Android mais recente…");
+                    progressDetails.setText(UiLanguage.translate(this, "Baixando e verificando a runtime Android mais recente…"));
                     setStatus("Baixando runtime Horizon",
                             "A primeira instalação exige uma runtime Android ARM64 verificada.");
                     HorizonRuntimeUpdateService.checkNow(MainActivity.this, verifyAfterCheck);
@@ -2432,7 +2442,7 @@ public final class MainActivity extends Activity {
             progressBar.setVisibility(View.GONE);
             progressBar.setIndeterminate(false);
         }
-        if (progressDetails != null) progressDetails.setText("");
+        if (progressDetails != null) progressDetails.setText(UiLanguage.translate(this, ""));
         updateActionEnablement();
     }
 
@@ -2458,7 +2468,7 @@ public final class MainActivity extends Activity {
 
     private void showRuntimeError(String title, String message) {
         new AlertDialog.Builder(this).setTitle(title).setMessage(message)
-                .setPositiveButton("Entendi", null).show();
+                .setPositiveButton(UiLanguage.translate(this, "Entendi"), null).show();
     }
 
     private void clearPendingImport() {
@@ -2496,9 +2506,9 @@ public final class MainActivity extends Activity {
             boolean cancellable = busy || conversionBusy || authBusy;
             cancelButton.setVisibility(cancellable ? View.VISIBLE : View.GONE);
             cancelButton.setEnabled(cancellable);
-            cancelButton.setText(authBusy ? "Cancelar login"
+            cancelButton.setText(UiLanguage.translate(this, authBusy ? "Cancelar login"
                     : fullConversionBusy ? "Cancelar conversão completa"
-                    : conversionBusy && !busy ? "Cancelar preparação" : "Cancelar importação");
+                    : conversionBusy && !busy ? "Cancelar preparação" : "Cancelar importação"));
         }
         if (cancelDownloadButton != null) {
             cancelDownloadButton.setVisibility(downloadBusy ? View.VISIBLE : View.GONE);
@@ -2519,8 +2529,8 @@ public final class MainActivity extends Activity {
     }
 
     private void setStatus(String title, String details) {
-        statusTitle.setText(title);
-        statusDetails.setText(details);
+        statusTitle.setText(UiLanguage.translate(this, title));
+        statusDetails.setText(UiLanguage.translate(this, details));
     }
 
     private LinearLayout card() {
@@ -2535,7 +2545,7 @@ public final class MainActivity extends Activity {
     private Button button(String label, boolean primary, View.OnClickListener click) {
         Button button = new Button(this);
         button.setAllCaps(false);
-        button.setText(label);
+        button.setText(UiLanguage.translate(this, label));
         button.setTextSize(13);
         button.setTypeface(buttonTypeface);
         button.setMinHeight(0);
@@ -2556,7 +2566,7 @@ public final class MainActivity extends Activity {
 
     private TextView text(String value, int sizeSp, int color, boolean bold) {
         TextView text = new TextView(this);
-        text.setText(value);
+        text.setText(UiLanguage.translate(this, value));
         text.setTextSize(sizeSp);
         text.setTextColor(color);
         text.setGravity(Gravity.START);
