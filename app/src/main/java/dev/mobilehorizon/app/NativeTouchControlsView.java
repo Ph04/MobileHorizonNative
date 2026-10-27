@@ -1734,7 +1734,7 @@ final class NativeTouchControlsView extends View {
         panel.addView(size, new LinearLayout.LayoutParams(-1, dpInt(28)));
         size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                scaleLabel.setText(UiLanguage.translate(activity, "Tamanho ") + + (progress + 60) + "%");
+                scaleLabel.setText(UiLanguage.translate(activity, "Tamanho ") + (progress + 60) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) { }
             @Override public void onStopTrackingTouch(SeekBar bar) { }
@@ -1747,21 +1747,21 @@ final class NativeTouchControlsView extends View {
             Button shapeButton = new Button(activity);
             shapeButton.setTextSize(11);
             shapeButton.setMinHeight(dpInt(34));
-            shapeButton.setText(UiLanguage.translate(activity, "Formato: ") + + shapeNames[chosenShape[0]]);
+            shapeButton.setText(UiLanguage.translate(activity, "Formato: ") + shapeNames[chosenShape[0]]);
             shapeButton.setOnClickListener(v -> {
                 chosenShape[0] = (chosenShape[0] + 1) % shapeNames.length;
-                shapeButton.setText(UiLanguage.translate(activity, "Formato: ") + + shapeNames[chosenShape[0]]);
+                shapeButton.setText(UiLanguage.translate(activity, "Formato: ") + shapeNames[chosenShape[0]]);
             });
             panel.addView(shapeLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
             panel.addView(shapeButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
 
             Button colorButton = new Button(activity);
-            colorButton.setText(UiLanguage.translate(activity, "Cor: ") + + BUTTON_COLOR_NAMES[chosenColor[0]]);
+            colorButton.setText(UiLanguage.translate(activity, "Cor: ") + BUTTON_COLOR_NAMES[chosenColor[0]]);
             colorButton.setTextSize(11);
             colorButton.setMinHeight(dpInt(34));
             colorButton.setOnClickListener(v -> {
                 chosenColor[0] = (chosenColor[0] + 1) % BUTTON_COLOR_NAMES.length;
-                colorButton.setText(UiLanguage.translate(activity, "Cor: ") + + BUTTON_COLOR_NAMES[chosenColor[0]]);
+                colorButton.setText(UiLanguage.translate(activity, "Cor: ") + BUTTON_COLOR_NAMES[chosenColor[0]]);
             });
             TextView colorLabel = miniLabel("Cor do botão", 11, false);
             panel.addView(colorLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
@@ -1788,7 +1788,7 @@ final class NativeTouchControlsView extends View {
         panel.addView(alpha, new LinearLayout.LayoutParams(-1, dpInt(28)));
         alpha.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                opacityLabel.setText(UiLanguage.translate(activity, "Opacidade ") + + (progress + 20) + "%");
+                opacityLabel.setText(UiLanguage.translate(activity, "Opacidade ") + (progress + 20) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) { }
             @Override public void onStopTrackingTouch(SeekBar bar) { }
@@ -2045,10 +2045,10 @@ final class NativeTouchControlsView extends View {
         panel.addView(gapLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(gapBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
-        size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText(UiLanguage.translate(activity, "Tamanho geral ") + + (70 + progress) + "%")));
-        alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText(UiLanguage.translate(activity, "Opacidade geral ") + + (35 + progress) + "%")));
-        sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText(UiLanguage.translate(activity, "Sensibilidade da câmera ") + + (50 + progress) + "%")));
-        gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText(UiLanguage.translate(activity, "Distância de encaixe ") + + (progress + 4) + " dp")));
+        size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText(UiLanguage.translate(activity, "Tamanho geral ") + (70 + progress) + "%")));
+        alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText(UiLanguage.translate(activity, "Opacidade geral ") + (35 + progress) + "%")));
+        sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText(UiLanguage.translate(activity, "Sensibilidade da câmera ") + (50 + progress) + "%")));
+        gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText(UiLanguage.translate(activity, "Distância de encaixe ") + (progress + 4) + " dp")));
         ScrollView settingsScroll = new ScrollView(activity);
         settingsScroll.setFillViewport(false);
         settingsScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
