@@ -40,7 +40,7 @@ public final class HorizonRuntimeUpdateService {
     private static final String RELEASES_URL =
             "https://api.github.com/repos/Ph04/MobileHorizonNative/releases?per_page=100";
     private static final String OFFICIAL_RELEASE_URL =
-            "https://api.github.com/repositories/1403446451/releases/latest";
+            "https://api.github.com/repositories/1403446451/releases?per_page=100";
     private static final String TAG_PREFIX = "horizon-runtime-";
     private static final String ENGINE_ASSET = "horizon-runtime-arm64-v8a.so";
     private static final String TEST_FIXTURE_TAG = "horizon-runtime-update-test";
@@ -378,14 +378,26 @@ public final class HorizonRuntimeUpdateService {
     }
 
     private static OfficialRelease latestOfficialRelease() throws Exception {
-        JSONObject release = new JSONObject(readUrl(OFFICIAL_RELEASE_URL, 512 * 1024));
-        String tag = release.optString("tag_name", "");
-        String publishedAt = release.optString("published_at", "");
-        if (release.optBoolean("draft", false) || release.optBoolean("prerelease", false)
-                || !isValidUpstreamTag(tag) || publishedAt.isEmpty()) {
+        // Resolve from the canonical repository-ID releases endpoint rather than relying on
+        // GitHub's permanent redirect from the old owner/repository URL. Pick by publication
+        // time, not git commit date or semantic-version text.
+        JSONArray releases = new JSONArray(readUrl(OFFICIAL_RELEASE_URL, 4 * 1024 * 1024));
+        OfficialRelease latest = null;
+        for (int i = 0; i < releases.length(); i++) {
+            JSONObject release = releases.optJSONObject(i);
+            if (release == null || release.optBoolean("draft", false)
+                    || release.optBoolean("prerelease", false)) continue;
+            String tag = release.optString("tag_name", "");
+            String publishedAt = release.optString("published_at", "");
+            if (!isValidUpstreamTag(tag) || publishedAt.isEmpty()) continue;
+            if (latest == null || comparePublicationDates(publishedAt, latest.publishedAt) > 0) {
+                latest = new OfficialRelease(tag, publishedAt);
+            }
+        }
+        if (latest == null) {
             throw new IOException("A API do Horizon não retornou uma release estável válida.");
         }
-        return new OfficialRelease(tag, publishedAt);
+        return latest;
     }
 
     private static void installRelease(Context context, SharedPreferences preferences,
