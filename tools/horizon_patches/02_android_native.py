@@ -474,6 +474,12 @@ replace_once(game,
                 }),''')
 
 replace_once(game,
+    'use horizon_client::{\n    Result,',
+    'use horizon_client::{\n    Result,\n    chat::Commands,\n    screen_draw::Measure,')
+replace_once(game,
+    'use horizon_core::{\n    biome::{BiomeZoom, obfuscate_seed},',
+    'use self::chat::chat_tree;\nuse horizon_core::{\n    biome::{BiomeZoom, obfuscate_seed},')
+replace_once(game,
     'event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent},',
     'event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent},')
 replace_once(game,
@@ -483,6 +489,9 @@ replace_once(game, '            agent_pointer: false,\n',
              '            agent_pointer: false,\n            touch_mouse: None,\n            touch_auxiliary: None,\n            touch_is_right: false,\n')
 
 # Keep the Android IME proxy synchronized with Horizon's real chat field.
+replace_once(chat,
+    'fn chat_tree<\'a>(',
+    'pub(super) fn chat_tree<\'a>(')
 replace_once(chat,
     """        self.ui.chat_screen = Some(screen);
         self.ui.chat_opened = Some(std::time::Instant::now());""",
