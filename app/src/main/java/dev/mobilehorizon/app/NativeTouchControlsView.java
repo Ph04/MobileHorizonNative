@@ -123,7 +123,7 @@ final class NativeTouchControlsView extends View {
     private float floatingMenuX = 0.52f;
     private float floatingMenuY = 0.14f;
     private PopupWindow activeButtonMenu;
-    private PopupWindow activeGameMenu;
+    private AlertDialog activeGameMenu;
     /** Alignment guide coordinates in view pixels; NaN means no active snap. */
     private float snapGuideX = Float.NaN;
     private float snapGuideY = Float.NaN;
@@ -1454,7 +1454,7 @@ final class NativeTouchControlsView extends View {
     }
 
     private void dismissGameControlMenu() {
-        PopupWindow menu = activeGameMenu;
+        AlertDialog menu = activeGameMenu;
         if (menu != null && menu.isShowing()) {
             menu.dismiss();
         } else {
@@ -1527,28 +1527,20 @@ final class NativeTouchControlsView extends View {
     }
 
     private void showGameControlMenu() {
-        if (gameActivity == null || previewOnly || !isAttachedToWindow()) return;
+        if (gameActivity == null || previewOnly) return;
         dismissGameControlMenu();
 
-        FrameLayout overlay = new FrameLayout(activity);
-        overlay.setBackgroundColor(0x99070b15);
-        overlay.setClickable(true);
-        overlay.setFocusable(true);
-        overlay.setOnClickListener(v -> dismissGameControlMenu());
-
-        LinearLayout drawer = new LinearLayout(activity);
-        drawer.setOrientation(LinearLayout.VERTICAL);
-        drawer.setPadding(dpInt(18), dpInt(22), dpInt(14), dpInt(16));
-        GradientDrawable drawerBackground = new GradientDrawable();
-        drawerBackground.setColor(0xff121a29);
-        drawerBackground.setCornerRadii(new float[] {
-                0f, 0f, dp(22), dp(22), dp(22), dp(22), 0f, 0f
-        });
-        drawer.setBackground(drawerBackground);
-        drawer.setElevation(dp(18));
-        drawer.setClickable(true);
-        drawer.setFocusable(true);
-        drawer.setOnClickListener(v -> { });
+        // The previous working implementation used a dialog owned by NativeGameActivity.
+        // Avoid a focusable full-screen PopupWindow: on some devices it can steal NativeActivity
+        // focus and interrupt the game surface.
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dpInt(14), dpInt(14), dpInt(14), dpInt(12));
+        GradientDrawable panelBackground = new GradientDrawable();
+        panelBackground.setColor(0xff121a29);
+        panelBackground.setCornerRadius(dp(20));
+        panelBackground.setStroke(dpInt(1), 0xff433969);
+        panel.setBackground(panelBackground);
 
         LinearLayout header = new LinearLayout(activity);
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -1561,11 +1553,10 @@ final class NativeTouchControlsView extends View {
         logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         logo.setGravity(Gravity.CENTER);
         GradientDrawable logoBackground = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                new int[] {0xff8b6cff, 0xff6045d8});
-        logoBackground.setCornerRadius(dp(14));
+                GradientDrawable.Orientation.TL_BR, new int[] {0xff8b6cff, 0xff6045d8});
+        logoBackground.setCornerRadius(dp(13));
         logo.setBackground(logoBackground);
-        header.addView(logo, new LinearLayout.LayoutParams(dpInt(46), dpInt(46)));
+        header.addView(logo, new LinearLayout.LayoutParams(dpInt(44), dpInt(44)));
 
         LinearLayout brand = new LinearLayout(activity);
         brand.setOrientation(LinearLayout.VERTICAL);
@@ -1600,42 +1591,42 @@ final class NativeTouchControlsView extends View {
         close.setBackground(closeBackground);
         close.setContentDescription("Fechar menu");
         close.setOnClickListener(v -> dismissGameControlMenu());
-        header.addView(close, new LinearLayout.LayoutParams(dpInt(40), dpInt(40)));
-        drawer.addView(header, new LinearLayout.LayoutParams(-1, dpInt(48)));
+        header.addView(close, new LinearLayout.LayoutParams(dpInt(38), dpInt(38)));
+        panel.addView(header, new LinearLayout.LayoutParams(-1, dpInt(46)));
 
         View divider = new View(activity);
         divider.setBackgroundColor(0xff2a3449);
         LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dpInt(1));
-        dividerParams.topMargin = dpInt(20);
-        dividerParams.bottomMargin = dpInt(15);
-        drawer.addView(divider, dividerParams);
+        dividerParams.topMargin = dpInt(13);
+        dividerParams.bottomMargin = dpInt(11);
+        panel.addView(divider, dividerParams);
 
         TextView sessionState = new TextView(activity);
         sessionState.setText(controlsVisible ? "●  CONTROLES ATIVOS" : "○  CONTROLES OCULTOS");
         sessionState.setTextColor(controlsVisible ? 0xff8be0bb : 0xffa8b2c7);
         sessionState.setTextSize(10);
         sessionState.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        sessionState.setPadding(dpInt(12), dpInt(10), dpInt(12), dpInt(10));
+        sessionState.setPadding(dpInt(11), dpInt(8), dpInt(11), dpInt(8));
         GradientDrawable stateBackground = new GradientDrawable();
         stateBackground.setColor(controlsVisible ? 0xff17352f : 0xff252d3e);
         stateBackground.setCornerRadius(dp(10));
         sessionState.setBackground(stateBackground);
-        drawer.addView(sessionState, new LinearLayout.LayoutParams(-1, -2));
+        panel.addView(sessionState, new LinearLayout.LayoutParams(-1, -2));
 
         LinearLayout menuItems = new LinearLayout(activity);
         menuItems.setOrientation(LinearLayout.VERTICAL);
-        ScrollView scroll = new ScrollView(activity);
-        scroll.setFillViewport(false);
-        scroll.setVerticalScrollBarEnabled(false);
-        scroll.setClipToPadding(false);
-        scroll.addView(menuItems, new ScrollView.LayoutParams(-1, -2));
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f);
-        scrollParams.topMargin = dpInt(18);
-        scrollParams.bottomMargin = dpInt(12);
-        drawer.addView(scroll, scrollParams);
+        ScrollView scroller = new ScrollView(activity);
+        scroller.setFillViewport(false);
+        scroller.setVerticalScrollBarEnabled(false);
+        scroller.setClipToPadding(false);
+        scroller.addView(menuItems, new ScrollView.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams scrollerParams = new LinearLayout.LayoutParams(-1, dpInt(230));
+        scrollerParams.topMargin = dpInt(12);
+        scrollerParams.bottomMargin = dpInt(9);
+        panel.addView(scroller, scrollerParams);
 
         LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(-1, -2);
-        itemParams.bottomMargin = dpInt(9);
+        itemParams.bottomMargin = dpInt(8);
         menuItems.addView(createGameMenuItem("✥", "Personalizar layout",
                 "Mover, redimensionar e configurar os botões", false, () -> {
                     controlsVisible = true;
@@ -1661,8 +1652,8 @@ final class NativeTouchControlsView extends View {
                     }
                     invalidate();
                 }), new LinearLayout.LayoutParams(itemParams));
-        menuItems.addView(createGameMenuItem("↩", "Voltar ao launcher",
-                "Encerrar esta sessão e voltar à tela inicial", true, () ->
+        menuItems.addView(createGameMenuItem("↩", "Fechar jogo",
+                "Encerrar a sessão e voltar à tela inicial", true, () ->
                     new AlertDialog.Builder(gameActivity)
                             .setTitle("Fechar o jogo?")
                             .setMessage("Você voltará à tela inicial do MobileHorizon.")
@@ -1675,30 +1666,32 @@ final class NativeTouchControlsView extends View {
 
         TextView footer = new TextView(activity);
         footer.setText("MOBILEHORIZON  •  CONTROLES NATIVOS");
-        footer.setTextColor(0xff6f7d98);
+        footer.setTextColor(0xff7885a0);
         footer.setTextSize(9);
         footer.setGravity(Gravity.CENTER);
         footer.setLetterSpacing(0.06f);
-        drawer.addView(footer, new LinearLayout.LayoutParams(-1, dpInt(24)));
+        panel.addView(footer, new LinearLayout.LayoutParams(-1, dpInt(20)));
 
-        int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-        int drawerWidth = Math.min(dpInt(340), Math.max(dpInt(220), Math.round(screenWidth * 0.86f)));
-        drawerWidth = Math.min(screenWidth, drawerWidth);
-        overlay.addView(drawer, new FrameLayout.LayoutParams(
-                drawerWidth, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.LEFT));
-
-        PopupWindow menu = new PopupWindow(overlay,
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, true);
-        menu.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-        menu.setOutsideTouchable(false);
-        menu.setTouchable(true);
-        menu.setElevation(dp(20));
-        menu.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
-        menu.setOnDismissListener(() -> {
+        AlertDialog menu = new AlertDialog.Builder(gameActivity).setView(panel).create();
+        menu.setCancelable(true);
+        menu.setCanceledOnTouchOutside(true);
+        menu.setOnDismissListener(d -> {
             if (activeGameMenu == menu) activeGameMenu = null;
         });
         activeGameMenu = menu;
-        menu.showAtLocation(this, Gravity.TOP | Gravity.LEFT, 0, 0);
+        menu.show();
+        if (menu.getWindow() != null) {
+            menu.getWindow().setBackgroundDrawable(
+                    new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+            int dialogWidth = Math.max(dpInt(250),
+                    Math.min(dpInt(440), screenWidth - dpInt(28)));
+            dialogWidth = Math.min(screenWidth, dialogWidth);
+            menu.getWindow().setLayout(dialogWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
+            android.view.WindowManager.LayoutParams attrs = menu.getWindow().getAttributes();
+            attrs.dimAmount = 0.48f;
+            menu.getWindow().setAttributes(attrs);
+        }
     }
 
     private void showButtonMiniMenu(int id) {
