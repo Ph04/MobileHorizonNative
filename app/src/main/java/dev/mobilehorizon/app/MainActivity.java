@@ -421,6 +421,9 @@ public final class MainActivity extends Activity {
         final int backgroundColor = 0xff0f0d17;
         getWindow().setStatusBarColor(0xff0b0a11);
         getWindow().setNavigationBarColor(0xff0b0a11);
+        if (Build.VERSION.SDK_INT >= 30) {
+            getWindow().setDecorFitsSystemWindows(false);
+        }
         if (Build.VERSION.SDK_INT >= 23) {
             getWindow().getDecorView().setSystemUiVisibility(0);
         }
@@ -721,7 +724,22 @@ public final class MainActivity extends Activity {
             root.addView(buildMobileNavigation(), params(-1, 56));
         }
         setContentView(root);
+        applyDashboardWindowInsets(root);
         if (!landscape) updateMobileNavigation(heroPanel);
+    }
+
+    /** Keeps dashboard cards and bottom navigation out of Android's status/navigation bars. */
+    private void applyDashboardWindowInsets(View root) {
+        if (Build.VERSION.SDK_INT < 30) return;
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            android.graphics.Insets bars = insets.getInsets(
+                    android.view.WindowInsets.Type.systemBars()
+                            | android.view.WindowInsets.Type.displayCutout());
+            android.graphics.Insets ime = insets.getInsets(android.view.WindowInsets.Type.ime());
+            view.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+            return insets;
+        });
+        root.requestApplyInsets();
     }
 
     private boolean resourcesPrepared() {

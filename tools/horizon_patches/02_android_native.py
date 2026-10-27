@@ -800,6 +800,13 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
             }
         }
         horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
+        horizon_client::set_android_gameplay(
+            self.player.is_some()
+                && self.title.is_none()
+                && self.screen == Screen::Playing
+                && self.sign_edit.is_none()
+                && self.book.is_none(),
+        );
         horizon_client::set_android_chat_target(
             self.player.is_some()
                 && self.title.is_none()
@@ -911,7 +918,13 @@ replace_once(game,
             return;
         }
         #[cfg(target_os = "android")]
-        horizon_client::set_android_gameplay(capture);""")
+        horizon_client::set_android_gameplay(
+            self.player.is_some()
+                && self.title.is_none()
+                && self.screen == Screen::Playing
+                && self.sign_edit.is_none()
+                && self.book.is_none(),
+        );""")
 
 # Publish whether Horizon is in the active world or currently displaying a menu.
 # Java polls this lightweight atomic to hide its virtual cursor during gameplay.
@@ -926,6 +939,13 @@ replace_once(game,
             event_loop.exit();
         }
         horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
+        horizon_client::set_android_gameplay(
+            self.player.is_some()
+                && self.title.is_none()
+                && self.screen == Screen::Playing
+                && self.sign_edit.is_none()
+                && self.book.is_none(),
+        );
         horizon_client::set_android_chat_target(
             self.player.is_some()
                 && self.title.is_none()

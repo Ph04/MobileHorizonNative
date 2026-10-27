@@ -132,7 +132,7 @@ final class NativeTouchControlsView extends View {
                 gameplayMode = active;
                 invalidate();
             }
-            modeHandler.postDelayed(this, 80);
+            modeHandler.postDelayed(this, 50);
         }
     };
 
@@ -1229,7 +1229,173 @@ final class NativeTouchControlsView extends View {
         invalidate();
     }
 
-    private void showAddButtonDialog() {
+    /** Branded text panel from the earlier keyboard flow; the Android IME submits into Horizon. */
+    private void showKeyboardDialog() {
+        EditText input = new EditText(activity);
+        input.setSingleLine(true);
+        input.setHint("Mensagem, comando ou texto…");
+        input.setTextSize(16);
+        input.setTextColor(0xfff5f1ff);
+        input.setHintTextColor(0xff918aa9);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        input.setPadding(dpInt(14), dpInt(13), dpInt(14), dpInt(13));
+        GradientDrawable inputBackground = new GradientDrawable();
+        inputBackground.setColor(0xff1c192b);
+        inputBackground.setCornerRadius(dp(12));
+        inputBackground.setStroke(dpInt(1), 0xff51466f);
+        input.setBackground(inputBackground);
+
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dpInt(18), dpInt(18), dpInt(18), dpInt(16));
+        GradientDrawable surface = new GradientDrawable();
+        surface.setColor(0xff151321);
+        surface.setCornerRadius(dp(20));
+        surface.setStroke(dpInt(1), 0xff403654);
+        panel.setBackground(surface);
+        panel.setElevation(dp(12));
+
+        LinearLayout header = new LinearLayout(activity);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout iconBox = new LinearLayout(activity);
+        iconBox.setGravity(Gravity.CENTER);
+        GradientDrawable iconSurface = new GradientDrawable();
+        iconSurface.setColor(0xff7557e8);
+        iconSurface.setCornerRadius(dp(13));
+        iconBox.setBackground(iconSurface);
+        TextView icon = new TextView(activity);
+        icon.setText("Aa");
+        icon.setTextColor(Color.WHITE);
+        icon.setTextSize(17);
+        icon.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        iconBox.addView(icon, new LinearLayout.LayoutParams(dpInt(44), dpInt(44)));
+        header.addView(iconBox, new LinearLayout.LayoutParams(dpInt(44), dpInt(44)));
+
+        LinearLayout heading = new LinearLayout(activity);
+        heading.setOrientation(LinearLayout.VERTICAL);
+        heading.setPadding(dpInt(12), 0, 0, 0);
+        TextView title = new TextView(activity);
+        title.setText("Painel de texto");
+        title.setTextColor(0xfff4f0ff);
+        title.setTextSize(19);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        heading.addView(title, new LinearLayout.LayoutParams(-1, -2));
+        TextView subtitle = new TextView(activity);
+        subtitle.setText("DIGITAÇÃO DO MINECRAFT");
+        subtitle.setTextColor(0xffb9a8ff);
+        subtitle.setTextSize(10);
+        subtitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(-1, -2);
+        subtitleParams.topMargin = dpInt(3);
+        heading.addView(subtitle, subtitleParams);
+        header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1f));
+        panel.addView(header, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView instructions = new TextView(activity);
+        instructions.setText("Digite abaixo e envie para o campo ativo ou para o chat. O texto aparece no jogo depois do envio.");
+        instructions.setTextColor(0xffb8b1cf);
+        instructions.setTextSize(12);
+        instructions.setLineSpacing(dp(2), 1f);
+        LinearLayout.LayoutParams instructionsParams = new LinearLayout.LayoutParams(-1, -2);
+        instructionsParams.topMargin = dpInt(16);
+        instructionsParams.bottomMargin = dpInt(10);
+        panel.addView(instructions, instructionsParams);
+
+        panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
+        TextView helper = new TextView(activity);
+        helper.setText("Use o botão Enviar do teclado ou o botão abaixo.");
+        helper.setTextColor(0xff8f88a9);
+        helper.setTextSize(11);
+        LinearLayout.LayoutParams helperParams = new LinearLayout.LayoutParams(-1, -2);
+        helperParams.topMargin = dpInt(8);
+        panel.addView(helper, helperParams);
+
+        LinearLayout actions = new LinearLayout(activity);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(-1, -2);
+        actionsParams.topMargin = dpInt(17);
+
+        TextView cancel = new TextView(activity);
+        cancel.setText("Cancelar");
+        cancel.setTextColor(0xffe5dfff);
+        cancel.setTextSize(14);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        cancel.setPadding(dpInt(10), dpInt(13), dpInt(10), dpInt(13));
+        GradientDrawable cancelSurface = new GradientDrawable();
+        cancelSurface.setColor(0xff242035);
+        cancelSurface.setCornerRadius(dp(12));
+        cancelSurface.setStroke(dpInt(1), 0xff51466f);
+        cancel.setBackground(cancelSurface);
+        cancel.setClickable(true);
+        cancel.setFocusable(true);
+
+        TextView send = new TextView(activity);
+        send.setText("Enviar  ↑");
+        send.setTextColor(Color.WHITE);
+        send.setTextSize(14);
+        send.setGravity(Gravity.CENTER);
+        send.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        send.setPadding(dpInt(10), dpInt(13), dpInt(10), dpInt(13));
+        GradientDrawable sendSurface = new GradientDrawable();
+        sendSurface.setColor(0xff7557e8);
+        sendSurface.setCornerRadius(dp(12));
+        sendSurface.setStroke(dpInt(1), 0xffa28cff);
+        send.setBackground(sendSurface);
+        send.setClickable(true);
+        send.setFocusable(true);
+
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(0, dpInt(46), 1f);
+        cancelParams.rightMargin = dpInt(8);
+        actions.addView(cancel, cancelParams);
+        actions.addView(send, new LinearLayout.LayoutParams(0, dpInt(46), 1.15f));
+        panel.addView(actions, actionsParams);
+
+        AlertDialog dialog = new AlertDialog.Builder(activity).setView(panel).create();
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        Runnable submit = () -> {
+            String value = input.getText() == null ? "" : input.getText().toString();
+            if (gameActivity != null && !value.isEmpty()) {
+                gameActivity.injectKeyboardText(value);
+            }
+            if (dialog.isShowing()) dialog.dismiss();
+        };
+        send.setOnClickListener(v -> submit.run());
+        input.setOnEditorActionListener((view, actionId, event) -> {
+            boolean enterKey = event != null
+                    && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                    && event.getAction() == KeyEvent.ACTION_UP;
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+                    || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+                    || enterKey) {
+                submit.run();
+                return true;
+            }
+            return false;
+        });
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(
+                    new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+            int dialogWidth = Math.max(dpInt(240), Math.min(dpInt(520), screenWidth - dpInt(32)));
+            dialog.getWindow().setLayout(dialogWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
+            dialog.getWindow().setSoftInputMode(
+                    android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+        input.requestFocus();
+        input.postDelayed(() -> {
+            InputMethodManager manager = (InputMethodManager)
+                    activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager != null) manager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+        }, 140);
+    }
+
+    private void showAddButtonDialog()
         EditText label = new EditText(activity);
         label.setSingleLine(true);
         label.setHint("Texto do botão (ex.: MAP)");
@@ -1819,7 +1985,7 @@ final class NativeTouchControlsView extends View {
                 releaseHeldControls();
             }
         } else if (control == KEYBOARD) {
-            if (gameActivity != null) gameActivity.showMinecraftKeyboard();
+            showKeyboardDialog();
             control = IGNORED;
         } else if (control == ADD_BUTTON && editingControls) {
             showAddButtonDialog();

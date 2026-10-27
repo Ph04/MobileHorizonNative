@@ -500,7 +500,7 @@ jobs:
           done
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$STANDARD_APK" > "$RUNNER_TEMP/standard-apk-badging.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$TEST_APK" > "$RUNNER_TEMP/test-apk-badging.txt"
-          grep -Eq "versionName='0.3.21.*updater-test" "$RUNNER_TEMP/test-apk-badging.txt"
+          grep -Eq "versionName='0.3.22.*updater-test" "$RUNNER_TEMP/test-apk-badging.txt"
           grep -Eq "name='dev\\.mobilehorizon\\.app[^']*updatertest[^']*'" "$RUNNER_TEMP/test-apk-badging.txt"
           test -s "$RUNNER_TEMP/horizon-runtime-stage/libhorizon_engine.so"
           test -s "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
