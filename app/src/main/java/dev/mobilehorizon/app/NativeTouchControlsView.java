@@ -30,6 +30,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.ScrollView;
@@ -122,6 +123,7 @@ final class NativeTouchControlsView extends View {
     private float floatingMenuX = 0.52f;
     private float floatingMenuY = 0.14f;
     private PopupWindow activeButtonMenu;
+    private PopupWindow activeGameMenu;
     /** Alignment guide coordinates in view pixels; NaN means no active snap. */
     private float snapGuideX = Float.NaN;
     private float snapGuideY = Float.NaN;
@@ -1395,7 +1397,7 @@ final class NativeTouchControlsView extends View {
         }, 140);
     }
 
-    private void showAddButtonDialog()
+    private void showAddButtonDialog() {
         EditText label = new EditText(activity);
         label.setSingleLine(true);
         label.setHint("Texto do botão (ex.: MAP)");
@@ -1451,46 +1453,252 @@ final class NativeTouchControlsView extends View {
         return label;
     }
 
+    private void dismissGameControlMenu() {
+        PopupWindow menu = activeGameMenu;
+        if (menu != null && menu.isShowing()) {
+            menu.dismiss();
+        } else {
+            activeGameMenu = null;
+        }
+    }
+
+    private View createGameMenuItem(String symbol, String titleText, String subtitleText,
+                                    boolean danger, Runnable action) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dpInt(10), dpInt(10), dpInt(10), dpInt(10));
+        row.setMinimumHeight(dpInt(66));
+        GradientDrawable rowBackground = new GradientDrawable();
+        rowBackground.setColor(danger ? 0xff2c1d2b : 0xff1b2435);
+        rowBackground.setCornerRadius(dp(14));
+        if (danger) rowBackground.setStroke(dpInt(1), 0x885a344b);
+        row.setBackground(rowBackground);
+        row.setClickable(true);
+        row.setFocusable(true);
+
+        TextView emblem = new TextView(activity);
+        emblem.setText(symbol);
+        emblem.setTextColor(danger ? 0xffffaebe : 0xffc4b7ff);
+        emblem.setTextSize(20);
+        emblem.setGravity(Gravity.CENTER);
+        GradientDrawable emblemBackground = new GradientDrawable();
+        emblemBackground.setColor(danger ? 0xff492738 : 0xff30284f);
+        emblemBackground.setCornerRadius(dp(12));
+        emblem.setBackground(emblemBackground);
+        row.addView(emblem, new LinearLayout.LayoutParams(dpInt(42), dpInt(42)));
+
+        LinearLayout copy = new LinearLayout(activity);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(activity);
+        title.setText(titleText);
+        title.setTextColor(danger ? 0xffffd5de : 0xfff3f5ff);
+        title.setTextSize(14);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setMaxLines(1);
+        TextView subtitle = new TextView(activity);
+        subtitle.setText(subtitleText);
+        subtitle.setTextColor(0xffa8b2c7);
+        subtitle.setTextSize(11);
+        subtitle.setMaxLines(2);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        subtitleParams.topMargin = dpInt(3);
+        copy.addView(title, new LinearLayout.LayoutParams(-1, -2));
+        copy.addView(subtitle, subtitleParams);
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        copyParams.leftMargin = dpInt(12);
+        copyParams.rightMargin = dpInt(5);
+        row.addView(copy, copyParams);
+
+        TextView arrow = new TextView(activity);
+        arrow.setText("›");
+        arrow.setTextColor(danger ? 0xffe7a4b6 : 0xff7887a6);
+        arrow.setTextSize(25);
+        arrow.setGravity(Gravity.CENTER);
+        row.addView(arrow, new LinearLayout.LayoutParams(dpInt(18), dpInt(38)));
+
+        row.setOnClickListener(v -> {
+            dismissGameControlMenu();
+            action.run();
+        });
+        return row;
+    }
+
     private void showGameControlMenu() {
-        if (gameActivity == null || previewOnly) return;
-        String[] items = new String[] {
-                "Personalizar layout",
-                "Ajustes gerais dos controles",
+        if (gameActivity == null || previewOnly || !isAttachedToWindow()) return;
+        dismissGameControlMenu();
+
+        FrameLayout overlay = new FrameLayout(activity);
+        overlay.setBackgroundColor(0x99070b15);
+        overlay.setClickable(true);
+        overlay.setFocusable(true);
+        overlay.setOnClickListener(v -> dismissGameControlMenu());
+
+        LinearLayout drawer = new LinearLayout(activity);
+        drawer.setOrientation(LinearLayout.VERTICAL);
+        drawer.setPadding(dpInt(18), dpInt(22), dpInt(14), dpInt(16));
+        GradientDrawable drawerBackground = new GradientDrawable();
+        drawerBackground.setColor(0xff121a29);
+        drawerBackground.setCornerRadii(new float[] {
+                0f, 0f, dp(22), dp(22), dp(22), dp(22), 0f, 0f
+        });
+        drawer.setBackground(drawerBackground);
+        drawer.setElevation(dp(18));
+        drawer.setClickable(true);
+        drawer.setFocusable(true);
+        drawer.setOnClickListener(v -> { });
+
+        LinearLayout header = new LinearLayout(activity);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView logo = new TextView(activity);
+        logo.setText("MH");
+        logo.setTextColor(Color.WHITE);
+        logo.setTextSize(15);
+        logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        logo.setGravity(Gravity.CENTER);
+        GradientDrawable logoBackground = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[] {0xff8b6cff, 0xff6045d8});
+        logoBackground.setCornerRadius(dp(14));
+        logo.setBackground(logoBackground);
+        header.addView(logo, new LinearLayout.LayoutParams(dpInt(46), dpInt(46)));
+
+        LinearLayout brand = new LinearLayout(activity);
+        brand.setOrientation(LinearLayout.VERTICAL);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+        TextView brandName = new TextView(activity);
+        brandName.setText("MOBILEHORIZON");
+        brandName.setTextColor(0xffb9adff);
+        brandName.setTextSize(10);
+        brandName.setLetterSpacing(0.08f);
+        brandName.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        TextView menuTitle = new TextView(activity);
+        menuTitle.setText("Menu do jogo");
+        menuTitle.setTextColor(0xfff6f7ff);
+        menuTitle.setTextSize(18);
+        menuTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        brand.addView(brandName, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams menuTitleParams = new LinearLayout.LayoutParams(-1, -2);
+        menuTitleParams.topMargin = dpInt(2);
+        brand.addView(menuTitle, menuTitleParams);
+        LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        brandParams.leftMargin = dpInt(11);
+        header.addView(brand, brandParams);
+
+        TextView close = new TextView(activity);
+        close.setText("×");
+        close.setTextSize(25);
+        close.setTextColor(0xffd8deed);
+        close.setGravity(Gravity.CENTER);
+        GradientDrawable closeBackground = new GradientDrawable();
+        closeBackground.setColor(0xff263148);
+        closeBackground.setCornerRadius(dp(12));
+        close.setBackground(closeBackground);
+        close.setContentDescription("Fechar menu");
+        close.setOnClickListener(v -> dismissGameControlMenu());
+        header.addView(close, new LinearLayout.LayoutParams(dpInt(40), dpInt(40)));
+        drawer.addView(header, new LinearLayout.LayoutParams(-1, dpInt(48)));
+
+        View divider = new View(activity);
+        divider.setBackgroundColor(0xff2a3449);
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dpInt(1));
+        dividerParams.topMargin = dpInt(20);
+        dividerParams.bottomMargin = dpInt(15);
+        drawer.addView(divider, dividerParams);
+
+        TextView sessionState = new TextView(activity);
+        sessionState.setText(controlsVisible ? "●  CONTROLES ATIVOS" : "○  CONTROLES OCULTOS");
+        sessionState.setTextColor(controlsVisible ? 0xff8be0bb : 0xffa8b2c7);
+        sessionState.setTextSize(10);
+        sessionState.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        sessionState.setPadding(dpInt(12), dpInt(10), dpInt(12), dpInt(10));
+        GradientDrawable stateBackground = new GradientDrawable();
+        stateBackground.setColor(controlsVisible ? 0xff17352f : 0xff252d3e);
+        stateBackground.setCornerRadius(dp(10));
+        sessionState.setBackground(stateBackground);
+        drawer.addView(sessionState, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout menuItems = new LinearLayout(activity);
+        menuItems.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setClipToPadding(false);
+        scroll.addView(menuItems, new ScrollView.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f);
+        scrollParams.topMargin = dpInt(18);
+        scrollParams.bottomMargin = dpInt(12);
+        drawer.addView(scroll, scrollParams);
+
+        LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(-1, -2);
+        itemParams.bottomMargin = dpInt(9);
+        menuItems.addView(createGameMenuItem("✥", "Personalizar layout",
+                "Mover, redimensionar e configurar os botões", false, () -> {
+                    controlsVisible = true;
+                    editingControls = true;
+                    snapGuideX = Float.NaN;
+                    snapGuideY = Float.NaN;
+                    Toast.makeText(activity,
+                            "Arraste os controles; toque em um para configurar. ✓ salva.",
+                            Toast.LENGTH_LONG).show();
+                    invalidate();
+                }), new LinearLayout.LayoutParams(itemParams));
+        menuItems.addView(createGameMenuItem("⚙", "Ajustes dos controles",
+                "Sensibilidade, opacidade e preferências", false, this::showGlobalSettingsDialog),
+                new LinearLayout.LayoutParams(itemParams));
+        menuItems.addView(createGameMenuItem(controlsVisible ? "◉" : "○",
                 controlsVisible ? "Ocultar controles" : "Mostrar controles",
-                "Fechar jogo"
-        };
-        new AlertDialog.Builder(gameActivity)
-                .setTitle("Configurações do jogo")
-                .setItems(items, (dialog, which) -> {
-                    if (which == 0) {
-                        controlsVisible = true;
-                        editingControls = true;
-                        snapGuideX = Float.NaN;
-                        snapGuideY = Float.NaN;
-                        Toast.makeText(activity, "Arraste os controles; toque em um para configurar. ✓ salva.", Toast.LENGTH_LONG).show();
-                        invalidate();
-                    } else if (which == 1) {
-                        showGlobalSettingsDialog();
-                    } else if (which == 2) {
-                        controlsVisible = !controlsVisible;
-                        if (!controlsVisible) {
-                            editingControls = false;
-                            releaseHeldControls();
-                        }
-                        invalidate();
-                    } else if (which == 3) {
-                        new AlertDialog.Builder(gameActivity)
-                                .setTitle("Fechar o jogo?")
-                                .setMessage("Você voltará à tela inicial do MobileHorizon.")
-                                .setNegativeButton("Cancelar", (d, w) -> { })
-                                .setPositiveButton("Fechar jogo", (d, w) -> {
-                                    releaseAllInputs();
-                                    gameActivity.finish();
-                                })
-                                .show();
+                controlsVisible ? "Deixar a tela do jogo mais livre" : "Exibir os botões de toque",
+                false, () -> {
+                    controlsVisible = !controlsVisible;
+                    if (!controlsVisible) {
+                        editingControls = false;
+                        releaseHeldControls();
                     }
-                })
-                .show();
+                    invalidate();
+                }), new LinearLayout.LayoutParams(itemParams));
+        menuItems.addView(createGameMenuItem("↩", "Voltar ao launcher",
+                "Encerrar esta sessão e voltar à tela inicial", true, () ->
+                    new AlertDialog.Builder(gameActivity)
+                            .setTitle("Fechar o jogo?")
+                            .setMessage("Você voltará à tela inicial do MobileHorizon.")
+                            .setNegativeButton("Cancelar", (d, w) -> { })
+                            .setPositiveButton("Fechar jogo", (d, w) -> {
+                                releaseAllInputs();
+                                gameActivity.finish();
+                            })
+                            .show()), new LinearLayout.LayoutParams(itemParams));
+
+        TextView footer = new TextView(activity);
+        footer.setText("MOBILEHORIZON  •  CONTROLES NATIVOS");
+        footer.setTextColor(0xff6f7d98);
+        footer.setTextSize(9);
+        footer.setGravity(Gravity.CENTER);
+        footer.setLetterSpacing(0.06f);
+        drawer.addView(footer, new LinearLayout.LayoutParams(-1, dpInt(24)));
+
+        int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+        int drawerWidth = Math.min(dpInt(340), Math.max(dpInt(220), Math.round(screenWidth * 0.86f)));
+        drawerWidth = Math.min(screenWidth, drawerWidth);
+        overlay.addView(drawer, new FrameLayout.LayoutParams(
+                drawerWidth, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.LEFT));
+
+        PopupWindow menu = new PopupWindow(overlay,
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, true);
+        menu.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        menu.setOutsideTouchable(false);
+        menu.setTouchable(true);
+        menu.setElevation(dp(20));
+        menu.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
+        menu.setOnDismissListener(() -> {
+            if (activeGameMenu == menu) activeGameMenu = null;
+        });
+        activeGameMenu = menu;
+        menu.showAtLocation(this, Gravity.TOP | Gravity.LEFT, 0, 0);
     }
 
     private void showButtonMiniMenu(int id) {
@@ -2618,6 +2826,11 @@ final class NativeTouchControlsView extends View {
             try { if (activeButtonMenu.isShowing()) activeButtonMenu.dismiss(); }
             catch (IllegalArgumentException ignored) { }
             activeButtonMenu = null;
+        }
+        if (activeGameMenu != null) {
+            try { if (activeGameMenu.isShowing()) activeGameMenu.dismiss(); }
+            catch (IllegalArgumentException ignored) { }
+            activeGameMenu = null;
         }
         super.onDetachedFromWindow();
     }
