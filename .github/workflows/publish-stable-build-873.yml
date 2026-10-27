@@ -1,0 +1,90 @@
+name: Publish MobileHorizonNative build 873
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/publish-stable-build-873.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-stable-apk:
+    name: Publish APK from verified build 873
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the exact build 873 source
+        uses: actions/checkout@v4
+        with:
+          ref: 66ea97d7ef310d7661c2741e1fec4f30a6b6c737
+
+      - name: Download the update-safe APK artifact from Actions run 873
+        uses: actions/download-artifact@v4
+        with:
+          name: mobilehorizon-native-offline1-update-safe
+          path: ${{ runner.temp }}/build-873
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 40194197668
+
+      - name: Verify and prepare release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_APK="$(find "$RUNNER_TEMP/build-873" -type f -name '*.apk' -print -quit)"
+          test -n "$SOURCE_APK"
+          mkdir -p release-assets
+          cp "$SOURCE_APK" release-assets/MobileHorizonNative-build-873.apk
+          unzip -tq release-assets/MobileHorizonNative-build-873.apk
+          EXPECTED_SHA256="be4769371136d686a87922f05b668865dc6aef3e20a602e5b330977fee3f6cbf"
+          ACTUAL_SHA256="$(sha256sum release-assets/MobileHorizonNative-build-873.apk | awk '{print $1}')"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256"
+          echo "Verified APK SHA-256: $ACTUAL_SHA256"
+          cat > release-assets/RELEASE-NOTES.md <<'NOTES'
+          # MobileHorizonNative — build 873
+
+          Esta é a build de referência que o mantenedor confirmou que abre corretamente no dispositivo. Ela está sendo publicada para voltar a uma base conhecida após testes posteriores de atualização que apresentaram encerramento inesperado.
+
+          ## O que está incluído
+          - Launcher Android nativa para o projeto Horizon/Minecraft Java 26.3.
+          - Runtime Horizon ARM64 integrada ao cliente NativeActivity.
+          - Controles táteis e editor de layout dos botões.
+          - Download e validação dos arquivos-base oficiais, preparação/importação de recursos e diagnósticos.
+          - Perfil local offline para servidores configurados para aceitar modo offline.
+          - Fluxo de autenticação Microsoft na launcher, sujeito à configuração do App ID próprio e às aprovações necessárias.
+
+          ## Estado e limitações
+          - Build 873 é a referência conhecida para abertura da aplicação; isso não garante compatibilidade com todos os aparelhos.
+          - O suporte a texturas/modelos de pacotes de recursos de servidores e a algumas entidades de texto/hologramas segue incompleto.
+          - O teste Vulkan verifica a inicialização gráfica básica, não certifica todos os recursos do jogo.
+          - Use uma cópia legal de Minecraft: Java Edition 26.3 e respeite os requisitos de autenticação do servidor.
+
+          ## Créditos
+          O motor base deriva do projeto **Horizon**, criado por Ludovic Marie (@ludovic111) e colaboradores: https://github.com/ludovic111/horizon
+          MobileHorizonNative é um port Android independente e não oficial; não é afiliado à Mojang Studios nem à Microsoft. Consulte o repositório Horizon para sua licença e créditos originais.
+          NOTES
+          sha256sum release-assets/MobileHorizonNative-build-873.apk > release-assets/SHA256SUMS.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="mobilehorizonnative-build-873"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              release-assets/MobileHorizonNative-build-873.apk \
+              release-assets/SHA256SUMS.txt \
+              --clobber
+          else
+            gh release create "$TAG" \
+              release-assets/MobileHorizonNative-build-873.apk \
+              release-assets/SHA256SUMS.txt \
+              --target 66ea97d7ef310d7661c2741e1fec4f30a6b6c737 \
+              --title "MobileHorizonNative — build 873 (referência estável)" \
+              --notes-file release-assets/RELEASE-NOTES.md
+          fi

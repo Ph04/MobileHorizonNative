@@ -1,0 +1,33 @@
+name: Schedule Horizon runtime publication
+
+concurrency:
+  group: horizon-runtime-publication
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # Avoid the heavily loaded quarter-hour/top-of-hour boundaries, where GitHub may delay or drop schedules.
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+  # Ensure the first publication check runs when this scheduler is added or repaired.
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/scheduled-horizon-runtime.yml"
+
+# This file exists on the GitHub default branch only because scheduled workflows
+# are restricted to that branch. The reusable workflow and all build inputs come
+# from feature/horizon-runtime-loader, which is the active MobileHorizonNative line.
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  publish-active-branch-runtime:
+    name: Publish runtime from feature/horizon-runtime-loader
+    uses: Ph04/MobileHorizonNative/.github/workflows/horizon-runtime-release.yml@feature/horizon-runtime-loader
+    with:
+      source_ref: feature/horizon-runtime-loader
+    permissions:
+      contents: write
+      actions: write
