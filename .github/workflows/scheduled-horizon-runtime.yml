@@ -20,6 +20,7 @@ on:
 # from feature/horizon-runtime-loader, which is the active MobileHorizonNative line.
 permissions:
   contents: write
+  actions: write
 
 jobs:
   publish-active-branch-runtime:
@@ -29,3 +30,4 @@ jobs:
       source_ref: feature/horizon-runtime-loader
     permissions:
       contents: write
+      actions: write
