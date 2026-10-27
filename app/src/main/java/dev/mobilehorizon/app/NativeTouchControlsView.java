@@ -2259,6 +2259,12 @@ final class NativeTouchControlsView extends View {
                 if (track.moved) setButtonPosition(track.control, x, y);
             } else if (track.control == JOYSTICK) {
                 updateJoystick(x, y);
+            } else if (track.startGameplay && isCameraDragActionControl(track.control)) {
+                // Keep the button's original pressed state while using this same finger to look around.
+                // Do not require a second pointer: the held control is released only on pointer-up/cancel.
+                if ((Math.abs(dx) >= 0.25f || Math.abs(dy) >= 0.25f) && gameActivity != null) {
+                    gameActivity.injectMouseMotion(dx * sensitivity, dy * sensitivity);
+                }
             } else if (isHotbarSlotControl(track.control)) {
                 // The invisible hotbar hit zones act only on tap/long-press, never as camera input.
             } else if (track.control == NONE && track.guiScrollGesture) {
@@ -2437,6 +2443,36 @@ final class NativeTouchControlsView extends View {
                 || guiY < hotbarTop || guiY >= guiHeight) return -1;
         int slot = (int) ((guiX - slotsLeft) / 20f);
         return slot >= 0 && slot < 9 ? slot : -1;
+    }
+
+    /**
+     * Action controls that can be dragged to rotate the camera without releasing the action.
+     * UI/navigation controls, the joystick and hotbar hit zones deliberately remain excluded.
+     */
+    private boolean isCameraDragActionControl(int control) {
+        switch (control) {
+            case JUMP:
+            case SNEAK:
+            case SPRINT:
+            case ATTACK:
+            case USE:
+            case DROP:
+            case SWAP:
+            case PICK:
+            case MOUSE_LEFT:
+            case MOUSE_RIGHT:
+                return true;
+            default:
+                if (control >= CUSTOM_BUTTON_START) {
+                    ButtonSpec spec = findButton(control);
+                    if (spec == null) return false;
+                    int function = resolvedFunction(spec);
+                    return function == FUNCTION_KEY
+                            || function == FUNCTION_MOUSE_LEFT
+                            || function == FUNCTION_MOUSE_RIGHT;
+                }
+                return false;
+        }
     }
 
     private boolean isHotbarSlotControl(int control) {
