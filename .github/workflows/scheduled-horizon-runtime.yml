@@ -6,8 +6,9 @@ concurrency:
 
 on:
   schedule:
-    # Avoid the heavily loaded quarter-hour/top-of-hour boundaries, where GitHub may delay or drop schedules.
-    - cron: "7,22,37,52 * * * *"
+    # Recheck often because upstream Horizon releases can arrive several times per hour.
+    # Publication is serialized, and each resolver exits quickly when the matching runtime already exists.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
   # Ensure the first publication check runs when this scheduler is added or repaired.
   push:
