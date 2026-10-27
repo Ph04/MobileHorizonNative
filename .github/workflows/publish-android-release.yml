@@ -61,7 +61,20 @@ jobs:
             exit 1
           fi
 
-          echo "Verified successful source build ${SOURCE_RUN_ID} for ${SOURCE_SHA}."
+          # Create the tag independently so the release API can bind to this exact commit
+          # without asking GITHUB_TOKEN to target a commit that changes workflow files.
+          if TAG_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha' 2>/dev/null)"; then
+            [[ "${TAG_SHA}" == "${SOURCE_SHA}" ]] || {
+              echo "::error::Tag ${RELEASE_TAG} already points at unexpected commit ${TAG_SHA}."
+              exit 1
+            }
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f "ref=refs/tags/${RELEASE_TAG}" \
+              -f "sha=${SOURCE_SHA}" >/dev/null
+          fi
+
+          echo "Verified successful source build ${SOURCE_RUN_ID} for ${SOURCE_SHA}; tag ${RELEASE_TAG} points to this exact commit."
 
       - name: Download APK from the verified source build
         shell: bash
@@ -129,7 +142,6 @@ jobs:
             "${RUNNER_TEMP}/mobilehorizon-release/MobileHorizonNative-0.3.24.apk" \
             "${RUNNER_TEMP}/mobilehorizon-release/SHA256SUMS.txt" \
             --repo "${GITHUB_REPOSITORY}" \
-            --target "${SOURCE_SHA}" \
             --title "MobileHorizonNative 0.3.24" \
             --notes-file "${RUNNER_TEMP}/release-notes.md"
 
