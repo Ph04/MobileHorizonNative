@@ -172,8 +172,9 @@ public final class OfficialDownloadService extends Service {
                 : cancelledResult ? "Download cancelado" : "Download não concluído";
         builder.setSmallIcon(ongoing ? android.R.drawable.stat_sys_download
                         : completed ? android.R.drawable.stat_sys_download_done : android.R.drawable.ic_dialog_alert)
-                .setContentTitle(title)
-                .setContentText(progress == null ? "Download oficial" : compact(progress.stage, progress.item))
+                .setContentTitle(UiLanguage.translate(this, title))
+                .setContentText(UiLanguage.translate(this,
+                        progress == null ? "Download oficial" : compact(progress.stage, progress.item)))
                 .setContentIntent(openIntent)
                 .setOnlyAlertOnce(ongoing)
                 .setOngoing(ongoing)
@@ -183,7 +184,8 @@ public final class OfficialDownloadService extends Service {
             PendingIntent cancelIntent = PendingIntent.getService(this, 2, cancel,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             builder.addAction(new Notification.Action.Builder(
-                    android.R.drawable.ic_menu_close_clear_cancel, "Cancelar", cancelIntent).build());
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    UiLanguage.translate(this, "Cancelar"), cancelIntent).build());
         }
         if (progress != null && progress.total > 0) {
             builder.setProgress(progress.total, Math.min(progress.completed, progress.total), false);
@@ -226,8 +228,9 @@ public final class OfficialDownloadService extends Service {
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager == null) return;
         NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
-                "Downloads do Minecraft", NotificationManager.IMPORTANCE_DEFAULT);
-        channel.setDescription("Progresso, cancelamento e conclusão dos downloads oficiais de Minecraft.");
+                UiLanguage.translate(this, "Downloads do Minecraft"), NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setDescription(UiLanguage.translate(this,
+                "Progresso, cancelamento e conclusão dos downloads oficiais de Minecraft."));
         manager.createNotificationChannel(channel);
     }
 
