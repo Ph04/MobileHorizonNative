@@ -800,7 +800,8 @@ public final class ResourceManagerActivity extends Activity {
 
     private void confirmDelete(ResourceItem item) {
         new AlertDialog.Builder(this).setTitle(UiLanguage.translate(this, "Excluir recurso?"))
-                .setMessage(UiLanguage.translate(this, "O arquivo ") + item.name + " será removido do armazenamento do jogo. Essa ação não pode ser desfeita.")
+                .setMessage(UiLanguage.translate(this, "O arquivo ") + item.name
+                        + UiLanguage.translate(this, " será removido do armazenamento do jogo. Essa ação não pode ser desfeita."))
                 .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
                 .setPositiveButton(UiLanguage.translate(this, "Excluir"), (dialog, which) -> {
                     try {
