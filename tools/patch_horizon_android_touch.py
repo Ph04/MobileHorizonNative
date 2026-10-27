@@ -21,6 +21,7 @@ hud = root / "crates/horizon-client/src/hud.rs"
 audio = root / "crates/horizon-client/src/audio.rs"
 skins = root / "crates/horizon-client/src/skins.rs"
 remote = root / "crates/horizon-client/src/game/remote.rs"
+chat = root / "crates/horizon-client/src/game/chat.rs"
 names = root / "crates/horizon-client/src/game/names.rs"
 item_draw = root / "crates/horizon-client/src/game/item_draw.rs"
 net = root / "crates/horizon-client/src/net.rs"
@@ -30,7 +31,7 @@ pad_menu = root / "crates/horizon-client/src/game/pad_menu.rs"
 startup_menu = root / "crates/horizon-client/src/game/startup_menu.rs"
 workspace_cargo = root / "Cargo.toml"
 
-for path in (game, lib, hud, audio, skins, remote, names, item_draw, net,
+for path in (game, lib, hud, audio, skins, remote, chat, names, item_draw, net,
              client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
     if not path.is_file():
         raise SystemExit(f"Missing pinned Horizon source file: {path}")

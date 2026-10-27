@@ -349,6 +349,52 @@ pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjec
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeBeginChatDraft(
+    _env: *mut core::ffi::c_void,
+    _class: *mut core::ffi::c_void,
+) {
+    horizon_client::inject_android_input(horizon_client::AndroidInjectedInput::BeginChatDraft);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectImeText(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    value: JString<'_>,
+    inserted: JString<'_>,
+    backspaces: i32,
+    submit: u8,
+) {
+    let Ok(java_value) = env.get_string(&value) else { return; };
+    let Ok(java_inserted) = env.get_string(&inserted) else { return; };
+    horizon_client::inject_android_input(horizon_client::AndroidInjectedInput::ImeText {
+        value: java_value.to_string_lossy().into_owned(),
+        inserted: java_inserted.to_string_lossy().into_owned(),
+        backspaces: backspaces.max(0) as u32,
+        submit: submit != 0,
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeGetChatDraft(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+) -> jni::sys::jstring {
+    match env.new_string(horizon_client::android_chat_draft()) {
+        Ok(value) => value.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeIsChatTarget(
+    _env: *mut core::ffi::c_void,
+    _class: *mut core::ffi::c_void,
+) -> u8 {
+    u8::from(horizon_client::android_is_chat_target())
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_mobilehorizon_app_NativeGameActivity_nativeIsGameplay(
     _env: *mut core::ffi::c_void,
     _class: *mut core::ffi::c_void,

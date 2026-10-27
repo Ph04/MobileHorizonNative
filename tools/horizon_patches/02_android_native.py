@@ -254,6 +254,49 @@ pub enum AndroidInjectedInput {
     KeyInput { key_code: i32, pressed: bool },
     /// Text from Android's keyboard and whether to commit the focused editor.
     KeyboardText { text: String, submit: bool },
+    /// Open Horizon's real chat input before showing Android's IME.
+    BeginChatDraft,
+    /// Full IME value plus the edit delta for non-chat fields.
+    ImeText { value: String, inserted: String, backspaces: u32, submit: bool },
+}
+
+static HORIZON_ANDROID_CHAT_OPEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+static HORIZON_ANDROID_CHAT_TARGET: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+static HORIZON_ANDROID_CHAT_DRAFT: std::sync::OnceLock<std::sync::Mutex<String>> =
+    std::sync::OnceLock::new();
+
+pub fn set_android_chat_open(open: bool) {
+    HORIZON_ANDROID_CHAT_OPEN.store(open, std::sync::atomic::Ordering::Relaxed);
+    if !open {
+        set_android_chat_draft("");
+    }
+}
+
+pub fn set_android_chat_target(active: bool) {
+    HORIZON_ANDROID_CHAT_TARGET.store(active, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn android_is_chat_target() -> bool {
+    HORIZON_ANDROID_CHAT_TARGET.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_android_chat_draft(text: &str) {
+    let slot = HORIZON_ANDROID_CHAT_DRAFT
+        .get_or_init(|| std::sync::Mutex::new(String::new()));
+    if let Ok(mut guard) = slot.lock() {
+        *guard = text.to_owned();
+    }
+}
+
+pub fn android_chat_draft() -> String {
+    if !HORIZON_ANDROID_CHAT_OPEN.load(std::sync::atomic::Ordering::Relaxed) {
+        return String::new();
+    }
+    let slot = HORIZON_ANDROID_CHAT_DRAFT
+        .get_or_init(|| std::sync::Mutex::new(String::new()));
+    slot.lock().map(|guard| guard.clone()).unwrap_or_default()
 }
 
 static HORIZON_ANDROID_GAMEPLAY: std::sync::atomic::AtomicBool =
@@ -438,6 +481,47 @@ replace_once(game,
     '    agent_pointer: bool,\n    /// First active touchscreen pointer translated to mouse input.\n    touch_mouse: Option<u64>,\n    /// A simultaneous second pointer requests a right-click.\n    touch_auxiliary: Option<u64>,\n    touch_is_right: bool,\n')
 replace_once(game, '            agent_pointer: false,\n',
              '            agent_pointer: false,\n            touch_mouse: None,\n            touch_auxiliary: None,\n            touch_is_right: false,\n')
+
+# Keep the Android IME proxy synchronized with Horizon's real chat field.
+replace_once(chat,
+    """        self.ui.chat_screen = Some(screen);
+        self.ui.chat_opened = Some(std::time::Instant::now());""",
+    """        self.ui.chat_screen = Some(screen);
+        horizon_client::set_android_chat_open(true);
+        horizon_client::set_android_chat_draft(initial);
+        self.ui.chat_opened = Some(std::time::Instant::now());""")
+replace_once(chat,
+    """    pub(super) fn close_chat(&mut self) {
+        self.ui.chat_screen = None;""",
+    """    pub(super) fn close_chat(&mut self) {
+        horizon_client::set_android_chat_open(false);
+        self.ui.chat_screen = None;""")
+replace_once(chat,
+    """                if let Some(text) = typed_text
+                    && !ctrl
+                {
+                    screen.type_text(&m, &c, text);
+                }
+                self.ui.chat_screen = Some(screen);""",
+    """                if let Some(text) = typed_text
+                    && !ctrl
+                {
+                    screen.type_text(&m, &c, text);
+                }
+                horizon_client::set_android_chat_draft(screen.value());
+                self.ui.chat_screen = Some(screen);""")
+replace_once(chat,
+    """        if let Some(screen) = self.ui.chat_screen.as_mut() {
+            screen.type_text(&m, &c, text);
+        }
+    }
+    /// ChatScreen.handleChatInput:""",
+    """        if let Some(screen) = self.ui.chat_screen.as_mut() {
+            screen.type_text(&m, &c, text);
+            horizon_client::set_android_chat_draft(screen.value());
+        }
+    }
+    /// ChatScreen.handleChatInput:""")
 
 impl_start = "impl ApplicationHandler for Game<'_> {"
 idx = game.read_text(encoding="utf-8").find(impl_start)
@@ -629,8 +713,91 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                     }
                 }
             }
+            horizon_client::AndroidInjectedInput::BeginChatDraft => {
+                if self.player.is_some()
+                    && self.title.is_none()
+                    && matches!(self.screen, Screen::Playing | Screen::Chat)
+                    && self.sign_edit.is_none()
+                    && self.book.is_none()
+                {
+                    if let Some(screen) = self.ui.chat_screen.as_ref() {
+                        horizon_client::set_android_chat_open(true);
+                        horizon_client::set_android_chat_draft(screen.value());
+                    } else {
+                        let draft = horizon_client::android_chat_draft();
+                        self.open_chat(&draft);
+                    }
+                }
+            }
+            horizon_client::AndroidInjectedInput::ImeText { value, inserted, backspaces, submit } => {
+                if self.title.is_some()
+                    && !matches!(self.screen, Screen::Options | Screen::WorldOptions)
+                {
+                    let (Some(title), clipboard) =
+                        (self.title.as_mut(), &mut self.clipboard)
+                    else { return; };
+                    if title.focused_field().is_some() {
+                        if title.has_caret_field() {
+                            title.field_shortcut(
+                                horizon_client::clipboard::EditShortcut::SelectAll,
+                                clipboard,
+                            );
+                            if value.is_empty() {
+                                title.field_key(KeyCode::Backspace, false, false);
+                            } else {
+                                title.type_text(&value);
+                            }
+                        } else {
+                            if let Some((_, current, _)) = title.focused_field() {
+                                current.clear();
+                            }
+                            title.type_text(&value);
+                        }
+                        if submit {
+                            title.confirm_edit();
+                        }
+                    }
+                } else if self.player.is_some()
+                    && matches!(self.screen, Screen::Playing | Screen::Chat)
+                    && self.sign_edit.is_none()
+                    && self.book.is_none()
+                {
+                    if self.ui.chat_screen.is_none() {
+                        self.open_chat("");
+                    }
+                    let m = Measure(&self.gui.atlas.font);
+                    let c = Commands {
+                        dispatcher: chat_tree(&self.remote, &self.mods),
+                        registries: &self.ui.registries,
+                    };
+                    if let Some(screen) = self.ui.chat_screen.as_mut() {
+                        screen.suggest_command(&m, &c, &value);
+                        horizon_client::set_android_chat_draft(screen.value());
+                    }
+                    if submit {
+                        self.chat_key_code(KeyCode::Enter, None);
+                    }
+                } else {
+                    for _ in 0..backspaces.min(4096) {
+                        self.pad_osk_output(horizon_client::osk::Output::Backspace);
+                    }
+                    if !inserted.is_empty() {
+                        self.pad_osk_output(horizon_client::osk::Output::Text(inserted.clone()));
+                    }
+                    if submit {
+                        self.pad_osk_output(horizon_client::osk::Output::Enter);
+                    }
+                }
+            }
         }
         horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
+        horizon_client::set_android_chat_target(
+            self.player.is_some()
+                && self.title.is_none()
+                && matches!(self.screen, Screen::Playing | Screen::Chat)
+                && self.sign_edit.is_none()
+                && self.book.is_none(),
+        );
     }
 
 """
@@ -750,6 +917,13 @@ replace_once(game,
             event_loop.exit();
         }
         horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
+        horizon_client::set_android_chat_target(
+            self.player.is_some()
+                && self.title.is_none()
+                && matches!(self.screen, Screen::Playing | Screen::Chat)
+                && self.sign_edit.is_none()
+                && self.book.is_none(),
+        );
     }""")
 
 replace_once(game,
@@ -779,6 +953,9 @@ replace_once(game,
         match (self, event) {
             (App::Loading(loading), horizon_client::AndroidInjectedInput::KeyboardText { text, submit }) => {
                 loading.android_keyboard_text(&text, submit);
+            }
+            (App::Loading(loading), horizon_client::AndroidInjectedInput::ImeText { value, submit, .. }) => {
+                loading.android_keyboard_text(&value, submit);
             }
             (App::Ready(game), event) => game.user_event(event_loop, event),
             (App::Loading(_), _) => {}

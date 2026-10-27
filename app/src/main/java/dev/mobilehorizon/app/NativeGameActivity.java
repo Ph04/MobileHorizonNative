@@ -6,11 +6,18 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Gravity;
 import android.view.Window;
 import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.PopupWindow;
 
 /** Fullscreen NativeActivity wrapper with optional Android touch controls. Native clicks are injected through the game's JNI input bridge; this must not depend on an Android AccessibilityService. */
@@ -21,6 +28,10 @@ public final class NativeGameActivity extends NativeActivity {
     private static native void nativeInjectMouseScroll(float amount, float x, float y);
     private static native void nativeInjectKeyCode(int keyCode, boolean pressed);
     private static native void nativeInjectKeyboardText(String text, boolean submit);
+    private static native void nativeBeginChatDraft();
+    private static native void nativeInjectImeText(String value, String inserted, int backspaces, boolean submit);
+    private static native String nativeGetChatDraft();
+    private static native boolean nativeIsChatTarget();
     private static native boolean nativeIsGameplay();
     private static native boolean nativeHasLoadedWorld();
     private static native int[] nativeGetGuiMetrics();
@@ -37,6 +48,10 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_NATIVE_SMOKE_TEST = "dev.mobilehorizon.app.EXTRA_NATIVE_SMOKE_TEST";
     private NativeTouchControlsView touchControls;
     private PopupWindow touchControlsPopup;
+    private PopupWindow keyboardInputPopup;
+    private EditText keyboardInput;
+    private boolean suppressKeyboardInputWatcher;
+    private String lastKeyboardInput = "";
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // Horizon resolves options, saves, logs and prepared resources from these paths.
@@ -195,6 +210,166 @@ public final class NativeGameActivity extends NativeActivity {
         nativeInjectKeyboardText(text == null ? "" : text, true);
     }
 
+    /** Show Android's IME while Horizon keeps Minecraft's actual focused text field on screen. */
+    void showMinecraftKeyboard() {
+        ensureKeyboardInputProxy();
+        if (hasLoadedWorld() && isChatInputTarget()) {
+            String draft = "";
+            try {
+                String current = nativeGetChatDraft();
+                if (current != null) draft = current;
+            } catch (UnsatisfiedLinkError ignored) { }
+            setKeyboardProxyText(draft);
+            try { nativeBeginChatDraft(); } catch (UnsatisfiedLinkError ignored) { }
+        }
+        View decor = getWindow().getDecorView();
+        if (keyboardInputPopup == null || keyboardInput == null) return;
+        if (!keyboardInputPopup.isShowing()) {
+            if (decor.getWindowToken() == null) {
+                decor.post(this::showMinecraftKeyboard);
+                return;
+            }
+            try {
+                keyboardInputPopup.showAtLocation(decor, Gravity.TOP | Gravity.START, 0, 0);
+            } catch (WindowManager.BadTokenException error) {
+                android.util.Log.w("MobileHorizon", "Não foi possível abrir o teclado Android", error);
+                return;
+            }
+        }
+        keyboardInput.requestFocus();
+        decor.postDelayed(() -> {
+            InputMethodManager ime = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (ime != null && keyboardInput != null) {
+                ime.showSoftInput(keyboardInput, InputMethodManager.SHOW_IMPLICIT);
+            }
+        }, 100);
+    }
+
+    private boolean isChatInputTarget() {
+        try { return nativeIsChatTarget(); }
+        catch (UnsatisfiedLinkError error) { return false; }
+    }
+
+    private void ensureKeyboardInputProxy() {
+        if (keyboardInputPopup != null && keyboardInput != null) return;
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setImeOptions(EditorInfo.IME_ACTION_SEND | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        input.setTextColor(Color.TRANSPARENT);
+        input.setHintTextColor(Color.TRANSPARENT);
+        input.setBackgroundColor(Color.TRANSPARENT);
+        input.setTextSize(1f);
+        input.setPadding(0, 0, 0, 0);
+        input.setAlpha(0.01f);
+        input.setFocusable(true);
+        input.setFocusableInTouchMode(true);
+        input.setOnEditorActionListener((view, actionId, event) -> {
+            boolean enterKey = event != null
+                    && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                    && event.getAction() == KeyEvent.ACTION_UP;
+            if (actionId == EditorInfo.IME_ACTION_SEND
+                    || actionId == EditorInfo.IME_ACTION_DONE
+                    || enterKey) {
+                submitKeyboardInput();
+                return true;
+            }
+            return false;
+        });
+        input.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
+            @Override public void afterTextChanged(Editable editable) {
+                String value = editable == null ? "" : editable.toString();
+                if (suppressKeyboardInputWatcher) {
+                    lastKeyboardInput = value;
+                    return;
+                }
+                ImeTextDelta delta = diffKeyboardText(lastKeyboardInput, value);
+                lastKeyboardInput = value;
+                try {
+                    nativeInjectImeText(value, delta.inserted, delta.backspaces, false);
+                } catch (UnsatisfiedLinkError error) {
+                    android.util.Log.w("MobileHorizon", "A ponte do teclado ainda não está disponível", error);
+                }
+            }
+        });
+        keyboardInput = input;
+        keyboardInputPopup = new PopupWindow(input, dpForKeyboard(2), dpForKeyboard(2), true);
+        keyboardInputPopup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        keyboardInputPopup.setFocusable(true);
+        keyboardInputPopup.setTouchable(true);
+        keyboardInputPopup.setOutsideTouchable(false);
+        keyboardInputPopup.setClippingEnabled(false);
+        keyboardInputPopup.setInputMethodMode(PopupWindow.INPUT_METHOD_NEEDED);
+        keyboardInputPopup.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
+                | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        keyboardInputPopup.setOnDismissListener(() -> {
+            // Back can hide the IME without clearing the draft held by this proxy.
+        });
+    }
+
+    private int dpForKeyboard(float value) {
+        return Math.max(1, Math.round(value * getResources().getDisplayMetrics().density));
+    }
+
+    private void setKeyboardProxyText(String value) {
+        if (keyboardInput == null) return;
+        String safe = value == null ? "" : value;
+        suppressKeyboardInputWatcher = true;
+        keyboardInput.setText(safe);
+        keyboardInput.setSelection(keyboardInput.length());
+        lastKeyboardInput = safe;
+        suppressKeyboardInputWatcher = false;
+    }
+
+    private static final class ImeTextDelta {
+        final String inserted;
+        final int backspaces;
+        ImeTextDelta(String inserted, int backspaces) {
+            this.inserted = inserted;
+            this.backspaces = backspaces;
+        }
+    }
+
+    /** Diff full IME strings but deliver only edits to non-chat Minecraft fields. */
+    private static ImeTextDelta diffKeyboardText(String oldValue, String newValue) {
+        int oldPos = 0, newPos = 0;
+        while (oldPos < oldValue.length() && newPos < newValue.length()) {
+            int oldCp = oldValue.codePointAt(oldPos);
+            int newCp = newValue.codePointAt(newPos);
+            if (oldCp != newCp) break;
+            oldPos += Character.charCount(oldCp);
+            newPos += Character.charCount(newCp);
+        }
+        int oldEnd = oldValue.length(), newEnd = newValue.length();
+        while (oldEnd > oldPos && newEnd > newPos) {
+            int oldCp = oldValue.codePointBefore(oldEnd);
+            int newCp = newValue.codePointBefore(newEnd);
+            if (oldCp != newCp) break;
+            oldEnd -= Character.charCount(oldCp);
+            newEnd -= Character.charCount(newCp);
+        }
+        return new ImeTextDelta(newValue.substring(newPos, newEnd),
+                oldValue.codePointCount(oldPos, oldEnd));
+    }
+
+    private void submitKeyboardInput() {
+        if (keyboardInput == null) return;
+        String value = keyboardInput.getText() == null ? "" : keyboardInput.getText().toString();
+        try {
+            nativeInjectImeText(value, "", 0, true);
+        } catch (UnsatisfiedLinkError error) {
+            android.util.Log.w("MobileHorizon", "Não foi possível enviar o texto pelo teclado Android", error);
+        }
+        setKeyboardProxyText("");
+        InputMethodManager ime = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (ime != null) ime.hideSoftInputFromWindow(keyboardInput.getWindowToken(), 0);
+        if (keyboardInputPopup != null && keyboardInputPopup.isShowing()) {
+            try { keyboardInputPopup.dismiss(); } catch (IllegalArgumentException ignored) { }
+        }
+    }
+
     boolean isGameplayMode() {
         try { return nativeIsGameplay(); }
         catch (UnsatisfiedLinkError error) { return false; }
@@ -220,6 +395,11 @@ public final class NativeGameActivity extends NativeActivity {
     @Override
     protected void onDestroy() {
         if (touchControls != null) touchControls.releaseAllInputs();
+        if (keyboardInputPopup != null) {
+            try { keyboardInputPopup.dismiss(); } catch (IllegalArgumentException ignored) { }
+            keyboardInputPopup = null;
+            keyboardInput = null;
+        }
         if (touchControlsPopup != null) {
             try { touchControlsPopup.dismiss(); } catch (IllegalArgumentException ignored) {}
             touchControlsPopup = null;

@@ -66,6 +66,7 @@ final class NativeTouchControlsView extends View {
     private static final String KEY_FLOAT_MENU_Y = "floating_menu_y";
     private static final String KEY_VISUAL_DEFAULTS_VERSION = "visual_defaults_version";
     private static final String KEY_CLASSIC_BUTTONS = "classic_buttons";
+    private static final String KEY_AUXILIARY_CONTROL_COLOR = "auxiliary_control_color";
     private static final float SPRINT_TRIGGER_THRESHOLD = 0.84f;
     private static final float JOYSTICK_MAX_REACH = 0.85f;
     private static final PorterDuffColorFilter CLASSIC_PRESSED_FILTER =
@@ -142,6 +143,8 @@ final class NativeTouchControlsView extends View {
     private boolean leftHanded;
     private boolean autoSprintEnabled;
     private boolean classicButtonsEnabled;
+    /** Accent shared by utility controls, following the most recently customized button color. */
+    private int auxiliaryControlColor = 7;
     private boolean joystickSprintActive;
     private boolean controlsVisible = true;
     private long lastHotbarTapTime;
@@ -250,6 +253,9 @@ final class NativeTouchControlsView extends View {
         snapGapDp = clamp(prefs.getFloat(KEY_SNAP_GAP, 12f), 4f, 32f);
         loadButtonLayouts(prefs.getString(KEY_LAYOUT, ""));
         loadCustomButtons(prefs.getString(KEY_CUSTOM_BUTTONS, ""));
+        ButtonLayout chatButtonLayout = buttonLayouts.get(CHAT);
+        auxiliaryControlColor = clampButtonColor(prefs.getInt(
+                KEY_AUXILIARY_CONTROL_COLOR, chatButtonLayout == null ? 7 : chatButtonLayout.color));
         if (prefs.getInt(KEY_UNIFORM_SIZE_VERSION, 0) < 1) {
             for (Map.Entry<Integer, ButtonLayout> entry : buttonLayouts.entrySet()) {
                 int id = entry.getKey();
@@ -835,23 +841,8 @@ final class NativeTouchControlsView extends View {
 
     private void drawFloatingMenuButton(Canvas canvas) {
         if (previewOnly || getWidth() <= 0 || getHeight() <= 0) return;
-        float x = floatingMenuPixelX(), y = floatingMenuPixelY(), radius = dp(18);
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(0xE22A4261);
-        canvas.drawRoundRect(x - radius, y - radius, x + radius, y + radius, dp(11), dp(11), paint);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(1.4f));
-        paint.setColor(0xFFE4F4FF);
-        canvas.drawRoundRect(x - radius, y - radius, x + radius, y + radius, dp(11), dp(11), paint);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(2f));
-        paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setColor(Color.WHITE);
-        for (int i = -1; i <= 1; i++) {
-            float yy = y + i * dp(5);
-            canvas.drawLine(x - dp(7), yy, x + dp(7), yy, paint);
-        }
-        paint.setStyle(Paint.Style.FILL);
+        drawStyledUtilityButton(canvas, FLOATING_MENU, "", floatingMenuPixelX(),
+                floatingMenuPixelY(), dp(18));
     }
 
     private void drawEditorToolbar(Canvas canvas) {
@@ -860,6 +851,11 @@ final class NativeTouchControlsView extends View {
     }
 
     private void drawToolbarButton(Canvas canvas, int id, String label, float x, float y) {
+        if (id == KEYBOARD || id == TOGGLE) {
+            drawStyledUtilityButton(canvas, id, label, x, y, dp(id == TOGGLE ? 18 : 17));
+            return;
+        }
+        // The edit/add/done toolbar keeps its editor-specific appearance.
         float radius = dp(id == TOGGLE ? 18 : 17);
         boolean active = id == EDITOR && editingControls;
         paint.setStyle(Paint.Style.FILL);
@@ -878,6 +874,76 @@ final class NativeTouchControlsView extends View {
         Paint.FontMetrics metrics = paint.getFontMetrics();
         canvas.drawText(label, x, y - (metrics.ascent + metrics.descent) / 2f, paint);
         paint.setFakeBoldText(false);
+    }
+
+    /** Utility controls share the active palette and classic/standard rendering mode. */
+    private void drawStyledUtilityButton(Canvas canvas, int id, String label,
+                                         float x, float y, float radius) {
+        ButtonSpec spec = new ButtonSpec(id, "", x, y, radius);
+        spec.color = auxiliaryControlColor;
+        spec.opacity = 1f;
+        ButtonLayout saved = buttonLayouts.get(id);
+        if (saved != null) {
+            spec.color = clampButtonColor(saved.color);
+            spec.shape = clampShape(saved.shape);
+            spec.opacity = clamp(saved.opacity, 0.20f, 1f);
+            spec.radius = radius * clamp(saved.scale, 0.60f, 2.40f);
+        }
+        boolean pressed = pressedControls.contains(id);
+        if (!(classicButtonsEnabled && drawClassicButton(canvas, spec, pressed, opacity * spec.opacity))) {
+            drawButton(canvas, spec);
+        }
+        drawUtilityGlyph(canvas, id, label, x, y, spec.radius, spec.color,
+                classicButtonsEnabled, opacity * spec.opacity);
+    }
+
+    private void drawUtilityGlyph(Canvas canvas, int id, String label, float x, float y,
+                                  float radius, int colorIndex, boolean classic, float alpha) {
+        int base = BUTTON_PALETTE[clampButtonColor(colorIndex)];
+        int luminance = (Color.red(base) * 299 + Color.green(base) * 587
+                + Color.blue(base) * 114) / 1000;
+        int ink = classic && luminance > 150 ? Color.BLACK : Color.WHITE;
+        paint.setColor(withAlpha(ink, Math.round(255f * clamp(alpha, 0f, 1f))));
+        paint.setStrokeWidth(Math.max(dp(1.2f), radius * 0.095f));
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        if (id == KEYBOARD) {
+            paint.setStyle(Paint.Style.STROKE);
+            RectF shell = new RectF(x - radius * 0.42f, y - radius * 0.29f,
+                    x + radius * 0.42f, y + radius * 0.27f);
+            canvas.drawRoundRect(shell, radius * 0.08f, radius * 0.08f, paint);
+            paint.setStyle(Paint.Style.FILL);
+            float keyW = radius * 0.12f;
+            float keyH = radius * 0.095f;
+            for (int row = 0; row < 2; row++) {
+                int cols = row == 0 ? 4 : 3;
+                float rowY = y - radius * 0.12f + row * radius * 0.18f;
+                for (int col = 0; col < cols; col++) {
+                    float keyX = x - (cols - 1) * radius * 0.17f / 2f + col * radius * 0.17f;
+                    canvas.drawRoundRect(keyX - keyW / 2f, rowY - keyH / 2f,
+                            keyX + keyW / 2f, rowY + keyH / 2f,
+                            keyW * 0.2f, keyH * 0.2f, paint);
+                }
+            }
+            paint.setStyle(Paint.Style.STROKE);
+            canvas.drawLine(x - radius * 0.18f, y + radius * 0.39f,
+                    x + radius * 0.18f, y + radius * 0.39f, paint);
+        } else if (id == FLOATING_MENU) {
+            paint.setStyle(Paint.Style.STROKE);
+            for (int row = -1; row <= 1; row++) {
+                float yy = y + row * radius * 0.29f;
+                canvas.drawLine(x - radius * 0.38f, yy, x + radius * 0.38f, yy, paint);
+            }
+        } else {
+            paint.setStyle(Paint.Style.FILL);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(radius * 1.25f);
+            paint.setFakeBoldText(true);
+            Paint.FontMetrics metrics = paint.getFontMetrics();
+            canvas.drawText(label, x, y - (metrics.ascent + metrics.descent) / 2f, paint);
+            paint.setFakeBoldText(false);
+        }
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private ButtonSpec[] buttonSpecs() {
@@ -1161,52 +1227,6 @@ final class NativeTouchControlsView extends View {
             layout.y = ny;
         }
         invalidate();
-    }
-
-    private void showKeyboardDialog() {
-        EditText input = new EditText(activity);
-        input.setSingleLine(true);
-        input.setHint("Texto para o campo selecionado ou mensagem");
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-
-        LinearLayout panel = new LinearLayout(activity);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding((int) dp(20), (int) dp(8), (int) dp(20), (int) dp(4));
-        panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
-
-        AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle("Teclado do Minecraft")
-                .setView(panel)
-                .setNegativeButton("Cancelar", (d, which) -> { })
-                .setPositiveButton("Aplicar / enviar", (d, which) -> {
-                    if (gameActivity != null) gameActivity.injectKeyboardText(input.getText().toString());
-                })
-                .create();
-
-        input.setOnEditorActionListener((view, actionId, event) -> {
-            boolean enterKey = event != null
-                    && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
-                    && event.getAction() == KeyEvent.ACTION_UP;
-            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-                    || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
-                    || enterKey) {
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
-                return true;
-            }
-            return false;
-        });
-
-        dialog.setOnShowListener(ignored -> {
-            input.requestFocus();
-            input.postDelayed(() -> {
-                InputMethodManager manager = (InputMethodManager)
-                        activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-                if (manager != null) manager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
-            }, 120);
-        });
-        dialog.show();
     }
 
     private void showAddButtonDialog() {
@@ -1590,6 +1610,9 @@ final class NativeTouchControlsView extends View {
                 }
                 saveButtonLayouts();
             }
+            auxiliaryControlColor = newColor;
+            activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit()
+                    .putInt(KEY_AUXILIARY_CONTROL_COLOR, auxiliaryControlColor).apply();
             invalidate();
             popup.dismiss();
         });
@@ -1796,7 +1819,7 @@ final class NativeTouchControlsView extends View {
                 releaseHeldControls();
             }
         } else if (control == KEYBOARD) {
-            showKeyboardDialog();
+            if (gameActivity != null) gameActivity.showMinecraftKeyboard();
             control = IGNORED;
         } else if (control == ADD_BUTTON && editingControls) {
             showAddButtonDialog();
