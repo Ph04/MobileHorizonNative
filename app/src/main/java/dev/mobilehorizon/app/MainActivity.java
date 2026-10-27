@@ -923,8 +923,8 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout collapsibleSection(LinearLayout parent, String title, String description, boolean expanded) {
-        title = UiLanguage.translate(this, title);
-        description = UiLanguage.translate(this, description);
+        final String localizedTitle = UiLanguage.translate(this, title);
+        final String localizedDescription = UiLanguage.translate(this, description);
         LinearLayout shell = card();
         LinearLayout.LayoutParams shellParams = params(-1, -2);
         shellParams.topMargin = dp(10);
@@ -934,9 +934,9 @@ public final class MainActivity extends Activity {
         header.setOrientation(LinearLayout.VERTICAL);
         header.setFocusable(true);
         header.setClickable(true);
-        TextView heading = text((expanded ? "▾  " : "▸  ") + title, 16, 0xfff1edff, true);
+        TextView heading = text((expanded ? "▾  " : "▸  ") + localizedTitle, 16, 0xfff1edff, true);
         header.addView(heading, params(-1, -2));
-        TextView summary = text(description, 12, 0xffa9a3c7, false);
+        TextView summary = text(localizedDescription, 12, 0xffa9a3c7, false);
         LinearLayout.LayoutParams summaryParams = params(-1, -2);
         summaryParams.topMargin = dp(4);
         header.addView(summary, summaryParams);
@@ -952,15 +952,15 @@ public final class MainActivity extends Activity {
         View.OnClickListener toggle = v -> {
             boolean show = body.getVisibility() != View.VISIBLE;
             body.setVisibility(show ? View.VISIBLE : View.GONE);
-            heading.setText((show ? "▾  " : "▸  ") + title);
+            heading.setText((show ? "▾  " : "▸  ") + localizedTitle);
             header.setContentDescription(UiLanguage.translate(this,
-                    (show ? "Recolher " : "Expandir ") + title));
+                    (show ? "Recolher " : "Expandir ") + localizedTitle));
         };
         header.setOnClickListener(toggle);
         heading.setOnClickListener(toggle);
         summary.setOnClickListener(toggle);
         header.setContentDescription(UiLanguage.translate(this,
-                (expanded ? "Recolher " : "Expandir ") + title));
+                (expanded ? "Recolher " : "Expandir ") + localizedTitle));
         return body;
     }
 
