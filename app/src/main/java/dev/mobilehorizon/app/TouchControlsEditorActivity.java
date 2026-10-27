@@ -38,7 +38,7 @@ public final class TouchControlsEditorActivity extends Activity {
         root.addView(controls, new FrameLayout.LayoutParams(-1, -1));
 
         TextView settingsButton = new TextView(this);
-        settingsButton.setText("⚙  Ajustes");
+        settingsButton.setText(UiLanguage.translate(this, "⚙  Ajustes"));
         settingsButton.setTextColor(Color.WHITE);
         settingsButton.setTextSize(12);
         settingsButton.setGravity(Gravity.CENTER);
@@ -53,7 +53,7 @@ public final class TouchControlsEditorActivity extends Activity {
         root.addView(settingsButton, settingsParams);
 
         TextView hint = new TextView(this);
-        hint.setText("Arraste para mover · toque para editar · + adiciona · ✓ salva");
+        hint.setText(UiLanguage.translate(this, "Arraste para mover · toque para editar · + adiciona · ✓ salva"));
         hint.setTextColor(Color.WHITE);
         hint.setTextSize(12);
         hint.setGravity(Gravity.CENTER);
