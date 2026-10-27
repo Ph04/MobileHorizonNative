@@ -446,6 +446,30 @@ hud_batch_initializers = [
             blur_at: 0,
         }''',
     ),
+    (
+        '''        Self {
+            vertices: Vec::new(),
+            scale: scale as f32,
+            width: (window[0] as f32 / scale as f32).ceil(),
+            height: (window[1] as f32 / scale as f32).ceil(),
+            patches: Vec::new(),
+            blends: Vec::new(),
+            end_portal: EndPortalFill::default(),
+            glint_alpha: 0.75,
+            blur_at: 0,
+        }''',
+        '''        Self {
+            vertices: Vec::new(),
+            scale: scale as f32,
+            width: gui_width as f32,
+            height: gui_height as f32,
+            patches: Vec::new(),
+            blends: Vec::new(),
+            end_portal: EndPortalFill::default(),
+            glint_alpha: 0.75,
+            blur_at: 0,
+        }''',
+    ),
 ]
 hud_content = hud.read_text(encoding="utf-8")
 matched_initializers = [
