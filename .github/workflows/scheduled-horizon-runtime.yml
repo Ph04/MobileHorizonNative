@@ -6,7 +6,8 @@ concurrency:
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    # Avoid the heavily loaded quarter-hour/top-of-hour boundaries, where GitHub may delay or drop schedules.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
   # Ensure the first publication check runs when this scheduler is added or repaired.
   push:
