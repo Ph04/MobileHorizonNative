@@ -698,42 +698,115 @@ public final class SkinManagerActivity extends Activity {
             float unit = Math.min(4.4f * density, (h - 35f * density) / 32f);
             float center = w / 2f;
             float baseY = h - 17f * density;
-            float sideRatio = Math.abs((float) Math.sin(yaw));
-            float frontRatio = Math.max(0.30f, Math.abs((float) Math.cos(yaw)));
-            Rect none = null;
 
-            // Legs and torso are drawn first; arms and head sit above them.
-            drawPart(canvas, center - 2f * unit, baseY - 12f * unit, 4, 12, 4,
-                    new Rect(4, 20, 8, 32), new Rect(0, 20, 4, 32), new Rect(8, 20, 12, 32),
-                    new Rect(4, 36, 8, 48), new Rect(0, 36, 4, 48), new Rect(8, 36, 12, 48),
-                    unit, frontRatio, sideRatio, yaw);
-            drawPart(canvas, center + 2f * unit, baseY - 12f * unit, 4, 12, 4,
-                    new Rect(20, 52, 24, 64), new Rect(16, 52, 20, 64), new Rect(24, 52, 28, 64),
-                    new Rect(4, 52, 8, 64), new Rect(0, 52, 4, 64), new Rect(8, 52, 12, 64),
-                    unit, frontRatio, sideRatio, yaw);
-            drawPart(canvas, center, baseY - 24f * unit, 8, 12, 4,
-                    new Rect(20, 20, 28, 32), new Rect(16, 20, 20, 32), new Rect(28, 20, 32, 32),
-                    new Rect(20, 36, 28, 48), new Rect(16, 36, 20, 48), new Rect(28, 36, 32, 48),
-                    unit, frontRatio, sideRatio, yaw);
-
+            // One root yaw is shared by the entire avatar. A part's center is projected
+            // from model-space X with cos(yaw); its front/back and side faces use the same
+            // yaw. This keeps the head, torso, arms and legs joined while the whole model turns.
+            float cosYaw = (float) Math.cos(yaw);
+            float sinYaw = (float) Math.sin(yaw);
+            float frontRatio = Math.max(0.015f, Math.abs(cosYaw));
+            float sideRatio = Math.abs(sinYaw);
+            float leftLegX = center - 2f * unit * cosYaw;
+            float rightLegX = center + 2f * unit * cosYaw;
             float armWidth = slim ? 3f : 4f;
             float armOffset = 4f + armWidth / 2f;
-            drawPart(canvas, center - armOffset * unit, baseY - 24f * unit, armWidth, 12, 4,
-                    new Rect(36, 52, 36 + (int) armWidth, 64),
-                    new Rect(32, 52, 36, 64), new Rect(36 + (int) armWidth, 52, 40 + (int) armWidth, 64),
-                    new Rect(52, 52, 52 + (int) armWidth, 64),
-                    new Rect(48, 52, 52, 64), new Rect(52 + (int) armWidth, 52, 56 + (int) armWidth, 64),
-                    unit, frontRatio, sideRatio, yaw);
-            drawPart(canvas, center + armOffset * unit, baseY - 24f * unit, armWidth, 12, 4,
-                    new Rect(44, 20, 44 + (int) armWidth, 32),
-                    new Rect(40, 20, 44, 32), new Rect(44 + (int) armWidth, 20, 48 + (int) armWidth, 32),
-                    new Rect(44, 36, 44 + (int) armWidth, 48),
-                    new Rect(40, 36, 44, 48), new Rect(44 + (int) armWidth, 36, 48 + (int) armWidth, 48),
-                    unit, frontRatio, sideRatio, yaw);
+            float leftArmX = center - armOffset * unit * cosYaw;
+            float rightArmX = center + armOffset * unit * cosYaw;
 
+            // Draw the far-side limbs before the torso and near-side limbs after it.
+            // Their positions are all transformed by the same root yaw, not rotated in isolation.
+            if (sinYaw >= 0f) {
+                drawPart(canvas, leftLegX, baseY - 12f * unit, 4, 12, 4,
+                        new Rect(4, 20, 8, 32), new Rect(0, 20, 4, 32),
+                        new Rect(8, 20, 12, 32), new Rect(12, 20, 16, 32),
+                        new Rect(4, 36, 8, 48), new Rect(0, 36, 4, 48),
+                        new Rect(8, 36, 12, 48), new Rect(12, 36, 16, 48),
+                        unit, frontRatio, sideRatio, yaw);
+                drawPart(canvas, rightLegX, baseY - 12f * unit, 4, 12, 4,
+                        new Rect(20, 52, 24, 64), new Rect(16, 52, 20, 64),
+                        new Rect(24, 52, 28, 64), new Rect(28, 52, 32, 64),
+                        new Rect(4, 52, 8, 64), new Rect(0, 52, 4, 64),
+                        new Rect(8, 52, 12, 64), new Rect(12, 52, 16, 64),
+                        unit, frontRatio, sideRatio, yaw);
+
+                drawPart(canvas, leftArmX, baseY - 24f * unit, armWidth, 12, 4,
+                        new Rect(36, 52, 36 + (int) armWidth, 64),
+                        new Rect(32, 52, 36, 64),
+                        new Rect(36 + (int) armWidth, 52, 40 + (int) armWidth, 64),
+                        new Rect(44, 52, 44 + (int) armWidth, 64),
+                        new Rect(52, 52, 52 + (int) armWidth, 64),
+                        new Rect(48, 52, 52, 64),
+                        new Rect(52 + (int) armWidth, 52, 56 + (int) armWidth, 64),
+                        new Rect(60, 52, 60 + (int) armWidth, 64),
+                        unit, frontRatio, sideRatio, yaw);
+
+                drawPart(canvas, center, baseY - 24f * unit, 8, 12, 4,
+                        new Rect(20, 20, 28, 32), new Rect(28, 20, 32, 32),
+                        new Rect(16, 20, 20, 32), new Rect(32, 20, 40, 32),
+                        new Rect(20, 36, 28, 48), new Rect(28, 36, 32, 48),
+                        new Rect(16, 36, 20, 48), new Rect(32, 36, 40, 48),
+                        unit, frontRatio, sideRatio, yaw);
+
+                drawPart(canvas, rightArmX, baseY - 24f * unit, armWidth, 12, 4,
+                        new Rect(44, 20, 44 + (int) armWidth, 32),
+                        new Rect(40, 20, 44, 32),
+                        new Rect(44 + (int) armWidth, 20, 48 + (int) armWidth, 32),
+                        new Rect(52, 20, 52 + (int) armWidth, 32),
+                        new Rect(44, 36, 44 + (int) armWidth, 48),
+                        new Rect(40, 36, 44, 48),
+                        new Rect(44 + (int) armWidth, 36, 48 + (int) armWidth, 48),
+                        new Rect(52, 36, 52 + (int) armWidth, 48),
+                        unit, frontRatio, sideRatio, yaw);
+            } else {
+                drawPart(canvas, rightLegX, baseY - 12f * unit, 4, 12, 4,
+                        new Rect(20, 52, 24, 64), new Rect(16, 52, 20, 64),
+                        new Rect(24, 52, 28, 64), new Rect(28, 52, 32, 64),
+                        new Rect(4, 52, 8, 64), new Rect(0, 52, 4, 64),
+                        new Rect(8, 52, 12, 64), new Rect(12, 52, 16, 64),
+                        unit, frontRatio, sideRatio, yaw);
+                drawPart(canvas, leftLegX, baseY - 12f * unit, 4, 12, 4,
+                        new Rect(4, 20, 8, 32), new Rect(0, 20, 4, 32),
+                        new Rect(8, 20, 12, 32), new Rect(12, 20, 16, 32),
+                        new Rect(4, 36, 8, 48), new Rect(0, 36, 4, 48),
+                        new Rect(8, 36, 12, 48), new Rect(12, 36, 16, 48),
+                        unit, frontRatio, sideRatio, yaw);
+
+                drawPart(canvas, rightArmX, baseY - 24f * unit, armWidth, 12, 4,
+                        new Rect(44, 20, 44 + (int) armWidth, 32),
+                        new Rect(40, 20, 44, 32),
+                        new Rect(44 + (int) armWidth, 20, 48 + (int) armWidth, 32),
+                        new Rect(52, 20, 52 + (int) armWidth, 32),
+                        new Rect(44, 36, 44 + (int) armWidth, 48),
+                        new Rect(40, 36, 44, 48),
+                        new Rect(44 + (int) armWidth, 36, 48 + (int) armWidth, 48),
+                        new Rect(52, 36, 52 + (int) armWidth, 48),
+                        unit, frontRatio, sideRatio, yaw);
+
+                drawPart(canvas, center, baseY - 24f * unit, 8, 12, 4,
+                        new Rect(20, 20, 28, 32), new Rect(28, 20, 32, 32),
+                        new Rect(16, 20, 20, 32), new Rect(32, 20, 40, 32),
+                        new Rect(20, 36, 28, 48), new Rect(28, 36, 32, 48),
+                        new Rect(16, 36, 20, 48), new Rect(32, 36, 40, 48),
+                        unit, frontRatio, sideRatio, yaw);
+
+                drawPart(canvas, leftArmX, baseY - 24f * unit, armWidth, 12, 4,
+                        new Rect(36, 52, 36 + (int) armWidth, 64),
+                        new Rect(32, 52, 36, 64),
+                        new Rect(36 + (int) armWidth, 52, 40 + (int) armWidth, 64),
+                        new Rect(44, 52, 44 + (int) armWidth, 64),
+                        new Rect(52, 52, 52 + (int) armWidth, 64),
+                        new Rect(48, 52, 52, 64),
+                        new Rect(52 + (int) armWidth, 52, 56 + (int) armWidth, 64),
+                        new Rect(60, 52, 60 + (int) armWidth, 64),
+                        unit, frontRatio, sideRatio, yaw);
+            }
+
+            // The head is centered on the same avatar root and drawn last, above the torso.
             drawPart(canvas, center, baseY - 32f * unit, 8, 8, 8,
-                    new Rect(8, 8, 16, 16), new Rect(0, 8, 8, 16), new Rect(16, 8, 24, 16),
-                    new Rect(40, 8, 48, 16), new Rect(32, 8, 40, 16), new Rect(48, 8, 56, 16),
+                    new Rect(8, 8, 16, 16), new Rect(0, 8, 8, 16),
+                    new Rect(16, 8, 24, 16), new Rect(24, 8, 32, 16),
+                    new Rect(40, 8, 48, 16), new Rect(32, 8, 40, 16),
+                    new Rect(48, 8, 56, 16), new Rect(56, 8, 64, 16),
                     unit, frontRatio, sideRatio, yaw);
 
             textPaint.setTextAlign(Paint.Align.CENTER);
@@ -745,34 +818,47 @@ public final class SkinManagerActivity extends Activity {
 
         private void drawPart(Canvas canvas, float centerX, float topY, float widthUnits,
                               float heightUnits, float depthUnits, Rect front, Rect sideRight,
-                              Rect sideLeft, Rect overlayFront, Rect overlayRight, Rect overlayLeft,
-                              float unit, float frontRatio, float sideRatio, float yaw) {
+                              Rect sideLeft, Rect back, Rect overlayFront, Rect overlayRight,
+                              Rect overlayLeft, Rect overlayBack, float unit, float frontRatio,
+                              float sideRatio, float yaw) {
             float density = getResources().getDisplayMetrics().density;
+            float sinYaw = (float) Math.sin(yaw);
+            boolean frontFacing = Math.cos(yaw) >= 0f;
+            boolean showRightSide = sinYaw >= 0f;
             float frontWidth = widthUnits * unit * frontRatio;
             float sideWidth = depthUnits * unit * sideRatio;
-            boolean showRightSide = yaw >= 0f;
-            float shift = showRightSide ? -sideWidth / 2f : sideWidth / 2f;
-            float left = centerX - frontWidth / 2f + shift;
             float height = heightUnits * unit;
-            RectF frontDst = new RectF(left, topY, left + frontWidth, topY + height);
-            RectF sideDst = null;
+
+            // A back face lies on the opposite side of the same rotated cuboid.
+            Rect visibleFace = frontFacing ? front : back;
+            Rect visibleOverlayFace = frontFacing ? overlayFront : overlayBack;
             Rect sideSource = showRightSide ? sideRight : sideLeft;
             Rect overlaySideSource = showRightSide ? overlayRight : overlayLeft;
+
+            // Front/back face centers shift by half the projected depth. The side face joins
+            // the correct edge, based on the same root yaw, so the cube stays connected.
+            float sideSign = sinYaw >= 0f ? 1f : -1f;
+            float faceShift = (frontFacing ? -1f : 1f) * sideSign * sideWidth * 0.5f;
+            float left = centerX + faceShift - frontWidth * 0.5f;
+            RectF faceDst = new RectF(left, topY, left + frontWidth, topY + height);
+            boolean sideToRight = showRightSide == frontFacing;
+            RectF sideDst = null;
             if (sideWidth > 0.8f * density) {
-                sideDst = showRightSide
-                        ? new RectF(frontDst.right, topY, frontDst.right + sideWidth, topY + height)
-                        : new RectF(frontDst.left - sideWidth, topY, frontDst.left, topY + height);
+                sideDst = sideToRight
+                        ? new RectF(faceDst.right, topY, faceDst.right + sideWidth, topY + height)
+                        : new RectF(faceDst.left - sideWidth, topY, faceDst.left, topY + height);
                 bitmapPaint.setColorFilter(sidePaint.getColorFilter());
                 canvas.drawBitmap(skin, sideSource, sideDst, bitmapPaint);
                 bitmapPaint.setColorFilter(null);
             }
-            canvas.drawBitmap(skin, front, frontDst, bitmapPaint);
-            // Outer layer (hat, jacket, sleeves and trousers) is transparent in the PNG.
-            if (overlayFront != null) {
+            canvas.drawBitmap(skin, visibleFace, faceDst, bitmapPaint);
+
+            // Outer-layer cubes (hat, jacket, sleeves, trousers) follow the same projection.
+            if (visibleOverlayFace != null) {
                 float inflate = 0.8f * density;
-                RectF overlayDst = new RectF(frontDst.left - inflate, frontDst.top - inflate,
-                        frontDst.right + inflate, frontDst.bottom + inflate);
-                canvas.drawBitmap(skin, overlayFront, overlayDst, bitmapPaint);
+                RectF overlayDst = new RectF(faceDst.left - inflate, faceDst.top - inflate,
+                        faceDst.right + inflate, faceDst.bottom + inflate);
+                canvas.drawBitmap(skin, visibleOverlayFace, overlayDst, bitmapPaint);
                 if (sideDst != null && overlaySideSource != null) {
                     RectF overlaySideDst = new RectF(sideDst.left - inflate, sideDst.top - inflate,
                             sideDst.right + inflate, sideDst.bottom + inflate);
@@ -784,7 +870,7 @@ public final class SkinManagerActivity extends Activity {
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(0.45f * density);
             paint.setColor(0x5520182e);
-            canvas.drawRect(frontDst, paint);
+            canvas.drawRect(faceDst, paint);
             paint.setStyle(Paint.Style.FILL);
         }
 
@@ -796,7 +882,9 @@ public final class SkinManagerActivity extends Activity {
                 case MotionEvent.ACTION_MOVE:
                     float x = event.getX();
                     yaw += (x - previousX) / Math.max(1f, getWidth()) * 4.0f;
-                    yaw = Math.max(-1.0f, Math.min(1.0f, yaw));
+                    float fullTurn = (float) (Math.PI * 2.0);
+                    yaw %= fullTurn;
+                    if (yaw < 0f) yaw += fullTurn;
                     previousX = x;
                     invalidate();
                     return true;
