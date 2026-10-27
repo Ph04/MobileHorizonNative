@@ -446,6 +446,39 @@ final class UiLanguage {
         pair(" detectada, mas nenhum pacote Android ARM64 verificado está disponível. ", " detected, but no verified Android ARM64 package is available. ");
         pair("Runtime ativado para a próxima inicialização: PC ", "Runtime activated for the next launch: PC ");
         pair("O Android não abriu o arquivo de destino.", "Android could not open the destination file.");
+        pair("Recolher ", "Collapse ");
+        pair("Expandir ", "Expand ");
+        pair("Preparando leitura do arquivo ZIP…", "Preparing ZIP file for reading…");
+        pair("Analisando a pasta selecionada…", "Analyzing selected folder…");
+        pair("Arquivos: ", "Files: ");
+        pair("Dados copiados: ", "Data copied: ");
+        pair("Item: ", "Item: ");
+        pair("Contagem: ", "Count: ");
+        pair("Arquivo atual: ", "Current file: ");
+        pair("Total conhecido: ", "Known total: ");
+        pair("Etapa: ", "Stage: ");
+        pair("Download", "Download");
+        pair("Preparação", "Preparation");
+        pair("Login Microsoft", "Microsoft sign-in");
+        pair("Conta verificada: ", "Verified account: ");
+        pair("\nA licença foi verificada durante o último login.", "\nThe license was verified during the last sign-in.");
+        pair("não definido", "not set");
+        pair("Destino: files/minecraft\nBibliotecas: ", "Destination: files/minecraft\nLibraries: ");
+        pair("\nAssets baixados: ", "\nAssets downloaded: ");
+        pair("\nAssets completos: ainda não baixados", "\nAssets complete: not downloaded yet");
+        pair("\nSHA-1 do JSON: ", "\nJSON SHA-1: ");
+        pair("Padrão", "Default");
+        pair("Tecla personalizada", "Custom key");
+        pair("Scroll para cima", "Scroll up");
+        pair("Scroll para baixo", "Scroll down");
+        pair("Texto em fonte Minecraft", "Minecraft-font text");
+        pair("Texto do botão", "Button label");
+        pair("Atualizar sessão Microsoft", "Refresh Microsoft session");
+        pair("Entrar com Microsoft", "Sign in with Microsoft");
+        pair("Nenhuma conta verificada neste dispositivo.", "No account has been verified on this device.");
+        pair(" ativado", " enabled");
+        pair(" desativado", " disabled");
+        pair("A mudança será aplicada quando o Minecraft iniciar novamente.", "The change will apply the next time Minecraft starts.");
     }
 
     private UiLanguage() { }
