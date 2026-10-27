@@ -120,7 +120,14 @@ fn launcher_assets(
 
 old_call = "let (store, index) = launcher_assets(&manifest, &minecraft)?;"
 new_call = "let (store, index) = launcher_assets(&lock, &manifest, &minecraft, log)?;"
-if new_call not in sounds:
+# Horizon v0.2.81 already contains the newer, equivalent loader. Keep the legacy backport
+# for older pinned sources, but do not require replacing its modern GameFiles/cache API.
+upstream_asset_loader = (
+    "files: &artifacts::GameFiles" in sounds
+    and "cached_index: &Path" in sounds
+    and "let (store, index, bytes) = launcher_assets(" in sounds
+)
+if new_call not in sounds and not upstream_asset_loader:
     sounds = replace_once(sounds, old_call, new_call, "sounds.rs launcher_assets call")
 
 old_sounds = 'copy_assets(root, minecraft, log, is_sound, "Sound", &[])'
@@ -139,7 +146,14 @@ path.write_text(sounds, encoding="utf-8")
 # Final invariants: fail the Android build if the backport only partly applied.
 if "asset_index_accepted" not in artifacts:
     artifacts = (root / "crates/horizon-prepare/src/artifacts.rs").read_text(encoding="utf-8")
-if "asset_index_accepted" not in artifacts or new_call not in sounds or new_sounds not in sounds:
+upstream_asset_loader = (
+    "files: &artifacts::GameFiles" in sounds
+    and "cached_index: &Path" in sounds
+    and "let (store, index, bytes) = launcher_assets(" in sounds
+)
+if ("asset_index_accepted" not in artifacts
+        or (new_call not in sounds and not upstream_asset_loader)
+        or new_sounds not in sounds):
     raise SystemExit("Asset-index compatibility backport did not fully apply")
 checked_lock = json.loads((root / "research-lock.json").read_text(encoding="utf-8"))
 if not all(h in checked_lock["minecraft"]["accepted_asset_index_sha1"] for h in accepted):
