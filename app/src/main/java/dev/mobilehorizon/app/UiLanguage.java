@@ -431,6 +431,22 @@ final class UiLanguage {
         pair("Arquivo baixado e SHA-256 verificado.", "File downloaded and SHA-256 verified.");
         pair("O download excedeu o tamanho esperado.", "Download exceeded the expected size.");
         pair("SHA-256 do asset baixado não confere.", "Downloaded asset SHA-256 does not match.");
+        // Last missing fragments discovered while auditing status and diagnostics.
+        pair("O serviço concluiu e validou a árvore de recursos.", "The service completed and validated the resource tree.");
+        pair("Controles Touch salvos", "Touch controls saved");
+        pair("% · sensibilidade: ", "% · sensitivity: ");
+        pair("%. Os ajustes serão aplicados na próxima abertura do jogo.", "%. Changes will be applied the next time the game opens.");
+        pair("A autenticação não foi concluída.", "Authentication was not completed.");
+        pair("\n\nA sessão será renovada e a licença será checada novamente.", "\n\nThe session will be renewed and the license checked again.");
+        pair("Copiando o ZIP para o local escolhido…", "Copying the ZIP to the selected location…");
+        pair("O Android não abriu o arquivo de destino.", "Android could not open the destination file.");
+        pair("Falha ao salvar o diagnóstico", "Failed to save diagnostics");
+        pair(". O jogo pode ser iniciado.", ". The game can now be started.");
+        pair(". A próxima verificação atualizará para ", ". The next check will update to ");
+        pair(" A versão instalada será mantida e o launcher continuará verificando ", " The installed version will be kept while the launcher continues checking ");
+        pair(" detectada, mas nenhum pacote Android ARM64 verificado está disponível. ", " detected, but no verified Android ARM64 package is available. ");
+        pair("Runtime ativado para a próxima inicialização: PC ", "Runtime activated for the next launch: PC ");
+        pair("O Android não abriu o arquivo de destino.", "Android could not open the destination file.");
     private UiLanguage() { }
 
     private static void pair(String portuguese, String english) {
