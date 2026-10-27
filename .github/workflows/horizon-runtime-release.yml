@@ -1,15 +1,15 @@
 name: Publish Android Horizon runtime
 
 # Resolve Horizon's latest stable release on every run; the Android runtime is published independently from APK releases.
-# A push to this workflow deliberately forces a fresh resolution/build when upstream advances (latest verified upstream: v0.2.75).
+# A push to this workflow deliberately forces a fresh resolution/build when upstream advances (latest verified upstream: v0.2.76).
 # Prevent two publication runs from resolving "missing" for the same tag and racing at upload.
 concurrency:
   group: horizon-runtime-artifact-build
   cancel-in-progress: false
 
+# Schedules must live on the default branch; scheduled-horizon-runtime.yml on main
+# calls this reusable workflow with the active runtime overlay branch.
 on:
-  schedule:
-    - cron: "17 * * * *"
   workflow_call:
     inputs:
       source_ref:
