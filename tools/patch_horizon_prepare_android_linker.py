@@ -64,30 +64,65 @@ fn javac_command(javac: &Path, java: &Path) -> Command {
 }
 
 '''
-marker = '/// The major version `javac -version` reports'
+markers = [
+    '/// The major version `javac -version` reports',
+    '/// The major version `javac -version` or `java -version` reports',
+]
 if "fn java_command(java: &Path) -> Command {" not in source:
-    if source.count(marker) != 1:
-        raise SystemExit("Pinned java.rs changed: expected one javac version marker")
+    matched_markers = [marker for marker in markers if source.count(marker) == 1]
+    if len(matched_markers) != 1:
+        raise SystemExit("Pinned java.rs changed: expected one supported Java version marker")
+    marker = matched_markers[0]
     source = source.replace(marker, helpers + marker, 1)
 
-source = replace_one_compatible(
-    source,
-    "fn javac_major(javac: &Path) -> Result<u32, String> {",
-    "fn javac_major(javac: &Path, java: &Path) -> Result<u32, String> {",
-    "javac_major signature",
-)
-source = replace_one_compatible(
-    source,
-    "    let output = command(javac)\n        .arg(\"-version\")",
-    "    let output = javac_command(javac, java)\n        .arg(\"-version\")",
-    "javac version invocation",
-)
-source = replace_one_compatible(
-    source,
-    "        match javac_major(&javac) {",
-    "        match javac_major(&javac, &java) {",
-    "javac_major call",
-)
+legacy_signature = "fn javac_major(javac: &Path) -> Result<u32, String> {"
+current_signature = "fn tool_major(program: &Path, name: &str) -> Result<u32, String> {"
+patched_current_signature = "fn tool_major(program: &Path, name: &str, java: &Path) -> Result<u32, String> {"
+
+if legacy_signature in source or "fn javac_major(javac: &Path, java: &Path) -> Result<u32, String> {" in source:
+    # Older Horizon source used a javac-only probe.
+    source = replace_one_compatible(
+        source,
+        legacy_signature,
+        "fn javac_major(javac: &Path, java: &Path) -> Result<u32, String> {",
+        "javac_major signature",
+    )
+    source = replace_one_compatible(
+        source,
+        "    let output = command(javac)\\n        .arg(\\\"-version\\\")",
+        "    let output = javac_command(javac, java)\\n        .arg(\\\"-version\\\")",
+        "javac version invocation",
+    )
+    source = replace_one_compatible(
+        source,
+        "        match javac_major(&javac) {",
+        "        match javac_major(&javac, &java) {",
+        "javac_major call",
+    )
+elif current_signature in source or patched_current_signature in source:
+    # Newer Horizon probes both tools through tool_major(); route both probes through
+    # the Android linker without disturbing its newer cross-platform JDK search logic.
+    source = replace_one_compatible(
+        source,
+        current_signature,
+        patched_current_signature,
+        "tool_major signature",
+    )
+    source = replace_one_compatible(
+        source,
+        "    let output = command(program)\\n        .arg(\\\"-version\\\")",
+        "    let output = (if name == \\\"javac\\\" {\\n        javac_command(program, java)\\n    } else {\\n        java_command(program)\\n    })\\n        .arg(\\\"-version\\\")",
+        "Java tool version invocation",
+    )
+    source = replace_one_compatible(
+        source,
+        "                let found = tool_major(program, name)?;",
+        "                let found = tool_major(program, name, &java)?;",
+        "tool_major call",
+    )
+else:
+    raise SystemExit("Pinned java.rs changed: expected a supported javac/tool_major probe")
+
 source = replace_one_compatible(
     source,
     "        let mut command = command(&self.javac);",
@@ -100,6 +135,5 @@ source = replace_one_compatible(
     "        let mut command = java_command(&self.java);",
     "Jdk::java invocation",
 )
-
 path.write_text(source, encoding="utf-8")
 print("Patched Horizon Java launcher for Android while preserving upstream JDK discovery logic.")
