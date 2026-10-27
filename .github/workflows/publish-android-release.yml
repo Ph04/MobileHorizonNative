@@ -58,8 +58,7 @@ jobs:
           }
 
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "::error::Release ${RELEASE_TAG} already exists; refusing to overwrite a published release."
-            exit 1
+            echo "Release ${RELEASE_TAG} already exists; the publication step will update its metadata."
           fi
 
           # Create the tag independently so the release API can bind to this exact commit
@@ -140,12 +139,19 @@ jobs:
           MobileHorizonNative é um projeto Android independente e não oficial baseado em Horizon. Minecraft e Horizon mantêm seus próprios créditos e licenças; o projeto não é afiliado à Mojang Studios nem à Microsoft.
           NOTES
 
-          gh release create "${RELEASE_TAG}" \
-            "${RUNNER_TEMP}/mobilehorizon-release/MobileHorizonNative-0.3.28.apk" \
-            "${RUNNER_TEMP}/mobilehorizon-release/SHA256SUMS.txt" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "MobileHorizonNative 0.3.24" \
-            --notes-file "${RUNNER_TEMP}/release-notes.md"
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "MobileHorizonNative 0.3.28" \
+              --notes-file "${RUNNER_TEMP}/release-notes.md"
+          else
+            gh release create "${RELEASE_TAG}" \
+              "${RUNNER_TEMP}/mobilehorizon-release/MobileHorizonNative-0.3.28.apk" \
+              "${RUNNER_TEMP}/mobilehorizon-release/SHA256SUMS.txt" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "MobileHorizonNative 0.3.28" \
+              --notes-file "${RUNNER_TEMP}/release-notes.md"
+          fi
 
           RELEASE_URL="$(gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --json url --jq '.url')"
           echo "Published: ${RELEASE_URL}" >> "${GITHUB_STEP_SUMMARY}"
