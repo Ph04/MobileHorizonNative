@@ -40,7 +40,7 @@ public final class HorizonRuntimeUpdateService {
     private static final String RELEASES_URL =
             "https://api.github.com/repos/Ph04/MobileHorizonNative/releases?per_page=100";
     private static final String OFFICIAL_RELEASE_URL =
-            "https://api.github.com/repos/ludovic111/horizon/releases/latest";
+            "https://api.github.com/repositories/1403446451/releases/latest";
     private static final String TAG_PREFIX = "horizon-runtime-";
     private static final String ENGINE_ASSET = "horizon-runtime-arm64-v8a.so";
     private static final String TEST_FIXTURE_TAG = "horizon-runtime-update-test";
@@ -52,7 +52,7 @@ public final class HorizonRuntimeUpdateService {
     private static final String PREFERENCES = "horizon_runtime_updates";
     private static final String LAST_CHECK = "last_check_ms";
     private static final String LAST_STATUS = "last_status";
-    private static final long CHECK_INTERVAL_MS = 30L * 60L * 1000L;
+    private static final long CHECK_INTERVAL_MS = 5L * 60L * 1000L;
     private static final long MAX_DOWNLOAD_BYTES = 300L * 1024L * 1024L;
 
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
@@ -266,12 +266,15 @@ public final class HorizonRuntimeUpdateService {
                     "Consultando o release oficial mais recente do Horizon…", 0L, -1L);
             try {
                 official = latestOfficialRelease();
+                Log.i(TAG, "Release oficial do Horizon detectada: " + official.tag
+                        + " (publicada em " + official.publishedAt + ").");
                 preferences.edit()
                         .putString(OFFICIAL_LATEST_TAG, official.tag)
                         .putLong(OFFICIAL_CHECKED_AT, System.currentTimeMillis())
                         .apply();
             } catch (Exception error) {
-                Log.w(TAG, "Não foi possível consultar o release oficial do Horizon.", error);
+                Log.w(TAG, "Não foi possível consultar o release oficial do Horizon em "
+                        + OFFICIAL_RELEASE_URL + "; a próxima tentativa automática será em até cinco minutos.", error);
             }
         }
 
