@@ -1802,7 +1802,14 @@ final class NativeTouchControlsView extends View {
         Spinner function = new Spinner(activity);
         ArrayAdapter<String> functionAdapter = new ArrayAdapter<>(activity,
                 android.R.layout.simple_spinner_item,
-                new String[]{"Padrão", "Tecla personalizada", "Clique esquerdo", "Clique direito", "Scroll para cima", "Scroll para baixo"});
+                new String[]{
+                        UiLanguage.translate(activity, "Padrão"),
+                        UiLanguage.translate(activity, "Tecla personalizada"),
+                        UiLanguage.translate(activity, "Clique esquerdo"),
+                        UiLanguage.translate(activity, "Clique direito"),
+                        UiLanguage.translate(activity, "Scroll para cima"),
+                        UiLanguage.translate(activity, "Scroll para baixo")
+                });
         functionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         function.setAdapter(functionAdapter);
         function.setSelection(clampFunction(currentFunction));
@@ -1838,7 +1845,8 @@ final class NativeTouchControlsView extends View {
             label.setTextSize(12);
             label.setTextColor(Color.WHITE);
             label.setHintTextColor(0xffaeb9cb);
-            label.setHint(classicButtonsEnabled ? "Texto em fonte Minecraft" : "Texto do botão");
+            label.setHint(UiLanguage.translate(activity,
+                    classicButtonsEnabled ? "Texto em fonte Minecraft" : "Texto do botão"));
             label.setPadding(dpInt(7), 0, dpInt(7), 0);
             label.setText(custom.label);
             label.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff7e91ad));
