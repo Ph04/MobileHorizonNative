@@ -240,8 +240,7 @@ replace_once(startup_menu,
 
     pub(super) fn menu_event(""")
 
-replace_once(lib, 'pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;',
-'''pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+android_runtime_api = '''pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Clone, Debug)]
 pub enum AndroidInjectedInput {
@@ -365,7 +364,22 @@ pub fn android_app() -> Result<winit::platform::android::activity::AndroidApp> {
             std::io::Error::new(std::io::ErrorKind::NotConnected, "Android NativeActivity is not initialized").into()
         })
     })
-}''')
+}'''
+legacy_result_alias = 'pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;'
+core_result_alias = 'pub use horizon_client_core::Result;'
+lib_source = lib.read_text(encoding="utf-8")
+if lib_source.count(legacy_result_alias) == 1:
+    # Horizon <= v0.2.75 defined the result alias locally; insert Android bridge here.
+    replace_once(lib, legacy_result_alias, android_runtime_api)
+elif lib_source.count(core_result_alias) == 1:
+    # v0.2.76 moved Result into horizon-client-core; preserve that public re-export.
+    android_runtime_additions = android_runtime_api.split("\n\n", 1)[1]
+    replace_once(lib, core_result_alias, core_result_alias + "\n\n" + android_runtime_additions)
+else:
+    raise SystemExit(
+        f"{lib}: expected one supported Result export (legacy alias or horizon_client_core re-export); "
+        f"found legacy={lib_source.count(legacy_result_alias)}, core={lib_source.count(core_result_alias)}"
+    )
 
 replace_once(hud,
     'pub static GUI_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);',
