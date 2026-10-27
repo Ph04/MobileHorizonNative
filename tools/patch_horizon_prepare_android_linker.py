@@ -89,8 +89,8 @@ if legacy_signature in source or "fn javac_major(javac: &Path, java: &Path) -> R
     )
     source = replace_one_compatible(
         source,
-        "    let output = command(javac)\\n        .arg(\\\"-version\\\")",
-        "    let output = javac_command(javac, java)\\n        .arg(\\\"-version\\\")",
+        "    let output = command(javac)\n        .arg(\"-version\")",
+        "    let output = javac_command(javac, java)\n        .arg(\"-version\")",
         "javac version invocation",
     )
     source = replace_one_compatible(
@@ -110,8 +110,8 @@ elif current_signature in source or patched_current_signature in source:
     )
     source = replace_one_compatible(
         source,
-        "    let output = command(program)\\n        .arg(\\\"-version\\\")",
-        "    let output = (if name == \\\"javac\\\" {\\n        javac_command(program, java)\\n    } else {\\n        java_command(program)\\n    })\\n        .arg(\\\"-version\\\")",
+        "    let output = command(program)\n        .arg(\"-version\")",
+        "    let output = (if name == \"javac\" {\n        javac_command(program, java)\n    } else {\n        java_command(program)\n    })\n        .arg(\"-version\")",
         "Java tool version invocation",
     )
     source = replace_one_compatible(
