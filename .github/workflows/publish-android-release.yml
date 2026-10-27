@@ -17,6 +17,9 @@ concurrency:
 
 jobs:
   publish:
+    permissions:
+      contents: write
+      actions: read
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
@@ -87,15 +90,14 @@ jobs:
             echo "### Verified APK"
             echo
             echo "- Version: 0.3.24 (versionCode 27)"
-            echo "- Source commit: `${SOURCE_SHA}`"
-            echo "- Source workflow: [`${SOURCE_RUN_ID}`](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID})"
-            echo "- Artifact: `${ARTIFACT_NAME}`"
+            echo "- Source commit: ${SOURCE_SHA}"
+            echo "- Source workflow: [${SOURCE_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID})"
+            echo "- Artifact: ${ARTIFACT_NAME}"
             echo "- ZIP integrity: passed"
             echo "- SHA-256:"
             echo
-            echo "```"
+            printf '%s\n' '---' 'SHA-256 checksum file:' 
             cat SHA256SUMS.txt
-            echo "```"
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Publish GitHub Release
@@ -128,7 +130,7 @@ jobs:
             "${RUNNER_TEMP}/mobilehorizon-release/SHA256SUMS.txt" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${SOURCE_SHA}" \
-            --title "MobileHorizonNative 0.3.16" \
+            --title "MobileHorizonNative 0.3.24" \
             --notes-file "${RUNNER_TEMP}/release-notes.md"
 
           RELEASE_URL="$(gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --json url --jq '.url')"
