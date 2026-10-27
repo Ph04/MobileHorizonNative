@@ -301,7 +301,7 @@ public final class MainActivity extends Activity {
                 HorizonRuntimeUpdateService.progressTotal(this));
         if (runtimePcReleaseText != null) {
             runtimePcReleaseText.setText(UiLanguage.translate(this, "Release de PC acompanhada: ") +
-                    + HorizonRuntimeUpdateService.pcReleaseLabel(this));
+                     HorizonRuntimeUpdateService.pcReleaseLabel(this));
         }
         if (runtimeOfficialReleaseText != null) {
             runtimeOfficialReleaseText.setText(
@@ -345,8 +345,8 @@ public final class MainActivity extends Activity {
                     runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Verificando a integridade do arquivo baixado…"));
                 } else if (total > 0L) {
                     int percent = (int) Math.max(0L, Math.min(100L, bytes * 100L / total));
-                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Transferido: ") + formatBytes(bytes) + UiLanguage.translate(this, " de ") + 
-                            + formatBytes(total) + "  •  " + percent + "%");
+                    runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Transferido: ") + formatBytes(bytes) + UiLanguage.translate(this, " de ") +
+                             formatBytes(total) + "  •  " + percent + "%");
                 } else if ("checking-official".equals(phase)) {
                     runtimeUpdateProgressDetails.setText(UiLanguage.translate(this, "Consultando a versão oficial do Horizon…"));
                 } else if ("checking-runtime".equals(phase)) {
@@ -994,7 +994,7 @@ public final class MainActivity extends Activity {
                     + "\n\nA verificação cobre esta etapa de importação. Ela não certifica compatibilidade gráfica nem inicialização de um motor.");
         } catch (Throwable error) {
             compatibilityText.setText(UiLanguage.translate(this, "A verificação detalhada da camada de compatibilidade não foi concluída: ") +
-                    + safeMessage(error));
+                     safeMessage(error));
         }
     }
 
@@ -1513,7 +1513,7 @@ public final class MainActivity extends Activity {
             progressBar.setVisibility(View.VISIBLE);
             progressBar.setProgress(1000);
             progressDetails.setText(UiLanguage.translate(this, "Plano: .local/horizon-input/26.3/conversion-plan.json") +
-                    + "\nExportações diretas: .local/horizon-input/26.3/direct-export"
+                     "\nExportações diretas: .local/horizon-input/26.3/direct-export"
                     + "\nBibliotecas SHA-1 verificadas: " + report.verifiedLibraries
                     + "\nAssets íntegros: " + report.presentAssetObjects + " / " + report.uniqueAssets
                     + "\nArquivos extraídos do cliente: " + report.extractedClientFiles
@@ -1714,7 +1714,7 @@ public final class MainActivity extends Activity {
         panel.addView(size, params(-1, -2));
         size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                sizeLabel.setText(UiLanguage.translate(this, "Tamanho dos controles: ") + (70 + progress) + "%");
+                sizeLabel.setText(UiLanguage.translate(MainActivity.this, "Tamanho dos controles: ") + (70 + progress) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
@@ -1732,7 +1732,7 @@ public final class MainActivity extends Activity {
         panel.addView(opacity, params(-1, -2));
         opacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                opacityLabel.setText(UiLanguage.translate(this, "Opacidade: ") + (35 + progress) + "%");
+                opacityLabel.setText(UiLanguage.translate(MainActivity.this, "Opacidade: ") + (35 + progress) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
@@ -1750,7 +1750,7 @@ public final class MainActivity extends Activity {
         panel.addView(sensitivity, params(-1, -2));
         sensitivity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
-                sensitivityLabel.setText(UiLanguage.translate(this, "Sensibilidade da câmera: ") + (50 + progress) + "%");
+                sensitivityLabel.setText(UiLanguage.translate(MainActivity.this, "Sensibilidade da câmera: ") + (50 + progress) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
