@@ -1,7 +1,7 @@
 name: Publish Android Horizon runtime
 
 # Resolve Horizon's latest stable release on every run; the Android runtime is published independently from APK releases.
-# A push to this workflow deliberately forces a fresh resolution/build when upstream advances (latest verified upstream: v0.2.76).
+# A push to this workflow forces a fresh resolution/build; publish races re-queue the default-branch scheduler.
 # Prevent two publication runs from resolving "missing" for the same tag and racing at upload.
 concurrency:
   group: horizon-runtime-artifact-build
@@ -232,6 +232,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+      actions: write
     steps:
       - name: Checkout MobileHorizonNative overlay
         uses: actions/checkout@v4
@@ -368,11 +369,34 @@ jobs:
           selected_tag = os.environ["UPSTREAM_TAG"]
           if (release.get("draft") or release.get("prerelease")
                   or latest_tag != selected_tag):
-              raise SystemExit(
+              message = (
                   "Horizon advanced during the Android runtime build: selected "
                   + selected_tag + ", latest stable is " + latest_tag
-                  + ". Refusing to publish a stale runtime; the next scheduled/push run will resolve it."
+                  + ". Refusing to publish a stale runtime."
               )
+              print("::warning::" + message, flush=True)
+              # Scheduled workflows are only available from the default branch.
+              # Queue a fresh resolution now instead of waiting for the next cron slot.
+              import subprocess
+              dispatch = subprocess.run(
+                  ["gh", "workflow", "run", "scheduled-horizon-runtime.yml",
+                   "--repo", os.environ["GITHUB_REPOSITORY"], "--ref", "main"],
+                  check=False, text=True, capture_output=True,
+              )
+              if dispatch.returncode != 0:
+                  if dispatch.stdout:
+                      print(dispatch.stdout, flush=True)
+                  if dispatch.stderr:
+                      print(dispatch.stderr, flush=True)
+                  raise SystemExit(
+                      message + " Automatic retry dispatch failed; inspect Actions permissions."
+                  )
+              print("Queued a new scheduler run to resolve and build the latest stable release.", flush=True)
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                  summary.write("### Horizon advanced during runtime compilation\n\n")
+                  summary.write(message + "\n\n")
+                  summary.write("A fresh default-branch scheduler run was queued automatically.\n")
+              raise SystemExit(message + " A fresh workflow run was queued automatically.")
           print("Confirmed upstream stable release is still latest:", latest_tag)
           PY
 
