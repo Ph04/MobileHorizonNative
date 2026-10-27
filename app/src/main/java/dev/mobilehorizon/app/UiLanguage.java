@@ -19,12 +19,11 @@ final class UiLanguage {
     private static final Map<String, String> EN_TO_PT = new HashMap<>();
 
     static {
-        pair("READY", "PRONTO");
-        pair("SETUP REQUIRED", "CONFIGURAÇÃO NECESSÁRIA");
-        pair("Resources", "Recursos");
-        pair("READY TO PLAY", "PRONTO PARA JOGAR");
+        pair("PRONTO", "READY");
+        pair("Configuração necessária", "SETUP REQUIRED");
         pair("PRONTO PARA JOGAR", "READY TO PLAY");
-        pair("Status", "Status");
+        pair("Recursos", "Resources");
+        pair("Estado", "Status");
         pair("Gerenciar", "Manage");
         pair("Downloads e preparação", "Downloads & setup");
         pair("Arquivos oficiais do Minecraft 26.3, assets e conversão para o Horizon.", "Official Minecraft 26.3 files, assets, and Horizon preparation.");
@@ -185,6 +184,114 @@ final class UiLanguage {
         pair("Não foi possível abrir o seletor: ", "Could not open picker: ");
         pair("Não foi possível abrir o seletor de pastas: ", "Could not open folder picker: ");
         pair("Cancelar", "Cancel");
+        // Additional UI strings used by progress, diagnostics, resource, and control panels.
+        pair("Preparado para Minecraft ", "Prepared for Minecraft ");
+        pair("Ainda não preparado • baixe e prepare os recursos antes de jogar", "Not prepared yet • download and prepare resources before playing");
+        pair("Nick offline: ", "Offline nickname: ");
+        pair("Nick: ", "Nickname: ");
+        pair("Transferido: ", "Transferred: ");
+        pair(" de ", " of ");
+        pair("Importação em andamento", "Import in progress");
+        pair("Os dados estão sendo copiados para uma área temporária. Você pode cancelar sem substituir a importação anterior.", "Data is being copied to a temporary location. You can cancel without replacing the previous import.");
+        pair("Recursos Horizon importados", "Horizon resources imported");
+        pair("Importação cancelada", "Import canceled");
+        pair("Não foi possível importar", "Import failed");
+        pair("Falha ao solicitar cancelamento", "Could not request cancellation");
+        pair("Baixando Minecraft e assets completos", "Downloading Minecraft and all assets");
+        pair("Baixando arquivos base oficiais", "Downloading official base files");
+        pair("Não foi possível iniciar o download", "Could not start download");
+        pair("Download oficial em andamento", "Official download in progress");
+        pair("Download oficial concluído", "Official download complete");
+        pair("Download não concluído", "Download incomplete");
+        pair("Verifique a conexão e tente novamente.", "Check your connection and try again.");
+        pair("Conversão completa em andamento", "Full conversion in progress");
+        pair("Não foi possível iniciar a conversão completa", "Could not start full conversion");
+        pair("Preparação em andamento", "Preparation in progress");
+        pair("Não foi possível iniciar a preparação", "Could not start preparation");
+        pair("Conversão Horizon completa validada", "Full Horizon conversion validated");
+        pair("Conversão completa cancelada", "Full conversion canceled");
+        pair("Conversão completa falhou", "Full conversion failed");
+        pair("Preparação cancelada", "Preparation canceled");
+        pair("Preparação para conversão falhou", "Conversion preparation failed");
+        pair("Nick offline salvo", "Offline nickname saved");
+        pair("Nick inválido", "Invalid nickname");
+        pair("Verificando recursos do jogo", "Verifying game resources");
+        pair("Recursos Horizon inválidos", "Invalid Horizon resources");
+        pair("Nenhum jogo foi iniciado.", "No game was started.");
+        pair("Biblioteca Horizon ausente", "Horizon library missing");
+        pair("O APK precisa conter o carregador nativo libhorizon_android.so para ARM64.", "The APK must include the native libhorizon_android.so loader for ARM64.");
+        pair("Iniciando cliente em modo offline", "Starting offline client");
+        pair("Não foi possível iniciar offline", "Could not start offline");
+        pair("Autenticação ainda não configurada", "Authentication not configured yet");
+        pair("Não foi possível ler a sessão salva", "Could not read the saved session");
+        pair("Iniciando autenticação Microsoft…", "Starting Microsoft authentication…");
+        pair("Login Microsoft em andamento", "Microsoft sign-in in progress");
+        pair("A autenticação e a checagem de licença estão sendo feitas pelos serviços oficiais.", "Authentication and license checks are performed by official services.");
+        pair("Código copiado", "Code copied");
+        pair("Conclua o login na página oficial da Microsoft.", "Complete sign-in on Microsoft's official page.");
+        pair("Conta Microsoft verificada", "Microsoft account verified");
+        pair("A conta e os direitos de Java Edition foram verificados.", "The account and Java Edition entitlements have been verified.");
+        pair("Login cancelado", "Sign-in canceled");
+        pair("Login não concluído", "Sign-in incomplete");
+        pair("Conta removida", "Account removed");
+        pair("Falha ao remover conta", "Could not remove account");
+        pair("Verificando sessão antes de iniciar", "Verifying session before launch");
+        pair("Iniciando cliente Horizon", "Starting Horizon client");
+        pair("Não foi possível iniciar o cliente", "Could not start client");
+        pair("Sessão não válida", "Invalid session");
+        pair("Ação indisponível", "Action unavailable");
+        pair("Preparando diagnóstico", "Preparing diagnostics");
+        pair("Não foi possível salvar o diagnóstico", "Could not save diagnostics");
+        pair("Falha ao preparar o diagnóstico", "Failed to prepare diagnostics");
+        pair("Falha ao exportar logs", "Failed to export logs");
+        pair("Relatório temporário ausente", "Temporary report missing");
+        pair("Salvando diagnóstico", "Saving diagnostics");
+        pair("Diagnóstico exportado", "Diagnostics exported");
+        pair("O cliente Horizon não iniciou", "The Horizon client did not start");
+        pair("Cliente Horizon encerrado", "Horizon client closed");
+        pair("Não foi possível ler o resultado do cliente", "Could not read the client result");
+        pair("Renderer Vulkan validado", "Vulkan renderer validated");
+        pair("Teste do renderer falhou", "Renderer test failed");
+        pair("Não foi possível ler o relatório Vulkan", "Could not read the Vulkan report");
+        pair("Biblioteca nativa ausente", "Native library missing");
+        pair("Arquitetura não suportada", "Unsupported architecture");
+        pair("Teste Vulkan iniciado", "Vulkan test started");
+        pair("Não foi possível abrir NativeActivity", "Could not open NativeActivity");
+        pair("Preparando runtime Horizon", "Preparing Horizon runtime");
+        pair("Baixando runtime Horizon", "Downloading Horizon runtime");
+        pair("Runtime Horizon pronta", "Horizon runtime ready");
+        pair("Runtime instalada e verificada: ", "Runtime installed and verified: ");
+        pair("Runtime Horizon indisponível", "Horizon runtime unavailable");
+        pair("Runtime pendente", "Runtime pending");
+        pair("Botão: ", "Button: ");
+        pair("Cor do botão", "Button color");
+        pair("Função do botão", "Button action");
+        pair("Ativo", "Active");
+        pair("Ativar", "Enable");
+        pair("Por mundo", "Per world");
+        pair("Azul", "Blue");
+        pair("Roxo", "Purple");
+        pair("Verde", "Green");
+        pair("Laranja", "Orange");
+        pair("Vermelho", "Red");
+        pair("Rosa", "Pink");
+        pair("Ciano", "Cyan");
+        pair("Cinza", "Gray");
+        pair("Clique esquerdo", "Left click");
+        pair("Clique direito", "Right click");
+        pair("Pular", "Jump");
+        pair("Agachar", "Sneak");
+        pair("Corrida (Ctrl)", "Sprint (Ctrl)");
+        pair("Inventário", "Inventory");
+        pair("Soltar item", "Drop item");
+        pair("Mão secundária", "Off-hand");
+        pair("Atacar", "Attack");
+        pair("Usar / colocar", "Use / place");
+        pair("Selecionar bloco", "Pick block");
+        pair("Perspectiva", "Perspective");
+        pair("Retângulo arredondado", "Rounded rectangle");
+        pair("Círculo / oval", "Circle / oval");
+        pair("Quadrado", "Square");
     }
 
     private UiLanguage() { }
@@ -203,8 +310,20 @@ final class UiLanguage {
 
     static String translate(Context context, String value) {
         if (value == null) return null;
-        if (isEnglish(context)) return PT_TO_EN.getOrDefault(value, value);
-        return EN_TO_PT.getOrDefault(value, value);
+        Map<String, String> map = isEnglish(context) ? PT_TO_EN : EN_TO_PT;
+        String exact = map.get(value);
+        if (exact != null) return exact;
+        String bestKey = null;
+        String bestValue = null;
+        for (Map.Entry<String, String> entry : map.entrySet()) {
+            String key = entry.getKey();
+            if (key.length() >= 6 && value.startsWith(key)
+                    && (bestKey == null || key.length() > bestKey.length())) {
+                bestKey = key;
+                bestValue = entry.getValue();
+            }
+        }
+        return bestKey == null ? value : bestValue + value.substring(bestKey.length());
     }
 
     static String switchLabel(Context context) {
