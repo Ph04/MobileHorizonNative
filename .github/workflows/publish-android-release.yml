@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: mobilehorizon-android-release-v0.3.16
+  group: mobilehorizon-android-release-v0.3.24
   cancel-in-progress: false
 
 jobs:
@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_RUN_ID: "40257238112"
-      SOURCE_SHA: "763130662cfd4d9d05f480a30e3790fc690d0f95"
-      RELEASE_TAG: "v0.3.16"
+      SOURCE_RUN_ID: "40445823390"
+      SOURCE_SHA: "14edcae430b876261432ff5719a920fce3e28c25"
+      RELEASE_TAG: "v0.3.24"
       ARTIFACT_NAME: "mobilehorizon-native-offline1-update-safe"
     steps:
       - name: Verify successful source build and release tag availability
@@ -79,14 +79,14 @@ jobs:
 
           APK_PATH="${APKS[0]}"
           unzip -tq "${APK_PATH}"
-          mv "${APK_PATH}" "${RUNNER_TEMP}/mobilehorizon-release/MobileHorizonNative-0.3.16.apk"
+          mv "${APK_PATH}" "${RUNNER_TEMP}/mobilehorizon-release/MobileHorizonNative-0.3.24.apk"
           cd "${RUNNER_TEMP}/mobilehorizon-release"
-          sha256sum "MobileHorizonNative-0.3.16.apk" > SHA256SUMS.txt
+          sha256sum "MobileHorizonNative-0.3.24.apk" > SHA256SUMS.txt
           cat SHA256SUMS.txt
           {
             echo "### Verified APK"
             echo
-            echo "- Version: 0.3.16 (versionCode 19)"
+            echo "- Version: 0.3.24 (versionCode 27)"
             echo "- Source commit: `${SOURCE_SHA}`"
             echo "- Source workflow: [`${SOURCE_RUN_ID}`](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID})"
             echo "- Artifact: `${ARTIFACT_NAME}`"
@@ -103,28 +103,28 @@ jobs:
         run: |
           set -euo pipefail
           cat > "${RUNNER_TEMP}/release-notes.md" <<'NOTES'
-          ## MobileHorizonNative 0.3.16
+          ## MobileHorizonNative 0.3.24
 
-          Esta versão atualiza os controles táteis e simplifica a interface inicial.
+          Esta versão corrige o menu do botão flutuante e remove o gerenciador de skins local para reduzir conflitos no multiplayer.
 
-          ### Controles
-          - Cinza como cor padrão dos botões, com transparência padrão ligeiramente maior.
-          - Removidos os botões predefinidos de seta para alternar os itens da hotbar/inventário.
-          - A zona frontal de corrida do joystick agora é destacada por uma área preenchida em tom mais escuro da cor escolhida, sem o rótulo “RUN” nem o traço verde.
-          - Mantém a personalização de cores, botões predefinidos e personalizados, alternância de ações e corrida automática no limite frontal do joystick.
+          ### Correções
+          - O painel do botão flutuante volta a usar um diálogo pertencente à atividade do jogo, preservando as ações anteriores e mantendo o estilo visual atualizado.
+          - Removida a integração de skins locais e as substituições de textura/modelo do jogador, restaurando o caminho normal de skins do Horizon/servidor.
+          - Mantida a configuração dos controles táteis e as demais funções presentes no build de origem.
 
           ### APK
           - Android ARM64 (arm64-v8a).
-          - Versão Android: 0.3.16 (versionCode 19).
-          - Este APK foi retirado do artefato assinado para atualização segura do workflow de origem; não é uma nova compilação feita pelo workflow de publicação.
-          - Consulte `SHA256SUMS.txt` para verificar o arquivo baixado.
+          - Versão Android: 0.3.24 (versionCode 27).
+          - Extraído do artefato assinado e verificado do build #956, sem recompilar nem substituir o APK por outra versão.
+          - Commit de origem: `14edcae430b876261432ff5719a920fce3e28c25`.
+          - Consulte `SHA256SUMS.txt` para verificar a integridade do APK.
 
           ### Observações
           MobileHorizonNative é um projeto Android independente e não oficial baseado em Horizon. Minecraft e Horizon mantêm seus próprios créditos e licenças; o projeto não é afiliado à Mojang Studios nem à Microsoft.
           NOTES
 
           gh release create "${RELEASE_TAG}" \
-            "${RUNNER_TEMP}/mobilehorizon-release/MobileHorizonNative-0.3.16.apk" \
+            "${RUNNER_TEMP}/mobilehorizon-release/MobileHorizonNative-0.3.24.apk" \
             "${RUNNER_TEMP}/mobilehorizon-release/SHA256SUMS.txt" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${SOURCE_SHA}" \
