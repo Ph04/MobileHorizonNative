@@ -185,8 +185,9 @@ public final class ResourcePreparationService extends Service {
                 : wasCancelled ? "Preparação cancelada" : "Preparação não concluída";
         builder.setSmallIcon(ongoing ? android.R.drawable.stat_sys_download
                         : success ? android.R.drawable.stat_sys_download_done : android.R.drawable.ic_dialog_alert)
-                .setContentTitle(title)
-                .setContentText(progress == null ? "Preparação de recursos vanilla" : compact(progress.stage, progress.detail))
+                .setContentTitle(UiLanguage.translate(this, title))
+                .setContentText(UiLanguage.translate(this,
+                        progress == null ? "Preparação de recursos vanilla" : compact(progress.stage, progress.detail)))
                 .setContentIntent(openIntent)
                 .setOnlyAlertOnce(ongoing)
                 .setOngoing(ongoing)
@@ -196,7 +197,8 @@ public final class ResourcePreparationService extends Service {
             PendingIntent cancelIntent = PendingIntent.getService(this, 13, cancel,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             builder.addAction(new Notification.Action.Builder(
-                    android.R.drawable.ic_menu_close_clear_cancel, "Cancelar", cancelIntent).build());
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    UiLanguage.translate(this, "Cancelar"), cancelIntent).build());
         }
         if (ongoing && progress != null && progress.total > 0) {
             builder.setProgress(progress.total, Math.max(0, Math.min(progress.completed, progress.total)), false);
@@ -247,8 +249,9 @@ public final class ResourcePreparationService extends Service {
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager == null) return;
         NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
-                "Preparação de recursos", NotificationManager.IMPORTANCE_DEFAULT);
-        channel.setDescription("Progresso, cancelamento e conclusão da preparação de recursos vanilla.");
+                UiLanguage.translate(this, "Preparação de recursos"), NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setDescription(UiLanguage.translate(this,
+                "Progresso, cancelamento e conclusão da preparação de recursos vanilla."));
         manager.createNotificationChannel(channel);
     }
 
