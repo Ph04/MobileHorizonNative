@@ -1751,7 +1751,8 @@ final class NativeTouchControlsView extends View {
                     + UiLanguage.translate(activity, shapeNames[chosenShape[0]]));
             shapeButton.setOnClickListener(v -> {
                 chosenShape[0] = (chosenShape[0] + 1) % shapeNames.length;
-                shapeButton.setText(UiLanguage.translate(activity, "Formato: ") + shapeNames[chosenShape[0]]);
+                shapeButton.setText(UiLanguage.translate(activity, "Formato: ")
+                    + UiLanguage.translate(activity, shapeNames[chosenShape[0]]));
             });
             panel.addView(shapeLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
             panel.addView(shapeButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
@@ -1763,7 +1764,8 @@ final class NativeTouchControlsView extends View {
             colorButton.setMinHeight(dpInt(34));
             colorButton.setOnClickListener(v -> {
                 chosenColor[0] = (chosenColor[0] + 1) % BUTTON_COLOR_NAMES.length;
-                colorButton.setText(UiLanguage.translate(activity, "Cor: ") + BUTTON_COLOR_NAMES[chosenColor[0]]);
+                colorButton.setText(UiLanguage.translate(activity, "Cor: ")
+                    + UiLanguage.translate(activity, BUTTON_COLOR_NAMES[chosenColor[0]]));
             });
             TextView colorLabel = miniLabel("Cor do botão", 11, false);
             panel.addView(colorLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
