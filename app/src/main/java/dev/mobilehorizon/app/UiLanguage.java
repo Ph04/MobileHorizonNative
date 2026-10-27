@@ -390,6 +390,47 @@ final class UiLanguage {
         pair("Preparação de recursos vanilla", "Vanilla resource preparation");
         pair("Preparação de recursos", "Resource preparation");
         pair("Progresso, cancelamento e conclusão da preparação de recursos vanilla.", "Progress, cancellation, and completion of vanilla resource preparation.");
+        // Horizon runtime update card, status, and verification progress.
+        pair("Verificando releases e atualizações da runtime Horizon…", "Checking for Horizon runtime releases and updates…");
+        pair("Procurando e baixando a runtime Horizon para Android ARM64…", "Looking for and downloading the Horizon runtime for Android ARM64…");
+        pair("Teste do atualizador: baixada a versão anterior do Horizon PC ", "Updater test: downloaded the previous Horizon PC version ");
+        pair("Consultando o release oficial mais recente do Horizon…", "Checking the latest official Horizon release…");
+        pair("Procurando a runtime Android ARM64 mais recente publicada…", "Looking for the latest published Android ARM64 runtime…");
+        pair("Release oficial ", "Official release ");
+        pair(" detectada, mas a runtime Android ARM64 correspondente ainda não ", " detected, but the matching Android ARM64 runtime has not yet ");
+        pair("foi publicada.", "been published.");
+        pair("A versão instalada será mantida e o launcher continuará verificando ", "The installed version will be kept while the launcher continues checking ");
+        pair("automaticamente até encontrar a runtime exata.", "automatically until the exact runtime is found.");
+        pair("detectada, mas nenhum pacote Android ARM64 verificado está disponível. ", "detected, but no verified Android ARM64 package is available. ");
+        pair("O launcher continuará verificando automaticamente.", "The launcher will keep checking automatically.");
+        pair("Nenhum release Android do Horizon foi encontrado; ", "No Horizon Android release was found; ");
+        pair("a consulta à versão oficial também não foi concluída.", "the official release query also did not complete.");
+        pair("Horizon está atualizado — release PC ", "Horizon is up to date — PC release ");
+        pair("O runtime Android para Horizon PC ", "The Android runtime for Horizon PC ");
+        pair(" foi baixado e verificado; será ativado na próxima abertura do jogo.", " was downloaded and verified; it will activate the next time the game opens.");
+        pair("O runtime Android instalado corresponde à release PC ", "The installed Android runtime matches PC release ");
+        pair(" Não foi possível consultar agora a release oficial mais recente do Horizon.", " The latest official Horizon release could not be checked right now.");
+        pair("Esse runtime foi baixado e verificado e será ativado na próxima ", "This runtime was downloaded and verified and will be activated at the next ");
+        pair("abertura do jogo. O pacote Android da release oficial mais nova ainda ", "game launch. The Android package for the latest official release is still ");
+        pair("não está disponível; o aplicativo continuará verificando automaticamente.", "unavailable; the app will keep checking automatically.");
+        pair("O runtime instalado permanece na versão ", "The installed runtime remains on version ");
+        pair(" até que um pacote Android correspondente à release ", " until an Android package for release ");
+        pair(" seja publicado. O aplicativo continuará verificando automaticamente.", " is published. The app will keep checking automatically.");
+        pair("Runtime Android verificado para o release oficial ", "Android runtime verified for official release ");
+        pair("; será ativado na próxima inicialização do jogo.", "; it will activate the next time the game starts.");
+        pair("Horizon está atualizado — release oficial ", "Horizon is up to date — official release ");
+        pair(" e runtime Android ", " and Android runtime ");
+        pair(" instalado.", " installed.");
+        pair("Baixando manifesto e metadados da runtime…", "Downloading runtime manifest and metadata…");
+        pair("Baixando manifesto da runtime…", "Downloading runtime manifest…");
+        pair("Validando o manifesto e a versão da runtime…", "Validating the runtime manifest and version…");
+        pair("Baixando a runtime Horizon Android ARM64…", "Downloading the Horizon Android ARM64 runtime…");
+        pair("Baixando runtime Horizon…", "Downloading Horizon runtime…");
+        pair("Download concluído. Instalando a runtime verificada…", "Download complete. Installing the verified runtime…");
+        pair("Download concluído. Verificando SHA-256…", "Download complete. Verifying SHA-256…");
+        pair("Arquivo baixado e SHA-256 verificado.", "File downloaded and SHA-256 verified.");
+        pair("O download excedeu o tamanho esperado.", "Download exceeded the expected size.");
+        pair("SHA-256 do asset baixado não confere.", "Downloaded asset SHA-256 does not match.");
     private UiLanguage() { }
 
     private static void pair(String portuguese, String english) {
