@@ -575,7 +575,7 @@ final class NativeTouchControlsView extends View {
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.WHITE);
         Paint.FontMetrics metrics = paint.getFontMetrics();
-        canvas.drawText(spec.label, spec.x, spec.y - (metrics.ascent + metrics.descent) / 2f, paint);
+        canvas.drawText(spec.custom ? spec.label : UiLanguage.translate(activity, spec.label), spec.x, spec.y - (metrics.ascent + metrics.descent) / 2f, paint);
         paint.setFakeBoldText(false);
     }
 
@@ -1235,7 +1235,7 @@ final class NativeTouchControlsView extends View {
     private void showKeyboardDialog() {
         EditText input = new EditText(activity);
         input.setSingleLine(true);
-        input.setHint("Mensagem, comando ou texto…");
+        input.setHint(UiLanguage.translate(activity, "Mensagem, comando ou texto…"));
         input.setTextSize(16);
         input.setTextColor(0xfff5f1ff);
         input.setHintTextColor(0xff918aa9);
@@ -1269,7 +1269,7 @@ final class NativeTouchControlsView extends View {
         iconSurface.setCornerRadius(dp(13));
         iconBox.setBackground(iconSurface);
         TextView icon = new TextView(activity);
-        icon.setText("Aa");
+        icon.setText(UiLanguage.translate(activity, "Aa"));
         icon.setTextColor(Color.WHITE);
         icon.setTextSize(17);
         icon.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
@@ -1280,13 +1280,13 @@ final class NativeTouchControlsView extends View {
         heading.setOrientation(LinearLayout.VERTICAL);
         heading.setPadding(dpInt(12), 0, 0, 0);
         TextView title = new TextView(activity);
-        title.setText("Painel de texto");
+        title.setText(UiLanguage.translate(activity, "Painel de texto"));
         title.setTextColor(0xfff4f0ff);
         title.setTextSize(19);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         heading.addView(title, new LinearLayout.LayoutParams(-1, -2));
         TextView subtitle = new TextView(activity);
-        subtitle.setText("DIGITAÇÃO DO MINECRAFT");
+        subtitle.setText(UiLanguage.translate(activity, "DIGITAÇÃO DO MINECRAFT"));
         subtitle.setTextColor(0xffb9a8ff);
         subtitle.setTextSize(10);
         subtitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
@@ -1297,7 +1297,7 @@ final class NativeTouchControlsView extends View {
         panel.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
         TextView instructions = new TextView(activity);
-        instructions.setText("Digite abaixo e envie para o campo ativo ou para o chat. O texto aparece no jogo depois do envio.");
+        instructions.setText(UiLanguage.translate(activity, "Digite abaixo e envie para o campo ativo ou para o chat. O texto aparece no jogo depois do envio."));
         instructions.setTextColor(0xffb8b1cf);
         instructions.setTextSize(12);
         instructions.setLineSpacing(dp(2), 1f);
@@ -1308,7 +1308,7 @@ final class NativeTouchControlsView extends View {
 
         panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
         TextView helper = new TextView(activity);
-        helper.setText("Use o botão Enviar do teclado ou o botão abaixo.");
+        helper.setText(UiLanguage.translate(activity, "Use o botão Enviar do teclado ou o botão abaixo."));
         helper.setTextColor(0xff8f88a9);
         helper.setTextSize(11);
         LinearLayout.LayoutParams helperParams = new LinearLayout.LayoutParams(-1, -2);
@@ -1322,7 +1322,7 @@ final class NativeTouchControlsView extends View {
         actionsParams.topMargin = dpInt(17);
 
         TextView cancel = new TextView(activity);
-        cancel.setText("Cancelar");
+        cancel.setText(UiLanguage.translate(activity, "Cancelar"));
         cancel.setTextColor(0xffe5dfff);
         cancel.setTextSize(14);
         cancel.setGravity(Gravity.CENTER);
@@ -1337,7 +1337,7 @@ final class NativeTouchControlsView extends View {
         cancel.setFocusable(true);
 
         TextView send = new TextView(activity);
-        send.setText("Enviar  ↑");
+        send.setText(UiLanguage.translate(activity, "Enviar  ↑"));
         send.setTextColor(Color.WHITE);
         send.setTextSize(14);
         send.setGravity(Gravity.CENTER);
@@ -1400,14 +1400,14 @@ final class NativeTouchControlsView extends View {
     private void showAddButtonDialog() {
         EditText label = new EditText(activity);
         label.setSingleLine(true);
-        label.setHint("Texto do botão (ex.: MAP)");
-        label.setText("G");
+        label.setHint(UiLanguage.translate(activity, "Texto do botão (ex.: MAP)"));
+        label.setText(UiLanguage.translate(activity, "G"));
         EditText key = new EditText(activity);
         key.setSingleLine(true);
-        key.setHint("Tecla (ex.: G, SPACE, F6)");
-        key.setText("G");
+        key.setHint(UiLanguage.translate(activity, "Tecla (ex.: G, SPACE, F6)"));
+        key.setText(UiLanguage.translate(activity, "G"));
         android.widget.CheckBox toggle = new android.widget.CheckBox(activity);
-        toggle.setText("Alternância: ativar/desativar");
+        toggle.setText(UiLanguage.translate(activity, "Alternância: ativar/desativar"));
         toggle.setTextColor(0xffeaf0ff);
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -1416,17 +1416,17 @@ final class NativeTouchControlsView extends View {
         panel.addView(key, new LinearLayout.LayoutParams(-1, -2));
         panel.addView(toggle, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle("Adicionar botão")
-                .setMessage("Escolha entre manter a tecla pressionada enquanto segura ou alternar entre ativar e desativar.")
+                .setTitle(UiLanguage.translate(activity, "Adicionar botão"))
+                .setMessage(UiLanguage.translate(activity, "Escolha entre manter a tecla pressionada enquanto segura ou alternar entre ativar e desativar."))
                 .setView(panel)
-                .setNegativeButton("Cancelar", (d, which) -> { })
-                .setPositiveButton("Adicionar", null)
+                .setNegativeButton(UiLanguage.translate(activity, "Cancelar"), (d, which) -> { })
+                .setPositiveButton(UiLanguage.translate(activity, "Adicionar"), null)
                 .create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String caption = label.getText().toString().trim();
             int keyCode = parseKeyCode(key.getText().toString());
             if (caption.isEmpty() || caption.length() > 7 || keyCode == KeyEvent.KEYCODE_UNKNOWN) {
-                Toast.makeText(activity, "Informe um nome curto e uma tecla válida.", Toast.LENGTH_LONG).show();
+                Toast.makeText(activity, UiLanguage.translate(activity, "Informe um nome curto e uma tecla válida."), Toast.LENGTH_LONG).show();
                 return;
             }
             int id = CUSTOM_BUTTON_START;
@@ -1446,7 +1446,7 @@ final class NativeTouchControlsView extends View {
 
     private TextView miniLabel(String value, int size, boolean bold) {
         TextView label = new TextView(activity);
-        label.setText(value);
+        label.setText(UiLanguage.translate(activity, value));
         label.setTextColor(0xffeaf0ff);
         label.setTextSize(size);
         if (bold) label.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
@@ -1464,6 +1464,8 @@ final class NativeTouchControlsView extends View {
 
     private View createGameMenuItem(String symbol, String titleText, String subtitleText,
                                     boolean danger, Runnable action) {
+        titleText = UiLanguage.translate(activity, titleText);
+        subtitleText = UiLanguage.translate(activity, subtitleText);
         LinearLayout row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -1513,7 +1515,7 @@ final class NativeTouchControlsView extends View {
         row.addView(copy, copyParams);
 
         TextView arrow = new TextView(activity);
-        arrow.setText("›");
+        arrow.setText(UiLanguage.translate(activity, "›"));
         arrow.setTextColor(danger ? 0xffe7a4b6 : 0xff7887a6);
         arrow.setTextSize(25);
         arrow.setGravity(Gravity.CENTER);
@@ -1547,7 +1549,7 @@ final class NativeTouchControlsView extends View {
         header.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView logo = new TextView(activity);
-        logo.setText("MH");
+        logo.setText(UiLanguage.translate(activity, "MH"));
         logo.setTextColor(Color.WHITE);
         logo.setTextSize(15);
         logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -1562,13 +1564,13 @@ final class NativeTouchControlsView extends View {
         brand.setOrientation(LinearLayout.VERTICAL);
         brand.setGravity(Gravity.CENTER_VERTICAL);
         TextView brandName = new TextView(activity);
-        brandName.setText("MOBILEHORIZON");
+        brandName.setText(UiLanguage.translate(activity, "MOBILEHORIZON"));
         brandName.setTextColor(0xffb9adff);
         brandName.setTextSize(10);
         brandName.setLetterSpacing(0.08f);
         brandName.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         TextView menuTitle = new TextView(activity);
-        menuTitle.setText("Menu do jogo");
+        menuTitle.setText(UiLanguage.translate(activity, "Menu do jogo"));
         menuTitle.setTextColor(0xfff6f7ff);
         menuTitle.setTextSize(18);
         menuTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -1581,7 +1583,7 @@ final class NativeTouchControlsView extends View {
         header.addView(brand, brandParams);
 
         TextView close = new TextView(activity);
-        close.setText("×");
+        close.setText(UiLanguage.translate(activity, "×"));
         close.setTextSize(25);
         close.setTextColor(0xffd8deed);
         close.setGravity(Gravity.CENTER);
@@ -1589,7 +1591,7 @@ final class NativeTouchControlsView extends View {
         closeBackground.setColor(0xff263148);
         closeBackground.setCornerRadius(dp(12));
         close.setBackground(closeBackground);
-        close.setContentDescription("Fechar menu");
+        close.setContentDescription(UiLanguage.translate(activity, "Fechar menu"));
         close.setOnClickListener(v -> dismissGameControlMenu());
         header.addView(close, new LinearLayout.LayoutParams(dpInt(38), dpInt(38)));
         panel.addView(header, new LinearLayout.LayoutParams(-1, dpInt(46)));
@@ -1602,7 +1604,8 @@ final class NativeTouchControlsView extends View {
         panel.addView(divider, dividerParams);
 
         TextView sessionState = new TextView(activity);
-        sessionState.setText(controlsVisible ? "●  CONTROLES ATIVOS" : "○  CONTROLES OCULTOS");
+        sessionState.setText(UiLanguage.translate(activity,
+                controlsVisible ? "●  CONTROLES ATIVOS" : "○  CONTROLES OCULTOS"));
         sessionState.setTextColor(controlsVisible ? 0xff8be0bb : 0xffa8b2c7);
         sessionState.setTextSize(10);
         sessionState.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -1634,7 +1637,7 @@ final class NativeTouchControlsView extends View {
                     snapGuideX = Float.NaN;
                     snapGuideY = Float.NaN;
                     Toast.makeText(activity,
-                            "Arraste os controles; toque em um para configurar. ✓ salva.",
+                            UiLanguage.translate(activity, "Arraste os controles; toque em um para configurar. ✓ salva."),
                             Toast.LENGTH_LONG).show();
                     invalidate();
                 }), new LinearLayout.LayoutParams(itemParams));
@@ -1655,17 +1658,17 @@ final class NativeTouchControlsView extends View {
         menuItems.addView(createGameMenuItem("↩", "Fechar jogo",
                 "Encerrar a sessão e voltar à tela inicial", true, () ->
                     new AlertDialog.Builder(gameActivity)
-                            .setTitle("Fechar o jogo?")
-                            .setMessage("Você voltará à tela inicial do MobileHorizon.")
-                            .setNegativeButton("Cancelar", (d, w) -> { })
-                            .setPositiveButton("Fechar jogo", (d, w) -> {
+                            .setTitle(UiLanguage.translate(activity, "Fechar o jogo?"))
+                            .setMessage(UiLanguage.translate(activity, "Você voltará à tela inicial do MobileHorizon."))
+                            .setNegativeButton(UiLanguage.translate(activity, "Cancelar"), (d, w) -> { })
+                            .setPositiveButton(UiLanguage.translate(activity, "Fechar jogo"), (d, w) -> {
                                 releaseAllInputs();
                                 gameActivity.finish();
                             })
                             .show()), new LinearLayout.LayoutParams(itemParams));
 
         TextView footer = new TextView(activity);
-        footer.setText("MOBILEHORIZON  •  CONTROLES NATIVOS");
+        footer.setText(UiLanguage.translate(activity, "MOBILEHORIZON  •  CONTROLES NATIVOS"));
         footer.setTextColor(0xff7885a0);
         footer.setTextSize(9);
         footer.setGravity(Gravity.CENTER);
@@ -1731,7 +1734,7 @@ final class NativeTouchControlsView extends View {
         panel.addView(size, new LinearLayout.LayoutParams(-1, dpInt(28)));
         size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                scaleLabel.setText("Tamanho " + (progress + 60) + "%");
+                scaleLabel.setText(UiLanguage.translate(activity, "Tamanho ") + + (progress + 60) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) { }
             @Override public void onStopTrackingTouch(SeekBar bar) { }
@@ -1744,21 +1747,21 @@ final class NativeTouchControlsView extends View {
             Button shapeButton = new Button(activity);
             shapeButton.setTextSize(11);
             shapeButton.setMinHeight(dpInt(34));
-            shapeButton.setText("Formato: " + shapeNames[chosenShape[0]]);
+            shapeButton.setText(UiLanguage.translate(activity, "Formato: ") + + shapeNames[chosenShape[0]]);
             shapeButton.setOnClickListener(v -> {
                 chosenShape[0] = (chosenShape[0] + 1) % shapeNames.length;
-                shapeButton.setText("Formato: " + shapeNames[chosenShape[0]]);
+                shapeButton.setText(UiLanguage.translate(activity, "Formato: ") + + shapeNames[chosenShape[0]]);
             });
             panel.addView(shapeLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
             panel.addView(shapeButton, new LinearLayout.LayoutParams(-1, dpInt(34)));
 
             Button colorButton = new Button(activity);
-            colorButton.setText("Cor: " + BUTTON_COLOR_NAMES[chosenColor[0]]);
+            colorButton.setText(UiLanguage.translate(activity, "Cor: ") + + BUTTON_COLOR_NAMES[chosenColor[0]]);
             colorButton.setTextSize(11);
             colorButton.setMinHeight(dpInt(34));
             colorButton.setOnClickListener(v -> {
                 chosenColor[0] = (chosenColor[0] + 1) % BUTTON_COLOR_NAMES.length;
-                colorButton.setText("Cor: " + BUTTON_COLOR_NAMES[chosenColor[0]]);
+                colorButton.setText(UiLanguage.translate(activity, "Cor: ") + + BUTTON_COLOR_NAMES[chosenColor[0]]);
             });
             TextView colorLabel = miniLabel("Cor do botão", 11, false);
             panel.addView(colorLabel, new LinearLayout.LayoutParams(-1, dpInt(17)));
@@ -1766,13 +1769,13 @@ final class NativeTouchControlsView extends View {
         }
 
         android.widget.CheckBox toggleMode = new android.widget.CheckBox(activity);
-        toggleMode.setText("Alternância: ativar/desativar");
+        toggleMode.setText(UiLanguage.translate(activity, "Alternância: ativar/desativar"));
         toggleMode.setTextColor(0xffeaf0ff);
         toggleMode.setChecked(currentToggle);
         if (!joystickButton) panel.addView(toggleMode, new LinearLayout.LayoutParams(-1, dpInt(36)));
 
         android.widget.CheckBox autoSprint = new android.widget.CheckBox(activity);
-        autoSprint.setText("Corrida automática ao empurrar até a frente");
+        autoSprint.setText(UiLanguage.translate(activity, "Corrida automática ao empurrar até a frente"));
         autoSprint.setTextColor(0xffeaf0ff);
         autoSprint.setChecked(autoSprintEnabled);
         if (joystickButton) panel.addView(autoSprint, new LinearLayout.LayoutParams(-1, dpInt(42)));
@@ -1785,7 +1788,7 @@ final class NativeTouchControlsView extends View {
         panel.addView(alpha, new LinearLayout.LayoutParams(-1, dpInt(28)));
         alpha.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                opacityLabel.setText("Opacidade " + (progress + 20) + "%");
+                opacityLabel.setText(UiLanguage.translate(activity, "Opacidade ") + + (progress + 20) + "%");
             }
             @Override public void onStartTrackingTouch(SeekBar bar) { }
             @Override public void onStopTrackingTouch(SeekBar bar) { }
@@ -1809,7 +1812,7 @@ final class NativeTouchControlsView extends View {
         key.setTextSize(12);
         key.setTextColor(Color.WHITE);
         key.setHintTextColor(0xffaeb9cb);
-        key.setHint("Tecla, ex.: G, SPACE, F6");
+        key.setHint(UiLanguage.translate(activity, "Tecla, ex.: G, SPACE, F6"));
         key.setPadding(dpInt(7), 0, dpInt(7), 0);
         key.setText(currentKey == KeyEvent.KEYCODE_UNKNOWN ? "" : KeyEvent.keyCodeToString(currentKey).replace("KEYCODE_", ""));
         key.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff7e91ad));
@@ -1845,13 +1848,13 @@ final class NativeTouchControlsView extends View {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         Button reset = new Button(activity);
-        reset.setText("Excluir");
+        reset.setText(UiLanguage.translate(activity, "Excluir"));
         reset.setTextSize(10);
         Button cancel = new Button(activity);
-        cancel.setText("Fechar");
+        cancel.setText(UiLanguage.translate(activity, "Fechar"));
         cancel.setTextSize(10);
         Button save = new Button(activity);
-        save.setText("Salvar");
+        save.setText(UiLanguage.translate(activity, "Salvar"));
         save.setTextSize(10);
         actions.addView(reset, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
         actions.addView(cancel, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
@@ -1904,7 +1907,7 @@ final class NativeTouchControlsView extends View {
         } catch (RuntimeException error) {
             if (activeButtonMenu == popup) activeButtonMenu = null;
             android.util.Log.e("MobileHorizonTouch", "Falha ao abrir personalização de botão", error);
-            Toast.makeText(activity, "Não foi possível abrir a personalização sem interromper o jogo.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(activity, UiLanguage.translate(activity, "Não foi possível abrir a personalização sem interromper o jogo."), Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -1929,7 +1932,7 @@ final class NativeTouchControlsView extends View {
                     ? currentKey : parseKeyCode(key.getText().toString());
             if (!joystickButton && !inGame && selectedFunction == FUNCTION_KEY
                     && selectedKey == KeyEvent.KEYCODE_UNKNOWN) {
-                Toast.makeText(activity, "Informe uma tecla válida para essa função.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity, UiLanguage.translate(activity, "Informe uma tecla válida para essa função."), Toast.LENGTH_SHORT).show();
                 return;
             }
             float newScale = (size.getProgress() + 60) / 100f;
@@ -1949,7 +1952,7 @@ final class NativeTouchControlsView extends View {
             if (custom != null) {
                 String caption = customLabel == null ? custom.label : customLabel.getText().toString().trim();
                 if (caption.isEmpty() || caption.length() > 7) {
-                    Toast.makeText(activity, "Use um texto de até 7 caracteres.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(activity, UiLanguage.translate(activity, "Use um texto de até 7 caracteres."), Toast.LENGTH_SHORT).show();
                     return;
                 }
                 custom.label = caption;
@@ -1992,19 +1995,19 @@ final class NativeTouchControlsView extends View {
         panel.setPadding(dpInt(14), dpInt(4), dpInt(14), dpInt(4));
 
         android.widget.CheckBox enabled = new android.widget.CheckBox(activity);
-        enabled.setText("Ativar controles na tela do jogo");
+        enabled.setText(UiLanguage.translate(activity, "Ativar controles na tela do jogo"));
         enabled.setTextColor(0xff18213a);
         enabled.setChecked(prefs.getBoolean(KEY_ENABLED, true));
         panel.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
 
         android.widget.CheckBox handed = new android.widget.CheckBox(activity);
-        handed.setText("Layout canhoto (joystick à direita)");
+        handed.setText(UiLanguage.translate(activity, "Layout canhoto (joystick à direita)"));
         handed.setTextColor(0xff18213a);
         handed.setChecked(leftHanded);
         panel.addView(handed, new LinearLayout.LayoutParams(-1, -2));
 
         android.widget.CheckBox classicButtons = new android.widget.CheckBox(activity);
-        classicButtons.setText("Botões Clássicos");
+        classicButtons.setText(UiLanguage.translate(activity, "Botões Clássicos"));
         classicButtons.setTextColor(0xff18213a);
         classicButtons.setChecked(classicButtonsEnabled);
         panel.addView(classicButtons, new LinearLayout.LayoutParams(-1, -2));
@@ -2031,7 +2034,7 @@ final class NativeTouchControlsView extends View {
         panel.addView(sensitivityBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
         Button manageButtons = new Button(activity);
-        manageButtons.setText("Gerenciar / restaurar botões predefinidos");
+        manageButtons.setText(UiLanguage.translate(activity, "Gerenciar / restaurar botões predefinidos"));
         manageButtons.setOnClickListener(v -> showButtonVisibilityManager());
         panel.addView(manageButtons, new LinearLayout.LayoutParams(-1, dpInt(42)));
 
@@ -2042,19 +2045,19 @@ final class NativeTouchControlsView extends View {
         panel.addView(gapLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(gapBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
-        size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText("Tamanho geral " + (70 + progress) + "%")));
-        alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText("Opacidade geral " + (35 + progress) + "%")));
-        sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText("Sensibilidade da câmera " + (50 + progress) + "%")));
-        gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText("Distância de encaixe " + (progress + 4) + " dp")));
+        size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText(UiLanguage.translate(activity, "Tamanho geral ") + + (70 + progress) + "%")));
+        alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText(UiLanguage.translate(activity, "Opacidade geral ") + + (35 + progress) + "%")));
+        sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText(UiLanguage.translate(activity, "Sensibilidade da câmera ") + + (50 + progress) + "%")));
+        gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText(UiLanguage.translate(activity, "Distância de encaixe ") + + (progress + 4) + " dp")));
         ScrollView settingsScroll = new ScrollView(activity);
         settingsScroll.setFillViewport(false);
         settingsScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
 
         AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle("Ajustes dos controles")
+                .setTitle(UiLanguage.translate(activity, "Ajustes dos controles"))
                 .setView(settingsScroll)
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Salvar", null)
+                .setNegativeButton(UiLanguage.translate(activity, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(activity, "Salvar"), null)
                 .create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             scale = (size.getProgress() + 70) / 100f;
@@ -2073,10 +2076,16 @@ final class NativeTouchControlsView extends View {
                     .putFloat(KEY_SNAP_GAP, snapGapDp)
                     .apply();
             invalidate();
-            Toast.makeText(activity, "Ajustes dos controles salvos.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(activity, UiLanguage.translate(activity, "Ajustes dos controles salvos."), Toast.LENGTH_SHORT).show();
             dialog.dismiss();
         }));
         dialog.show();
+    }
+
+    private String[] localizedManagedButtonNames() {
+        String[] names = MANAGED_BUTTON_NAMES.clone();
+        for (int i = 0; i < names.length; i++) names[i] = UiLanguage.translate(activity, names[i]);
+        return names;
     }
 
     private void showButtonVisibilityManager() {
@@ -2086,9 +2095,9 @@ final class NativeTouchControlsView extends View {
             visible[i] = layout == null || layout.visible;
         }
         AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle("Botões predefinidos")
-                .setMessage("Desmarque para excluir da tela. Marque novamente para restaurar. Posições e cores salvas são mantidas.")
-                .setMultiChoiceItems(MANAGED_BUTTON_NAMES, visible, (d, which, checked) -> {
+                .setTitle(UiLanguage.translate(activity, "Botões predefinidos"))
+                .setMessage(UiLanguage.translate(activity, "Desmarque para excluir da tela. Marque novamente para restaurar. Posições e cores salvas são mantidas."))
+                .setMultiChoiceItems(localizedManagedButtonNames(), visible, (d, which, checked) -> {
                     int id = MANAGED_BUTTON_IDS[which];
                     ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
                     layout.visible = checked;
@@ -2096,16 +2105,16 @@ final class NativeTouchControlsView extends View {
                     saveButtonLayouts();
                     invalidate();
                 })
-                .setNegativeButton("Restaurar todos", (d, which) -> {
+                .setNegativeButton(UiLanguage.translate(activity, "Restaurar todos"), (d, which) -> {
                     for (int id : MANAGED_BUTTON_IDS) {
                         ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
                         layout.visible = true;
                     }
                     saveButtonLayouts();
                     invalidate();
-                    Toast.makeText(activity, "Botões predefinidos restaurados.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(activity, UiLanguage.translate(activity, "Botões predefinidos restaurados."), Toast.LENGTH_SHORT).show();
                 })
-                .setPositiveButton("Fechar", null)
+                .setPositiveButton(UiLanguage.translate(activity, "Fechar"), null)
                 .create();
         dialog.show();
     }
@@ -2124,7 +2133,7 @@ final class NativeTouchControlsView extends View {
 
     private TextView textSetting(String value) {
         TextView text = new TextView(activity);
-        text.setText(value);
+        text.setText(UiLanguage.translate(activity, value));
         text.setTextColor(0xff18213a);
         text.setTextSize(12);
         return text;
@@ -2198,7 +2207,7 @@ final class NativeTouchControlsView extends View {
             saveButtonLayouts();
             saveCustomButtons();
             if (previewOnly) {
-                Toast.makeText(activity, "Layout dos botões salvo.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(activity, UiLanguage.translate(activity, "Layout dos botões salvo."), Toast.LENGTH_SHORT).show();
                 activity.setResult(Activity.RESULT_OK);
                 activity.finish();
             }
