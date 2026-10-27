@@ -292,7 +292,6 @@ final class UiLanguage {
         pair("Retângulo arredondado", "Rounded rectangle");
         pair("Círculo / oval", "Circle / oval");
         pair("Quadrado", "Square");
-    }
 
         // Final pass for launcher progress and diagnostics copy.
         pair("▶  Jogar", "▶  Play");
@@ -447,6 +446,8 @@ final class UiLanguage {
         pair(" detectada, mas nenhum pacote Android ARM64 verificado está disponível. ", " detected, but no verified Android ARM64 package is available. ");
         pair("Runtime ativado para a próxima inicialização: PC ", "Runtime activated for the next launch: PC ");
         pair("O Android não abriu o arquivo de destino.", "Android could not open the destination file.");
+    }
+
     private UiLanguage() { }
 
     private static void pair(String portuguese, String english) {
