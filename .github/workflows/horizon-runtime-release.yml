@@ -278,7 +278,7 @@ jobs:
           set -euo pipefail
           SOURCE="$RUNNER_TEMP/horizon-runtime-source"
           git init "$SOURCE"
-          git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
+          git -C "$SOURCE" remote add origin https://github.com/horizon-rust/horizon.git
           git -C "$SOURCE" fetch --depth 1 origin "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
           git -C "$SOURCE" checkout --detach "$UPSTREAM_TAG"
           test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
@@ -356,7 +356,7 @@ jobs:
           import json, os, urllib.request
 
           request = urllib.request.Request(
-              "https://api.github.com/repos/ludovic111/horizon/releases/latest",
+              "https://api.github.com/repos/horizon-rust/horizon/releases/latest",
               headers={
                   "Accept": "application/vnd.github+json",
                   "X-GitHub-Api-Version": "2022-11-28",
