@@ -40,7 +40,7 @@ public final class HorizonRuntimeUpdateService {
     private static final String RELEASES_URL =
             "https://api.github.com/repos/Ph04/MobileHorizonNative/releases?per_page=100";
     private static final String OFFICIAL_RELEASE_URL =
-            "https://api.github.com/repositories/1403446451/releases?per_page=100";
+            "https://api.github.com/repos/horizon-rust/horizon/releases?per_page=100";
     private static final String TAG_PREFIX = "horizon-runtime-";
     private static final String ENGINE_ASSET = "horizon-runtime-arm64-v8a.so";
     private static final String TEST_FIXTURE_TAG = "horizon-runtime-update-test";
