@@ -4,6 +4,7 @@ name: Publish Android Horizon runtime
 # A push to this workflow forces a fresh resolution/build; publish races re-queue the default-branch scheduler.
 # Builds are serialized per resolved runtime tag, not globally: a newer upstream release must not wait
 # for a slow build of an older tag, while duplicate builds for the same tag must not race at upload.
+# Updating this workflow intentionally changes the overlay fingerprint and forces a fresh build from current stable.
 
 # Schedules must live on the default branch; scheduled-horizon-runtime.yml on main
 # calls this reusable workflow with the active runtime overlay branch.
