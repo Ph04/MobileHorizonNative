@@ -86,7 +86,7 @@ jobs:
           # it beyond the first 100 records. Page until a short page or a bounded safety limit.
           for page in range(1, 11):
               batch = get_json(
-                  "https://api.github.com/repos/ludovic111/horizon/releases?per_page=100&page=" + str(page)
+                  "https://api.github.com/repos/horizon-rust/horizon/releases?per_page=100&page=" + str(page)
               )
               if not isinstance(batch, list):
                   raise SystemExit("Unexpected response while listing Horizon releases.")
@@ -104,10 +104,10 @@ jobs:
           latest = max(stable, key=lambda item: item.get("published_at") or item.get("created_at", ""))
           upstream_tag = latest["tag_name"]
           encoded_tag = urllib.parse.quote(upstream_tag, safe="")
-          ref = get_json("https://api.github.com/repos/ludovic111/horizon/git/ref/tags/" + encoded_tag)
+          ref = get_json("https://api.github.com/repos/horizon-rust/horizon/git/ref/tags/" + encoded_tag)
           obj = ref["object"]
           while obj.get("type") == "tag":
-              obj = get_json("https://api.github.com/repos/ludovic111/horizon/git/tags/" + obj["sha"])["object"]
+              obj = get_json("https://api.github.com/repos/horizon-rust/horizon/git/tags/" + obj["sha"])["object"]
           if obj.get("type") != "commit":
               raise SystemExit("Upstream tag did not resolve to a commit: " + upstream_tag)
           upstream_commit = obj["sha"]
