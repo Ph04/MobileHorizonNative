@@ -1099,11 +1099,24 @@ replace_once(game,
     }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {''')
 
-replace_once(game,
-    '    EventLoop::new()?.run_app(&mut app)?;',
-    '''    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
+legacy_app_loop = '    EventLoop::new()?.run_app(&mut app)?;'
+current_app_loop = '    let result = EventLoop::new()?.run_app(&mut app);'
+app_source = game.read_text(encoding="utf-8")
+if app_source.count(current_app_loop) == 1:
+    replace_once(game, current_app_loop,
+        """    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
+    horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
+    let result = event_loop.run_app(&mut app);""")
+elif app_source.count(legacy_app_loop) == 1:
+    replace_once(game, legacy_app_loop,
+        '''    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
     horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
     event_loop.run_app(&mut app)?;''')
+else:
+    raise SystemExit(
+        f"{game}: expected exactly one supported main App event-loop anchor "
+        f"(current={app_source.count(current_app_loop)}, legacy={app_source.count(legacy_app_loop)})"
+    )
 
 replace_once(workspace_cargo, '"crates/horizon-client",',
              '"crates/horizon-client", "crates/mobilehorizon-android",')
