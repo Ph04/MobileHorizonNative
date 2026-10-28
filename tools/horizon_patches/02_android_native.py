@@ -986,21 +986,32 @@ content = content.replace(
 game.write_text(content, encoding="utf-8");
 
 # Use the game's cursor capture request as the virtual cursor visibility state.
-replace_once(game,
-    """        if capture && !self.focused {
+# v0.2.92 added server-pack/dialog capture guards; preserve them and inject the Android
+# gameplay visibility signal after the complete guard instead of replacing upstream logic.
+capture_guard_old = """        if capture && !self.focused {
             return;
-        }""",
-    """        if capture && !self.focused {
+        }"""
+capture_guard_current = """        if capture && (!self.focused || self.server_packs.prompt.is_some() || self.dialog_open()) {
             return;
-        }
-        #[cfg(target_os = "android")]
+        }"""
+capture_android_hook = """        #[cfg(target_os = "android")]
         horizon_client::set_android_gameplay(
             self.player.is_some()
                 && self.title.is_none()
                 && self.screen == Screen::Playing
                 && self.sign_edit.is_none()
                 && self.book.is_none(),
-        );""")
+        );"""
+game_content = game.read_text(encoding="utf-8")
+if game_content.count(capture_guard_old) == 1:
+    replace_once(game, capture_guard_old, capture_guard_old + "\n" + capture_android_hook)
+elif game_content.count(capture_guard_current) == 1:
+    replace_once(game, capture_guard_current, capture_guard_current + "\n" + capture_android_hook)
+else:
+    raise SystemExit(
+        f"{game}: expected one recognized cursor-capture guard, found "
+        f"old={game_content.count(capture_guard_old)}, current={game_content.count(capture_guard_current)}"
+    )
 
 # Publish whether Horizon is in the active world or currently displaying a menu.
 # Java polls this lightweight atomic to hide its virtual cursor during gameplay.
