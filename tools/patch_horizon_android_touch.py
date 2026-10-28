@@ -26,15 +26,26 @@ names = root / "crates/horizon-client/src/game/names.rs"
 item_draw = root / "crates/horizon-client/src/game/item_draw.rs"
 net = root / "crates/horizon-client/src/net.rs"
 client_cargo = root / "crates/horizon-client/Cargo.toml"
-clipboard = root / "crates/horizon-client/src/clipboard.rs"
+client_input_cargo = root / "crates/horizon-client-input/Cargo.toml"
+legacy_clipboard = root / "crates/horizon-client/src/clipboard.rs"
+input_clipboard = root / "crates/horizon-client-input/src/clipboard.rs"
+# Horizon v0.2.92 moved the clipboard implementation into horizon-client-input.
+# Prefer the active module path and retain support for older releases.
+if legacy_clipboard.is_file():
+    clipboard = legacy_clipboard
+else:
+    clipboard = input_clipboard
 pad_menu = root / "crates/horizon-client/src/game/pad_menu.rs"
 startup_menu = root / "crates/horizon-client/src/game/startup_menu.rs"
 workspace_cargo = root / "Cargo.toml"
 
-for path in (game, lib, hud, audio, skins, remote, chat, names, item_draw, net,
-             client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo):
+required_sources = (game, lib, hud, audio, skins, remote, chat, names, item_draw,
+                    net, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo)
+for path in required_sources:
     if not path.is_file():
         raise SystemExit(f"Missing pinned Horizon source file: {path}")
+if clipboard == input_clipboard and not client_input_cargo.is_file():
+    raise SystemExit(f"Missing Horizon input crate manifest: {client_input_cargo}")
 
 def replace_once(path: Path, old: str, new: str) -> None:
     content = path.read_text(encoding="utf-8")
