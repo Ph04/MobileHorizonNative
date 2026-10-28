@@ -25,7 +25,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       SOURCE_RUN_ID: "40696022773"
       SOURCE_SHA: "f759a85b2dd047feed8a93358b5ae48c8fbbbfe1"
-      RELEASE_TARGET_SHA: "f759a85b2dd047feed8a93358b5ae48c8fbbbfe1"
+      RELEASE_TARGET_SHA: "dc0c16f80a61dc4a4d5e9fd3f35bc8aefed7ba19"
       RELEASE_TAG: "v0.3.29"
       ARTIFACT_NAME: "mobilehorizon-native-offline1-update-safe"
     steps:
