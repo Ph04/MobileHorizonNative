@@ -81,16 +81,28 @@ fn open_device(
 replace_once(client_cargo, 'winit = "0.30.13"',
              'winit = { version = "0.30.13", features = ["android-native-activity"] }')
 
-# Keep the desktop clipboard for desktop builds, but don't compile it on Android.
-replace_once(client_cargo,
-    'arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }',
-    'arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"], optional = true }')
+# Keep the desktop clipboard backend optional so the Android build doesn't compile arboard.
+# Horizon v0.2.92 moved the clipboard dependency and its feature into horizon-client-input.
+clipboard_dependency = 'arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }'
+client_manifest = client_cargo.read_text(encoding="utf-8")
+uses_input_crate = 'horizon-client-input = { path = "../horizon-client-input" }' in client_manifest
+clipboard_manifest = client_input_cargo if uses_input_crate else client_cargo
+replace_once(clipboard_manifest, clipboard_dependency,
+             clipboard_dependency[:-1] + ', optional = true }')
 replace_once(client_cargo,
     'default = ["audio", "controllers"]',
     'default = ["audio", "controllers", "system-clipboard"]')
-replace_once(client_cargo,
-    'controllers = ["dep:gilrs", "dep:horizon-dualsense"]',
-    'controllers = ["dep:gilrs", "dep:horizon-dualsense"]\nsystem-clipboard = ["dep:arboard"]')
+if uses_input_crate:
+    replace_once(client_input_cargo,
+        'controllers = ["dep:horizon-dualsense"]',
+        'controllers = ["dep:horizon-dualsense"]\nsystem-clipboard = ["dep:arboard"]')
+    replace_once(client_cargo,
+        'controllers = ["dep:gilrs", "dep:horizon-dualsense", "horizon-client-input/controllers"]',
+        'controllers = ["dep:gilrs", "dep:horizon-dualsense", "horizon-client-input/controllers"]\nsystem-clipboard = ["horizon-client-input/system-clipboard"]')
+else:
+    replace_once(client_cargo,
+        'controllers = ["dep:gilrs", "dep:horizon-dualsense"]',
+        'controllers = ["dep:gilrs", "dep:horizon-dualsense"]\nsystem-clipboard = ["dep:arboard"]')
 
 # Keep the existing SystemClipboard type, but make its desktop-only backend optional.
 # The Android NativeActivity is built with --no-default-features and uses memory clipboard.
