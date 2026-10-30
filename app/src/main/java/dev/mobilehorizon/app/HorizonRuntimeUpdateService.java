@@ -25,7 +25,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Checks the project's published ARM64 Horizon-engine releases on startup and every 30 minutes
+ * Checks the project's published ARM64 Horizon-engine releases on startup and every five minutes
  * while MainActivity is visible. The APK is not replaced; only a verified versioned engine is
  * installed, and it takes effect on the next game launch.
  */
@@ -288,8 +288,8 @@ public final class HorizonRuntimeUpdateService {
         if (BuildConfig.HORIZON_TEST_OLD_RUNTIME) {
             latest = testFixtureRuntime(BuildConfig.HORIZON_PC_RELEASE_TAG);
         } else if (official != null) {
-            // A stable runtime must follow the exact stable Horizon tag, not merely the newest
-            // Android artifact. Otherwise the launcher can install v0.2.65 while Horizon is on
+            // The Nightly runtime must follow the exact current Horizon channel, not merely the newest
+            // Android artifact. Otherwise the launcher can install an older engine while Horizon is on
             // v0.2.66 and then report success without ever catching up to the official release.
             latest = latestRuntimeRelease(official.tag);
             if (latest == null) {
