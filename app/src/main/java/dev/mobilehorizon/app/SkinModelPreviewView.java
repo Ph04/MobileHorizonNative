@@ -34,6 +34,7 @@ final class SkinModelPreviewView extends View {
     private float lastX;
     private float lastY;
     private boolean dragging;
+    private boolean animationEnabled = true;
 
     SkinModelPreviewView(Context context) {
         super(context);
@@ -45,6 +46,11 @@ final class SkinModelPreviewView extends View {
         textPaint.setColor(0xffb9b3d1);
         textPaint.setTextSize(dp(12));
         textPaint.setTextAlign(Paint.Align.CENTER);
+    }
+
+    void setAnimationEnabled(boolean enabled) {
+        animationEnabled = enabled;
+        if (enabled) invalidate();
     }
 
     void setSkin(Bitmap bitmap, String variant) {
@@ -112,9 +118,9 @@ final class SkinModelPreviewView extends View {
         paint.setColor(Color.WHITE);
         paint.setAlpha(255);
 
-        if (!dragging) {
-            yaw += 0.009f;
-            postInvalidateDelayed(33L);
+        if (animationEnabled && !dragging) {
+            yaw += 0.0135f;
+            postInvalidateDelayed(50L);
         }
     }
 
