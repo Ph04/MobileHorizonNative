@@ -4,7 +4,9 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.LayerDrawable;
 import android.net.Uri;
 import android.content.res.Resources;
 
@@ -162,10 +164,13 @@ final class LauncherAppearance {
         options.inPreferredConfig = Bitmap.Config.RGB_565;
         Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
         if (bitmap == null) return null;
-        BitmapDrawable drawable = new BitmapDrawable(context.getResources(), bitmap);
-        drawable.setAlpha(118);
-        drawable.setFilterBitmap(true);
-        return drawable;
+        BitmapDrawable image = new BitmapDrawable(context.getResources(), bitmap);
+        image.setAlpha(118);
+        image.setFilterBitmap(true);
+        // Always keep a dark base behind the semi-transparent photograph.
+        return new LayerDrawable(new Drawable[]{
+                new ColorDrawable(DEFAULT_BACKGROUND), image
+        });
     }
 
     private static File backgroundFile(Context context) {
