@@ -482,6 +482,32 @@ hud_batch_initializers = [
             blur_at: 0,
         }''',
     ),
+    (
+        '''        Self {
+            vertices: Vec::new(),
+            scale: scale as f32,
+            width: (window[0] as f32 / scale as f32).ceil(),
+            height: (window[1] as f32 / scale as f32).ceil(),
+            patches: Vec::new(),
+            blends: Vec::new(),
+            end_portal: EndPortalFill::default(),
+            glint_alpha: 0.75,
+            blur_at: 0,
+            inline_profiles: Vec::new(),
+        }''',
+        '''        Self {
+            vertices: Vec::new(),
+            scale: scale as f32,
+            width: gui_width as f32,
+            height: gui_height as f32,
+            patches: Vec::new(),
+            blends: Vec::new(),
+            end_portal: EndPortalFill::default(),
+            glint_alpha: 0.75,
+            blur_at: 0,
+            inline_profiles: Vec::new(),
+        }''',
+    ),
 ]
 hud_content = hud.read_text(encoding="utf-8")
 matched_initializers = [
@@ -539,9 +565,21 @@ replace_once(game, '            agent_pointer: false,\n',
              '            agent_pointer: false,\n            touch_mouse: None,\n            touch_auxiliary: None,\n            touch_is_right: false,\n')
 
 # Keep the Android IME proxy synchronized with Horizon's real chat field.
-replace_once(chat,
-    'fn chat_tree<\'a>(',
-    'pub(super) fn chat_tree<\'a>(')
+# Recent Nightly already exposes chat_tree to the parent game module.
+# Older revisions still need the visibility adjustment.
+chat_tree_source = chat.read_text(encoding="utf-8")
+legacy_chat_tree = "fn chat_tree<'a>("
+visible_chat_tree = "pub(super) fn chat_tree("
+if chat_tree_source.count(legacy_chat_tree) == 1:
+    replace_once(chat, legacy_chat_tree, "pub(super) fn chat_tree<'a>(")
+elif chat_tree_source.count(visible_chat_tree) == 1:
+    pass
+else:
+    raise SystemExit(
+        f"{chat}: expected one supported chat_tree signature, "
+        f"legacy={chat_tree_source.count(legacy_chat_tree)}, "
+        f"visible={chat_tree_source.count(visible_chat_tree)}"
+    )
 replace_once(chat,
     """        self.ui.chat_screen = Some(screen);
         self.ui.chat_opened = Some(std::time::Instant::now());""",
@@ -572,6 +610,19 @@ close_chat_anchors = [
         }
         horizon_client::set_android_chat_open(false);
         self.ui.chat_screen = None;""",
+    ),
+    (
+        """        if self.ui.in_bed_chat && self.sleeping.is_some() {
+            self.wake_up();
+            return;
+        }
+        let text = self""",
+        """        if self.ui.in_bed_chat && self.sleeping.is_some() {
+            self.wake_up();
+            return;
+        }
+        horizon_client::set_android_chat_open(false);
+        let text = self""",
     ),
 ]
 chat_content = chat.read_text(encoding="utf-8")
