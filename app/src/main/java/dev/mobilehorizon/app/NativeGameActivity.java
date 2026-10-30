@@ -100,10 +100,7 @@ public final class NativeGameActivity extends NativeActivity {
             if (!home.isDirectory() && !home.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório da instância Horizon.");
             }
-            // Use an explicit per-launch flag. The old marker file could survive a
-            // previous smoke test and accidentally suppress diagnostics for the real game.
-            boolean smokeTest = launchIntent != null
-                    && launchIntent.getBooleanExtra(EXTRA_NATIVE_SMOKE_TEST, false);
+            // Use the per-launch flag set before the instance metadata was touched.
             if (smokeTest) {
                 android.system.Os.setenv("HORIZON_NATIVE_SMOKE_TEST", "1", true);
             } else {

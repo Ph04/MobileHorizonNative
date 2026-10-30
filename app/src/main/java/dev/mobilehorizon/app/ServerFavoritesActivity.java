@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.content.ClipboardManager;
 import android.content.ClipData;
 import android.content.Context;
+import android.content.Intent;
 import android.text.InputType;
 import android.view.Gravity;
 import android.widget.Button;

@@ -86,9 +86,11 @@ public final class WorldDataPacksActivity extends Activity {
         list.removeAllViews();
         try {
             List<WorldDataPackManager.Pack> packs = WorldDataPackManager.list(this, worldFolder);
+            int enabledCount = 0;
+            for (WorldDataPackManager.Pack pack : packs) if (pack.enabled) enabledCount++;
             status.setText(UiLanguage.translate(this, "Data packs: ")
                     + packs.size() + " • " + UiLanguage.translate(this, "Ativos: ")
-                    + packs.stream().filter(p -> p.enabled).count());
+                    + enabledCount);
             if (packs.isEmpty()) {
                 list.addView(text("Este mundo ainda não possui data packs.", 12,
                         0xffaaa2c6, false), top(-1, -2, 8));

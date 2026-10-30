@@ -263,6 +263,10 @@ public final class MainActivity extends Activity {
                         .setNeutralButton(UiLanguage.translate(this, "Cancelar"),
                                 (dialog, which) -> clearPendingQuickPlay())
                         .show();
+            } else if (hasWorld) {
+                // Singleplayer worlds do not require a Microsoft session, even when one
+                // is saved for multiplayer. Keep world quick-play independent of account state.
+                openOfflineClient();
             } else if (MicrosoftAccountStore.active(this) != null) {
                 openNativeClient();
             } else {

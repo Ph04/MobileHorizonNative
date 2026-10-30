@@ -261,8 +261,10 @@ final class WorldDataPackManager {
                 || value.indexOf('\\') >= 0 || value.indexOf(':') >= 0 || hasControl(value)) {
             throw new IOException("Caminho inválido no data pack.");
         }
+        String normalized = value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
+        if (normalized.isEmpty()) throw new IOException("Caminho vazio no data pack.");
         StringBuilder result = new StringBuilder();
-        for (String part : value.split("/", -1)) {
+        for (String part : normalized.split("/", -1)) {
             if (part.isEmpty() || ".".equals(part) || "..".equals(part) || part.length() > 180) {
                 throw new IOException("Data pack contém caminho inseguro.");
             }
