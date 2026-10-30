@@ -69,6 +69,10 @@ final class NativeTouchControlsView extends View {
     private static final String KEY_MENU_PANEL_Y = "menu_panel_y";
     private static final String KEY_KEYBOARD_PANEL_X = "keyboard_panel_x";
     private static final String KEY_KEYBOARD_PANEL_Y = "keyboard_panel_y";
+    private static final String KEY_SETTINGS_PANEL_X = "settings_panel_x";
+    private static final String KEY_SETTINGS_PANEL_Y = "settings_panel_y";
+    private static final String KEY_BUTTONS_PANEL_X = "buttons_panel_x";
+    private static final String KEY_BUTTONS_PANEL_Y = "buttons_panel_y";
     private static final String KEY_VISUAL_DEFAULTS_VERSION = "visual_defaults_version";
     private static final String KEY_CLASSIC_BUTTONS = "classic_buttons";
     private static final String KEY_AUXILIARY_CONTROL_COLOR = "auxiliary_control_color";
@@ -128,7 +132,7 @@ final class NativeTouchControlsView extends View {
     private float floatingMenuY = 0.14f;
     private PopupWindow activeButtonMenu;
     private PopupWindow activeGameMenu;
-    private PopupWindow activeKeyboardPanel;
+    private PopupWindow activeGameSettingsPanel;
     /** Alignment guide coordinates in view pixels; NaN means no active snap. */
     private float snapGuideX = Float.NaN;
     private float snapGuideY = Float.NaN;
@@ -1236,156 +1240,17 @@ final class NativeTouchControlsView extends View {
         invalidate();
     }
 
-    /** Branded text panel from the earlier keyboard flow; the Android IME submits into Horizon. */
+    /** Open the phone's native IME; Horizon keeps the focused Minecraft text field. */
     private void showKeyboardDialog() {
         if (previewOnly || gameActivity == null) return;
-        if (activeKeyboardPanel != null && activeKeyboardPanel.isShowing()) activeKeyboardPanel.dismiss();
-
-        LinearLayout panel = new LinearLayout(activity);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dpInt(14), dpInt(12), dpInt(14), dpInt(12));
-        GradientDrawable surface = new GradientDrawable();
-        surface.setColor(0xff151321);
-        surface.setCornerRadius(dp(16));
-        surface.setStroke(dpInt(1), 0xff51466f);
-        panel.setBackground(surface);
-        panel.setElevation(dp(12));
-
-        LinearLayout header = new LinearLayout(activity);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = new TextView(activity);
-        title.setText(UiLanguage.translate(activity, "Painel de teclado"));
-        title.setTextColor(0xfff4f0ff);
-        title.setTextSize(16);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        header.addView(title, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
-        TextView close = new TextView(activity);
-        close.setText("×");
-        close.setTextColor(0xfff0eaff);
-        close.setTextSize(24);
-        close.setGravity(Gravity.CENTER);
-        close.setContentDescription(UiLanguage.translate(activity, "Fechar painel de teclado"));
-        header.addView(close, new LinearLayout.LayoutParams(dpInt(38), dpInt(38)));
-        panel.addView(header, new LinearLayout.LayoutParams(-1, dpInt(40)));
-
-        TextView hint = new TextView(activity);
-        hint.setText(UiLanguage.translate(activity,
-                "Digite sua mensagem ou comando e envie pelo teclado do Android."));
-        hint.setTextColor(0xffb8b1cf);
-        hint.setTextSize(12);
-        hint.setLineSpacing(dp(2), 1f);
-        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(-1, -2);
-        hintParams.topMargin = dpInt(5);
-        panel.addView(hint, hintParams);
-
-        EditText input = new EditText(activity);
-        input.setSingleLine(true);
-        input.setHint(UiLanguage.translate(activity, "Mensagem, comando ou texto…"));
-        input.setTextSize(15);
-        input.setTextColor(0xfff5f1ff);
-        input.setHintTextColor(0xff918aa9);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEND
-                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-        input.setPadding(dpInt(12), dpInt(10), dpInt(12), dpInt(10));
-        GradientDrawable inputBackground = new GradientDrawable();
-        inputBackground.setColor(0xff1c192b);
-        inputBackground.setCornerRadius(dp(10));
-        inputBackground.setStroke(dpInt(1), 0xff51466f);
-        input.setBackground(inputBackground);
-        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(-1, -2);
-        inputParams.topMargin = dpInt(10);
-        panel.addView(input, inputParams);
-
-        LinearLayout actions = new LinearLayout(activity);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(-1, dpInt(40));
-        actionsParams.topMargin = dpInt(10);
-        TextView cancel = new TextView(activity);
-        cancel.setText(UiLanguage.translate(activity, "Fechar"));
-        cancel.setTextColor(0xffe5dfff);
-        cancel.setTextSize(13);
-        cancel.setGravity(Gravity.CENTER);
-        GradientDrawable cancelBg = new GradientDrawable();
-        cancelBg.setColor(0xff242035);
-        cancelBg.setCornerRadius(dp(9));
-        cancelBg.setStroke(dpInt(1), 0xff51466f);
-        cancel.setBackground(cancelBg);
-        actions.addView(cancel, new LinearLayout.LayoutParams(0, -1, 1f));
-
-        TextView send = new TextView(activity);
-        send.setText(UiLanguage.translate(activity, "Enviar"));
-        send.setTextColor(Color.WHITE);
-        send.setTextSize(13);
-        send.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        send.setGravity(Gravity.CENTER);
-        GradientDrawable sendBg = new GradientDrawable();
-        sendBg.setColor(LauncherAppearance.accentColor(activity));
-        sendBg.setCornerRadius(dp(9));
-        sendBg.setStroke(dpInt(1), LauncherAppearance.accentBorderColor(activity));
-        send.setBackground(sendBg);
-        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(0, -1, 1f);
-        sendParams.leftMargin = dpInt(8);
-        actions.addView(send, sendParams);
-        panel.addView(actions, actionsParams);
-
-        int width = Math.min(dpInt(340), Math.max(dpInt(240),
-                activity.getResources().getDisplayMetrics().widthPixels - dpInt(24)));
-        final PopupWindow popup = new PopupWindow(panel, width,
-                ViewGroup.LayoutParams.WRAP_CONTENT, true);
-        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-        popup.setFocusable(true);
-        popup.setTouchable(true);
-        popup.setOutsideTouchable(true);
-        popup.setClippingEnabled(true);
-        popup.setElevation(dpInt(10));
-        popup.setInputMethodMode(PopupWindow.INPUT_METHOD_NEEDED);
-        popup.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        panel.setAlpha(LauncherAppearance.panelOpacity(activity));
-        activeKeyboardPanel = popup;
-        popup.setOnDismissListener(() -> {
-            if (activeKeyboardPanel == popup) activeKeyboardPanel = null;
-        });
-
-        Runnable dismiss = () -> {
-            InputMethodManager manager = (InputMethodManager)
-                    activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (manager != null) manager.hideSoftInputFromWindow(input.getWindowToken(), 0);
-            if (popup.isShowing()) popup.dismiss();
-        };
-        Runnable submit = () -> {
-            String value = input.getText() == null ? "" : input.getText().toString();
-            if (!value.isEmpty()) gameActivity.injectKeyboardText(value);
-            dismiss.run();
-        };
-        cancel.setOnClickListener(v -> dismiss.run());
-        close.setOnClickListener(v -> dismiss.run());
-        send.setOnClickListener(v -> submit.run());
-        input.setOnEditorActionListener((view, actionId, event) -> {
-            boolean enterKey = event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
-                    && event.getAction() == KeyEvent.ACTION_UP;
-            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
-                    || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || enterKey) {
-                submit.run();
-                return true;
-            }
-            return false;
-        });
-        showDraggablePanel(popup, header, KEY_KEYBOARD_PANEL_X, KEY_KEYBOARD_PANEL_Y,
-                0.5f, 0.42f);
-        input.requestFocus();
-        input.postDelayed(() -> {
-            InputMethodManager manager = (InputMethodManager)
-                    activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (manager != null && popup.isShowing()) {
-                manager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
-            }
-        }, 140);
+        gameActivity.showMinecraftKeyboard();
     }
 
     private void showAddButtonDialog() {
+        if (!previewOnly && gameActivity != null) {
+            showAddButtonFloatingPanel();
+            return;
+        }
         EditText label = new EditText(activity);
         label.setSingleLine(true);
         label.setHint(UiLanguage.translate(activity, "Texto do botão (ex.: MAP)"));
@@ -1432,6 +1297,74 @@ final class NativeTouchControlsView extends View {
         dialog.show();
     }
 
+    private void showAddButtonFloatingPanel() {
+        final String[] captions = {"G", "MAP", "INV", "ALT", "MOD"};
+        final String[] keyNames = {"G", "M", "E", "R", "TAB"};
+        final int[] keyCodes = {
+                KeyEvent.KEYCODE_G, KeyEvent.KEYCODE_M, KeyEvent.KEYCODE_E,
+                KeyEvent.KEYCODE_R, KeyEvent.KEYCODE_TAB
+        };
+        final int[] captionIndex = {0};
+        final int[] keyIndex = {0};
+        LinearLayout content = new LinearLayout(activity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dpInt(10), dpInt(6), dpInt(10), dpInt(6));
+        TextView help = miniLabel(
+                "Escolha um rótulo e uma tecla. Personalizações livres continuam disponíveis no editor fora do jogo.",
+                11, false);
+        help.setPadding(0, 0, 0, dpInt(8));
+        content.addView(help, new LinearLayout.LayoutParams(-1, -2));
+
+        Button caption = panelActionButton("Texto: G", false);
+        Button key = panelActionButton("Tecla: G", false);
+        content.addView(caption, new LinearLayout.LayoutParams(-1, dpInt(42)));
+        LinearLayout.LayoutParams keyParams = new LinearLayout.LayoutParams(-1, dpInt(42));
+        keyParams.topMargin = dpInt(7);
+        content.addView(key, keyParams);
+        caption.setOnClickListener(v -> {
+            captionIndex[0] = (captionIndex[0] + 1) % captions.length;
+            caption.setText(UiLanguage.translate(activity, "Texto: ") + captions[captionIndex[0]]);
+        });
+        key.setOnClickListener(v -> {
+            keyIndex[0] = (keyIndex[0] + 1) % keyNames.length;
+            key.setText(UiLanguage.translate(activity, "Tecla: ") + keyNames[keyIndex[0]]);
+        });
+        android.widget.CheckBox toggle = new android.widget.CheckBox(activity);
+        toggle.setText(UiLanguage.translate(activity, "Alternância: ativar/desativar"));
+        toggle.setTextColor(0xff18213a);
+        toggle.setFocusable(false);
+        content.addView(toggle, new LinearLayout.LayoutParams(-1, dpInt(40)));
+
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(false);
+        scroll.addView(content, new ScrollView.LayoutParams(-1, -2));
+        LinearLayout footer = new LinearLayout(activity);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        Button cancel = panelActionButton("Cancelar", false);
+        Button create = panelActionButton("Adicionar", true);
+        footer.addView(cancel, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
+        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(0, dpInt(38), 1f);
+        createParams.leftMargin = dpInt(8);
+        footer.addView(create, createParams);
+        PopupWindow popup = showFloatingSettingsPanel("Adicionar botão", scroll, footer,
+                KEY_BUTTONS_PANEL_X, KEY_BUTTONS_PANEL_Y, 0.16f, 0.18f, 290);
+        cancel.setOnClickListener(v -> popup.dismiss());
+        create.setOnClickListener(v -> {
+            int id = CUSTOM_BUTTON_START;
+            for (CustomButton item : customButtons) id = Math.max(id, item.id + 1);
+            float x = 0.62f + (customButtons.size() % 3) * 0.055f;
+            float y = 0.50f + (customButtons.size() % 4) * 0.055f;
+            CustomButton created = new CustomButton(id, captions[captionIndex[0]],
+                    keyCodes[keyIndex[0]], clamp(x, 0.10f, 0.90f),
+                    clamp(y, 0.15f, 0.85f), 1f);
+            created.toggle = toggle.isChecked();
+            customButtons.add(created);
+            saveCustomButtons();
+            invalidate();
+            popup.dismiss();
+        });
+    }
+
     private TextView miniLabel(String value, int size, boolean bold) {
         TextView label = new TextView(activity);
         label.setText(UiLanguage.translate(activity, value));
@@ -1462,7 +1395,7 @@ final class NativeTouchControlsView extends View {
         if (danger) rowBackground.setStroke(dpInt(1), 0x885a344b);
         row.setBackground(rowBackground);
         row.setClickable(true);
-        row.setFocusable(true);
+        row.setFocusable(false);
 
         TextView emblem = new TextView(activity);
         emblem.setText(symbol);
@@ -1526,6 +1459,9 @@ final class NativeTouchControlsView extends View {
         panelBackground.setStroke(dpInt(1), 0xff433969);
         panel.setBackground(panelBackground);
         panel.setElevation(dp(12));
+        panel.setFocusable(false);
+        panel.setFocusableInTouchMode(false);
+        panel.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
 
         LinearLayout header = new LinearLayout(activity);
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -1689,7 +1625,8 @@ final class NativeTouchControlsView extends View {
                 Math.round(clamp(prefs.getFloat(prefX, defaultX), 0f, 1f) * maxX),
                 Math.round(clamp(prefs.getFloat(prefY, defaultY), 0f, 1f) * maxY)
         };
-        try { popup.showAtLocation(this, Gravity.TOP | Gravity.LEFT, position[0], position[1]); }
+        View anchor = activity.getWindow().getDecorView();
+        try { popup.showAtLocation(anchor, Gravity.TOP | Gravity.LEFT, position[0], position[1]); }
         catch (RuntimeException error) {
             android.util.Log.e("MobileHorizonTouch", "Falha ao abrir painel flutuante", error);
             return;
@@ -1727,8 +1664,8 @@ final class NativeTouchControlsView extends View {
 
     void dismissFloatingPanels() {
         dismissGameControlMenu();
-        if (activeKeyboardPanel != null && activeKeyboardPanel.isShowing()) {
-            activeKeyboardPanel.dismiss();
+        if (activeGameSettingsPanel != null && activeGameSettingsPanel.isShowing()) {
+            activeGameSettingsPanel.dismiss();
         }
         if (activeButtonMenu != null && activeButtonMenu.isShowing()) {
             activeButtonMenu.dismiss();
@@ -1941,6 +1878,7 @@ final class NativeTouchControlsView extends View {
                 ? PopupWindow.INPUT_METHOD_NOT_NEEDED : PopupWindow.INPUT_METHOD_NEEDED);
         popup.setClippingEnabled(true);
         popup.setElevation(dpInt(8));
+        scroller.setAlpha(LauncherAppearance.panelOpacity(activity));
         activeButtonMenu = popup;
         popup.setOnDismissListener(() -> {
             if (activeButtonMenu == popup) activeButtonMenu = null;
@@ -1953,7 +1891,8 @@ final class NativeTouchControlsView extends View {
         menuX = Math.max(dpInt(8), Math.min(screenWidth - menuWidth - dpInt(8), menuX));
         menuY = Math.max(dpInt(8), Math.min(screenHeight - menuHeight - dpInt(8), menuY));
         try {
-            popup.showAtLocation(this, Gravity.TOP | Gravity.LEFT, menuX, menuY);
+            View anchor = activity.getWindow().getDecorView();
+            popup.showAtLocation(anchor, Gravity.TOP | Gravity.LEFT, menuX, menuY);
         } catch (RuntimeException error) {
             if (activeButtonMenu == popup) activeButtonMenu = null;
             android.util.Log.e("MobileHorizonTouch", "Falha ao abrir personalização de botão", error);
@@ -2038,8 +1977,90 @@ final class NativeTouchControlsView extends View {
         });
     }
 
+    private Button panelActionButton(String label, boolean primary) {
+        Button button = new Button(activity);
+        button.setAllCaps(false);
+        button.setText(UiLanguage.translate(activity, label));
+        button.setTextSize(12);
+        button.setTextColor(Color.WHITE);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setFocusable(false);
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(primary ? LauncherAppearance.accentColor(activity) : 0xff2b2641);
+        background.setCornerRadius(dp(8));
+        background.setStroke(dpInt(1), primary
+                ? LauncherAppearance.accentBorderColor(activity) : 0xff51466f);
+        button.setBackground(background);
+        return button;
+    }
+
+    private PopupWindow showFloatingSettingsPanel(String title, View content, View footer,
+                                                   String prefX, String prefY,
+                                                   float defaultX, float defaultY,
+                                                   int preferredHeightDp) {
+        if (activeGameSettingsPanel != null && activeGameSettingsPanel.isShowing()) {
+            activeGameSettingsPanel.dismiss();
+        }
+        LinearLayout shell = new LinearLayout(activity);
+        shell.setOrientation(LinearLayout.VERTICAL);
+        shell.setPadding(dpInt(12), dpInt(10), dpInt(12), dpInt(10));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(0xff151321);
+        background.setCornerRadius(dp(16));
+        background.setStroke(dpInt(1), 0xff51466f);
+        shell.setBackground(background);
+        shell.setElevation(dp(12));
+        shell.setFocusable(false);
+        shell.setFocusableInTouchMode(false);
+        shell.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+
+        LinearLayout header = new LinearLayout(activity);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(miniLabel(title, 15, true),
+                new LinearLayout.LayoutParams(0, dpInt(40), 1f));
+        TextView close = new TextView(activity);
+        close.setText("×");
+        close.setTextColor(0xfff0eaff);
+        close.setTextSize(24);
+        close.setGravity(Gravity.CENTER);
+        close.setContentDescription(UiLanguage.translate(activity, "Fechar painel"));
+        header.addView(close, new LinearLayout.LayoutParams(dpInt(38), dpInt(38)));
+        shell.addView(header, new LinearLayout.LayoutParams(-1, dpInt(42)));
+        shell.addView(content, new LinearLayout.LayoutParams(-1, 0, 1f));
+        if (footer != null) {
+            LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(-1, dpInt(42));
+            footerParams.topMargin = dpInt(8);
+            shell.addView(footer, footerParams);
+        }
+
+        int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
+        int width = Math.min(dpInt(380), Math.max(dpInt(240), screenWidth - dpInt(24)));
+        int height = Math.min(dpInt(preferredHeightDp), Math.max(dpInt(180), screenHeight - dpInt(32)));
+        PopupWindow popup = new PopupWindow(shell, width, height, false);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        popup.setFocusable(false);
+        popup.setTouchable(true);
+        popup.setOutsideTouchable(true);
+        popup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
+        popup.setClippingEnabled(true);
+        popup.setElevation(dpInt(12));
+        shell.setAlpha(LauncherAppearance.panelOpacity(activity));
+        activeGameSettingsPanel = popup;
+        popup.setOnDismissListener(() -> {
+            if (activeGameSettingsPanel == popup) activeGameSettingsPanel = null;
+        });
+        close.setOnClickListener(v -> popup.dismiss());
+        showDraggablePanel(popup, header, prefX, prefY, defaultX, defaultY);
+        return popup;
+    }
+
     void showGlobalSettingsDialog() {
-        android.content.SharedPreferences prefs = activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        android.content.SharedPreferences prefs =
+                activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dpInt(14), dpInt(4), dpInt(14), dpInt(4));
@@ -2047,18 +2068,21 @@ final class NativeTouchControlsView extends View {
         android.widget.CheckBox enabled = new android.widget.CheckBox(activity);
         enabled.setText(UiLanguage.translate(activity, "Ativar controles na tela do jogo"));
         enabled.setTextColor(0xff18213a);
+        enabled.setFocusable(false);
         enabled.setChecked(prefs.getBoolean(KEY_ENABLED, true));
         panel.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
 
         android.widget.CheckBox handed = new android.widget.CheckBox(activity);
         handed.setText(UiLanguage.translate(activity, "Layout canhoto (joystick à direita)"));
         handed.setTextColor(0xff18213a);
+        handed.setFocusable(false);
         handed.setChecked(leftHanded);
         panel.addView(handed, new LinearLayout.LayoutParams(-1, -2));
 
         android.widget.CheckBox classicButtons = new android.widget.CheckBox(activity);
         classicButtons.setText(UiLanguage.translate(activity, "Botões Clássicos"));
         classicButtons.setTextColor(0xff18213a);
+        classicButtons.setFocusable(false);
         classicButtons.setChecked(classicButtonsEnabled);
         panel.addView(classicButtons, new LinearLayout.LayoutParams(-1, -2));
 
@@ -2085,16 +2109,19 @@ final class NativeTouchControlsView extends View {
         panel.addView(panelOpacityLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(panelOpacityBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
-        TextView sensitivityLabel = textSetting("Sensibilidade da câmera " + Math.round(sensitivity * 100) + "%");
+        TextView sensitivityLabel = textSetting(
+                "Sensibilidade da câmera " + Math.round(sensitivity * 100) + "%");
         SeekBar sensitivityBar = new SeekBar(activity);
         sensitivityBar.setMax(150);
         sensitivityBar.setProgress(Math.round((sensitivity - 0.50f) * 100f));
         panel.addView(sensitivityLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(sensitivityBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
-        Button manageButtons = new Button(activity);
-        manageButtons.setText(UiLanguage.translate(activity, "Gerenciar / restaurar botões predefinidos"));
-        manageButtons.setOnClickListener(v -> showButtonVisibilityManager());
+        Button manageButtons = panelActionButton("Gerenciar / restaurar botões predefinidos", false);
+        manageButtons.setOnClickListener(v -> {
+            if (activeGameSettingsPanel != null) activeGameSettingsPanel.dismiss();
+            showButtonVisibilityManager();
+        });
         panel.addView(manageButtons, new LinearLayout.LayoutParams(-1, dpInt(42)));
 
         TextView gapLabel = textSetting("Distância de encaixe " + Math.round(snapGapDp) + " dp");
@@ -2104,24 +2131,38 @@ final class NativeTouchControlsView extends View {
         panel.addView(gapLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(gapBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
-        size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText(UiLanguage.translate(activity, "Tamanho geral ") + (70 + progress) + "%")));
-        alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText(UiLanguage.translate(activity, "Opacidade geral ") + (35 + progress) + "%")));
+        size.setOnSeekBarChangeListener(simpleSeek(progress ->
+                sizeLabel.setText(UiLanguage.translate(activity, "Tamanho geral ") + (70 + progress) + "%")));
+        alpha.setOnSeekBarChangeListener(simpleSeek(progress ->
+                alphaLabel.setText(UiLanguage.translate(activity, "Opacidade geral ") + (35 + progress) + "%")));
         panelOpacityBar.setOnSeekBarChangeListener(simpleSeek(progress ->
                 panelOpacityLabel.setText(UiLanguage.translate(activity,
                         "Opacidade dos painéis ") + (25 + progress) + "%")));
-        sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText(UiLanguage.translate(activity, "Sensibilidade da câmera ") + (50 + progress) + "%")));
-        gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText(UiLanguage.translate(activity, "Distância de encaixe ") + (progress + 4) + " dp")));
+        sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress ->
+                sensitivityLabel.setText(UiLanguage.translate(activity,
+                        "Sensibilidade da câmera ") + (50 + progress) + "%")));
+        gapBar.setOnSeekBarChangeListener(simpleSeek(progress ->
+                gapLabel.setText(UiLanguage.translate(activity,
+                        "Distância de encaixe ") + (progress + 4) + " dp")));
+
         ScrollView settingsScroll = new ScrollView(activity);
         settingsScroll.setFillViewport(false);
         settingsScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
+        LinearLayout footer = new LinearLayout(activity);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        Button cancel = panelActionButton("Cancelar", false);
+        Button save = panelActionButton("Salvar", true);
+        footer.addView(cancel, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dpInt(38), 1f);
+        saveParams.leftMargin = dpInt(8);
+        footer.addView(save, saveParams);
 
-        AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle(UiLanguage.translate(activity, "Ajustes dos controles"))
-                .setView(settingsScroll)
-                .setNegativeButton(UiLanguage.translate(activity, "Cancelar"), null)
-                .setPositiveButton(UiLanguage.translate(activity, "Salvar"), null)
-                .create();
-        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+        PopupWindow[] popupRef = new PopupWindow[1];
+        popupRef[0] = showFloatingSettingsPanel("Ajustes dos controles", settingsScroll,
+                footer, KEY_SETTINGS_PANEL_X, KEY_SETTINGS_PANEL_Y, 0.08f, 0.10f, 560);
+        cancel.setOnClickListener(v -> popupRef[0].dismiss());
+        save.setOnClickListener(v -> {
             scale = (size.getProgress() + 70) / 100f;
             opacity = (alpha.getProgress() + 35) / 100f;
             sensitivity = (sensitivityBar.getProgress() + 50) / 100f;
@@ -2140,10 +2181,10 @@ final class NativeTouchControlsView extends View {
                     .putFloat(KEY_SNAP_GAP, snapGapDp)
                     .apply();
             invalidate();
-            Toast.makeText(activity, UiLanguage.translate(activity, "Ajustes dos controles salvos."), Toast.LENGTH_SHORT).show();
-            dialog.dismiss();
-        }));
-        dialog.show();
+            Toast.makeText(activity, UiLanguage.translate(activity,
+                    "Ajustes dos controles salvos."), Toast.LENGTH_SHORT).show();
+            popupRef[0].dismiss();
+        });
     }
 
     private String[] localizedManagedButtonNames() {
@@ -2153,34 +2194,56 @@ final class NativeTouchControlsView extends View {
     }
 
     private void showButtonVisibilityManager() {
-        boolean[] visible = new boolean[MANAGED_BUTTON_IDS.length];
+        LinearLayout options = new LinearLayout(activity);
+        options.setOrientation(LinearLayout.VERTICAL);
+        options.setPadding(dpInt(10), dpInt(4), dpInt(10), dpInt(4));
+        options.addView(textSetting(
+                "Desmarque para ocultar. Posições e cores salvas são mantidas."),
+                new LinearLayout.LayoutParams(-1, -2));
+        ArrayList<android.widget.CheckBox> checkBoxes = new ArrayList<>();
+        String[] names = localizedManagedButtonNames();
         for (int i = 0; i < MANAGED_BUTTON_IDS.length; i++) {
-            ButtonLayout layout = buttonLayouts.get(MANAGED_BUTTON_IDS[i]);
-            visible[i] = layout == null || layout.visible;
+            final int index = i;
+            int id = MANAGED_BUTTON_IDS[i];
+            ButtonLayout layout = buttonLayouts.get(id);
+            android.widget.CheckBox check = new android.widget.CheckBox(activity);
+            check.setText(names[i]);
+            check.setTextColor(0xff18213a);
+            check.setFocusable(false);
+            check.setChecked(layout == null || layout.visible);
+            check.setOnCheckedChangeListener((button, checked) -> {
+                ButtonLayout updated = buttonLayouts.computeIfAbsent(
+                        MANAGED_BUTTON_IDS[index], ignored -> newDefaultButtonLayout(MANAGED_BUTTON_IDS[index]));
+                updated.visible = checked;
+                if (!checked) releaseHeldControls();
+                saveButtonLayouts();
+                invalidate();
+            });
+            checkBoxes.add(check);
+            options.addView(check, new LinearLayout.LayoutParams(-1, dpInt(36)));
         }
-        AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle(UiLanguage.translate(activity, "Botões predefinidos"))
-                .setMessage(UiLanguage.translate(activity, "Desmarque para excluir da tela. Marque novamente para restaurar. Posições e cores salvas são mantidas."))
-                .setMultiChoiceItems(localizedManagedButtonNames(), visible, (d, which, checked) -> {
-                    int id = MANAGED_BUTTON_IDS[which];
-                    ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
-                    layout.visible = checked;
-                    if (!checked) releaseHeldControls();
-                    saveButtonLayouts();
-                    invalidate();
-                })
-                .setNegativeButton(UiLanguage.translate(activity, "Restaurar todos"), (d, which) -> {
-                    for (int id : MANAGED_BUTTON_IDS) {
-                        ButtonLayout layout = buttonLayouts.computeIfAbsent(id, ignored -> newDefaultButtonLayout(id));
-                        layout.visible = true;
-                    }
-                    saveButtonLayouts();
-                    invalidate();
-                    Toast.makeText(activity, UiLanguage.translate(activity, "Botões predefinidos restaurados."), Toast.LENGTH_SHORT).show();
-                })
-                .setPositiveButton(UiLanguage.translate(activity, "Fechar"), null)
-                .create();
-        dialog.show();
+
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(false);
+        scroll.addView(options, new ScrollView.LayoutParams(-1, -2));
+        LinearLayout footer = new LinearLayout(activity);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        Button restore = panelActionButton("Restaurar todos", false);
+        Button close = panelActionButton("Fechar", true);
+        footer.addView(restore, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(0, dpInt(38), 1f);
+        closeParams.leftMargin = dpInt(8);
+        footer.addView(close, closeParams);
+
+        PopupWindow popup = showFloatingSettingsPanel("Botões predefinidos", scroll, footer,
+                KEY_BUTTONS_PANEL_X, KEY_BUTTONS_PANEL_Y, 0.14f, 0.14f, 500);
+        restore.setOnClickListener(v -> {
+            for (android.widget.CheckBox check : checkBoxes) check.setChecked(true);
+            Toast.makeText(activity, UiLanguage.translate(activity,
+                    "Botões predefinidos restaurados."), Toast.LENGTH_SHORT).show();
+        });
+        close.setOnClickListener(v -> popup.dismiss());
     }
 
     private interface SeekValueChanged { void onChanged(int progress); }
