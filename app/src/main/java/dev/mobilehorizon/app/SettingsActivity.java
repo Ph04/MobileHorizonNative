@@ -167,6 +167,9 @@ public final class SettingsActivity extends Activity {
 
     private void showAccentPicker() {
         String[] choices = LauncherAppearance.accentNames();
+        for (int i = 0; i < choices.length; i++) {
+            choices[i] = UiLanguage.translate(this, choices[i]);
+        }
         new AlertDialog.Builder(this)
                 .setTitle(UiLanguage.translate(this, "Cor de destaque"))
                 .setItems(choices, (dialog, which) -> {
