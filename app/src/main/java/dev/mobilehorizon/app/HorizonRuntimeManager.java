@@ -309,6 +309,23 @@ public final class HorizonRuntimeManager {
         }
     }
 
+    /**
+     * Temporarily selects a verified version for one instance/session without changing
+     * previous.json. The global rollback pointer must not be overwritten by an instance pin.
+     */
+    public static synchronized void activatePinnedVersion(Context context, String version)
+            throws IOException {
+        InstalledVersion installed = readInstalledVersion(context, version);
+        Context app = context.getApplicationContext();
+        File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
+        try (FileChannel lockChannel = FileChannel.open(
+                     new File(root, ".runtime-manager.lock").toPath(),
+                     StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+             FileLock ignoredLock = lockChannel.lock()) {
+            writeActive(root, installed.version, installed.sha256);
+        }
+    }
+
     private static InstalledVersion readInstalledVersion(Context context, String version)
             throws IOException {
         String safeVersion = requireVersion(version);
