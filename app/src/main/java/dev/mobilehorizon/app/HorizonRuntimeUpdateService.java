@@ -623,7 +623,7 @@ public final class HorizonRuntimeUpdateService {
     private static void download(Context context, SharedPreferences preferences,
                                  String phase, String progressLabel, String address,
                                  long expectedSize, String expectedSha256, File destination) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
+        HttpURLConnection connection = (HttpURLConnection) LauncherNetworkSettings.open(new URL(address));
         connection.setRequestMethod("GET");
         connection.setConnectTimeout(20000);
         connection.setReadTimeout(45000);
@@ -684,7 +684,7 @@ public final class HorizonRuntimeUpdateService {
     }
 
     private static String readUrl(String address, int maximumBytes) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
+        HttpURLConnection connection = (HttpURLConnection) LauncherNetworkSettings.open(new URL(address));
         connection.setRequestMethod("GET");
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(20000);
