@@ -899,7 +899,6 @@ public final class MainActivity extends Activity {
     }
 
     private void updateMobileNavigation(View target) {
-        if (mobileNavigationItems == null) return;
         String selected = UiLanguage.translate(this, "Início");
         if (target == instanceSectionView) selected = UiLanguage.translate(this, "Instâncias");
         else if (target == resourcesSectionView) selected = UiLanguage.translate(this, "Biblioteca");
