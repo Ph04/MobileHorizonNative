@@ -91,15 +91,21 @@ public final class SettingsActivity extends Activity {
         addNote(notes, "Runtime Horizon Nightly",
                 "O launcher acompanha o canal Nightly oficial e prepara a runtime Android separadamente do APK.");
         addNote(notes, "Instâncias e mundos",
-                "Perfis de jogo isolados, mundos por instância, backups ZIP e restauração validada.");
+                "Duplicação, grupos, ícones, exportação/importação ZIP, tempo jogado, backups de mundos e data packs por mundo.");
+        addNote(notes, "Versões da runtime",
+                "Catálogo de runtimes Android ARM64 verificadas, instalação manual e seleção separada por instância.");
+        addNote(notes, "Pacotes instalados",
+                "Ativar, desativar, importar e remover resource packs e shaders da instância selecionada.");
+        addNote(notes, "Aparência",
+                "Cor de destaque e imagem de fundo próprias do launcher, sem alterar a aparência do Minecraft.");
         addNote(notes, "Perfis e contas",
                 "Vários perfis offline e contas Microsoft salvas com tokens criptografados por conta.");
         addNote(notes, "Skins e capas",
                 "Gerenciamento de skins Classic e Slim, prévia da textura ativa e capas já pertencentes à conta.");
         addNote(notes, "Servidores favoritos",
-                "Favoritos separados por instância e sincronização com a lista Multiplayer do Minecraft.");
+                "Favoritos por instância com entrada direta via Quick Play e autenticação para servidores online.");
         addNote(notes, "Biblioteca e sistema",
-                "Catálogo de resource packs e shaders, galeria de capturas, console com filtro e exportação.");
+                "Catálogo Modrinth vanilla, galeria com exportação em ZIP, console pesquisável com copiar e exportar logs.");
         page.addView(notes, top(-1, -2, 12));
 
         LinearLayout limitations = card();
