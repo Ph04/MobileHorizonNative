@@ -40,6 +40,16 @@ public final class SkinCapeActivity extends Activity {
         buildUi();
         loadProfile();
     }
+    @Override protected void onResume() {
+        super.onResume();
+        if (skinPreview != null) skinPreview.setAnimationEnabled(true);
+    }
+
+    @Override protected void onPause() {
+        if (skinPreview != null) skinPreview.setAnimationEnabled(false);
+        super.onPause();
+    }
+
     @Override protected void onDestroy() { io.shutdown(); super.onDestroy(); }
 
     private void buildUi() {
