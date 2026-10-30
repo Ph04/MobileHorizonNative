@@ -144,7 +144,7 @@ final class MinecraftCosmeticsService {
 
     private static HttpURLConnection open(String path, String token) throws Exception {
         if (token == null || token.isEmpty()) throw new IllegalArgumentException("Sessão Minecraft vazia.");
-        HttpURLConnection connection = (HttpURLConnection) new URL(API + path).openConnection();
+        HttpURLConnection connection = (HttpURLConnection) LauncherNetworkSettings.open(new URL(API + path));
         connection.setConnectTimeout(20000);
         connection.setReadTimeout(45000);
         connection.setRequestProperty("Authorization", "Bearer " + token);
