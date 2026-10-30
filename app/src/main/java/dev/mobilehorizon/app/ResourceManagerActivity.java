@@ -98,7 +98,8 @@ public final class ResourceManagerActivity extends Activity {
         try {
             return GameInstanceManager.getSelectedInstanceHome(this);
         } catch (IOException error) {
-            return new File(getFilesDir(), "horizon");
+            throw new IllegalStateException(
+                    "Não foi possível resolver a instância selecionada com segurança.", error);
         }
     }
     private File textureDir() { return new File(home(), "resourcepacks"); }
