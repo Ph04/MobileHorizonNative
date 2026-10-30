@@ -47,6 +47,7 @@ public final class WorldsActivity extends Activity {
         page.setPadding(dp(16),dp(18),dp(16),dp(28));
         scroll.addView(page);
         setContentView(scroll);
+        LauncherButtonStyle.install(this);
         page.addView(text("MOBILEHORIZON  /  BIBLIOTECA",11,0xff9e88ff,true),lp(-1,-2));
         page.addView(text("Mundos",27,0xfff0ecff,true),top(-1,-2,5));
         page.addView(text("Mundos da instância ativa. Crie backups locais e restaure cópias quando necessário.",13,0xffb9b3d1,false),top(-1,-2,6));
