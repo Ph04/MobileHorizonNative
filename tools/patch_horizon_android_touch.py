@@ -14,12 +14,16 @@ import sys
 root = Path(sys.argv[1])
 repo_root = Path(__file__).resolve().parents[1]
 
-# Shared upstream paths used by the first two patch groups.
-game = root / "crates/horizon-client/src/game.rs"
-lib = root / "crates/horizon-client/src/lib.rs"
-hud = root / "crates/horizon-client/src/hud.rs"
-audio = root / "crates/horizon-client/src/audio.rs"
-skins = root / "crates/horizon-client/src/skins.rs"
+# Shared upstream paths used by the active Android patch groups.
+# Recent Nightly releases split rendering code out of horizon-client into
+# horizon-client-render; keep the legacy paths for older pinned Horizon tags.
+client_src = root / "crates/horizon-client/src"
+render_src = root / "crates/horizon-client-render/src"
+game = client_src / "game.rs"
+lib = client_src / "lib.rs"
+hud = render_src / "hud.rs" if (render_src / "hud.rs").is_file() else client_src / "hud.rs"
+audio = render_src / "audio.rs" if (render_src / "audio.rs").is_file() else client_src / "audio.rs"
+skins = render_src / "skins.rs" if (render_src / "skins.rs").is_file() else client_src / "skins.rs"
 remote = root / "crates/horizon-client/src/game/remote.rs"
 chat = root / "crates/horizon-client/src/game/chat.rs"
 names = root / "crates/horizon-client/src/game/names.rs"
