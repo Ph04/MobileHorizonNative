@@ -19,6 +19,10 @@ import android.graphics.drawable.GradientDrawable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
@@ -26,13 +30,21 @@ import java.util.Locale;
 
 public final class ScreenshotsActivity extends Activity {
     private static final int EXPORT_SCREENSHOT = 401;
+    private static final int EXPORT_ALL_SCREENSHOTS = 402;
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
     private LinearLayout list;
     private TextView status;
     private File pendingExport;
+    private File[] pendingExportBatch;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state); getWindow().setStatusBarColor(0xff090911); getWindow().setNavigationBarColor(0xff090911);
         buildUi(); refresh();
+    }
+
+    @Override protected void onDestroy() {
+        io.shutdown();
+        super.onDestroy();
     }
 
     private void buildUi() {
@@ -44,6 +56,7 @@ public final class ScreenshotsActivity extends Activity {
         page.addView(text("Arquivos locais da pasta screenshots da instância selecionada.",13,0xffb9b3d1,false),top(-1,-2,6));
         page.addView(button("Voltar",false,v->finish()),top(-1,52,12));
         page.addView(button("Atualizar",true,v->refresh()),top(-1,48,8));
+        page.addView(button("Exportar todas em ZIP",false,v->exportAll()),top(-1,48,6));
         status=text("",12,0xffc7bce6,false); page.addView(status,top(-1,-2,8));
         list=new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); page.addView(list,top(-1,-2,5));
     }
@@ -128,16 +141,117 @@ public final class ScreenshotsActivity extends Activity {
         startActivityForResult(intent,EXPORT_SCREENSHOT);
     }
 
+    private void exportAll() {
+        try {
+            File[] files = scan();
+            if (files.length == 0) {
+                status.setText(UiLanguage.translate(this, "Não há capturas para exportar."));
+                return;
+            }
+            pendingExportBatch = files;
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/zip");
+            intent.putExtra(Intent.EXTRA_TITLE, "mobilehorizon-screenshots.zip");
+            startActivityForResult(intent, EXPORT_ALL_SCREENSHOTS);
+        } catch (Exception error) {
+            status.setText(UiLanguage.translate(this, "Não foi possível preparar a exportação: ")
+                    + error.getMessage());
+        }
+    }
+
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
-        if(request!=EXPORT_SCREENSHOT||result!=RESULT_OK||data==null||data.getData()==null||pendingExport==null)return;
-        Uri uri=data.getData();File source=pendingExport;pendingExport=null;
-        try(InputStreamCopy copy=new InputStreamCopy(new FileInputStream(source),getContentResolver().openOutputStream(uri))) {
-            copy.transfer();
-            status.setText(UiLanguage.translate(this,"Captura exportada: ")+source.getName());
-        } catch(Exception error) {
-            status.setText(UiLanguage.translate(this,"Falha ao exportar captura: ")+error.getMessage());
+        if (request != EXPORT_SCREENSHOT && request != EXPORT_ALL_SCREENSHOTS) return;
+        if (result != RESULT_OK || data == null || data.getData() == null) {
+            pendingExport = null;
+            pendingExportBatch = null;
+            return;
         }
+        Uri uri = data.getData();
+        if (request == EXPORT_SCREENSHOT) {
+            File source = pendingExport;
+            pendingExport = null;
+            if (source == null) return;
+            io.execute(() -> copyScreenshot(source, uri));
+        } else {
+            File[] batch = pendingExportBatch;
+            pendingExportBatch = null;
+            if (batch == null) return;
+            io.execute(() -> zipScreenshots(batch, uri));
+        }
+    }
+
+    private void copyScreenshot(File source, Uri destination) {
+        Exception failure = null;
+        try {
+            File root = new File(GameInstanceManager.getSelectedInstanceHome(this),
+                    "screenshots").getCanonicalFile();
+            File canonical = source.getCanonicalFile();
+            if (!root.equals(canonical.getParentFile())
+                    || java.nio.file.Files.isSymbolicLink(source.toPath())) {
+                throw new java.io.IOException("Caminho da captura inválido.");
+            }
+            try (FileInputStream input = new FileInputStream(source);
+                 OutputStream output = getContentResolver().openOutputStream(destination, "w")) {
+                if (output == null) throw new java.io.IOException("Destino de exportação indisponível.");
+                byte[] buffer = new byte[32768];
+                int count;
+                while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                output.flush();
+            }
+        } catch (Exception error) { failure = error; }
+        final Exception error = failure;
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            status.setText(UiLanguage.translate(this, error == null
+                    ? "Captura exportada: " + source.getName()
+                    : "Falha ao exportar captura: " + error.getMessage()));
+        });
+    }
+
+    private void zipScreenshots(File[] files, Uri destination) {
+        Exception failure = null;
+        int exported = 0;
+        try {
+            File root = new File(GameInstanceManager.getSelectedInstanceHome(this),
+                    "screenshots").getCanonicalFile();
+            try (OutputStream raw = getContentResolver().openOutputStream(destination, "w")) {
+                if (raw == null) throw new java.io.IOException("Destino de exportação indisponível.");
+                try (ZipOutputStream zip = new ZipOutputStream(raw)) {
+                    byte[] buffer = new byte[32768];
+                    for (File source : files) {
+                        File canonical = source.getCanonicalFile();
+                        if (!root.equals(canonical.getParentFile())
+                                || java.nio.file.Files.isSymbolicLink(source.toPath())
+                                || !source.isFile()) {
+                            throw new java.io.IOException("Uma captura saiu da pasta segura de origem.");
+                        }
+                        String name = source.getName();
+                        if (name.isEmpty() || name.contains("/") || name.contains("\\\\")
+                                || name.equals(".") || name.equals("..")) {
+                            throw new java.io.IOException("Nome de captura inválido no ZIP.");
+                        }
+                        zip.putNextEntry(new ZipEntry(name));
+                        try (FileInputStream input = new FileInputStream(source)) {
+                            int count;
+                            while ((count = input.read(buffer)) != -1) zip.write(buffer, 0, count);
+                        }
+                        zip.closeEntry();
+                        exported++;
+                    }
+                    zip.finish();
+                }
+            }
+        } catch (Exception error) { failure = error; }
+        final Exception error = failure;
+        final int count = exported;
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            status.setText(UiLanguage.translate(this, error == null
+                    ? "Capturas exportadas: " + count
+                    : "Falha ao criar ZIP de capturas: " + error.getMessage()));
+        });
     }
 
     private static final class InputStreamCopy implements AutoCloseable {
