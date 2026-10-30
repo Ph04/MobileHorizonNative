@@ -66,10 +66,10 @@ public final class InstancesActivity extends Activity {
                 13, 0xffb9b3d1, false), topParams(-1, -2, 6));
 
         Button back = button("Voltar", false, v -> finish());
-        page.addView(back, topParams(-1, 40, 12));
+        page.addView(back, topParams(-1, 52, 12));
 
         Button create = button("Nova instância", true, v -> showNameDialog(null));
-        page.addView(create, topParams(-1, 44, 10));
+        page.addView(create, topParams(-1, 52, 10));
 
         progress = new ProgressBar(this);
         progress.setIndeterminate(true);
@@ -146,7 +146,7 @@ public final class InstancesActivity extends Activity {
 
         Button delete = button("Excluir", false, v -> confirmDelete(instance));
         delete.setEnabled(!busy && !active && !instance.isDefault());
-        card.addView(delete, topParams(-1, 36, 7));
+        card.addView(delete, topParams(-1, 52, 7));
         return card;
     }
 

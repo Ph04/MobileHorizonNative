@@ -114,7 +114,7 @@ public final class WorldsActivity extends Activity {
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,dp(40),1f);
         bp.leftMargin=dp(7);
         row.addView(backups,bp);
-        card.addView(button("Excluir mundo",false,v->confirmDelete(world)),top(-1,36,7));
+        card.addView(button("Excluir mundo",false,v->confirmDelete(world)),top(-1,52,7));
         return card;
     }
 

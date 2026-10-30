@@ -647,9 +647,9 @@ public final class MainActivity extends Activity {
                 "Cada perfil mantém seus mundos, opções, logs e pacotes separados.",
                 "Gerenciar", v -> startActivity(new Intent(this, InstancesActivity.class)),
                 landscape);
-        worldsSectionView = addDashboardRow(page, "Mundos",
-                "Visualize seus mundos, crie backups e restaure cópias da instância ativa.",
-                "Gerenciar", v -> startActivity(new Intent(this, WorldsActivity.class)),
+        worldsSectionView = addDashboardRow(page, "Biblioteca",
+                "Mundos, servidores favoritos, conteúdo, capturas e console da instância ativa.",
+                "Abrir", v -> startActivity(new Intent(this, LibraryActivity.class)),
                 landscape);
         addDashboardRow(page, "Resources", resourceReadySummary(),
                 "Gerenciar", v -> startActivity(new Intent(this, ResourceManagerActivity.class)),
@@ -708,6 +708,9 @@ public final class MainActivity extends Activity {
         microsoftSignOutButton = button("Remover conta salva", false, v -> signOutMicrosoft());
         microsoftSignOutButton.setVisibility(View.GONE);
         addSpaced(accountSection, microsoftSignOutButton, 40, 6);
+        Button manageProfilesButton = button("Gerenciar perfis e cosméticos", false,
+                v -> startActivity(new Intent(this, ProfilesActivity.class)));
+        addSpaced(accountSection, manageProfilesButton, 46, 7);
 
         logsSectionView = collapsibleSection(page, "Logs e diagnóstico",
                 "Consultar logs locais, testar o renderizador e exportar um pacote de diagnóstico.", false);
@@ -1743,7 +1746,12 @@ public final class MainActivity extends Activity {
         }
         String refreshToken;
         try {
-            refreshToken = EncryptedRefreshTokenStore.load(this);
+            MicrosoftAccountStore.Account active = MicrosoftAccountStore.active(this);
+            if (active == null) {
+                refreshToken = null;
+            } else {
+                refreshToken = EncryptedRefreshTokenStore.load(this, active.uuid);
+            }
         } catch (Exception error) {
             showRuntimeError("Não foi possível ler a sessão salva", safeMessage(error));
             return;
@@ -1857,14 +1865,16 @@ public final class MainActivity extends Activity {
 
     private void refreshAccountUi() {
         if (accountStatusText == null) return;
-        android.content.SharedPreferences prefs = getSharedPreferences("microsoft_account_state", MODE_PRIVATE);
-        boolean signedIn = prefs.getBoolean("hasAccount", false);
-        String name = prefs.getString("accountName", "");
-        accountStatusText.setText(UiLanguage.translate(this, signedIn && !name.isEmpty()
-                ? "Conta verificada: " + name + "\nA licença foi verificada durante o último login."
-                : "Nenhuma conta verificada neste dispositivo."));
+        List<MicrosoftAccountStore.Account> accounts = MicrosoftAccountStore.list(this);
+        MicrosoftAccountStore.Account active = MicrosoftAccountStore.active(this);
+        boolean signedIn = active != null;
+        String detail = signedIn
+                ? "Conta selecionada: " + active.name + "\nContas Microsoft salvas: " + accounts.size()
+                    + "\nA licença é verificada novamente antes de iniciar o jogo."
+                : "Nenhuma conta verificada neste dispositivo.";
+        accountStatusText.setText(UiLanguage.translate(this, detail));
         if (microsoftLoginButton != null) microsoftLoginButton.setText(UiLanguage.translate(this, signedIn
-                ? "Atualizar sessão Microsoft" : "Entrar com Microsoft"));
+                ? "Adicionar/atualizar conta Microsoft" : "Entrar com Microsoft"));
         if (microsoftSignOutButton != null) microsoftSignOutButton.setVisibility(signedIn ? View.VISIBLE : View.GONE);
         updateActionEnablement();
     }
@@ -1983,15 +1993,21 @@ public final class MainActivity extends Activity {
     private void signOutMicrosoft() {
         if (authBusy || launchBusy) return;
         new AlertDialog.Builder(this)
-                .setTitle(UiLanguage.translate(this, "Remover conta salva?"))
-                .setMessage(UiLanguage.translate(this, "O token de renovação criptografado e os dados públicos da conta serão removidos deste dispositivo."))
+                .setTitle(UiLanguage.translate(this, "Remover conta selecionada?"))
+                .setMessage(UiLanguage.translate(this, "Somente a conta Microsoft ativa e seu token criptografado serão removidos. Outras contas e perfis offline serão preservados."))
                 .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
                 .setPositiveButton(UiLanguage.translate(this, "Remover"), (dialog, which) -> {
                     try {
-                        EncryptedRefreshTokenStore.clear(this);
-                        getSharedPreferences("microsoft_account_state", MODE_PRIVATE).edit().clear().commit();
+                        MicrosoftAccountStore.Account active = MicrosoftAccountStore.active(this);
+                        if (active != null) {
+                            EncryptedRefreshTokenStore.clear(this, active.uuid);
+                            MicrosoftAccountStore.remove(this, active.uuid);
+                        } else {
+                            EncryptedRefreshTokenStore.clear(this);
+                            getSharedPreferences("microsoft_account_state", MODE_PRIVATE).edit().clear().commit();
+                        }
                         refreshAccountUi();
-                        setStatus("Conta removida", "Entre novamente pela Microsoft para iniciar o cliente online.");
+                        setStatus("Conta removida", "As demais contas salvas continuam disponíveis no gerenciador de perfis.");
                     } catch (Exception error) {
                         showRuntimeError("Falha ao remover conta", safeMessage(error));
                     }
@@ -2014,7 +2030,9 @@ public final class MainActivity extends Activity {
                             if (isFinishing() || isDestroyed()) return;
                             progressDetails.setText(stage + "\n" + detail);
                         }));
-                EncryptedRefreshTokenStore.save(this, account.refreshToken);
+                EncryptedRefreshTokenStore.save(this, account.uuid, account.refreshToken);
+                MicrosoftAccountStore.upsert(this, account.uuid, account.name, account.xuid,
+                        System.currentTimeMillis());
                 runOnUiThread(() -> {
                     launchBusy = false;
                     updateActionEnablement();
@@ -2055,8 +2073,13 @@ public final class MainActivity extends Activity {
                     String message = safeMessage(error);
                     setStatus("Sessão não válida", message);
                     if (message.contains("Entre novamente")) {
-                        try { EncryptedRefreshTokenStore.clear(this); } catch (Exception ignored) {}
-                        getSharedPreferences("microsoft_account_state", MODE_PRIVATE).edit().clear().commit();
+                        try {
+                            MicrosoftAccountStore.Account active = MicrosoftAccountStore.active(this);
+                            if (active != null) {
+                                EncryptedRefreshTokenStore.clear(this, active.uuid);
+                                MicrosoftAccountStore.remove(this, active.uuid);
+                            }
+                        } catch (Exception ignored) {}
                         refreshAccountUi();
                     }
                 });
