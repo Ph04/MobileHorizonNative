@@ -8,7 +8,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.ImageView;
+
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -26,7 +26,7 @@ public final class SkinCapeActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private LinearLayout skins;
     private LinearLayout capes;
-    private ImageView skinPreview;
+    private SkinModelPreviewView skinPreview;
     private TextView status;
     private ProgressBar progress;
     private JSONObject profile;
@@ -54,13 +54,11 @@ public final class SkinCapeActivity extends Activity {
         progress = new ProgressBar(this); progress.setIndeterminate(true); page.addView(progress, top(-1, 4, 8));
         LinearLayout skinCard = card();
         skinCard.addView(text("Skins", 16, 0xfff0ecff, true), lp(-1, -2));
-        skinPreview = new ImageView(this);
-        skinPreview.setAdjustViewBounds(true);
-        skinPreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        skinPreview.setBackgroundColor(0xff100f1a);
-        skinPreview.setContentDescription(UiLanguage.translate(this, "Textura 64 × 64 da skin ativa"));
-        skinCard.addView(skinPreview, top(-1, 150, 8));
-        skinCard.addView(text("Prévia da textura 64 × 64; a visualização 3D giratória ainda não está disponível.", 11, 0xffaaa2c6, false), top(-1, -2, 4));
+        skinPreview = new SkinModelPreviewView(this);
+        skinPreview.setContentDescription(UiLanguage.translate(this,
+                "Prévia 3D da skin ativa. Arraste para girar o avatar inteiro."));
+        skinCard.addView(skinPreview, top(-1, 224, 8));
+        skinCard.addView(text("O avatar gira como um único modelo. Arraste para controlar a rotação; o modelo clássico e o slim são detectados automaticamente.", 11, 0xffaaa2c6, false), top(-1, -2, 4));
         skinCard.addView(button("Importar skin PNG 64 × 64", true, v -> pickSkin()), top(-1, 50, 8));
         skinCard.addView(button("Redefinir skin", false, v -> resetSkin()), top(-1, 46, 6));
         skins = new LinearLayout(this); skins.setOrientation(LinearLayout.VERTICAL); skinCard.addView(skins, top(-1, -2, 8));
@@ -111,8 +109,12 @@ public final class SkinCapeActivity extends Activity {
             row.addView(use, new LinearLayout.LayoutParams(dp(104), dp(46)));
             skins.addView(row, top(-1, -2, 5));
         }
-        if (activeSkin != null) loadSkinPreview(activeSkin.optString("url", ""));
-        else if (skinPreview != null) skinPreview.setImageDrawable(null);
+        if (activeSkin != null) {
+            loadSkinPreview(activeSkin.optString("url", ""),
+                    activeSkin.optString("variant", "CLASSIC"));
+        } else if (skinPreview != null) {
+            skinPreview.setSkin(null, "CLASSIC");
+        }
 
         JSONArray capeList = profile.optJSONArray("capes");
         if (capeList == null || capeList.length() == 0) capes.addView(text("Esta conta não possui capas disponíveis.", 12, 0xffb9b3d1, false), lp(-1, -2));
@@ -130,7 +132,7 @@ public final class SkinCapeActivity extends Activity {
         }
     }
 
-    private void loadSkinPreview(String textureUrl) {
+    private void loadSkinPreview(String textureUrl, String variant) {
         if (skinPreview == null || textureUrl == null || textureUrl.isEmpty()) return;
         skinPreview.setTag(textureUrl);
         io.execute(() -> {
@@ -140,10 +142,11 @@ public final class SkinCapeActivity extends Activity {
             catch (Exception error) { failure = error; }
             final Bitmap preview = bitmap;
             final Exception problem = failure;
+            final String modelVariant = variant == null ? "CLASSIC" : variant;
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed() || skinPreview == null
                         || !textureUrl.equals(skinPreview.getTag())) return;
-                if (problem == null) skinPreview.setImageBitmap(preview);
+                if (problem == null) skinPreview.setSkin(preview, modelVariant);
                 else status.setText("Prévia indisponível: " + message(problem));
             });
         });
