@@ -870,7 +870,7 @@ public final class HorizonRuntimeUpdateService {
             if (!setAsAutomaticDefault && restoreVersion != null && !restoreVersion.isEmpty()
                     && HorizonRuntimeManager.hasInstalledVersion(app, restoreVersion)) {
                 try {
-                    HorizonRuntimeManager.activateInstalledVersion(app, restoreVersion);
+                    HorizonRuntimeManager.activatePinnedVersion(app, restoreVersion);
                 } catch (Exception restoreError) {
                     Log.e(TAG, "Não foi possível restaurar a runtime automática após instalar a versão fixada.", restoreError);
                 }
@@ -906,7 +906,7 @@ public final class HorizonRuntimeUpdateService {
         String version = automaticRuntimeVersion(context);
         if (version == null || version.isEmpty()) return;
         if (HorizonRuntimeManager.hasInstalledVersion(context, version)) {
-            HorizonRuntimeManager.activateInstalledVersion(context, version);
+            HorizonRuntimeManager.activatePinnedVersion(context, version);
         }
     }
 
