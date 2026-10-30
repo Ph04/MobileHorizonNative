@@ -47,6 +47,9 @@ final class LauncherNetworkSettings {
             throw new IOException("Proxy com usuário/senha embutidos não é aceito nesta versão.");
         }
         String host = uri.getHost();
+        if (host != null && host.startsWith("[") && host.endsWith("]")) {
+            host = host.substring(1, host.length() - 1);
+        }
         int port = uri.getPort();
         if (host == null || host.trim().isEmpty() || port < 1 || port > 65535
                 || (uri.getRawPath() != null && !uri.getRawPath().isEmpty()
