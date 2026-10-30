@@ -67,6 +67,7 @@ final class UiLanguage {
         pair("Sistema", "System");
         pair("AMBIENTE DO JOGO", "GAME ENVIRONMENT");
         pair("Instâncias", "Instances");
+        pair("Perfil: ", "Profile: ");
         pair("Instância ativa: ", "Active instance: ");
         pair("Mundos, opções e pacotes ficam separados neste perfil.", "Worlds, options and packs are isolated in this profile.");
         pair("Não foi possível ler as instâncias: ", "Could not read instances: ");
