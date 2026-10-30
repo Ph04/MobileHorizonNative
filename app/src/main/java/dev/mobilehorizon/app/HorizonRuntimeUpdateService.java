@@ -17,6 +17,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -52,6 +55,7 @@ public final class HorizonRuntimeUpdateService {
     private static final String TEST_SEED_DONE = "test_old_runtime_seed_done";
     private static final String PREFERENCES = "horizon_runtime_updates";
     private static final String LAST_CHECK = "last_check_ms";
+    private static final String LAST_AUTOMATIC_VERSION = "last_automatic_runtime_version";
     private static final String LAST_STATUS = "last_status";
     private static final long CHECK_INTERVAL_MS = 5L * 60L * 1000L;
     private static final long MAX_DOWNLOAD_BYTES = 300L * 1024L * 1024L;
@@ -334,6 +338,7 @@ public final class HorizonRuntimeUpdateService {
             return;
         }
 
+        preferences.edit().putString(LAST_AUTOMATIC_VERSION, latest.version).apply();
         boolean installNeeded = !latest.version.equals(currentVersion);
         if (installNeeded) {
             Log.i(TAG, "Atualização de motor encontrada: PC " + latest.upstreamTag
@@ -404,6 +409,12 @@ public final class HorizonRuntimeUpdateService {
 
     private static void installRelease(Context context, SharedPreferences preferences,
                                        Release release) throws Exception {
+        installRelease(context, preferences, release, true);
+    }
+
+    private static void installRelease(Context context, SharedPreferences preferences,
+                                       Release release, boolean updateDisplayedReleaseTag)
+            throws Exception {
         File manifestDownload = new File(context.getCacheDir(),
                 "horizon-runtime-" + release.version + ".manifest.part");
         File download = new File(context.getCacheDir(),
@@ -442,8 +453,11 @@ public final class HorizonRuntimeUpdateService {
             publishProgress(context, preferences, "runtime-install",
                     "Download concluído. Instalando a runtime verificada…",
                     release.size, release.size);
-            HorizonRuntimeManager.installAndActivate(context, download, release.version, release.sha256);
-            preferences.edit().putString(PC_RELEASE_TAG, release.upstreamTag).apply();
+            HorizonRuntimeManager.installAndActivate(context, download, release.version,
+                    release.sha256, release.upstreamTag);
+            if (updateDisplayedReleaseTag) {
+                preferences.edit().putString(PC_RELEASE_TAG, release.upstreamTag).apply();
+            }
             Log.i(TAG, "Runtime ativado para a próxima inicialização: PC "
                     + release.upstreamTag + ", motor " + release.version);
         } finally {
@@ -752,6 +766,142 @@ public final class HorizonRuntimeUpdateService {
     private static void setStatus(SharedPreferences preferences, String status) {
         preferences.edit().putString(LAST_STATUS, status).apply();
         Log.i(TAG, status);
+    }
+
+    private static final class OfficialRelease {
+    public static final class PublishedRuntime {
+        public final String version;
+        public final String upstreamTag;
+        public final String publishedAt;
+        public final long sizeBytes;
+        private PublishedRuntime(Release release) {
+            this.version = release.version;
+            this.upstreamTag = release.upstreamTag;
+            this.publishedAt = release.publishedAt;
+            this.sizeBytes = release.size;
+        }
+    }
+
+    /** Returns validated Android ARM64 releases, newest first. This performs network I/O. */
+    public static List<PublishedRuntime> listPublishedRuntimes() throws Exception {
+        LinkedHashMap<String, Release> found = new LinkedHashMap<>();
+        for (int page = 1; page <= 10 && found.size() < 60; page++) {
+            JSONArray releases = new JSONArray(readUrl(RELEASES_URL + "&page=" + page,
+                    4 * 1024 * 1024));
+            if (releases.length() == 0) break;
+            for (int i = 0; i < releases.length(); i++) {
+                JSONObject item = releases.optJSONObject(i);
+                if (item == null || item.optBoolean("draft", false)
+                        || item.optBoolean("prerelease", false)) continue;
+                String tag = item.optString("tag_name", "");
+                if (!tag.startsWith(TAG_PREFIX)) continue;
+                String version = tag.substring(TAG_PREFIX.length());
+                String upstream = upstreamTagFromRuntimeVersion(version);
+                if (upstream.isEmpty() || found.containsKey(version)) continue;
+                try {
+                    Release candidate = releaseFromAssets(item, version, upstream,
+                            ENGINE_ASSET, "horizon-runtime-manifest.json");
+                    found.put(version, candidate);
+                } catch (Exception invalid) {
+                    Log.w(TAG, "Ignorando runtime inválida no catálogo: " + tag, invalid);
+                }
+            }
+            if (releases.length() < 100) break;
+        }
+        ArrayList<Release> ordered = new ArrayList<>(found.values());
+        ordered.sort((a, b) -> comparePublicationDates(b.publishedAt, a.publishedAt));
+        ArrayList<PublishedRuntime> result = new ArrayList<>();
+        for (Release release : ordered) result.add(new PublishedRuntime(release));
+        return Collections.unmodifiableList(result);
+    }
+
+    /** Downloads one exact published version using the same signed-by-checksum manifest path. */
+    public static void installSpecificRuntime(Context context, String requestedVersion,
+                                              boolean setAsAutomaticDefault) throws Exception {
+        if (requestedVersion == null || !requestedVersion.matches(
+                "horizon-[A-Za-z0-9._+-]+-c[0-9a-fA-F]{8}-o[0-9a-fA-F]{8}")) {
+            throw new IOException("Identificador de runtime inválido.");
+        }
+        synchronized (CHECK_LOCK) {
+            if (IN_FLIGHT.get()) {
+                throw new IOException("Já existe uma atualização de runtime em andamento. Tente novamente após sua conclusão.");
+            }
+            IN_FLIGHT.set(true);
+        }
+        Context app = context.getApplicationContext();
+        SharedPreferences preferences = app.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        try {
+            Release release = findRuntimeRelease(requestedVersion);
+            publishProgress(app, preferences, "manual-runtime",
+                    "Instalando a runtime selecionada " + release.version + "…", 0L, release.size);
+            installRelease(app, preferences, release, setAsAutomaticDefault);
+            if (setAsAutomaticDefault) {
+                preferences.edit().putString(LAST_AUTOMATIC_VERSION, release.version).apply();
+                setStatus(preferences, "Runtime padrão selecionada: " + release.version
+                        + " (Horizon PC " + release.upstreamTag + ").");
+            } else {
+                setStatus(preferences, "Runtime " + release.version
+                        + " instalada e verificada para uso em uma instância fixada.");
+            }
+        } catch (Exception error) {
+            setStatus(preferences, "Falha ao instalar a runtime selecionada: " + error.getMessage());
+            throw error;
+        } finally {
+            finishProgress(app, preferences);
+            List<Runnable> callbacks;
+            synchronized (CHECK_LOCK) {
+                IN_FLIGHT.set(false);
+                callbacks = new ArrayList<>(PENDING_CALLBACKS);
+                PENDING_CALLBACKS.clear();
+                CHECK_LOCK.notifyAll();
+            }
+            for (Runnable callback : callbacks) postFinished(callback);
+        }
+    }
+
+    /** Persists the automatic/default runtime separately from temporary per-instance pins. */
+    public static void setAutomaticRuntimeVersion(Context context, String version) throws IOException {
+        if (!HorizonRuntimeManager.hasInstalledVersion(context, version)) {
+            throw new IOException("A runtime escolhida não está instalada ou não passou na verificação.");
+        }
+        context.getApplicationContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .edit().putString(LAST_AUTOMATIC_VERSION, version).apply();
+    }
+
+    public static String automaticRuntimeVersion(Context context) {
+        return context.getApplicationContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getString(LAST_AUTOMATIC_VERSION, "");
+    }
+
+    /** Restores the default pointer after leaving an instance that used a pinned runtime. */
+    public static void restoreAutomaticRuntimeVersion(Context context) throws IOException {
+        String version = automaticRuntimeVersion(context);
+        if (version == null || version.isEmpty()) return;
+        if (HorizonRuntimeManager.hasInstalledVersion(context, version)) {
+            HorizonRuntimeManager.activateInstalledVersion(context, version);
+        }
+    }
+
+    private static Release findRuntimeRelease(String wantedVersion) throws Exception {
+        for (int page = 1; page <= 10; page++) {
+            JSONArray releases = new JSONArray(readUrl(RELEASES_URL + "&page=" + page,
+                    4 * 1024 * 1024));
+            if (releases.length() == 0) break;
+            for (int i = 0; i < releases.length(); i++) {
+                JSONObject item = releases.optJSONObject(i);
+                if (item == null || item.optBoolean("draft", false)
+                        || item.optBoolean("prerelease", false)) continue;
+                String tag = item.optString("tag_name", "");
+                if (!tag.equals(TAG_PREFIX + wantedVersion)) continue;
+                String upstream = upstreamTagFromRuntimeVersion(wantedVersion);
+                if (upstream.isEmpty()) throw new IOException("Release aponta para tag Horizon inválida.");
+                return releaseFromAssets(item, wantedVersion, upstream,
+                        ENGINE_ASSET, "horizon-runtime-manifest.json");
+            }
+            if (releases.length() < 100) break;
+        }
+        throw new IOException("A versão " + wantedVersion
+                + " não está mais disponível entre os releases verificados do MobileHorizonNative.");
     }
 
     private static final class OfficialRelease {
