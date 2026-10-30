@@ -1,0 +1,295 @@
+package dev.mobilehorizon.app;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.os.Bundle;
+import android.text.InputFilter;
+import android.text.InputType;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.TextView;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/** Manager for isolated game homes; the original horizon/ directory remains the default profile. */
+public final class InstancesActivity extends Activity {
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private LinearLayout list;
+    private TextView status;
+    private ProgressBar progress;
+    private boolean busy;
+
+    @Override protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        getWindow().setStatusBarColor(0xff090911);
+        getWindow().setNavigationBarColor(0xff090911);
+        buildUi();
+        refreshList();
+    }
+
+    @Override protected void onDestroy() {
+        if (!busy) io.shutdown();
+        super.onDestroy();
+    }
+
+    private void buildUi() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(0xff090911);
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(16), dp(18), dp(16), dp(28));
+        scroll.addView(page);
+        setContentView(scroll);
+
+        page.addView(text("MOBILEHORIZON  /  INSTÂNCIAS", 11, 0xff9e88ff, true),
+                params(-1, -2));
+        TextView title = text("Instâncias", 27, 0xfff0ecff, true);
+        LinearLayout.LayoutParams titleParams = params(-1, -2);
+        titleParams.topMargin = dp(5);
+        page.addView(title, titleParams);
+        page.addView(text(
+                "Cada instância mantém seus próprios mundos, opções, logs e pacotes. Os arquivos preparados do Minecraft e o motor Horizon continuam compartilhados para economizar espaço.",
+                13, 0xffb9b3d1, false), topParams(-1, -2, 6));
+
+        Button back = button("Voltar", false, v -> finish());
+        page.addView(back, topParams(-1, 40, 12));
+
+        Button create = button("Nova instância", true, v -> showNameDialog(null));
+        page.addView(create, topParams(-1, 44, 10));
+
+        progress = new ProgressBar(this);
+        progress.setIndeterminate(true);
+        progress.setVisibility(View.GONE);
+        page.addView(progress, topParams(-1, 4, 8));
+
+        status = text("", 12, 0xffc7bce6, false);
+        page.addView(status, topParams(-1, -2, 8));
+
+        list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        page.addView(list, topParams(-1, -2, 4));
+
+        LinearLayout info = card();
+        info.addView(text("Perfil padrão preservado", 14, 0xffeee9ff, true),
+                params(-1, -2));
+        info.addView(text(
+                "A instância Padrão continua usando a pasta antiga filesDir/horizon. Nenhum mundo, configuração ou pacote existente é movido durante esta migração.",
+                12, 0xffb9b3d1, false), topParams(-1, -2, 5));
+        page.addView(info, topParams(-1, -2, 12));
+    }
+
+    private void refreshList() {
+        if (list == null || isFinishing() || isDestroyed()) return;
+        list.removeAllViews();
+        try {
+            GameInstanceManager.Instance active = GameInstanceManager.getSelectedInstance(this);
+            List<GameInstanceManager.Instance> instances = GameInstanceManager.listInstances(this);
+            for (GameInstanceManager.Instance instance : instances) {
+                list.addView(instanceCard(instance, active.id.equals(instance.id)),
+                        topParams(-1, -2, 8));
+            }
+            status.setText(UiLanguage.translate(this, "Instâncias disponíveis: ")
+                    + instances.size() + " / 12");
+        } catch (Exception error) {
+            status.setText(UiLanguage.translate(this, "Não foi possível ler o catálogo: ")
+                    + error.getMessage());
+        }
+    }
+
+    private View instanceCard(GameInstanceManager.Instance instance, boolean active) {
+        LinearLayout card = card();
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.HORIZONTAL);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(heading, params(-1, -2));
+        LinearLayout titleBox = new LinearLayout(this);
+        titleBox.setOrientation(LinearLayout.VERTICAL);
+        heading.addView(titleBox, new LinearLayout.LayoutParams(0, -2, 1f));
+        titleBox.addView(text(instance.name, 16, 0xfff0ecff, true), params(-1, -2));
+        String kind = instance.isDefault() ? "Padrão" : "Perfil separado";
+        titleBox.addView(text(kind + "  •  " + (active ? "Em uso" : "Disponível"),
+                11, active ? 0xffc4adff : 0xffaaa2c6, true), topParams(-1, -2, 3));
+
+        String lastPlayed = instance.lastPlayed <= 0L
+                ? UiLanguage.translate(this, "Último uso: nunca")
+                : UiLanguage.translate(this, "Último uso: ")
+                    + new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+                        .format(new Date(instance.lastPlayed));
+        card.addView(text(lastPlayed, 11, 0xffa8a1c6, false), topParams(-1, -2, 8));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(actions, topParams(-1, -2, 9));
+        Button select = button(active ? "Em uso" : "Selecionar", true, v -> select(instance));
+        select.setEnabled(!active && !busy);
+        actions.addView(select, new LinearLayout.LayoutParams(0, dp(38), 1f));
+        Button rename = button("Renomear", false, v -> showNameDialog(instance));
+        rename.setEnabled(!busy);
+        LinearLayout.LayoutParams renameParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
+        renameParams.leftMargin = dp(7);
+        actions.addView(rename, renameParams);
+
+        Button delete = button("Excluir", false, v -> confirmDelete(instance));
+        delete.setEnabled(!busy && !active && !instance.isDefault());
+        card.addView(delete, topParams(-1, 36, 7));
+        return card;
+    }
+
+    private void select(GameInstanceManager.Instance instance) {
+        try {
+            GameInstanceManager.setSelectedInstance(this, instance.id);
+            setResult(RESULT_OK);
+            finish();
+        } catch (Exception error) {
+            showError("Não foi possível selecionar a instância", error);
+        }
+    }
+
+    private void showNameDialog(GameInstanceManager.Instance editing) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(24)});
+        input.setHint(UiLanguage.translate(this, "Nome da instância"));
+        if (editing != null) input.setText(editing.name);
+        if (editing != null) input.setSelection(input.length());
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this,
+                        editing == null ? "Criar instância" : "Renomear instância"))
+                .setMessage(UiLanguage.translate(this, "Use um nome de até 24 caracteres."))
+                .setView(input)
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this,
+                        editing == null ? "Criar" : "Salvar"), (dialog, which) -> {
+                    try {
+                        if (editing == null) {
+                            GameInstanceManager.createInstance(this, input.getText().toString());
+                            status.setText(UiLanguage.translate(this, "Instância criada."));
+                        } else {
+                            GameInstanceManager.renameInstance(
+                                    this, editing.id, input.getText().toString());
+                            status.setText(UiLanguage.translate(this, "Instância renomeada."));
+                        }
+                        refreshList();
+                    } catch (Exception error) {
+                        showError("Não foi possível salvar a instância", error);
+                    }
+                }).show();
+    }
+
+    private void confirmDelete(GameInstanceManager.Instance instance) {
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this, "Excluir instância?"))
+                .setMessage(UiLanguage.translate(this,
+                        "Isso remove os mundos, opções, logs e pacotes desse perfil. A instância Padrão e a instância atualmente em uso não podem ser excluídas."))
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Excluir"), (dialog, which) -> {
+                    busy = true;
+                    setBusy(true);
+                    io.execute(() -> {
+                        Exception failure = null;
+                        try {
+                            GameInstanceManager.deleteInstance(this, instance.id);
+                        } catch (Exception error) {
+                            failure = error;
+                        }
+                        final Exception result = failure;
+                        runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            busy = false;
+                            setBusy(false);
+                            if (result != null) showError("Não foi possível excluir a instância", result);
+                            else status.setText(UiLanguage.translate(this, "Instância excluída."));
+                            refreshList();
+                        });
+                    });
+                }).show();
+    }
+
+    private void setBusy(boolean value) {
+        if (progress != null) progress.setVisibility(value ? View.VISIBLE : View.GONE);
+        if (list != null) {
+            for (int i = 0; i < list.getChildCount(); i++) {
+                list.getChildAt(i).setAlpha(value ? 0.55f : 1f);
+            }
+        }
+    }
+
+    private void showError(String title, Exception error) {
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this, title))
+                .setMessage(error.getMessage() == null ? error.toString() : error.getMessage())
+                .setPositiveButton(UiLanguage.translate(this, "Fechar"), null)
+                .show();
+    }
+
+    private LinearLayout card() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(13), dp(12), dp(13), dp(12));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(0xff151321);
+        background.setCornerRadius(dp(7));
+        background.setStroke(dp(1), 0xff37304f);
+        card.setBackground(background);
+        return card;
+    }
+
+    private Button button(String label, boolean primary, View.OnClickListener action) {
+        Button button = new Button(this);
+        button.setAllCaps(false);
+        button.setText(UiLanguage.translate(this, label));
+        button.setTextSize(12);
+        button.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(dp(7), 0, dp(7), 0);
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(primary ? 0xff5b3fd6 : 0xff2b2641);
+        background.setCornerRadius(dp(5));
+        background.setStroke(dp(1), primary ? 0xff8a74ff : 0xff3d3560);
+        button.setBackground(background);
+        button.setTextColor(Color.WHITE);
+        button.setOnClickListener(action);
+        return button;
+    }
+
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(UiLanguage.translate(this, value));
+        view.setTextSize(size);
+        view.setTextColor(color);
+        view.setTypeface(bold ? android.graphics.Typeface.DEFAULT_BOLD
+                : android.graphics.Typeface.DEFAULT);
+        return view;
+    }
+
+    private LinearLayout.LayoutParams topParams(int width, int height, int marginDp) {
+        LinearLayout.LayoutParams params = params(width, height);
+        params.topMargin = dp(marginDp);
+        return params;
+    }
+
+    private LinearLayout.LayoutParams params(int width, int height) {
+        return new LinearLayout.LayoutParams(width, height);
+    }
+
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+}
