@@ -14,7 +14,6 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -279,6 +278,9 @@ public final class GameInstanceManager {
             return initial;
         }
 
+        if (Files.isSymbolicLink(index.toPath())) {
+            throw new IOException("O catálogo não pode ser um link simbólico.");
+        }
         long indexSize = index.length();
         if (indexSize <= 0L || indexSize > 1024L * 1024L) {
             throw new IOException("O catálogo de instâncias está vazio ou excede 1 MiB.");
@@ -297,6 +299,7 @@ public final class GameInstanceManager {
                 if (item == null) continue;
                 String id = item.optString("id", "");
                 if (!isValidInstanceId(id) || find(catalog, id) != null) continue;
+                if (!DEFAULT_ID.equals(id) && catalog.entries.size() >= MAX_INSTANCES - 1) break;
                 String name;
                 try {
                     name = validateName(item.optString("name", ""));
@@ -347,6 +350,9 @@ public final class GameInstanceManager {
 
         File target = new File(root, INDEX_FILE);
         File temporary = new File(root, INDEX_FILE + ".tmp");
+        if (Files.isSymbolicLink(target.toPath()) || Files.isSymbolicLink(temporary.toPath())) {
+            throw new IOException("Os arquivos do catálogo não podem ser links simbólicos.");
+        }
         try (FileOutputStream output = new FileOutputStream(temporary, false)) {
             output.write((json.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
             output.flush();
@@ -366,10 +372,13 @@ public final class GameInstanceManager {
 
     private static void deleteTreeSafely(Context context, File target) throws IOException {
         File profilesRoot = validatedInstancesRoot(context);
+        File requestedProfile = target.getAbsoluteFile();
         File canonicalProfile = target.getCanonicalFile();
-        if (!canonicalProfile.getName().matches("i-[0-9a-f]{32}")
+        if (!requestedProfile.getName().matches("i-[0-9a-f]{32}")
+                || !profilesRoot.equals(requestedProfile.getParentFile().getCanonicalFile())
+                || !requestedProfile.getName().equals(canonicalProfile.getName())
                 || !profilesRoot.equals(canonicalProfile.getParentFile())) {
-            throw new IOException("O diretório de exclusão não corresponde a uma instância.");
+            throw new IOException("O diretório de exclusão não corresponde a esta instância.");
         }
         deleteRecursively(canonicalProfile, canonicalProfile);
     }
