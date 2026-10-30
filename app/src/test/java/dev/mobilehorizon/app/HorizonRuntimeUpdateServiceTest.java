@@ -34,6 +34,18 @@ public final class HorizonRuntimeUpdateServiceTest {
     }
 
     @Test
+    public void recognizesTheMovingNightlyChannel() {
+        String nightlyRuntime = "horizon-nightly-c1234abcd-o89abcdef";
+        assertTrue(HorizonRuntimeUpdateService.isValidUpstreamTag("nightly"));
+        assertEquals("nightly",
+                HorizonRuntimeUpdateService.upstreamTagFromRuntimeVersion(nightlyRuntime));
+        assertTrue(HorizonRuntimeUpdateService.runtimeVersionMatchesRelease(
+                nightlyRuntime, "nightly"));
+        assertFalse(HorizonRuntimeUpdateService.runtimeVersionMatchesRelease(
+                nightlyRuntime, "nightly-2026-10-29"));
+    }
+
+    @Test
     public void recognizesDateBasedHorizonReleaseTags() {
         assertTrue(HorizonRuntimeUpdateService.isValidUpstreamTag("v2026.10.22.07"));
         assertEquals("v2026.10.22.07",
