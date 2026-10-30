@@ -75,6 +75,11 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_IMPORT_FOLDER = 101;
     private static final int REQUEST_IMPORT_ZIP = 102;
     private static final int REQUEST_EXPORT_DIAGNOSTICS = 103;
+    static final String EXTRA_QUICK_PLAY_SERVER = "dev.mobilehorizon.app.MAIN_QUICK_PLAY_SERVER";
+    static final String EXTRA_QUICK_PLAY_WORLD = "dev.mobilehorizon.app.MAIN_QUICK_PLAY_WORLD";
+
+    private String pendingQuickPlayServer;
+    private String pendingQuickPlayWorld;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
@@ -209,6 +214,69 @@ public final class MainActivity extends Activity {
             refreshRuntimeUpdateStatus();
             updateActionEnablement();
         });
+        handleQuickPlayIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleQuickPlayIntent(intent);
+    }
+
+    private void handleQuickPlayIntent(Intent intent) {
+        if (intent == null) return;
+        String server = intent.getStringExtra(EXTRA_QUICK_PLAY_SERVER);
+        String world = intent.getStringExtra(EXTRA_QUICK_PLAY_WORLD);
+        boolean hasServer = server != null && !server.trim().isEmpty();
+        boolean hasWorld = world != null && !world.trim().isEmpty();
+        if (!hasServer && !hasWorld) return;
+        try {
+            if (hasServer && hasWorld) {
+                throw new IllegalArgumentException("Escolha um servidor ou um mundo para início direto.");
+            }
+            pendingQuickPlayServer = hasServer ? ServerFavoriteStore.validateAddress(server) : null;
+            pendingQuickPlayWorld = null;
+            if (hasWorld) {
+                String safeWorld = world.trim();
+                if (!GameWorldManager.safeFolder(safeWorld)) {
+                    throw new IllegalArgumentException("Nome da pasta do mundo inválido.");
+                }
+                File saves = new File(GameInstanceManager.getSelectedInstanceHome(this), "saves")
+                        .getCanonicalFile();
+                File target = new File(saves, safeWorld).getCanonicalFile();
+                if (!saves.equals(target.getParentFile())
+                        || !new File(target, "level.dat").isFile()) {
+                    throw new IllegalArgumentException("Esse mundo não existe na instância selecionada.");
+                }
+                pendingQuickPlayWorld = safeWorld;
+            }
+            if (hasServer && MicrosoftAccountStore.active(this) == null) {
+                new AlertDialog.Builder(this)
+                        .setTitle(UiLanguage.translate(this, "Entrar no servidor"))
+                        .setMessage(UiLanguage.translate(this,
+                                "Servidores online exigem uma conta Microsoft com licença Java. Você também pode tentar entrar usando o perfil offline, caso o servidor aceite esse modo."))
+                        .setPositiveButton(UiLanguage.translate(this, "Entrar com Microsoft"),
+                                (dialog, which) -> startMicrosoftSignIn())
+                        .setNegativeButton(UiLanguage.translate(this, "Continuar offline"),
+                                (dialog, which) -> openOfflineClient())
+                        .setNeutralButton(UiLanguage.translate(this, "Cancelar"),
+                                (dialog, which) -> clearPendingQuickPlay())
+                        .show();
+            } else if (MicrosoftAccountStore.active(this) != null) {
+                openNativeClient();
+            } else {
+                openOfflineClient();
+            }
+        } catch (Exception error) {
+            clearPendingQuickPlay();
+            showRuntimeError("Não foi possível iniciar diretamente", safeMessage(error));
+        }
+    }
+
+    private void clearPendingQuickPlay() {
+        pendingQuickPlayServer = null;
+        pendingQuickPlayWorld = null;
     }
 
     @Override
@@ -1742,7 +1810,14 @@ public final class MainActivity extends Activity {
             intent.putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true);
             intent.putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instance.id);
             intent.putExtra(NativeGameActivity.EXTRA_PLAYER_NAME, playerName);
+            if (pendingQuickPlayServer != null) {
+                intent.putExtra(NativeGameActivity.EXTRA_QUICK_PLAY_SERVER, pendingQuickPlayServer);
+            }
+            if (pendingQuickPlayWorld != null) {
+                intent.putExtra(NativeGameActivity.EXTRA_QUICK_PLAY_WORLD, pendingQuickPlayWorld);
+            }
             startActivity(intent);
+            clearPendingQuickPlay();
             setStatus("Iniciando cliente em modo offline",
                     "Perfil local: " + playerName + "\n" + resourceSummary
                             + "\n\nA primeira abertura pode ter pequenas pausas enquanto o renderer inicializa e cria caches. O perfil não autentica uma conta Microsoft nem concede licença online.");
@@ -2010,6 +2085,9 @@ public final class MainActivity extends Activity {
             refreshAccountUi();
             setStatus("Conta Microsoft verificada",
                     message == null ? "A conta e os direitos de Java Edition foram verificados." : message);
+            if (pendingQuickPlayServer != null) {
+                openNativeClient();
+            }
         } else {
             progressBar.setVisibility(View.GONE);
             setStatus(cancelledLogin ? "Login cancelado" : "Login não concluído",
@@ -2082,11 +2160,20 @@ public final class MainActivity extends Activity {
                         sessionFile = writeOneShotSession(account);
                         Os.setenv("HORIZON_SESSION_FILE", sessionFile.getAbsolutePath(), true);
                         sessionEnvSet = true;
-                        startActivity(new Intent(this, NativeGameActivity.class)
+                        Intent gameIntent = new Intent(this, NativeGameActivity.class)
                                 .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true)
                                 .putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instance.id)
-                                .putExtra(NativeGameActivity.EXTRA_SESSION_FILE, sessionFile.getAbsolutePath())
-);
+                                .putExtra(NativeGameActivity.EXTRA_SESSION_FILE, sessionFile.getAbsolutePath());
+                        if (pendingQuickPlayServer != null) {
+                            gameIntent.putExtra(NativeGameActivity.EXTRA_QUICK_PLAY_SERVER,
+                                    pendingQuickPlayServer);
+                        }
+                        if (pendingQuickPlayWorld != null) {
+                            gameIntent.putExtra(NativeGameActivity.EXTRA_QUICK_PLAY_WORLD,
+                                    pendingQuickPlayWorld);
+                        }
+                        startActivity(gameIntent);
+                        clearPendingQuickPlay();
                         setStatus("Iniciando cliente Horizon",
                                 "A sessão oficial foi verificada. A inicialização ainda depende de recursos derivados completos e validação real de gameplay.");
                     } catch (Exception error) {
