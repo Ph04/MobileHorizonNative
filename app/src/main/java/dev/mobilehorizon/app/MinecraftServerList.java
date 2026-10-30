@@ -46,7 +46,7 @@ final class MinecraftServerList {
         if (file.isFile() && file.length() > 0) {
             if (file.length() > MAX_FILE) throw new IOException("servers.dat excede o limite de leitura.");
             try (DataInputStream in = new DataInputStream(new BufferedInputStream(
-                    new BoundedInputStream(new GZIPInputStream(new FileInputStream(file)), MAX_EXPANDED))) {
+                    new BoundedInputStream(new GZIPInputStream(new FileInputStream(file)), MAX_EXPANDED)))) {
                 Counter counter = new Counter();
                 byte type = in.readByte();
                 if (type != 10) throw new IOException("servers.dat não contém um compound NBT.");
