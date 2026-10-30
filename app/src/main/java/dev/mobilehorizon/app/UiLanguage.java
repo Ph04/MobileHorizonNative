@@ -941,6 +941,17 @@ final class UiLanguage {
         pair("Excluir favorito?", "Delete favorite?");
         pair("Voltar", "Back");
         pair("Aparência do launcher", "Launcher appearance");
+        pair("Rede e proxy", "Network and proxy");
+        pair("Proxy HTTP", "HTTP proxy");
+        pair("Proxy HTTP desativado", "HTTP proxy disabled");
+        pair("Proxy HTTP: ", "HTTP proxy: ");
+        pair("Configurar proxy HTTP", "Configure HTTP proxy");
+        pair("Desativar proxy", "Disable proxy");
+        pair("Proxy inválido", "Invalid proxy");
+        pair("Informe o endereço completo com http:// e a porta. Deixe vazio para usar a conexão direta.",
+                "Enter the full address with http:// and the port. Leave empty to connect directly.");
+        pair("O proxy será usado em downloads, consultas Modrinth, login Microsoft e próximas sessões do Horizon. Endereços locais continuam diretos. Use http://host:porta; SOCKS e usuário/senha embutidos não são aceitos.",
+                "The proxy is used for downloads, Modrinth queries, Microsoft sign-in and future Horizon sessions. Local addresses bypass it. Use http://host:port; SOCKS and embedded credentials are not supported.");
         pair("Cor de destaque", "Accent color");
         pair("Escolher cor de destaque", "Choose accent color");
         pair("Escolher imagem de fundo", "Choose background image");
