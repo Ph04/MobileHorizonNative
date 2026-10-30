@@ -99,6 +99,7 @@ public final class MainActivity extends Activity {
     private Typeface buttonTypeface = Typeface.DEFAULT_BOLD;
     private Typeface monoTypeface = Typeface.MONOSPACE;
     private View downloadSectionView;
+    private View instanceSectionView;
     private View resourcesSectionView;
     private View accountSectionView;
     private View logsSectionView;
@@ -118,6 +119,7 @@ public final class MainActivity extends Activity {
     private Button microsoftLoginButton;
     private Button microsoftSignOutButton;
     private TextView accountStatusText;
+    private TextView instanceSummaryText;
     private TextView offlineStatusText;
     private Button offlineNameButton;
     private Button offlinePlayButton;
@@ -195,6 +197,7 @@ public final class MainActivity extends Activity {
                 "Baixe os arquivos oficiais do Minecraft 26.3, prepare as entradas para conversão ou importe uma saída Horizon já preparada.");
         refreshAccountUi();
         refreshOfflineUi();
+        refreshInstanceSummary();
         updateActionEnablement();
         HorizonRuntimeUpdateService.checkAtStartup(this, () -> {
             refreshRuntimeUpdateStatus();
@@ -244,6 +247,7 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshRuntimeUpdateStatus();
+        refreshInstanceSummary();
         HorizonRuntimeUpdateService.checkInBackground(this, () -> {
             refreshRuntimeUpdateStatus();
             updateActionEnablement();
@@ -634,8 +638,12 @@ public final class MainActivity extends Activity {
         refreshRuntimeActionButton();
         addSpaced(runtimeCard, runtimeUpdateButton, 40, 8);
 
-        // Atalhos redundantes para Multiplayer e Minecraft folder foram removidos:
-        // jogar/servidores são acessados pelo botão principal e downloads pela seção abaixo.
+        // Each profile gets its own worlds, options, logs and local packs while prepared
+        // Minecraft assets and the downloaded native runtime stay shared.
+        instanceSectionView = addDashboardRow(page, "Instâncias",
+                "Cada perfil mantém seus mundos, opções, logs e pacotes separados.",
+                "Gerenciar", v -> startActivity(new Intent(this, InstancesActivity.class)),
+                landscape);
         addDashboardRow(page, "Resources", resourceReadySummary(),
                 "Gerenciar", v -> startActivity(new Intent(this, ResourceManagerActivity.class)),
                 landscape);
@@ -765,7 +773,7 @@ public final class MainActivity extends Activity {
         return "Ainda não preparado • baixe e prepare os recursos antes de jogar";
     }
 
-    private void addDashboardRow(LinearLayout parent, String title, String description,
+    private LinearLayout addDashboardRow(LinearLayout parent, String title, String description,
                                  String actionLabel, View.OnClickListener action,
                                  boolean landscape) {
         LinearLayout rowCard = card();
@@ -786,11 +794,13 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams detailParams = params(-1, -2);
         detailParams.topMargin = dp(4);
         info.addView(detail, detailParams);
+        if ("Instâncias".equals(title)) instanceSummaryText = detail;
         Button actionButton = button(actionLabel, false, action);
         LinearLayout.LayoutParams actionParams = params(landscape ? 116 : -1, 38);
         if (landscape) actionParams.setMargins(dp(10), 0, 0, 0);
         else actionParams.topMargin = dp(8);
         rowCard.addView(actionButton, actionParams);
+        return rowCard;
     }
 
     private LinearLayout buildSidebar(ScrollView scroll) {
@@ -824,13 +834,14 @@ public final class MainActivity extends Activity {
         instance.addView(instanceText, instanceTextParams);
         instanceText.addView(text("Horizon", 12, 0xfff0ecff, true), params(-1, -2));
         instanceText.addView(text("Minecraft Java • 26.3", 9, 0xffb8a9d8, false), params(-1, -2));
+        instanceText.addView(text("Perfil: " + currentInstanceName(), 9, 0xffb8a9d8, false), params(-1, -2));
 
         TextView navigationTitle = text("NAVEGAÇÃO", 10, 0xff8b82aa, true);
         LinearLayout.LayoutParams navTitleParams = params(-1, -2);
         navTitleParams.topMargin = dp(24);
         sidebar.addView(navigationTitle, navTitleParams);
         addSpaced(sidebar, button("Início", true, v -> scrollToSection(heroPanel)), 40, 8);
-        addSpaced(sidebar, button("Instalar", false, v -> scrollToSection(downloadSectionView)), 40, 5);
+        addSpaced(sidebar, button("Instâncias", false, v -> scrollToSection(instanceSectionView)), 40, 5);
         addSpaced(sidebar, button("Biblioteca", false, v -> scrollToSection(resourcesSectionView)), 40, 5);
         addSpaced(sidebar, button("Conta", false, v -> scrollToSection(accountSectionView)), 40, 5);
         addSpaced(sidebar, button("Sistema", false, v -> scrollToSection(logsSectionView)), 40, 5);
@@ -857,8 +868,8 @@ public final class MainActivity extends Activity {
 
         // Top-level destinations are grouped by player task, not by implementation detail.
         // The Horizon runtime card lives on Home; it does not need a separate navigation tab.
-        String[] labels = {"Início", "Instalar", "Biblioteca", "Conta", "Sistema"};
-        View[] targets = {heroPanel, downloadSectionView, resourcesSectionView,
+        String[] labels = {"Início", "Instâncias", "Biblioteca", "Conta", "Sistema"};
+        View[] targets = {heroPanel, instanceSectionView, resourcesSectionView,
                 accountSectionView, logsSectionView};
         mobileNavigationItems = new TextView[labels.length];
         for (int i = 0; i < labels.length; i++) {
@@ -881,7 +892,7 @@ public final class MainActivity extends Activity {
     private void updateMobileNavigation(View target) {
         if (mobileNavigationItems == null) return;
         String selected = UiLanguage.translate(this, "Início");
-        if (target == downloadSectionView) selected = UiLanguage.translate(this, "Instalar");
+        if (target == instanceSectionView) selected = UiLanguage.translate(this, "Instâncias");
         else if (target == resourcesSectionView) selected = UiLanguage.translate(this, "Biblioteca");
         else if (target == accountSectionView) selected = UiLanguage.translate(this, "Conta");
         else if (target == logsSectionView) selected = UiLanguage.translate(this, "Sistema");
@@ -895,6 +906,27 @@ public final class MainActivity extends Activity {
                 item.setBackgroundColor(0xff0b0a11);
                 item.setTextColor(0xffa29cb8);
             }
+        }
+    }
+
+    private String currentInstanceName() {
+        try {
+            return GameInstanceManager.getSelectedInstance(this).name;
+        } catch (Exception error) {
+            return "Padrão";
+        }
+    }
+
+    private void refreshInstanceSummary() {
+        if (instanceSummaryText == null) return;
+        try {
+            GameInstanceManager.Instance active = GameInstanceManager.getSelectedInstance(this);
+            instanceSummaryText.setText(UiLanguage.translate(this, "Instância ativa: ")
+                    + active.name + "\n"
+                    + UiLanguage.translate(this, "Mundos, opções e pacotes ficam separados neste perfil."));
+        } catch (Exception error) {
+            instanceSummaryText.setText(UiLanguage.translate(this,
+                    "Não foi possível ler as instâncias: ") + safeMessage(error));
         }
     }
 
@@ -1632,7 +1664,9 @@ public final class MainActivity extends Activity {
     private void launchOfflineClientAfterValidation(String resourceSummary) {
         try {
             String playerName = OfflineProfile.loadName(this);
-            MobilePerformanceProfile.applyInitialOptions(this);
+            GameInstanceManager.Instance instance = GameInstanceManager.getSelectedInstance(this);
+            GameInstanceManager.markLastPlayed(this, instance.id);
+            MobilePerformanceProfile.applyInitialOptions(this, instance.id);
             new File(getFilesDir(), "horizon-client-result.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke.flag").delete();
@@ -1644,6 +1678,7 @@ public final class MainActivity extends Activity {
             offlineNameEnvSet = true;
             Intent intent = new Intent(this, NativeGameActivity.class);
             intent.putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true);
+            intent.putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instance.id);
             intent.putExtra(NativeGameActivity.EXTRA_PLAYER_NAME, playerName);
             startActivity(intent);
             setStatus("Iniciando cliente em modo offline",
@@ -1954,7 +1989,9 @@ public final class MainActivity extends Activity {
                     refreshAccountUi();
                     File sessionFile = null;
                     try {
-                        MobilePerformanceProfile.applyInitialOptions(this);
+                        GameInstanceManager.Instance instance = GameInstanceManager.getSelectedInstance(this);
+                        GameInstanceManager.markLastPlayed(this, instance.id);
+                        MobilePerformanceProfile.applyInitialOptions(this, instance.id);
                         new File(getFilesDir(), "horizon-client-result.txt").delete();
                         new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
                         new File(getFilesDir(), "horizon-native-smoke.flag").delete();
@@ -1965,6 +2002,7 @@ public final class MainActivity extends Activity {
                         sessionEnvSet = true;
                         startActivity(new Intent(this, NativeGameActivity.class)
                                 .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true)
+                                .putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instance.id)
                                 .putExtra(NativeGameActivity.EXTRA_SESSION_FILE, sessionFile.getAbsolutePath())
 );
                         setStatus("Iniciando cliente Horizon",
@@ -2030,7 +2068,13 @@ public final class MainActivity extends Activity {
         report.append("Runtime updater: ").append(HorizonRuntimeUpdateService.lastStatus(this)).append("\n");
         report.append("Aviso: logs podem conter endereços de servidores, nicknames e mensagens de chat.\n\n");
 
-        File gameHome = new File(getFilesDir(), "horizon");
+        File gameHome;
+        try {
+            gameHome = GameInstanceManager.getSelectedInstanceHome(this);
+        } catch (IOException error) {
+            showRuntimeError("Não foi possível abrir os logs da instância", safeMessage(error));
+            return;
+        }
         File latestLog = new File(new File(gameHome, "logs"), "latest.log");
         appendLogTail(report, "Client log: logs/latest.log", latestLog, 96 * 1024);
         if (!latestLog.isFile()) {
@@ -2128,7 +2172,7 @@ public final class MainActivity extends Activity {
                 String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
                 archive = new File(directory, "MobileHorizon-multiplayer-" + stamp + ".zip");
 
-                File horizonHome = new File(getFilesDir(), "horizon");
+                File horizonHome = GameInstanceManager.getSelectedInstanceHome(this);
                 File logsDirectory = new File(horizonHome, "logs");
                 File latestLog = new File(logsDirectory, "latest.log");
                 File[] archivedLogs = logsDirectory.listFiles((dir, name) ->
@@ -2352,8 +2396,10 @@ public final class MainActivity extends Activity {
         pendingNativeSmokeResult = true;
         pendingNativeClientResult = false;
         try {
+            String instanceId = GameInstanceManager.getSelectedInstance(this).id;
             startActivity(new Intent(this, NativeGameActivity.class)
                     .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, false)
+                    .putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instanceId)
                     .putExtra(NativeGameActivity.EXTRA_NATIVE_SMOKE_TEST, true));
             setStatus("Teste Vulkan iniciado", "Este teste cria uma superfície WGPU, solicita um adaptador Vulkan e tenta apresentar um frame de cor simples; não carrega os recursos do Minecraft.");
         } catch (Exception error) {
