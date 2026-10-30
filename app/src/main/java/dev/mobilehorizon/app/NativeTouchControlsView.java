@@ -65,6 +65,10 @@ final class NativeTouchControlsView extends View {
     private static final String KEY_UNIFORM_SIZE_VERSION = "uniform_button_size_version";
     private static final String KEY_FLOAT_MENU_X = "floating_menu_x";
     private static final String KEY_FLOAT_MENU_Y = "floating_menu_y";
+    private static final String KEY_MENU_PANEL_X = "menu_panel_x";
+    private static final String KEY_MENU_PANEL_Y = "menu_panel_y";
+    private static final String KEY_KEYBOARD_PANEL_X = "keyboard_panel_x";
+    private static final String KEY_KEYBOARD_PANEL_Y = "keyboard_panel_y";
     private static final String KEY_VISUAL_DEFAULTS_VERSION = "visual_defaults_version";
     private static final String KEY_CLASSIC_BUTTONS = "classic_buttons";
     private static final String KEY_AUXILIARY_CONTROL_COLOR = "auxiliary_control_color";
@@ -123,7 +127,8 @@ final class NativeTouchControlsView extends View {
     private float floatingMenuX = 0.52f;
     private float floatingMenuY = 0.14f;
     private PopupWindow activeButtonMenu;
-    private AlertDialog activeGameMenu;
+    private PopupWindow activeGameMenu;
+    private PopupWindow activeKeyboardPanel;
     /** Alignment guide coordinates in view pixels; NaN means no active snap. */
     private float snapGuideX = Float.NaN;
     private float snapGuideY = Float.NaN;
@@ -1233,167 +1238,150 @@ final class NativeTouchControlsView extends View {
 
     /** Branded text panel from the earlier keyboard flow; the Android IME submits into Horizon. */
     private void showKeyboardDialog() {
-        EditText input = new EditText(activity);
-        input.setSingleLine(true);
-        input.setHint(UiLanguage.translate(activity, "Mensagem, comando ou texto…"));
-        input.setTextSize(16);
-        input.setTextColor(0xfff5f1ff);
-        input.setHintTextColor(0xff918aa9);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEND
-                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-        input.setPadding(dpInt(14), dpInt(13), dpInt(14), dpInt(13));
-        GradientDrawable inputBackground = new GradientDrawable();
-        inputBackground.setColor(0xff1c192b);
-        inputBackground.setCornerRadius(dp(12));
-        inputBackground.setStroke(dpInt(1), 0xff51466f);
-        input.setBackground(inputBackground);
+        if (previewOnly || gameActivity == null) return;
+        if (activeKeyboardPanel != null && activeKeyboardPanel.isShowing()) activeKeyboardPanel.dismiss();
 
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dpInt(18), dpInt(18), dpInt(18), dpInt(16));
+        panel.setPadding(dpInt(14), dpInt(12), dpInt(14), dpInt(12));
         GradientDrawable surface = new GradientDrawable();
         surface.setColor(0xff151321);
-        surface.setCornerRadius(dp(20));
-        surface.setStroke(dpInt(1), 0xff403654);
+        surface.setCornerRadius(dp(16));
+        surface.setStroke(dpInt(1), 0xff51466f);
         panel.setBackground(surface);
         panel.setElevation(dp(12));
 
         LinearLayout header = new LinearLayout(activity);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout iconBox = new LinearLayout(activity);
-        iconBox.setGravity(Gravity.CENTER);
-        GradientDrawable iconSurface = new GradientDrawable();
-        iconSurface.setColor(0xff7557e8);
-        iconSurface.setCornerRadius(dp(13));
-        iconBox.setBackground(iconSurface);
-        TextView icon = new TextView(activity);
-        icon.setText(UiLanguage.translate(activity, "Aa"));
-        icon.setTextColor(Color.WHITE);
-        icon.setTextSize(17);
-        icon.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        iconBox.addView(icon, new LinearLayout.LayoutParams(dpInt(44), dpInt(44)));
-        header.addView(iconBox, new LinearLayout.LayoutParams(dpInt(44), dpInt(44)));
-
-        LinearLayout heading = new LinearLayout(activity);
-        heading.setOrientation(LinearLayout.VERTICAL);
-        heading.setPadding(dpInt(12), 0, 0, 0);
         TextView title = new TextView(activity);
-        title.setText(UiLanguage.translate(activity, "Painel de texto"));
+        title.setText(UiLanguage.translate(activity, "Painel de teclado"));
         title.setTextColor(0xfff4f0ff);
-        title.setTextSize(19);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        heading.addView(title, new LinearLayout.LayoutParams(-1, -2));
-        TextView subtitle = new TextView(activity);
-        subtitle.setText(UiLanguage.translate(activity, "DIGITAÇÃO DO MINECRAFT"));
-        subtitle.setTextColor(0xffb9a8ff);
-        subtitle.setTextSize(10);
-        subtitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(-1, -2);
-        subtitleParams.topMargin = dpInt(3);
-        heading.addView(subtitle, subtitleParams);
-        header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1f));
-        panel.addView(header, new LinearLayout.LayoutParams(-1, -2));
+        title.setTextSize(16);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        header.addView(title, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
+        TextView close = new TextView(activity);
+        close.setText("×");
+        close.setTextColor(0xfff0eaff);
+        close.setTextSize(24);
+        close.setGravity(Gravity.CENTER);
+        close.setContentDescription(UiLanguage.translate(activity, "Fechar painel de teclado"));
+        header.addView(close, new LinearLayout.LayoutParams(dpInt(38), dpInt(38)));
+        panel.addView(header, new LinearLayout.LayoutParams(-1, dpInt(40)));
 
-        TextView instructions = new TextView(activity);
-        instructions.setText(UiLanguage.translate(activity, "Digite abaixo e envie para o campo ativo ou para o chat. O texto aparece no jogo depois do envio."));
-        instructions.setTextColor(0xffb8b1cf);
-        instructions.setTextSize(12);
-        instructions.setLineSpacing(dp(2), 1f);
-        LinearLayout.LayoutParams instructionsParams = new LinearLayout.LayoutParams(-1, -2);
-        instructionsParams.topMargin = dpInt(16);
-        instructionsParams.bottomMargin = dpInt(10);
-        panel.addView(instructions, instructionsParams);
+        TextView hint = new TextView(activity);
+        hint.setText(UiLanguage.translate(activity,
+                "Digite sua mensagem ou comando e envie pelo teclado do Android."));
+        hint.setTextColor(0xffb8b1cf);
+        hint.setTextSize(12);
+        hint.setLineSpacing(dp(2), 1f);
+        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(-1, -2);
+        hintParams.topMargin = dpInt(5);
+        panel.addView(hint, hintParams);
 
-        panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
-        TextView helper = new TextView(activity);
-        helper.setText(UiLanguage.translate(activity, "Use o botão Enviar do teclado ou o botão abaixo."));
-        helper.setTextColor(0xff8f88a9);
-        helper.setTextSize(11);
-        LinearLayout.LayoutParams helperParams = new LinearLayout.LayoutParams(-1, -2);
-        helperParams.topMargin = dpInt(8);
-        panel.addView(helper, helperParams);
+        EditText input = new EditText(activity);
+        input.setSingleLine(true);
+        input.setHint(UiLanguage.translate(activity, "Mensagem, comando ou texto…"));
+        input.setTextSize(15);
+        input.setTextColor(0xfff5f1ff);
+        input.setHintTextColor(0xff918aa9);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        input.setPadding(dpInt(12), dpInt(10), dpInt(12), dpInt(10));
+        GradientDrawable inputBackground = new GradientDrawable();
+        inputBackground.setColor(0xff1c192b);
+        inputBackground.setCornerRadius(dp(10));
+        inputBackground.setStroke(dpInt(1), 0xff51466f);
+        input.setBackground(inputBackground);
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(-1, -2);
+        inputParams.topMargin = dpInt(10);
+        panel.addView(input, inputParams);
 
         LinearLayout actions = new LinearLayout(activity);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(-1, -2);
-        actionsParams.topMargin = dpInt(17);
-
+        LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(-1, dpInt(40));
+        actionsParams.topMargin = dpInt(10);
         TextView cancel = new TextView(activity);
-        cancel.setText(UiLanguage.translate(activity, "Cancelar"));
+        cancel.setText(UiLanguage.translate(activity, "Fechar"));
         cancel.setTextColor(0xffe5dfff);
-        cancel.setTextSize(14);
+        cancel.setTextSize(13);
         cancel.setGravity(Gravity.CENTER);
-        cancel.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        cancel.setPadding(dpInt(10), dpInt(13), dpInt(10), dpInt(13));
-        GradientDrawable cancelSurface = new GradientDrawable();
-        cancelSurface.setColor(0xff242035);
-        cancelSurface.setCornerRadius(dp(12));
-        cancelSurface.setStroke(dpInt(1), 0xff51466f);
-        cancel.setBackground(cancelSurface);
-        cancel.setClickable(true);
-        cancel.setFocusable(true);
+        GradientDrawable cancelBg = new GradientDrawable();
+        cancelBg.setColor(0xff242035);
+        cancelBg.setCornerRadius(dp(9));
+        cancelBg.setStroke(dpInt(1), 0xff51466f);
+        cancel.setBackground(cancelBg);
+        actions.addView(cancel, new LinearLayout.LayoutParams(0, -1, 1f));
 
         TextView send = new TextView(activity);
-        send.setText(UiLanguage.translate(activity, "Enviar  ↑"));
+        send.setText(UiLanguage.translate(activity, "Enviar"));
         send.setTextColor(Color.WHITE);
-        send.setTextSize(14);
+        send.setTextSize(13);
+        send.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         send.setGravity(Gravity.CENTER);
-        send.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        send.setPadding(dpInt(10), dpInt(13), dpInt(10), dpInt(13));
-        GradientDrawable sendSurface = new GradientDrawable();
-        sendSurface.setColor(0xff7557e8);
-        sendSurface.setCornerRadius(dp(12));
-        sendSurface.setStroke(dpInt(1), 0xffa28cff);
-        send.setBackground(sendSurface);
-        send.setClickable(true);
-        send.setFocusable(true);
-
-        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(0, dpInt(46), 1f);
-        cancelParams.rightMargin = dpInt(8);
-        actions.addView(cancel, cancelParams);
-        actions.addView(send, new LinearLayout.LayoutParams(0, dpInt(46), 1.15f));
+        GradientDrawable sendBg = new GradientDrawable();
+        sendBg.setColor(LauncherAppearance.accentColor(activity));
+        sendBg.setCornerRadius(dp(9));
+        sendBg.setStroke(dpInt(1), LauncherAppearance.accentBorderColor(activity));
+        send.setBackground(sendBg);
+        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(0, -1, 1f);
+        sendParams.leftMargin = dpInt(8);
+        actions.addView(send, sendParams);
         panel.addView(actions, actionsParams);
 
-        AlertDialog dialog = new AlertDialog.Builder(activity).setView(panel).create();
-        cancel.setOnClickListener(v -> dialog.dismiss());
+        int width = Math.min(dpInt(340), Math.max(dpInt(240),
+                activity.getResources().getDisplayMetrics().widthPixels - dpInt(24)));
+        final PopupWindow popup = new PopupWindow(panel, width,
+                ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        popup.setFocusable(true);
+        popup.setTouchable(true);
+        popup.setOutsideTouchable(true);
+        popup.setClippingEnabled(true);
+        popup.setElevation(dpInt(10));
+        popup.setInputMethodMode(PopupWindow.INPUT_METHOD_NEEDED);
+        popup.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        panel.setAlpha(LauncherAppearance.panelOpacity(activity));
+        activeKeyboardPanel = popup;
+        popup.setOnDismissListener(() -> {
+            if (activeKeyboardPanel == popup) activeKeyboardPanel = null;
+        });
+
+        Runnable dismiss = () -> {
+            InputMethodManager manager = (InputMethodManager)
+                    activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager != null) manager.hideSoftInputFromWindow(input.getWindowToken(), 0);
+            if (popup.isShowing()) popup.dismiss();
+        };
         Runnable submit = () -> {
             String value = input.getText() == null ? "" : input.getText().toString();
-            if (gameActivity != null && !value.isEmpty()) {
-                gameActivity.injectKeyboardText(value);
-            }
-            if (dialog.isShowing()) dialog.dismiss();
+            if (!value.isEmpty()) gameActivity.injectKeyboardText(value);
+            dismiss.run();
         };
+        cancel.setOnClickListener(v -> dismiss.run());
+        close.setOnClickListener(v -> dismiss.run());
         send.setOnClickListener(v -> submit.run());
         input.setOnEditorActionListener((view, actionId, event) -> {
-            boolean enterKey = event != null
-                    && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+            boolean enterKey = event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
                     && event.getAction() == KeyEvent.ACTION_UP;
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
-                    || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-                    || enterKey) {
+                    || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || enterKey) {
                 submit.run();
                 return true;
             }
             return false;
         });
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(
-                    new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-            int dialogWidth = Math.max(dpInt(240), Math.min(dpInt(520), screenWidth - dpInt(32)));
-            dialog.getWindow().setLayout(dialogWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
-            dialog.getWindow().setSoftInputMode(
-                    android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        }
+        showDraggablePanel(popup, header, KEY_KEYBOARD_PANEL_X, KEY_KEYBOARD_PANEL_Y,
+                0.5f, 0.42f);
         input.requestFocus();
         input.postDelayed(() -> {
             InputMethodManager manager = (InputMethodManager)
                     activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (manager != null) manager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+            if (manager != null && popup.isShowing()) {
+                manager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+            }
         }, 140);
     }
 
@@ -1454,12 +1442,9 @@ final class NativeTouchControlsView extends View {
     }
 
     private void dismissGameControlMenu() {
-        AlertDialog menu = activeGameMenu;
-        if (menu != null && menu.isShowing()) {
-            menu.dismiss();
-        } else {
-            activeGameMenu = null;
-        }
+        PopupWindow menu = activeGameMenu;
+        if (menu != null && menu.isShowing()) menu.dismiss();
+        else activeGameMenu = null;
     }
 
     private View createGameMenuItem(String symbol, String titleText, String subtitleText,
@@ -1532,9 +1517,6 @@ final class NativeTouchControlsView extends View {
         if (gameActivity == null || previewOnly) return;
         dismissGameControlMenu();
 
-        // The previous working implementation used a dialog owned by NativeGameActivity.
-        // Avoid a focusable full-screen PopupWindow: on some devices it can steal NativeActivity
-        // focus and interrupt the game surface.
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dpInt(14), dpInt(14), dpInt(14), dpInt(12));
@@ -1543,13 +1525,13 @@ final class NativeTouchControlsView extends View {
         panelBackground.setCornerRadius(dp(20));
         panelBackground.setStroke(dpInt(1), 0xff433969);
         panel.setBackground(panelBackground);
+        panel.setElevation(dp(12));
 
         LinearLayout header = new LinearLayout(activity);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-
         TextView logo = new TextView(activity);
-        logo.setText(UiLanguage.translate(activity, "MH"));
+        logo.setText("MH");
         logo.setTextColor(Color.WHITE);
         logo.setTextSize(15);
         logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -1564,7 +1546,7 @@ final class NativeTouchControlsView extends View {
         brand.setOrientation(LinearLayout.VERTICAL);
         brand.setGravity(Gravity.CENTER_VERTICAL);
         TextView brandName = new TextView(activity);
-        brandName.setText(UiLanguage.translate(activity, "MOBILEHORIZON"));
+        brandName.setText("MOBILEHORIZON");
         brandName.setTextColor(0xffb9adff);
         brandName.setTextSize(10);
         brandName.setLetterSpacing(0.08f);
@@ -1575,15 +1557,15 @@ final class NativeTouchControlsView extends View {
         menuTitle.setTextSize(18);
         menuTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         brand.addView(brandName, new LinearLayout.LayoutParams(-1, -2));
-        LinearLayout.LayoutParams menuTitleParams = new LinearLayout.LayoutParams(-1, -2);
-        menuTitleParams.topMargin = dpInt(2);
-        brand.addView(menuTitle, menuTitleParams);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
+        titleParams.topMargin = dpInt(2);
+        brand.addView(menuTitle, titleParams);
         LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(0, -2, 1f);
         brandParams.leftMargin = dpInt(11);
         header.addView(brand, brandParams);
 
         TextView close = new TextView(activity);
-        close.setText(UiLanguage.translate(activity, "×"));
+        close.setText("×");
         close.setTextSize(25);
         close.setTextColor(0xffd8deed);
         close.setGravity(Gravity.CENTER);
@@ -1623,13 +1605,13 @@ final class NativeTouchControlsView extends View {
         scroller.setVerticalScrollBarEnabled(false);
         scroller.setClipToPadding(false);
         scroller.addView(menuItems, new ScrollView.LayoutParams(-1, -2));
-        LinearLayout.LayoutParams scrollerParams = new LinearLayout.LayoutParams(-1, dpInt(230));
-        scrollerParams.topMargin = dpInt(12);
-        scrollerParams.bottomMargin = dpInt(9);
-        panel.addView(scroller, scrollerParams);
-
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, dpInt(230));
+        scrollParams.topMargin = dpInt(12);
+        scrollParams.bottomMargin = dpInt(9);
+        panel.addView(scroller, scrollParams);
         LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(-1, -2);
         itemParams.bottomMargin = dpInt(8);
+
         menuItems.addView(createGameMenuItem("✥", "Personalizar layout",
                 "Mover, redimensionar e configurar os botões", false, () -> {
                     controlsVisible = true;
@@ -1664,36 +1646,92 @@ final class NativeTouchControlsView extends View {
                             .setPositiveButton(UiLanguage.translate(activity, "Fechar jogo"), (d, w) -> {
                                 releaseAllInputs();
                                 gameActivity.finish();
-                            })
-                            .show()), new LinearLayout.LayoutParams(itemParams));
+                            }).show()), new LinearLayout.LayoutParams(itemParams));
 
-        TextView footer = new TextView(activity);
-        footer.setText(UiLanguage.translate(activity, "MOBILEHORIZON  •  CONTROLES NATIVOS"));
-        footer.setTextColor(0xff7885a0);
-        footer.setTextSize(9);
-        footer.setGravity(Gravity.CENTER);
-        footer.setLetterSpacing(0.06f);
-        panel.addView(footer, new LinearLayout.LayoutParams(-1, dpInt(20)));
+        TextView dragHint = new TextView(activity);
+        dragHint.setText(UiLanguage.translate(activity, "Arraste o cabeçalho para mover o painel"));
+        dragHint.setTextColor(0xff7885a0);
+        dragHint.setTextSize(9);
+        dragHint.setGravity(Gravity.CENTER);
+        panel.addView(dragHint, new LinearLayout.LayoutParams(-1, dpInt(18)));
 
-        AlertDialog menu = new AlertDialog.Builder(gameActivity).setView(panel).create();
-        menu.setCancelable(true);
-        menu.setCanceledOnTouchOutside(true);
-        menu.setOnDismissListener(d -> {
+        int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+        int width = Math.min(dpInt(390), Math.max(dpInt(250), screenWidth - dpInt(24)));
+        final PopupWindow menu = new PopupWindow(panel, width,
+                ViewGroup.LayoutParams.WRAP_CONTENT, false);
+        menu.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        menu.setTouchable(true);
+        menu.setFocusable(false);
+        menu.setOutsideTouchable(true);
+        menu.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
+        menu.setClippingEnabled(true);
+        menu.setElevation(dpInt(12));
+        panel.setAlpha(LauncherAppearance.panelOpacity(activity));
+        activeGameMenu = menu;
+        menu.setOnDismissListener(() -> {
             if (activeGameMenu == menu) activeGameMenu = null;
         });
-        activeGameMenu = menu;
-        menu.show();
-        if (menu.getWindow() != null) {
-            menu.getWindow().setBackgroundDrawable(
-                    new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-            int dialogWidth = Math.max(dpInt(250),
-                    Math.min(dpInt(440), screenWidth - dpInt(28)));
-            dialogWidth = Math.min(screenWidth, dialogWidth);
-            menu.getWindow().setLayout(dialogWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
-            android.view.WindowManager.LayoutParams attrs = menu.getWindow().getAttributes();
-            attrs.dimAmount = 0.48f;
-            menu.getWindow().setAttributes(attrs);
+        showDraggablePanel(menu, header, KEY_MENU_PANEL_X, KEY_MENU_PANEL_Y, 0.04f, 0.16f);
+    }
+
+    private void showDraggablePanel(PopupWindow popup, View handle,
+                                    String prefX, String prefY,
+                                    float defaultX, float defaultY) {
+        android.content.SharedPreferences prefs =
+                activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        int screenW = activity.getResources().getDisplayMetrics().widthPixels;
+        int screenH = activity.getResources().getDisplayMetrics().heightPixels;
+        int panelW = Math.max(1, popup.getWidth());
+        int panelH = Math.max(dpInt(120), popup.getHeight());
+        int maxX = Math.max(0, screenW - panelW);
+        int maxY = Math.max(0, screenH - panelH);
+        final int[] position = {
+                Math.round(clamp(prefs.getFloat(prefX, defaultX), 0f, 1f) * maxX),
+                Math.round(clamp(prefs.getFloat(prefY, defaultY), 0f, 1f) * maxY)
+        };
+        try { popup.showAtLocation(this, Gravity.TOP | Gravity.LEFT, position[0], position[1]); }
+        catch (RuntimeException error) {
+            android.util.Log.e("MobileHorizonTouch", "Falha ao abrir painel flutuante", error);
+            return;
+        }
+        final float[] origin = new float[2];
+        final int[] start = new int[2];
+        handle.setOnTouchListener((view, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    origin[0] = event.getRawX();
+                    origin[1] = event.getRawY();
+                    start[0] = position[0];
+                    start[1] = position[1];
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    int boundX = Math.max(0, screenW - Math.max(1, popup.getWidth()));
+                    int boundY = Math.max(0, screenH - Math.max(dpInt(120), popup.getHeight()));
+                    position[0] = Math.round(clamp(start[0] + event.getRawX() - origin[0], 0f, boundX));
+                    position[1] = Math.round(clamp(start[1] + event.getRawY() - origin[1], 0f, boundY));
+                    try { popup.update(position[0], position[1], -1, -1); }
+                    catch (RuntimeException ignored) { }
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    int limitX = Math.max(1, screenW - Math.max(1, popup.getWidth()));
+                    int limitY = Math.max(1, screenH - Math.max(dpInt(120), popup.getHeight()));
+                    prefs.edit().putFloat(prefX, position[0] / (float) limitX)
+                            .putFloat(prefY, position[1] / (float) limitY).apply();
+                    return true;
+                default:
+                    return true;
+            }
+        });
+    }
+
+    void dismissFloatingPanels() {
+        dismissGameControlMenu();
+        if (activeKeyboardPanel != null && activeKeyboardPanel.isShowing()) {
+            activeKeyboardPanel.dismiss();
+        }
+        if (activeButtonMenu != null && activeButtonMenu.isShowing()) {
+            activeButtonMenu.dismiss();
         }
     }
 
@@ -2038,6 +2076,15 @@ final class NativeTouchControlsView extends View {
         panel.addView(alphaLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(alpha, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
+        float panelOpacity = LauncherAppearance.panelOpacity(activity);
+        TextView panelOpacityLabel = textSetting(
+                "Opacidade dos painéis " + Math.round(panelOpacity * 100f) + "%");
+        SeekBar panelOpacityBar = new SeekBar(activity);
+        panelOpacityBar.setMax(75);
+        panelOpacityBar.setProgress(Math.round(panelOpacity * 100f) - 25);
+        panel.addView(panelOpacityLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
+        panel.addView(panelOpacityBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
+
         TextView sensitivityLabel = textSetting("Sensibilidade da câmera " + Math.round(sensitivity * 100) + "%");
         SeekBar sensitivityBar = new SeekBar(activity);
         sensitivityBar.setMax(150);
@@ -2059,6 +2106,9 @@ final class NativeTouchControlsView extends View {
 
         size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText(UiLanguage.translate(activity, "Tamanho geral ") + (70 + progress) + "%")));
         alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText(UiLanguage.translate(activity, "Opacidade geral ") + (35 + progress) + "%")));
+        panelOpacityBar.setOnSeekBarChangeListener(simpleSeek(progress ->
+                panelOpacityLabel.setText(UiLanguage.translate(activity,
+                        "Opacidade dos painéis ") + (25 + progress) + "%")));
         sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText(UiLanguage.translate(activity, "Sensibilidade da câmera ") + (50 + progress) + "%")));
         gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText(UiLanguage.translate(activity, "Distância de encaixe ") + (progress + 4) + " dp")));
         ScrollView settingsScroll = new ScrollView(activity);
@@ -2078,6 +2128,8 @@ final class NativeTouchControlsView extends View {
             snapGapDp = gapBar.getProgress() + 4;
             leftHanded = handed.isChecked();
             classicButtonsEnabled = classicButtons.isChecked();
+            LauncherAppearance.setPanelOpacity(activity,
+                    (panelOpacityBar.getProgress() + 25) / 100f);
             prefs.edit()
                     .putBoolean(KEY_ENABLED, enabled.isChecked())
                     .putBoolean(KEY_LEFT_HANDED, leftHanded)

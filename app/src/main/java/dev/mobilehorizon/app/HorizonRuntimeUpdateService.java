@@ -51,6 +51,8 @@ public final class HorizonRuntimeUpdateService {
     private static final String TEST_FIXTURE_URL = "https://api.github.com/repos/Ph04/MobileHorizonNative/releases/tags/" + TEST_FIXTURE_TAG;
     private static final String PC_RELEASE_TAG = "pc_release_tag";
     private static final String OFFICIAL_LATEST_TAG = "official_latest_tag";
+    private static final String OFFICIAL_LATEST_NAME = "official_latest_name";
+    private static final String OFFICIAL_LATEST_COMMIT = "official_latest_commit";
     private static final String OFFICIAL_CHECKED_AT = "official_checked_at_ms";
     private static final String TEST_SEED_DONE = "test_old_runtime_seed_done";
     private static final String PREFERENCES = "horizon_runtime_updates";
@@ -243,7 +245,8 @@ public final class HorizonRuntimeUpdateService {
             return BuildConfig.HORIZON_TEST_OLD_RUNTIME
                     ? BuildConfig.HORIZON_PC_RELEASE_TAG : "runtime Android ainda não instalada";
         }
-        return OFFICIAL_NIGHTLY_TAG.equals(tag) ? "Nightly" : tag;
+        return OFFICIAL_NIGHTLY_TAG.equals(tag)
+                ? officialNightlyVersionLabel(preferences) : tag;
     }
 
     /** Last official Horizon release successfully checked against upstream GitHub. */
@@ -255,7 +258,21 @@ public final class HorizonRuntimeUpdateService {
             return "Último release oficial verificado: ainda não consultado";
         }
         return "Último release oficial verificado: "
-                + (OFFICIAL_NIGHTLY_TAG.equals(tag) ? "Nightly" : tag);
+                + (OFFICIAL_NIGHTLY_TAG.equals(tag)
+                    ? officialNightlyVersionLabel(preferences) : tag);
+    }
+
+    private static String officialNightlyVersionLabel(SharedPreferences preferences) {
+        String name = preferences.getString(OFFICIAL_LATEST_NAME, "");
+        String commit = preferences.getString(OFFICIAL_LATEST_COMMIT, "");
+        if (name != null && !name.trim().isEmpty()
+                && !name.trim().equalsIgnoreCase("nightly")) {
+            return name.trim();
+        }
+        if (commit != null && commit.matches("(?i)[0-9a-f]{7,40}")) {
+            return "Nightly · " + commit.substring(0, 7).toLowerCase(java.util.Locale.ROOT);
+        }
+        return "Nightly";
     }
 
     private static void checkAndInstall(Context context, SharedPreferences preferences) throws Exception {
@@ -283,6 +300,8 @@ public final class HorizonRuntimeUpdateService {
                         + " (publicada em " + official.publishedAt + ").");
                 preferences.edit()
                         .putString(OFFICIAL_LATEST_TAG, official.tag)
+                        .putString(OFFICIAL_LATEST_NAME, official.name)
+                        .putString(OFFICIAL_LATEST_COMMIT, official.commit)
                         .putLong(OFFICIAL_CHECKED_AT, System.currentTimeMillis())
                         .apply();
             } catch (Exception error) {
@@ -399,13 +418,22 @@ public final class HorizonRuntimeUpdateService {
                 OFFICIAL_NIGHTLY_RELEASE_URL, 1024 * 1024));
         String tag = release.optString("tag_name", "");
         String publishedAt = release.optString("published_at", "");
+        String name = release.optString("name", "").trim();
+        String commit = release.optString("target_commitish", "").trim();
+        if (!commit.matches("(?i)[0-9a-f]{7,40}")) {
+            Matcher matcher = Pattern.compile("(?i)([0-9a-f]{7,40})").matcher(name);
+            commit = matcher.find() ? matcher.group(1) : "";
+        }
+        if (name.isEmpty() || name.length() > 160) {
+            name = commit.isEmpty() ? "Nightly" : "Nightly · " + commit.substring(0, 7);
+        }
         if (release.optBoolean("draft", false)
                 || !release.optBoolean("prerelease", false)
                 || !OFFICIAL_NIGHTLY_TAG.equals(tag)
                 || publishedAt.isEmpty()) {
             throw new IOException("A release Nightly oficial do Horizon não está publicada ou é inválida.");
         }
-        return new OfficialRelease(tag, publishedAt);
+        return new OfficialRelease(tag, publishedAt, name, commit);
     }
 
     private static void installRelease(Context context, SharedPreferences preferences,
@@ -935,10 +963,14 @@ public final class HorizonRuntimeUpdateService {
     private static final class OfficialRelease {
         final String tag;
         final String publishedAt;
+        final String name;
+        final String commit;
 
-        OfficialRelease(String tag, String publishedAt) {
+        OfficialRelease(String tag, String publishedAt, String name, String commit) {
             this.tag = tag;
             this.publishedAt = publishedAt;
+            this.name = name;
+            this.commit = commit;
         }
     }
 

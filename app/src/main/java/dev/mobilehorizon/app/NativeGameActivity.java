@@ -440,7 +440,10 @@ public final class NativeGameActivity extends NativeActivity {
 
     @Override
     protected void onDestroy() {
-        if (touchControls != null) touchControls.releaseAllInputs();
+        if (touchControls != null) {
+            touchControls.releaseAllInputs();
+            touchControls.dismissFloatingPanels();
+        }
         if (keyboardInputPopup != null) {
             try { keyboardInputPopup.dismiss(); } catch (IllegalArgumentException ignored) { }
             keyboardInputPopup = null;

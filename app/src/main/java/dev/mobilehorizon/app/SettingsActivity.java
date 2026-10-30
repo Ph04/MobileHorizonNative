@@ -12,6 +12,7 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.graphics.Color;
 import java.util.concurrent.ExecutorService;
@@ -72,6 +73,25 @@ public final class SettingsActivity extends Activity {
                 v -> chooseBackground()), top(-1, 48, 6));
         appearance.addView(button("Restaurar fundo padrão", false,
                 v -> clearBackground()), top(-1, 44, 6));
+        TextView panelOpacityLabel = text("Opacidade dos painéis "
+                + Math.round(LauncherAppearance.panelOpacity(this) * 100f) + "%",
+                12, 0xffb9b3d1, true);
+        appearance.addView(panelOpacityLabel, top(-1, -2, 10));
+        SeekBar panelOpacity = new SeekBar(this);
+        panelOpacity.setMax(75);
+        panelOpacity.setProgress(Math.round(LauncherAppearance.panelOpacity(this) * 100f) - 25);
+        appearance.addView(panelOpacity, top(-1, 34, 2));
+        panelOpacity.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                panelOpacityLabel.setText(UiLanguage.translate(SettingsActivity.this,
+                        "Opacidade dos painéis ") + (progress + 25) + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                LauncherAppearance.setPanelOpacity(SettingsActivity.this,
+                        (seekBar.getProgress() + 25) / 100f);
+            }
+        });
         page.addView(appearance, top(-1, -2, 12));
 
         LinearLayout network = card();

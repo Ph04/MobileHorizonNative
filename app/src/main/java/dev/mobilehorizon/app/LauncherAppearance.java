@@ -23,6 +23,8 @@ final class LauncherAppearance {
     private static final String PREFS = "mobilehorizon_interface";
     private static final String KEY_ACCENT = "launcher_accent_index";
     private static final String KEY_CUSTOM_BACKGROUND = "launcher_custom_background";
+    private static final String KEY_PANEL_OPACITY = "game_panel_opacity";
+    private static final float DEFAULT_PANEL_OPACITY = 0.92f;
     private static final int DEFAULT_BACKGROUND = 0xff0f0d17;
     private static final int MAX_IMAGE_BYTES = 15 * 1024 * 1024;
     private static final int MAX_IMAGE_SIDE = 12000;
@@ -48,6 +50,7 @@ final class LauncherAppearance {
         long length = image.isFile() ? image.length() : 0L;
         int result = preferences.getInt(KEY_ACCENT, 0);
         result = 31 * result + (preferences.getBoolean(KEY_CUSTOM_BACKGROUND, false) ? 1 : 0);
+        result = 31 * result + Math.round(panelOpacity(context) * 100f);
         result = 31 * result + (int) (modified ^ (modified >>> 32));
         result = 31 * result + (int) (length ^ (length >>> 32));
         return result;
@@ -67,6 +70,21 @@ final class LauncherAppearance {
         int index = context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getInt(KEY_ACCENT, 0);
         return BORDERS[Math.max(0, Math.min(BORDERS.length - 1, index))];
+    }
+
+    static float panelOpacity(Context context) {
+        float value = context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getFloat(KEY_PANEL_OPACITY, DEFAULT_PANEL_OPACITY);
+        return Math.max(0.25f, Math.min(1f, value));
+    }
+
+    static void setPanelOpacity(Context context, float value) {
+        if (Float.isNaN(value) || Float.isInfinite(value)) {
+            throw new IllegalArgumentException("Opacidade dos painéis inválida.");
+        }
+        float safe = Math.max(0.25f, Math.min(1f, value));
+        context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putFloat(KEY_PANEL_OPACITY, safe).apply();
     }
 
     static String accentName(Context context) {
