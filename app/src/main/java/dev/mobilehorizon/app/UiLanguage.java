@@ -61,6 +61,11 @@ final class UiLanguage {
         pair("Recursos", "Resources");
         pair("Logs", "Logs");
         pair("Atualizações", "Updates");
+        pair("Instalar", "Install");
+        pair("Biblioteca", "Library");
+        pair("Conta", "Account");
+        pair("Sistema", "System");
+        pair("AMBIENTE DO JOGO", "GAME ENVIRONMENT");
         pair("Estado do Horizon", "Horizon status");
         pair("Pronto", "Ready");
         pair("Recursos oficiais e motor nativo são gerenciados separadamente.", "Official game files and the native engine are managed separately.");
