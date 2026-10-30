@@ -94,6 +94,7 @@ public final class MainActivity extends Activity {
     private FrameLayout heroPanel;
     private LinearLayout mobileNavigation;
     private TextView[] mobileNavigationItems;
+    private Button[] sidebarNavigationItems;
     private TextView sidebarInstanceNameText;
     private Typeface bodyTypeface = Typeface.DEFAULT;
     private Typeface pixelTypeface = Typeface.DEFAULT_BOLD;
@@ -742,6 +743,7 @@ public final class MainActivity extends Activity {
             root.addView(buildMobileNavigation(), params(-1, 56));
         }
         setContentView(root);
+        updateMobileNavigation(heroPanel);
         applyDashboardWindowInsets(root);
         if (!landscape) updateMobileNavigation(heroPanel);
     }
@@ -842,11 +844,16 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams navTitleParams = params(-1, -2);
         navTitleParams.topMargin = dp(24);
         sidebar.addView(navigationTitle, navTitleParams);
-        addSpaced(sidebar, button("Início", true, v -> scrollToSection(heroPanel)), 40, 8);
-        addSpaced(sidebar, button("Instâncias", false, v -> scrollToSection(instanceSectionView)), 40, 5);
-        addSpaced(sidebar, button("Biblioteca", false, v -> scrollToSection(resourcesSectionView)), 40, 5);
-        addSpaced(sidebar, button("Conta", false, v -> scrollToSection(accountSectionView)), 40, 5);
-        addSpaced(sidebar, button("Sistema", false, v -> scrollToSection(logsSectionView)), 40, 5);
+        String[] sidebarLabels = {"Início", "Instâncias", "Biblioteca", "Conta", "Sistema"};
+        View[] sidebarTargets = {heroPanel, instanceSectionView, resourcesSectionView,
+                accountSectionView, logsSectionView};
+        sidebarNavigationItems = new Button[sidebarLabels.length];
+        for (int i = 0; i < sidebarLabels.length; i++) {
+            final View target = sidebarTargets[i];
+            Button item = button(sidebarLabels[i], false, v -> scrollToSection(target));
+            addSpaced(sidebar, item, 40, i == 0 ? 8 : 5);
+            sidebarNavigationItems[i] = item;
+        }
 
         View spacer = new View(this);
         sidebar.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1f));
@@ -898,15 +905,27 @@ public final class MainActivity extends Activity {
         else if (target == resourcesSectionView) selected = UiLanguage.translate(this, "Biblioteca");
         else if (target == accountSectionView) selected = UiLanguage.translate(this, "Conta");
         else if (target == logsSectionView) selected = UiLanguage.translate(this, "Sistema");
-        for (TextView item : mobileNavigationItems) {
-            boolean active = selected.contentEquals(item.getText());
-            if (active) {
-                item.setBackground(new HorizonBlockDrawable(0xff221e34, 0xff3d3560,
+        if (mobileNavigationItems != null) {
+            for (TextView item : mobileNavigationItems) {
+                boolean active = selected.contentEquals(item.getText());
+                if (active) {
+                    item.setBackground(new HorizonBlockDrawable(0xff221e34, 0xff3d3560,
+                            0xff07060b, 0xff05040a, dp(1), dp(1), dp(2)));
+                    item.setTextColor(0xffecedf3);
+                } else {
+                    item.setBackgroundColor(0xff0b0a11);
+                    item.setTextColor(0xffa29cb8);
+                }
+            }
+        }
+        if (sidebarNavigationItems != null) {
+            for (Button item : sidebarNavigationItems) {
+                boolean active = selected.contentEquals(item.getText());
+                item.setBackground(new HorizonBlockDrawable(
+                        active ? 0xff29243e : 0xff151321,
+                        active ? 0xff7561c7 : 0xff3d3560,
                         0xff07060b, 0xff05040a, dp(1), dp(1), dp(2)));
-                item.setTextColor(0xffecedf3);
-            } else {
-                item.setBackgroundColor(0xff0b0a11);
-                item.setTextColor(0xffa29cb8);
+                item.setTextColor(active ? 0xfff0ecff : 0xffb7b0cc);
             }
         }
     }
