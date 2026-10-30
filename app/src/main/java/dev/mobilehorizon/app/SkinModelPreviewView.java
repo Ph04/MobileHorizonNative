@@ -88,16 +88,20 @@ final class SkinModelPreviewView extends View {
         // Base model: head, torso, two arms and two legs.
         addBox(faces, 0f, 16f, 0f, 8f, 8f, 8f, HEAD_BASE, false);
         addBox(faces, 0f, 6f, 0f, 8f, 12f, 4f, BODY_BASE, false);
-        addBox(faces, -6f, 6f, 0f, armWidth, 12f, 4f, RIGHT_ARM_BASE, false);
-        addBox(faces, 6f, 6f, 0f, armWidth, 12f, 4f, LEFT_ARM_BASE, false);
+        addBox(faces, -6f, 6f, 0f, armWidth, 12f, 4f,
+                slim ? RIGHT_ARM_SLIM_BASE : RIGHT_ARM_BASE, false);
+        addBox(faces, 6f, 6f, 0f, armWidth, 12f, 4f,
+                slim ? LEFT_ARM_SLIM_BASE : LEFT_ARM_BASE, false);
         addBox(faces, -2f, -6f, 0f, 4f, 12f, 4f, RIGHT_LEG_BASE, false);
         addBox(faces, 2f, -6f, 0f, 4f, 12f, 4f, LEFT_LEG_BASE, false);
 
         // Transparent second layer (hat, jacket, sleeves and trousers).
         addBox(faces, 0f, 16f, 0f, 8.45f, 8.45f, 8.45f, HEAD_OVERLAY, true);
         addBox(faces, 0f, 6f, 0f, 8.42f, 12.42f, 4.42f, BODY_OVERLAY, true);
-        addBox(faces, -6f, 6f, 0f, armWidth + 0.38f, 12.42f, 4.42f, RIGHT_ARM_OVERLAY, true);
-        addBox(faces, 6f, 6f, 0f, armWidth + 0.38f, 12.42f, 4.42f, LEFT_ARM_OVERLAY, true);
+        addBox(faces, -6f, 6f, 0f, armWidth + 0.38f, 12.42f, 4.42f,
+                slim ? RIGHT_ARM_SLIM_OVERLAY : RIGHT_ARM_OVERLAY, true);
+        addBox(faces, 6f, 6f, 0f, armWidth + 0.38f, 12.42f, 4.42f,
+                slim ? LEFT_ARM_SLIM_OVERLAY : LEFT_ARM_OVERLAY, true);
         addBox(faces, -2f, -6f, 0f, 4.38f, 12.42f, 4.38f, RIGHT_LEG_OVERLAY, true);
         addBox(faces, 2f, -6f, 0f, 4.38f, 12.42f, 4.38f, LEFT_LEG_OVERLAY, true);
 
@@ -246,6 +250,18 @@ final class SkinModelPreviewView extends View {
     };
     private static final int[] RIGHT_ARM_BASE = {
             44,16,4,4, 48,16,4,4, 44,20,4,12, 40,20,4,12, 48,20,4,12, 52,20,4,12
+    };
+    private static final int[] RIGHT_ARM_SLIM_BASE = {
+            44,16,3,4, 47,16,3,4, 44,20,3,12, 40,20,4,12, 47,20,4,12, 51,20,3,12
+    };
+    private static final int[] RIGHT_ARM_SLIM_OVERLAY = {
+            44,32,3,4, 47,32,3,4, 44,36,3,12, 40,36,4,12, 47,36,4,12, 51,36,3,12
+    };
+    private static final int[] LEFT_ARM_SLIM_BASE = {
+            36,48,3,4, 39,48,3,4, 36,52,3,12, 32,52,4,12, 39,52,4,12, 43,52,3,12
+    };
+    private static final int[] LEFT_ARM_SLIM_OVERLAY = {
+            52,48,3,4, 55,48,3,4, 52,52,3,12, 48,52,4,12, 55,52,4,12, 59,52,3,12
     };
     private static final int[] RIGHT_ARM_OVERLAY = {
             44,32,4,4, 48,32,4,4, 44,36,4,12, 40,36,4,12, 48,36,4,12, 52,36,4,12
