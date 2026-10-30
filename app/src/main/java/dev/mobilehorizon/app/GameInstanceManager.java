@@ -21,7 +21,7 @@ import java.util.UUID;
 /**
  * Owns isolated Minecraft game-home directories.
  *
- * The legacy filesDir/horizon directory remains the immutable "default" profile so
+ * The legacy filesDir/horizon directory remains the fixed "default" profile so
  * existing worlds, settings, packs and logs are never moved or overwritten during migration.
  * New profiles live below filesDir/instances/<id>/game. Prepared Minecraft resources and the
  * downloaded Horizon engine remain shared by all instances.
@@ -100,7 +100,7 @@ public final class GameInstanceManager {
 
     /**
      * Resolve an internal instance ID to its private game directory. Unknown IDs fall back
-     * to the existing default profile; callers can never supply an arbitrary filesystem path.
+     * to the selected profile and then to the default; callers cannot supply filesystem paths.
      */
     public static synchronized File getInstanceHome(Context context, String requestedId)
             throws IOException {
