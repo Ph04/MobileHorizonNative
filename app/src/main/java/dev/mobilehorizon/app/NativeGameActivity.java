@@ -47,6 +47,9 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
     static final String EXTRA_NATIVE_SMOKE_TEST = "dev.mobilehorizon.app.EXTRA_NATIVE_SMOKE_TEST";
     static final String EXTRA_INSTANCE_ID = "dev.mobilehorizon.app.EXTRA_INSTANCE_ID";
+    static final String EXTRA_QUICK_PLAY_SERVER = "dev.mobilehorizon.app.EXTRA_QUICK_PLAY_SERVER";
+    static final String EXTRA_QUICK_PLAY_WORLD = "dev.mobilehorizon.app.EXTRA_QUICK_PLAY_WORLD";
+    private String runningInstanceId;
     private NativeTouchControlsView touchControls;
     private PopupWindow touchControlsPopup;
     private PopupWindow keyboardInputPopup;
@@ -81,6 +84,18 @@ public final class NativeGameActivity extends NativeActivity {
 
             String instanceId = launchIntent == null ? GameInstanceManager.DEFAULT_ID
                     : launchIntent.getStringExtra(EXTRA_INSTANCE_ID);
+            if (instanceId == null || instanceId.trim().isEmpty()) {
+                instanceId = GameInstanceManager.DEFAULT_ID;
+            }
+            runningInstanceId = instanceId;
+            boolean smokeTest = launchIntent != null
+                    && launchIntent.getBooleanExtra(EXTRA_NATIVE_SMOKE_TEST, false);
+            if (!smokeTest) {
+                try { InstanceMetadataStore.markStarted(this, instanceId); }
+                catch (Exception error) {
+                    android.util.Log.w("MobileHorizon", "Não foi possível iniciar o cronômetro da instância", error);
+                }
+            }
             java.io.File home = GameInstanceManager.getInstanceHome(this, instanceId);
             if (!home.isDirectory() && !home.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório da instância Horizon.");
@@ -102,6 +117,35 @@ public final class NativeGameActivity extends NativeActivity {
             // NativeActivity already starts the runtime with the app's private working directory
             // on supported builds; Os.chdir is not exposed by Android's public SDK.
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
+            // Quick-play values are set only after strict Java-side validation. Clear any
+            // previous activity values because the :game process can be reused.
+            android.system.Os.unsetenv("HORIZON_QUICK_PLAY_SERVER");
+            android.system.Os.unsetenv("HORIZON_QUICK_PLAY_WORLD");
+            if (launchIntent != null) {
+                String quickServer = launchIntent.getStringExtra(EXTRA_QUICK_PLAY_SERVER);
+                String quickWorld = launchIntent.getStringExtra(EXTRA_QUICK_PLAY_WORLD);
+                boolean hasServer = quickServer != null && !quickServer.trim().isEmpty();
+                boolean hasWorld = quickWorld != null && !quickWorld.trim().isEmpty();
+                if (hasServer && hasWorld) {
+                    throw new java.io.IOException("Início direto aceita somente um servidor ou um mundo por vez.");
+                }
+                if (hasServer) {
+                    android.system.Os.setenv("HORIZON_QUICK_PLAY_SERVER",
+                            ServerFavoriteStore.validateAddress(quickServer), true);
+                } else if (hasWorld) {
+                    String safeWorld = quickWorld.trim();
+                    if (!GameWorldManager.safeFolder(safeWorld)) {
+                        throw new java.io.IOException("Nome de pasta do mundo inválido.");
+                    }
+                    java.io.File saves = new java.io.File(home, "saves").getCanonicalFile();
+                    java.io.File target = new java.io.File(saves, safeWorld).getCanonicalFile();
+                    if (!saves.equals(target.getParentFile())
+                            || !new java.io.File(target, "level.dat").isFile()) {
+                        throw new java.io.IOException("O mundo selecionado não existe nesta instância.");
+                    }
+                    android.system.Os.setenv("HORIZON_QUICK_PLAY_WORLD", safeWorld, true);
+                }
+            }
             // Worlds, options, logs and local packs are isolated under this instance's
             // HORIZON_HOME. The prepared Minecraft resource tree stays shared under filesDir/.local.
             java.io.File resources = new java.io.File(
@@ -395,6 +439,13 @@ public final class NativeGameActivity extends NativeActivity {
             try { touchControlsPopup.dismiss(); } catch (IllegalArgumentException ignored) {}
             touchControlsPopup = null;
             touchControls = null;
+        }
+        if (runningInstanceId != null && !runningInstanceId.isEmpty()) {
+            try { InstanceMetadataStore.markStopped(this, runningInstanceId); }
+            catch (Exception error) {
+                android.util.Log.w("MobileHorizon", "Não foi possível atualizar o tempo de jogo da instância", error);
+            }
+            runningInstanceId = null;
         }
         super.onDestroy();
     }
