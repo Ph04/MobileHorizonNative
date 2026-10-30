@@ -155,6 +155,9 @@ public final class InstancesActivity extends Activity {
                     + new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
                         .format(new Date(instance.lastPlayed));
         card.addView(text(lastPlayed, 11, 0xffa8a1c6, false), topParams(-1, -2, 8));
+        card.addView(text(UiLanguage.translate(this, "Tempo jogado: ")
+                        + formatPlayedTime(metadata.totalPlayedMs),
+                11, 0xffa8a1c6, false), topParams(-1, -2, 3));
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -496,6 +499,16 @@ public final class InstancesActivity extends Activity {
         button.setTextColor(Color.WHITE);
         button.setOnClickListener(action);
         return button;
+    }
+
+    private String formatPlayedTime(long millis) {
+        long totalMinutes = Math.max(0L, millis / 60000L);
+        long days = totalMinutes / (24L * 60L);
+        long hours = (totalMinutes / 60L) % 24L;
+        long minutes = totalMinutes % 60L;
+        if (days > 0L) return days + " d " + hours + " h";
+        if (hours > 0L) return hours + " h " + minutes + " min";
+        return minutes + " min";
     }
 
     private void setProminentActionSize(Button button) {

@@ -112,6 +112,80 @@ public final class GameWorldManager {
         if(!world.isDirectory()||Files.isSymbolicLink(world.toPath()))throw new IOException("Mundo inexistente ou inseguro.");
         deleteTree(world,root);
     }
+    public static void copyWorld(Context c, String sourceFolder, String requestedTargetFolder)
+            throws IOException {
+        File root = saves(c, false).getCanonicalFile();
+        File source = worldDir(root, sourceFolder);
+        if (!source.isDirectory() || !new File(source, "level.dat").isFile()
+                || Files.isSymbolicLink(source.toPath())) {
+            throw new IOException("Mundo de origem ausente ou inválido.");
+        }
+        String targetName = requestedTargetFolder == null ? "" : requestedTargetFolder.trim();
+        if (!safeFolder(targetName)) throw new IOException("Nome da cópia inválido.");
+        File target = worldDir(root, targetName);
+        if (target.exists()) throw new IOException("Já existe um mundo com esse nome.");
+        File stagingRoot = new File(root, ".mh-copy-" + UUID.randomUUID());
+        File staged = new File(stagingRoot, targetName);
+        if (!staged.mkdirs()) throw new IOException("Não foi possível preparar a cópia do mundo.");
+        try {
+            Count count = new Count();
+            copyWorldTree(source, source.getCanonicalFile(), staged, count);
+            if (!new File(staged, "level.dat").isFile()) {
+                throw new IOException("A cópia não contém level.dat.");
+            }
+            if (target.exists()) throw new IOException("O nome do mundo já foi utilizado.");
+            move(staged, target);
+        } catch (Exception error) {
+            if (error instanceof IOException) throw (IOException) error;
+            throw new IOException("Não foi possível duplicar o mundo.", error);
+        } finally {
+            if (stagingRoot.exists()) deleteTree(stagingRoot, root);
+        }
+    }
+
+    private static void copyWorldTree(File source, File sourceRoot, File destination,
+                                      Count count) throws IOException {
+        if (Files.isSymbolicLink(source.toPath())) return;
+        File canonical = source.getCanonicalFile();
+        if (!canonical.equals(sourceRoot)
+                && !canonical.getPath().startsWith(sourceRoot.getPath() + File.separator)) {
+            throw new IOException("A cópia encontrou um caminho fora do mundo.");
+        }
+        String name = source.getName();
+        if ("session.lock".equals(name) || name.startsWith(".mh-")
+                || ".DS_Store".equals(name)) return;
+        if (source.isDirectory()) {
+            if (!destination.isDirectory() && !destination.mkdirs()) {
+                throw new IOException("Não foi possível criar " + destination.getName());
+            }
+            File[] children = source.listFiles();
+            if (children == null) throw new IOException("Diretório do mundo ilegível.");
+            for (File child : children) {
+                copyWorldTree(child, sourceRoot, new File(destination, child.getName()), count);
+            }
+            return;
+        }
+        if (!source.isFile()) return;
+        if (++count.entries > MAX_ENTRIES || source.length() > MAX_BYTES
+                || count.bytes + source.length() > MAX_BYTES) {
+            throw new IOException("O mundo excede os limites de duplicação (2 GiB/150 mil arquivos).");
+        }
+        File parent = destination.getParentFile();
+        if (!parent.isDirectory() && !parent.mkdirs()) throw new IOException("Não foi possível criar a pasta de destino.");
+        try (InputStream input = new BufferedInputStream(new FileInputStream(source));
+             FileOutputStream output = new FileOutputStream(destination, false)) {
+            byte[] buffer = new byte[32768];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                count.bytes += read;
+                if (count.bytes > MAX_BYTES) throw new IOException("O mundo excede 2 GiB.");
+                output.write(buffer, 0, read);
+            }
+            output.flush();
+            output.getFD().sync();
+        }
+    }
+
     public static void deleteBackup(Context c,String name)throws IOException{
         if(!safeBackupName(name))throw new IOException("Nome de backup inválido.");
         File root=backups(c,false).getCanonicalFile(),f=new File(root,name).getCanonicalFile();

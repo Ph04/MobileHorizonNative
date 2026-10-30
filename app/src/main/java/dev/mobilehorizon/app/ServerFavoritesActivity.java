@@ -40,7 +40,7 @@ public final class ServerFavoritesActivity extends Activity {
         page.addView(button("Sincronizar lista no Minecraft", false, v -> sync()), top(-1, 52, 7));
         status = text("", 12, 0xffc7bce6, false); page.addView(status, top(-1, -2, 8));
         list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); page.addView(list, top(-1, -2, 4));
-        page.addView(text("O cliente Horizon atual ainda inicia pela tela inicial; a conexão direta automática depende de suporte do motor. Depois da sincronização, os favoritos ficam disponíveis na lista Multiplayer do jogo.", 11, 0xffaaa2c6, false), top(-1, -2, 12));
+        page.addView(text("Entrar inicia o cliente diretamente no servidor. Para servidores online, selecione uma conta Microsoft com licença Java; o modo offline depende da configuração do servidor.", 11, 0xffaaa2c6, false), top(-1, -2, 12));
     }
 
     private void refresh() {
@@ -52,14 +52,25 @@ public final class ServerFavoritesActivity extends Activity {
             card.addView(text(server.name, 15, 0xfff0ecff, true), lp(-1, -2));
             card.addView(text(server.address, 12, 0xffaaa2c6, false), top(-1, -2, 3));
             LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); card.addView(row, top(-1, -2, 8));
-            Button copy = button("Copiar endereço", true, v -> {
+            Button join = button("Entrar", true, v -> {
+                Intent intent = new Intent(this, MainActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        .putExtra(MainActivity.EXTRA_QUICK_PLAY_SERVER, server.address);
+                startActivity(intent);
+            });
+            row.addView(join, new LinearLayout.LayoutParams(0, dp(48), 1f));
+            Button copy = button("Copiar endereço", false, v -> {
                 ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                 if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("Servidor Minecraft", server.address));
                 status.setText("Endereço copiado.");
             });
-            row.addView(copy, new LinearLayout.LayoutParams(0, dp(48), 1f));
+            LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, dp(48), 1f);
+            copyParams.leftMargin = dp(6);
+            row.addView(copy, copyParams);
             Button remove = button("Excluir", false, v -> confirmDelete(server));
-            LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(0, dp(48), 1f); rp.leftMargin = dp(7); row.addView(remove, rp);
+            LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+            rp.leftMargin = dp(6);
+            row.addView(remove, rp);
             list.addView(card, top(-1, -2, 8));
         }
     }

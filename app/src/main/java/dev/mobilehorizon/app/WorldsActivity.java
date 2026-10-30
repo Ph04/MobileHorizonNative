@@ -2,6 +2,7 @@ package dev.mobilehorizon.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -106,18 +107,67 @@ public final class WorldsActivity extends Activity {
         card.addView(text(world.folderName+" • "+formatSize(world.sizeBytes),11,0xffa8a1c6,false),top(-1,-2,4));
         String date=new SimpleDateFormat("dd/MM/yyyy HH:mm",Locale.getDefault()).format(new Date(world.lastModified));
         card.addView(text(UiLanguage.translate(this,"Última alteração: ")+date,11,0xffa8a1c6,false),top(-1,-2,3));
-        LinearLayout row=new LinearLayout(this);
+        LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        card.addView(row,top(-1,-2,9));
-        row.addView(button("Criar backup",true,v->createBackup(world)),new LinearLayout.LayoutParams(0,dp(40),1f));
-        Button backups=button("Backups",false,v->showBackups(world));
-        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,dp(40),1f);
-        bp.leftMargin=dp(7);
-        row.addView(backups,bp);
-        Button deleteWorld = button("Excluir mundo",false,v->confirmDelete(world));
+        card.addView(row, top(-1, -2, 9));
+        Button play = button("Jogar", true, v -> {
+            Intent intent = new Intent(this, MainActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    .putExtra(MainActivity.EXTRA_QUICK_PLAY_WORLD, world.folderName);
+            startActivity(intent);
+        });
+        row.addView(play, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        Button duplicate = button("Duplicar", false, v -> showCopyWorldDialog(world));
+        LinearLayout.LayoutParams duplicateParams = new LinearLayout.LayoutParams(0, dp(42), 1f);
+        duplicateParams.leftMargin = dp(6);
+        row.addView(duplicate, duplicateParams);
+
+        LinearLayout backupRow = new LinearLayout(this);
+        backupRow.setOrientation(LinearLayout.HORIZONTAL);
+        card.addView(backupRow, top(-1, -2, 6));
+        Button createBackup = button("Criar backup", true, v -> createBackup(world));
+        backupRow.addView(createBackup, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        Button backups = button("Backups", false, v -> showBackups(world));
+        LinearLayout.LayoutParams backupParams = new LinearLayout.LayoutParams(0, dp(42), 1f);
+        backupParams.leftMargin = dp(6);
+        backupRow.addView(backups, backupParams);
+
+        Button dataPacks = button("Gerenciar data packs", false, v -> {
+            Intent intent = new Intent(this, WorldDataPacksActivity.class)
+                    .putExtra(WorldDataPacksActivity.EXTRA_WORLD_FOLDER, world.folderName);
+            startActivity(intent);
+        });
+        card.addView(dataPacks, top(-1, 46, 7));
+        Button deleteWorld = button("Excluir mundo", false, v -> confirmDelete(world));
         setProminentActionSize(deleteWorld);
-        card.addView(deleteWorld,top(-1,60,7));
+        card.addView(deleteWorld, top(-1, 60, 7));
         return card;
+    }
+
+    private void showCopyWorldDialog(GameWorldManager.World world) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setFilters(new android.text.InputFilter[]{
+                new android.text.InputFilter.LengthFilter(96)});
+        input.setText(world.folderName + "-copy");
+        input.setSelection(input.length());
+        input.setHint(UiLanguage.translate(this, "Nome da pasta da cópia"));
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this, "Duplicar mundo"))
+                .setMessage(UiLanguage.translate(this,
+                        "A cópia inclui os arquivos do mundo e os data packs. O arquivo session.lock não será copiado."))
+                .setView(input)
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Duplicar"), (dialog, which) -> {
+                    String target = input.getText().toString().trim();
+                    if (!GameWorldManager.safeFolder(target)) {
+                        status.setText(UiLanguage.translate(this, "Nome da cópia inválido."));
+                        return;
+                    }
+                    runIo("Duplicando mundo…",
+                            () -> GameWorldManager.copyWorld(this, world.folderName, target),
+                            "Cópia do mundo criada.");
+                }).show();
     }
 
     private void createBackup(GameWorldManager.World world){
