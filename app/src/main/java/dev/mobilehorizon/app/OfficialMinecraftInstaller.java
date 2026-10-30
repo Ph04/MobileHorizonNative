@@ -393,7 +393,7 @@ final class OfficialMinecraftInstaller {
         try {
             URL parsed = new URL(url);
             requireOfficialUrl(url, "URL de " + label);
-            URLConnection raw = parsed.openConnection();
+            URLConnection raw = LauncherNetworkSettings.open(parsed);
             if (!(raw instanceof HttpURLConnection)) throw new IllegalStateException("O download não é HTTP(S).");
             connection = (HttpURLConnection) raw;
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
