@@ -1331,7 +1331,7 @@ final class NativeTouchControlsView extends View {
         });
         android.widget.CheckBox toggle = new android.widget.CheckBox(activity);
         toggle.setText(UiLanguage.translate(activity, "Alternância: ativar/desativar"));
-        toggle.setTextColor(0xff18213a);
+        toggle.setTextColor(0xffeaf0ff);
         toggle.setFocusable(false);
         content.addView(toggle, new LinearLayout.LayoutParams(-1, dpInt(40)));
 
@@ -2067,21 +2067,21 @@ final class NativeTouchControlsView extends View {
 
         android.widget.CheckBox enabled = new android.widget.CheckBox(activity);
         enabled.setText(UiLanguage.translate(activity, "Ativar controles na tela do jogo"));
-        enabled.setTextColor(0xff18213a);
+        enabled.setTextColor(0xffeaf0ff);
         enabled.setFocusable(false);
         enabled.setChecked(prefs.getBoolean(KEY_ENABLED, true));
         panel.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
 
         android.widget.CheckBox handed = new android.widget.CheckBox(activity);
         handed.setText(UiLanguage.translate(activity, "Layout canhoto (joystick à direita)"));
-        handed.setTextColor(0xff18213a);
+        handed.setTextColor(0xffeaf0ff);
         handed.setFocusable(false);
         handed.setChecked(leftHanded);
         panel.addView(handed, new LinearLayout.LayoutParams(-1, -2));
 
         android.widget.CheckBox classicButtons = new android.widget.CheckBox(activity);
         classicButtons.setText(UiLanguage.translate(activity, "Botões Clássicos"));
-        classicButtons.setTextColor(0xff18213a);
+        classicButtons.setTextColor(0xffeaf0ff);
         classicButtons.setFocusable(false);
         classicButtons.setChecked(classicButtonsEnabled);
         panel.addView(classicButtons, new LinearLayout.LayoutParams(-1, -2));
@@ -2208,7 +2208,7 @@ final class NativeTouchControlsView extends View {
             ButtonLayout layout = buttonLayouts.get(id);
             android.widget.CheckBox check = new android.widget.CheckBox(activity);
             check.setText(names[i]);
-            check.setTextColor(0xff18213a);
+            check.setTextColor(0xffeaf0ff);
             check.setFocusable(false);
             check.setChecked(layout == null || layout.visible);
             check.setOnCheckedChangeListener((button, checked) -> {
@@ -2261,7 +2261,7 @@ final class NativeTouchControlsView extends View {
     private TextView textSetting(String value) {
         TextView text = new TextView(activity);
         text.setText(UiLanguage.translate(activity, value));
-        text.setTextColor(0xff18213a);
+        text.setTextColor(0xffeaf0ff);
         text.setTextSize(12);
         return text;
     }
@@ -2996,6 +2996,11 @@ final class NativeTouchControlsView extends View {
             try { if (activeGameMenu.isShowing()) activeGameMenu.dismiss(); }
             catch (IllegalArgumentException ignored) { }
             activeGameMenu = null;
+        }
+        if (activeGameSettingsPanel != null) {
+            try { if (activeGameSettingsPanel.isShowing()) activeGameSettingsPanel.dismiss(); }
+            catch (IllegalArgumentException ignored) { }
+            activeGameSettingsPanel = null;
         }
         super.onDetachedFromWindow();
     }
