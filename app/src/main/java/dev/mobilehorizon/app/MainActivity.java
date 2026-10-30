@@ -1497,6 +1497,12 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private LinearLayout.LayoutParams top(int width, int height, int topMarginDp) {
+        LinearLayout.LayoutParams layoutParams = params(width, height);
+        layoutParams.topMargin = dp(topMarginDp);
+        return layoutParams;
+    }
+
     private int normalizedButtonHeight(int requestedDp) {
         if (requestedDp <= 0) return requestedDp;
         if (requestedDp <= 38) return BUTTON_SMALL_DP;

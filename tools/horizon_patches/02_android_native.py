@@ -580,6 +580,14 @@ else:
         f"legacy={chat_tree_source.count(legacy_chat_tree)}, "
         f"visible={chat_tree_source.count(visible_chat_tree)}"
     )
+
+# Horizon has shipped both one-argument and two-argument chat_tree signatures.
+# Select the call that matches the pinned source instead of assuming one API shape.
+chat_tree_decl_start = chat_tree_source.find("fn chat_tree")
+chat_tree_decl_end = chat_tree_source.find("{", chat_tree_decl_start)
+if chat_tree_decl_start < 0 or chat_tree_decl_end < 0:
+    raise SystemExit(f"{chat}: could not read chat_tree declaration")
+chat_tree_has_mods = "ModsState" in chat_tree_source[chat_tree_decl_start:chat_tree_decl_end]
 replace_once(chat,
     """        self.ui.chat_screen = Some(screen);
         self.ui.chat_opened = Some(std::time::Instant::now());""",
@@ -933,7 +941,7 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                     }
                     let m = Measure(&self.gui.atlas.font);
                     let c = Commands {
-                        dispatcher: chat_tree(&self.remote, &self.mods),
+                        dispatcher: chat_tree(&self.remote),
                         registries: &self.ui.registries,
                     };
                     if let Some(screen) = self.ui.chat_screen.as_mut() {
@@ -976,6 +984,13 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
 """
 content = game.read_text(encoding="utf-8")
 content = content[:idx] + content[idx:].replace(impl_start, injected_impl, 1)
+if chat_tree_has_mods:
+    content = content.replace(
+        "dispatcher: chat_tree(&self.remote),",
+        "dispatcher: chat_tree(&self.remote, &self.mods),",
+        1,
+    )
+
 idx = content.find("impl ApplicationHandler<horizon_client::AndroidInjectedInput> for Game<'_> {")
 if idx < 0:
     raise SystemExit("Could not replace Game ApplicationHandler implementation")
