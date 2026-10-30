@@ -315,13 +315,14 @@ public final class HorizonRuntimeManager {
      */
     public static synchronized void activatePinnedVersion(Context context, String version)
             throws IOException {
-        InstalledVersion installed = readInstalledVersion(context, version);
         Context app = context.getApplicationContext();
         File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
         try (FileChannel lockChannel = FileChannel.open(
                      new File(root, ".runtime-manager.lock").toPath(),
                      StandardOpenOption.CREATE, StandardOpenOption.WRITE);
              FileLock ignoredLock = lockChannel.lock()) {
+            // Verify the complete installation while holding the same lock as the updater.
+            InstalledVersion installed = readInstalledVersion(app, version);
             writeActive(root, installed.version, installed.sha256);
         }
     }
