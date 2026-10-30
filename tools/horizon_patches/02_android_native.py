@@ -1121,6 +1121,49 @@ else:
 replace_once(workspace_cargo, '"crates/horizon-client",',
              '"crates/horizon-client", "crates/mobilehorizon-android",')
 
+replace_once(game,
+    """        // The launcher's account: online-mode servers need it. A bad file
+        // only leaves the game offline.
+        if let Some(path) = session_file.filter(|p| !p.is_empty()) {""",
+    """        // Native Android launcher quick play. Explicit CLI arguments take precedence.
+        if o.server.is_none() {
+            if let Ok(address) = std::env::var("HORIZON_QUICK_PLAY_SERVER") {
+                let address = address.trim().to_owned();
+                if address.is_empty() || address.len() > 255
+                    || address.chars().any(|c| c.is_control() || c.is_whitespace()
+                        || matches!(c, '/' | '\\\\' | '@' | '#' | '?'))
+                {
+                    return Err("invalid HORIZON_QUICK_PLAY_SERVER address".into());
+                }
+                o.server = Some(address);
+            }
+        }
+        if o.world.is_none() {
+            if let Ok(world) = std::env::var("HORIZON_QUICK_PLAY_WORLD") {
+                let folder = std::path::Path::new(&world);
+                let single_component = folder.components().count() == 1
+                    && matches!(folder.components().next(),
+                        Some(std::path::Component::Normal(_)));
+                if !single_component || world.len() > 96 || world.starts_with('.')
+                    || world.contains("..") || world.chars().any(|c| c.is_control())
+                {
+                    return Err("invalid HORIZON_QUICK_PLAY_WORLD folder name".into());
+                }
+                let save = std::env::current_dir()?.join("saves").join(&world);
+                if !save.join("level.dat").is_file() {
+                    return Err(format!("quick-play world '{}' was not found in saves/", world).into());
+                }
+                o.world = Some(world);
+            }
+        }
+        if o.server.is_some() && o.world.is_some() {
+            return Err("quick play can target either one server or one world, not both".into());
+        }
+
+        // The launcher's account: online-mode servers need it. A bad file
+        // only leaves the game offline.
+        if let Some(path) = session_file.filter(|p| !p.is_empty()) {""");
+
 dst = root / "crates/mobilehorizon-android"
 (dst / "src").mkdir(parents=True, exist_ok=True)
 shutil.copyfile(repo_root / "android-native/Cargo.toml", dst / "Cargo.toml")
