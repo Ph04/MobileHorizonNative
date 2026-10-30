@@ -16,6 +16,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -118,9 +120,10 @@ public final class RuntimeVersionsActivity extends Activity {
         }
         String automatic = HorizonRuntimeUpdateService.automaticRuntimeVersion(this);
         String pin = metadata.pinnedVersion;
+        boolean pinnedIsInstalled = containsVersion(installed, pin);
         String selected = pin.isEmpty()
                 ? "Automática" + (automatic.isEmpty() ? " (ainda não definida)" : " • " + automatic)
-                : pin + (HorizonRuntimeManager.hasInstalledVersion(this, pin) ? "" : " (não instalada)");
+                : pin + (pinnedIsInstalled ? "" : " (não instalada)");
         status.setText(UiLanguage.translate(this, "Esta instância: ")
                 + selected + "\n" + UiLanguage.translate(this, "Versão padrão global: ")
                 + (automatic.isEmpty() ? "não definida" : automatic));
@@ -148,7 +151,8 @@ public final class RuntimeVersionsActivity extends Activity {
             publishedCard.addView(text("Nenhuma runtime publicada foi encontrada.", 11, 0xffaaa2c6, false), top(-1, -2, 6));
         } else {
             for (HorizonRuntimeUpdateService.PublishedRuntime item : published) {
-                publishedCard.addView(publishedRow(item, pin, automatic), top(-1, -2, 8));
+                publishedCard.addView(publishedRow(item, pin, automatic,
+                        containsVersion(installed, item.version)), top(-1, -2, 8));
             }
         }
         list.addView(publishedCard, top(-1, -2, 8));
@@ -184,8 +188,17 @@ public final class RuntimeVersionsActivity extends Activity {
         return row;
     }
 
+    private boolean containsVersion(List<HorizonRuntimeManager.InstalledVersion> installed,
+                                    String version) {
+        if (version == null || version.isEmpty()) return false;
+        for (HorizonRuntimeManager.InstalledVersion item : installed) {
+            if (item.version.equals(version)) return true;
+        }
+        return false;
+    }
+
     private View publishedRow(HorizonRuntimeUpdateService.PublishedRuntime item,
-                              String pin, String automatic) {
+                              String pin, String automatic, boolean installed) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
         row.addView(text(item.version, 12, 0xffeee9ff, true), lp(-1, -2));
@@ -194,7 +207,6 @@ public final class RuntimeVersionsActivity extends Activity {
         row.addView(text("Horizon PC " + item.upstreamTag + " • " + formatSize(item.sizeBytes)
                         + (date.isEmpty() ? "" : " • " + date),
                 10, 0xffaaa2c6, false), top(-1, -2, 2));
-        boolean installed = HorizonRuntimeManager.hasInstalledVersion(this, item.version);
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         row.addView(actions, top(-1, -2, 5));
@@ -214,27 +226,29 @@ public final class RuntimeVersionsActivity extends Activity {
     }
 
     private void pinInstalled(String version) {
-        try {
-            if (!HorizonRuntimeManager.hasInstalledVersion(this, version)) {
-                throw new IllegalStateException("A runtime não está instalada ou não passou na verificação.");
-            }
-            InstanceMetadataStore.setPinnedVersion(this, instanceId, version);
-            status.setText(UiLanguage.translate(this, "Versão fixada. Ela será usada na próxima abertura desta instância."));
-            refresh();
-        } catch (Exception error) {
-            showError("Não foi possível fixar a runtime", error);
-        }
+        // runInstall verifies the binary on the I/O executor before saving this instance pin.
+        runInstall(version, false);
     }
 
     private void clearPin() {
-        try {
-            InstanceMetadataStore.setPinnedVersion(this, instanceId, "");
-            HorizonRuntimeUpdateService.restoreAutomaticRuntimeVersion(this);
-            status.setText(UiLanguage.translate(this, "Esta instância seguirá novamente a runtime automática."));
-            refresh();
-        } catch (Exception error) {
-            showError("Não foi possível remover a versão fixada", error);
-        }
+        if (busy) return;
+        setBusy(true, "Removendo versão fixada…");
+        io.execute(() -> {
+            Exception failure = null;
+            try {
+                InstanceMetadataStore.setPinnedVersion(this, instanceId, "");
+                HorizonRuntimeUpdateService.restoreAutomaticRuntimeVersion(this);
+            } catch (Exception error) { failure = error; }
+            final Exception result = failure;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                setBusy(false, "");
+                if (result != null) showError("Não foi possível remover a versão fixada", result);
+                else status.setText(UiLanguage.translate(this,
+                        "Esta instância seguirá novamente a runtime automática."));
+                refresh();
+            });
+        });
     }
 
     private void installForInstance(String version) {
