@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: ["main", "feature/horizon-runtime-loader"]
+    branches: ["main", "feature/horizon-runtime-loader", "feature/android-launcher-parity"]
     paths:
       - "app/**"
       - "core/**"
