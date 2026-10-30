@@ -332,7 +332,20 @@ public final class MainActivity extends Activity {
         super.onResume();
         int appearanceSignature = LauncherAppearance.signature(this);
         if (appearanceSignature != lastAppearanceSignature) {
+            int retainedTab = activeTabIndex;
+            int[] retainedScroll = new int[tabScrolls == null ? 0 : tabScrolls.length];
+            if (tabScrolls != null) {
+                for (int i = 0; i < tabScrolls.length; i++) {
+                    retainedScroll[i] = tabScrolls[i].getScrollY();
+                }
+            }
             buildUi();
+            selectTab(Math.max(0, Math.min(retainedTab, tabPages.length - 1)));
+            for (int i = 0; i < Math.min(retainedScroll.length, tabScrolls.length); i++) {
+                final ScrollView target = tabScrolls[i];
+                final int scrollY = retainedScroll[i];
+                target.post(() -> target.scrollTo(0, scrollY));
+            }
             lastAppearanceSignature = appearanceSignature;
             updateCompatibility();
             setStatus("Pronto",
