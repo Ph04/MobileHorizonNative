@@ -114,7 +114,9 @@ public final class WorldsActivity extends Activity {
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,dp(40),1f);
         bp.leftMargin=dp(7);
         row.addView(backups,bp);
-        card.addView(button("Excluir mundo",false,v->confirmDelete(world)),top(-1,52,7));
+        Button deleteWorld = button("Excluir mundo",false,v->confirmDelete(world));
+        setProminentActionSize(deleteWorld);
+        card.addView(deleteWorld,top(-1,60,7));
         return card;
     }
 
@@ -254,6 +256,13 @@ public final class WorldsActivity extends Activity {
         android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();
         bg.setColor(primary?0xff5b3fd6:0xff2b2641);bg.setCornerRadius(dp(5));bg.setStroke(dp(1),primary?0xff8a74ff:0xff3d3560);
         b.setBackground(bg);b.setTextColor(android.graphics.Color.WHITE);b.setOnClickListener(click);return b;
+    }
+    private void setProminentActionSize(Button button) {
+        button.setMinHeight(dp(60));
+        button.setMinimumHeight(dp(60));
+        button.setPadding(dp(14), dp(3), dp(14), dp(3));
+        button.setTextSize(13);
+        button.setGravity(Gravity.CENTER);
     }
     private TextView text(String value,int size,int color,boolean bold){
         TextView t=new TextView(this);t.setText(UiLanguage.translate(this,value));t.setTextSize(size);t.setTextColor(color);

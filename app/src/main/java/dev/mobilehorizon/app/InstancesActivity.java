@@ -66,10 +66,12 @@ public final class InstancesActivity extends Activity {
                 13, 0xffb9b3d1, false), topParams(-1, -2, 6));
 
         Button back = button("Voltar", false, v -> finish());
-        page.addView(back, topParams(-1, 52, 12));
+        setProminentActionSize(back);
+        page.addView(back, topParams(-1, 60, 12));
 
         Button create = button("Nova instância", true, v -> showNameDialog(null));
-        page.addView(create, topParams(-1, 52, 10));
+        setProminentActionSize(create);
+        page.addView(create, topParams(-1, 60, 10));
 
         progress = new ProgressBar(this);
         progress.setIndeterminate(true);
@@ -145,8 +147,9 @@ public final class InstancesActivity extends Activity {
         actions.addView(rename, renameParams);
 
         Button delete = button("Excluir", false, v -> confirmDelete(instance));
+        setProminentActionSize(delete);
         delete.setEnabled(!busy && !active && !instance.isDefault());
-        card.addView(delete, topParams(-1, 52, 7));
+        card.addView(delete, topParams(-1, 60, 7));
         return card;
     }
 
@@ -279,6 +282,14 @@ public final class InstancesActivity extends Activity {
         button.setTextColor(Color.WHITE);
         button.setOnClickListener(action);
         return button;
+    }
+
+    private void setProminentActionSize(Button button) {
+        button.setMinHeight(dp(60));
+        button.setMinimumHeight(dp(60));
+        button.setPadding(dp(14), dp(3), dp(14), dp(3));
+        button.setTextSize(13);
+        button.setGravity(Gravity.CENTER);
     }
 
     private TextView text(String value, int size, int color, boolean bold) {
