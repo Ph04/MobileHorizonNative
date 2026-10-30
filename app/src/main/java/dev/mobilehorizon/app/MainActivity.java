@@ -94,6 +94,7 @@ public final class MainActivity extends Activity {
     private FrameLayout heroPanel;
     private LinearLayout mobileNavigation;
     private TextView[] mobileNavigationItems;
+    private TextView sidebarInstanceNameText;
     private Typeface bodyTypeface = Typeface.DEFAULT;
     private Typeface pixelTypeface = Typeface.DEFAULT_BOLD;
     private Typeface buttonTypeface = Typeface.DEFAULT_BOLD;
@@ -834,7 +835,8 @@ public final class MainActivity extends Activity {
         instance.addView(instanceText, instanceTextParams);
         instanceText.addView(text("Horizon", 12, 0xfff0ecff, true), params(-1, -2));
         instanceText.addView(text("Minecraft Java • 26.3", 9, 0xffb8a9d8, false), params(-1, -2));
-        instanceText.addView(text("Perfil: " + currentInstanceName(), 9, 0xffb8a9d8, false), params(-1, -2));
+        sidebarInstanceNameText = text("Perfil: " + currentInstanceName(), 9, 0xffb8a9d8, false);
+        instanceText.addView(sidebarInstanceNameText, params(-1, -2));
 
         TextView navigationTitle = text("NAVEGAÇÃO", 10, 0xff8b82aa, true);
         LinearLayout.LayoutParams navTitleParams = params(-1, -2);
@@ -918,15 +920,21 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshInstanceSummary() {
-        if (instanceSummaryText == null) return;
         try {
             GameInstanceManager.Instance active = GameInstanceManager.getSelectedInstance(this);
-            instanceSummaryText.setText(UiLanguage.translate(this, "Instância ativa: ")
-                    + active.name + "\n"
-                    + UiLanguage.translate(this, "Mundos, opções e pacotes ficam separados neste perfil."));
+            if (instanceSummaryText != null) {
+                instanceSummaryText.setText(UiLanguage.translate(this, "Instância ativa: ")
+                        + active.name + "\n"
+                        + UiLanguage.translate(this, "Mundos, opções e pacotes ficam separados neste perfil."));
+            }
+            if (sidebarInstanceNameText != null) {
+                sidebarInstanceNameText.setText(UiLanguage.translate(this, "Perfil: ") + active.name);
+            }
         } catch (Exception error) {
-            instanceSummaryText.setText(UiLanguage.translate(this,
-                    "Não foi possível ler as instâncias: ") + safeMessage(error));
+            if (instanceSummaryText != null) {
+                instanceSummaryText.setText(UiLanguage.translate(this,
+                        "Não foi possível ler as instâncias: ") + safeMessage(error));
+            }
         }
     }
 
