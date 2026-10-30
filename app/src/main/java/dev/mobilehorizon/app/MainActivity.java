@@ -197,6 +197,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        LauncherNetworkSettings.initialize(this);
         getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
         getWindow().setNavigationBarColor(Color.rgb(244, 246, 251));
         if (Build.VERSION.SDK_INT >= 23) {
