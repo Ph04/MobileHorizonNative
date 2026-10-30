@@ -933,7 +933,7 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                     }
                     let m = Measure(&self.gui.atlas.font);
                     let c = Commands {
-                        dispatcher: chat_tree(&self.remote, &self.mods),
+                        dispatcher: chat_tree(&self.remote),
                         registries: &self.ui.registries,
                     };
                     if let Some(screen) = self.ui.chat_screen.as_mut() {
