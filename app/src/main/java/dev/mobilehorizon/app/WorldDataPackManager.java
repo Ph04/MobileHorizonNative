@@ -89,6 +89,7 @@ final class WorldDataPackManager {
         Pack metadata;
         try {
             metadata = inspectZip(staging, safeName, true);
+            if (metadata == null) throw new IOException("O ZIP não contém pack.mcmeta válido na raiz.");
         } catch (Exception error) {
             staging.delete();
             if (error instanceof IOException) throw (IOException) error;
@@ -182,7 +183,8 @@ final class WorldDataPackManager {
                     }
                 }
                 if ("pack.mcmeta".equals(path)) continue;
-                if (!entry.isDirectory() && !path.startsWith("data/")) {
+                if (!entry.isDirectory() && !path.startsWith("data/")
+                        && !"pack.mcmeta".equals(path) && !"pack.png".equals(path)) {
                     throw new IOException("Data pack possui caminho fora de pack.mcmeta/ e data/: " + path);
                 }
             }
