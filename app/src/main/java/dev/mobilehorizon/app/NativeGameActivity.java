@@ -80,7 +80,7 @@ public final class NativeGameActivity extends NativeActivity {
                 if (!HorizonRuntimeManager.hasInstalledVersion(this, instanceMetadata.pinnedVersion)) {
                     throw new java.io.IOException("A runtime fixada para esta instância não está instalada ou não passou na verificação. Abra Instâncias > Versões para corrigir.");
                 }
-                HorizonRuntimeManager.activateInstalledVersion(this, instanceMetadata.pinnedVersion);
+                HorizonRuntimeManager.activatePinnedVersion(this, instanceMetadata.pinnedVersion);
                 runtimePinnedForSession = true;
             } else {
                 HorizonRuntimeUpdateService.restoreAutomaticRuntimeVersion(this);
