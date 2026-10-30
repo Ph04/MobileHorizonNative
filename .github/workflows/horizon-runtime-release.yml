@@ -15,16 +15,16 @@ on:
         description: "Branch containing the live Android updater code."
         required: false
         type: string
-        default: feature/horizon-runtime-loader
+        default: feature/android-launcher-parity
   workflow_dispatch:
     inputs:
       source_ref:
         description: "Branch to build the Android Horizon runtime from."
         required: true
         type: string
-        default: feature/horizon-runtime-loader
+        default: feature/android-launcher-parity
   push:
-    branches: ["feature/horizon-runtime-loader"]
+    branches: ["feature/android-launcher-parity"]
     paths:
       - "android-native/**"
       - "tools/horizon-revisions.env"
