@@ -321,6 +321,19 @@ public final class HorizonRuntimeManager {
             throw new IOException("Runtime não instalada: " + safeVersion);
         }
         File metadata = new File(directory, "runtime.json");
+        if (!metadata.isFile()) {
+            // Older releases only stored the hash in active.json/previous.json. Migrate those
+            // verified selections forward so they remain visible and pinnable after an app update.
+            Active legacy = readValidSelection(versions, ACTIVE_NAME);
+            if (legacy == null || !safeVersion.equals(legacy.version)) {
+                legacy = readValidSelection(versions, PREVIOUS_NAME);
+            }
+            if (legacy == null || !safeVersion.equals(legacy.version)) {
+                throw new IOException("Metadados da runtime ausentes para " + safeVersion);
+            }
+            writeRuntimeMetadata(directory, safeVersion, legacy.sha256,
+                    HorizonRuntimeUpdateService.upstreamTagFromRuntimeVersion(safeVersion));
+        }
         if (!metadata.isFile() || metadata.length() <= 0 || metadata.length() > 16 * 1024
                 || Files.isSymbolicLink(metadata.toPath())) {
             throw new IOException("Metadados da runtime ausentes para " + safeVersion);
