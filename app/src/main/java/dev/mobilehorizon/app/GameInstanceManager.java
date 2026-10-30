@@ -113,11 +113,11 @@ public final class GameInstanceManager {
         File home = homeFor(context, entry.id).getCanonicalFile();
         File filesRoot = context.getApplicationContext().getFilesDir().getCanonicalFile();
         if (entry.id.equals(DEFAULT_ID)) {
-            if (!home.equals(new File(filesRoot, "horizon").getCanonicalFile())) {
+            if (!"horizon".equals(home.getName()) || !filesRoot.equals(home.getParentFile())) {
                 throw new IOException("O caminho do perfil padrão não é válido.");
             }
         } else {
-            File profilesRoot = instancesRoot(context).getCanonicalFile();
+            File profilesRoot = validatedInstancesRoot(context);
             File profileDirectory = new File(profilesRoot, entry.id).getCanonicalFile();
             if (!profileDirectory.getName().equals(entry.id)
                     || !profilesRoot.equals(profileDirectory.getParentFile())
@@ -255,16 +255,23 @@ public final class GameInstanceManager {
         return new File(context.getApplicationContext().getFilesDir(), "instances");
     }
 
-    private static File indexFile(Context context) {
-        return new File(instancesRoot(context), INDEX_FILE);
+    private static File validatedInstancesRoot(Context context) throws IOException {
+        File filesRoot = context.getApplicationContext().getFilesDir().getCanonicalFile();
+        File requestedRoot = new File(filesRoot, "instances");
+        if (!requestedRoot.isDirectory() && !requestedRoot.mkdirs()) {
+            throw new IOException("Não foi possível criar o catálogo de instâncias.");
+        }
+        File canonicalRoot = requestedRoot.getCanonicalFile();
+        if (!"instances".equals(canonicalRoot.getName())
+                || !filesRoot.equals(canonicalRoot.getParentFile())) {
+            throw new IOException("A pasta de instâncias não é um diretório privado válido.");
+        }
+        return canonicalRoot;
     }
 
     private static Catalog readCatalog(Context context) throws IOException {
-        File root = instancesRoot(context);
-        if (!root.isDirectory() && !root.mkdirs()) {
-            throw new IOException("Não foi possível criar o catálogo de instâncias.");
-        }
-        File index = indexFile(context);
+        File root = validatedInstancesRoot(context);
+        File index = new File(root, INDEX_FILE);
         if (!index.isFile()) {
             Catalog initial = new Catalog();
             initial.entries.add(new Entry(DEFAULT_ID, "Padrão", System.currentTimeMillis(), 0L));
@@ -319,10 +326,7 @@ public final class GameInstanceManager {
     }
 
     private static void writeCatalog(Context context, Catalog catalog) throws IOException {
-        File root = instancesRoot(context);
-        if (!root.isDirectory() && !root.mkdirs()) {
-            throw new IOException("Não foi possível criar o catálogo de instâncias.");
-        }
+        File root = validatedInstancesRoot(context);
         JSONObject json = new JSONObject();
         JSONArray items = new JSONArray();
         try {
@@ -341,7 +345,7 @@ public final class GameInstanceManager {
             throw new IOException("Não foi possível montar o catálogo de instâncias.", impossible);
         }
 
-        File target = indexFile(context);
+        File target = new File(root, INDEX_FILE);
         File temporary = new File(root, INDEX_FILE + ".tmp");
         try (FileOutputStream output = new FileOutputStream(temporary, false)) {
             output.write((json.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
@@ -361,7 +365,7 @@ public final class GameInstanceManager {
     }
 
     private static void deleteTreeSafely(Context context, File target) throws IOException {
-        File profilesRoot = instancesRoot(context).getCanonicalFile();
+        File profilesRoot = validatedInstancesRoot(context);
         File canonicalProfile = target.getCanonicalFile();
         if (!canonicalProfile.getName().matches("i-[0-9a-f]{32}")
                 || !profilesRoot.equals(canonicalProfile.getParentFile())) {
