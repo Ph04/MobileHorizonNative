@@ -61,11 +61,6 @@ final class LauncherNetworkSettings {
     }
 
     static URLConnection open(URL url) throws IOException {
-        Proxy proxy = proxyFor(url);
-        return url.openConnection(proxy);
-    }
-
-    static URLConnection open(URL url) throws IOException {
         Context context = applicationContext;
         return context == null ? url.openConnection() : open(context, url);
     }
@@ -75,12 +70,18 @@ final class LauncherNetworkSettings {
         String configured = configuredProxy(context);
         if (configured.isEmpty()) return url.openConnection();
         URI uri = URI.create(validate(configured));
+        String host = uri.getHost();
+        if (host != null && host.startsWith("[") && host.endsWith("]")) {
+            host = host.substring(1, host.length() - 1);
+        }
         return url.openConnection(new Proxy(Proxy.Type.HTTP,
-                InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort())));
+                InetSocketAddress.createUnresolved(host, uri.getPort())));
     }
 
     static void applyToNativeProcess(Context context) throws android.system.ErrnoException {
         String configured = configuredProxy(context);
+        android.system.Os.setenv("NO_PROXY", "localhost,127.0.0.1,::1", true);
+        android.system.Os.setenv("no_proxy", "localhost,127.0.0.1,::1", true);
         if (configured == null || configured.isEmpty()) {
             android.system.Os.unsetenv("HTTP_PROXY");
             android.system.Os.unsetenv("HTTPS_PROXY");
@@ -97,8 +98,6 @@ final class LauncherNetworkSettings {
         android.system.Os.setenv("http_proxy", safe, true);
         android.system.Os.setenv("https_proxy", safe, true);
         android.system.Os.setenv("all_proxy", safe, true);
-        android.system.Os.setenv("NO_PROXY", "localhost,127.0.0.1,::1", true);
-        android.system.Os.setenv("no_proxy", "localhost,127.0.0.1,::1", true);
     }
 
     static boolean isDirectHost(String rawHost) {
