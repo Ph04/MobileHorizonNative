@@ -19,6 +19,10 @@ import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 import java.util.regex.Pattern;
 
 /**
@@ -39,6 +43,22 @@ public final class HorizonRuntimeManager {
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._+-]{0,79}");
 
     private HorizonRuntimeManager() {}
+
+    public static final class InstalledVersion {
+        public final String version;
+        public final String upstreamTag;
+        public final String sha256;
+        public final long installedAt;
+        public final boolean active;
+        private InstalledVersion(String version, String tag, String sha, long installedAt,
+                                 boolean active) {
+            this.version = version;
+            this.upstreamTag = tag;
+            this.sha256 = sha;
+            this.installedAt = installedAt;
+            this.active = active;
+        }
+    }
 
     public static final class PreparedRuntime {
         public final File root;
@@ -162,6 +182,12 @@ public final class HorizonRuntimeManager {
     public static synchronized void installAndActivate(
             Context context, File downloadedLibrary, String version, String expectedSha256)
             throws IOException {
+        installAndActivate(context, downloadedLibrary, version, expectedSha256, "");
+    }
+
+    public static synchronized void installAndActivate(
+            Context context, File downloadedLibrary, String version, String expectedSha256,
+            String upstreamTag) throws IOException {
         Context app = context.getApplicationContext();
         String safeVersion = requireVersion(version);
         String sha = requireSha256(expectedSha256);
@@ -217,10 +243,140 @@ public final class HorizonRuntimeManager {
             }
         }
 
+        writeRuntimeMetadata(versionDir, safeVersion, sha, upstreamTag);
         if (previousActive != null && !previousActive.version.equals(safeVersion)) {
             writeSelection(root, PREVIOUS_NAME, previousActive.version, previousActive.sha256);
         }
         writeActive(root, safeVersion, sha);
+        }
+    }
+
+    /** Returns true only when the stored metadata and ARM64 ELF still verify. */
+    public static synchronized boolean hasInstalledVersion(Context context, String version) {
+        try {
+            readInstalledVersion(context, version);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /** Lists installed versions only after validating each stored SHA-256 and ELF header. */
+    public static synchronized List<InstalledVersion> listInstalledVersions(Context context)
+            throws IOException {
+        Context app = context.getApplicationContext();
+        File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
+        File versions = new File(root, "versions");
+        if (!versions.isDirectory()) return Collections.emptyList();
+        File[] directories = versions.listFiles();
+        if (directories == null) throw new IOException("Não foi possível listar as runtimes instaladas.");
+        Active active = readValidActive(versions);
+        ArrayList<InstalledVersion> result = new ArrayList<>();
+        for (File directory : directories) {
+            if (!directory.isDirectory() || Files.isSymbolicLink(directory.toPath())) continue;
+            String version = directory.getName();
+            if (!VERSION_PATTERN.matcher(version).matches() || version.contains("..")) continue;
+            try {
+                InstalledVersion installed = readInstalledVersion(context, version);
+                result.add(new InstalledVersion(installed.version, installed.upstreamTag,
+                        installed.sha256, installed.installedAt,
+                        active != null && active.version.equals(installed.version)));
+            } catch (Exception invalid) {
+                Log.w(TAG, "Ignorando runtime local inválida " + version + ": " + invalid.getMessage());
+            }
+        }
+        result.sort(Comparator.comparingLong((InstalledVersion item) -> item.installedAt).reversed());
+        return Collections.unmodifiableList(result);
+    }
+
+    /** Activates an installed version without downloading or modifying its binary. */
+    public static synchronized void activateInstalledVersion(Context context, String version)
+            throws IOException {
+        InstalledVersion installed = readInstalledVersion(context, version);
+        Context app = context.getApplicationContext();
+        File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
+        File versions = new File(root, "versions");
+        try (FileChannel lockChannel = FileChannel.open(
+                     new File(root, ".runtime-manager.lock").toPath(),
+                     StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+             FileLock ignoredLock = lockChannel.lock()) {
+            Active current = readValidActive(versions);
+            if (current != null && current.version.equals(installed.version)) return;
+            if (current != null) {
+                writeSelection(root, PREVIOUS_NAME, current.version, current.sha256);
+            }
+            writeActive(root, installed.version, installed.sha256);
+        }
+    }
+
+    private static InstalledVersion readInstalledVersion(Context context, String version)
+            throws IOException {
+        String safeVersion = requireVersion(version);
+        Context app = context.getApplicationContext();
+        File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
+        File versions = new File(root, "versions").getCanonicalFile();
+        File directory = new File(versions, safeVersion).getCanonicalFile();
+        if (!directory.getPath().startsWith(versions.getPath() + File.separator)
+                || Files.isSymbolicLink(directory.toPath()) || !directory.isDirectory()) {
+            throw new IOException("Runtime não instalada: " + safeVersion);
+        }
+        File metadata = new File(directory, "runtime.json");
+        if (!metadata.isFile() || metadata.length() <= 0 || metadata.length() > 16 * 1024
+                || Files.isSymbolicLink(metadata.toPath())) {
+            throw new IOException("Metadados da runtime ausentes para " + safeVersion);
+        }
+        try (FileInputStream input = new FileInputStream(metadata)) {
+            byte[] bytes = new byte[(int) metadata.length()];
+            int count = input.read(bytes);
+            if (count <= 0) throw new IOException("Metadados da runtime vazios.");
+            JSONObject json = new JSONObject(new String(bytes, 0, count, StandardCharsets.UTF_8));
+            String recordedVersion = requireVersion(json.optString("version", ""));
+            String sha = requireSha256(json.optString("sha256", ""));
+            String tag = json.optString("upstream_tag", "");
+            if (!safeVersion.equals(recordedVersion)
+                    || (!tag.isEmpty() && !HorizonRuntimeUpdateService.isValidUpstreamTag(tag))) {
+                throw new IOException("Metadados da runtime não correspondem ao diretório.");
+            }
+            File library = new File(directory, ENGINE_NAME).getCanonicalFile();
+            if (!library.getPath().startsWith(directory.getPath() + File.separator)) {
+                throw new IOException("Biblioteca saiu do diretório da runtime.");
+            }
+            verifyEngine(library, sha);
+            return new InstalledVersion(safeVersion, tag, sha,
+                    Math.max(0L, json.optLong("installed_at", directory.lastModified())), false);
+        } catch (org.json.JSONException error) {
+            throw new IOException("Metadados JSON da runtime inválidos.", error);
+        }
+    }
+
+    private static void writeRuntimeMetadata(File versionDirectory, String version, String sha,
+                                             String upstreamTag) throws IOException {
+        String tag = upstreamTag == null ? "" : upstreamTag.trim();
+        if (!tag.isEmpty() && !HorizonRuntimeUpdateService.isValidUpstreamTag(tag)) {
+            throw new IOException("Tag oficial inválida nos metadados da runtime.");
+        }
+        JSONObject json = new JSONObject();
+        try {
+            json.put("format", 1);
+            json.put("version", version);
+            json.put("sha256", sha);
+            json.put("upstream_tag", tag);
+            json.put("installed_at", System.currentTimeMillis());
+        } catch (org.json.JSONException error) {
+            throw new IOException("Não foi possível montar os metadados da runtime.", error);
+        }
+        File temporary = new File(versionDirectory, "runtime.json.partial");
+        File target = new File(versionDirectory, "runtime.json");
+        try (FileOutputStream output = new FileOutputStream(temporary, false)) {
+            output.write((json.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            output.getFD().sync();
+        }
+        try {
+            Os.rename(temporary.getAbsolutePath(), target.getAbsolutePath());
+        } catch (android.system.ErrnoException error) {
+            temporary.delete();
+            throw new IOException("Não foi possível salvar os metadados da runtime.", error);
         }
     }
 
