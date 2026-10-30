@@ -1202,11 +1202,7 @@ else:
 replace_once(workspace_cargo, '"crates/horizon-client",',
              '"crates/horizon-client", "crates/mobilehorizon-android",')
 
-replace_once(game,
-    """        // The launcher's account: online-mode servers need it. A bad file
-        // only leaves the game offline.
-        if let Some(path) = session_file.filter(|p| !p.is_empty()) {""",
-    """        // Native Android launcher quick play. Explicit CLI arguments take precedence.
+android_quick_play = """        // Native Android launcher quick play. Explicit CLI arguments take precedence.
         if o.server.is_none() {
             if let Ok(address) = std::env::var("HORIZON_QUICK_PLAY_SERVER") {
                 let address = address.trim().to_owned();
@@ -1241,9 +1237,30 @@ replace_once(game,
             return Err("quick play can target either one server or one world, not both".into());
         }
 
-        // The launcher's account: online-mode servers need it. A bad file
+"""
+legacy_quick_play_anchor = """        // The launcher's account: online-mode servers need it. A bad file
         // only leaves the game offline.
-        if let Some(path) = session_file.filter(|p| !p.is_empty()) {""");
+        if let Some(path) = session_file.filter(|p| !p.is_empty()) {"""
+current_quick_play_anchor = """        // The launcher's account: online-mode servers need it. A bad file
+        // only leaves the game offline.
+        let session = if o.session_stdin {
+"""
+quick_play_anchors = [
+    (legacy_quick_play_anchor, android_quick_play + legacy_quick_play_anchor),
+    (current_quick_play_anchor, android_quick_play + current_quick_play_anchor),
+]
+game_source = game.read_text(encoding="utf-8")
+matched_quick_play = [
+    pair for pair in quick_play_anchors
+    if game_source.count(pair[0]) == 1
+]
+if len(matched_quick_play) != 1:
+    raise SystemExit(
+        f"{game}: expected one supported account-loading anchor, "
+        f"legacy={game_source.count(legacy_quick_play_anchor)}, "
+        f"current={game_source.count(current_quick_play_anchor)}"
+    )
+replace_once(game, *matched_quick_play[0])
 
 dst = root / "crates/mobilehorizon-android"
 (dst / "src").mkdir(parents=True, exist_ok=True)
