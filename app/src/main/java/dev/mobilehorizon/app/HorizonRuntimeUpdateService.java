@@ -25,7 +25,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Checks the project's published ARM64 Horizon-engine releases on startup and every 30 minutes
+ * Checks the project's published ARM64 Horizon-engine releases on startup and every five minutes
  * while MainActivity is visible. The APK is not replaced; only a verified versioned engine is
  * installed, and it takes effect on the next game launch.
  */
@@ -39,8 +39,9 @@ public final class HorizonRuntimeUpdateService {
     private static final String PROGRESS_TOTAL = "progress_total";
     private static final String RELEASES_URL =
             "https://api.github.com/repos/Ph04/MobileHorizonNative/releases?per_page=100";
-    private static final String OFFICIAL_RELEASE_URL =
-            "https://api.github.com/repos/horizon-rust/horizon/releases?per_page=100";
+    private static final String OFFICIAL_NIGHTLY_RELEASE_URL =
+            "https://api.github.com/repos/horizon-rust/horizon/releases/tags/nightly";
+    private static final String OFFICIAL_NIGHTLY_TAG = "nightly";
     private static final String TAG_PREFIX = "horizon-runtime-";
     private static final String ENGINE_ASSET = "horizon-runtime-arm64-v8a.so";
     private static final String TEST_FIXTURE_TAG = "horizon-runtime-update-test";
@@ -150,6 +151,12 @@ public final class HorizonRuntimeUpdateService {
         new android.os.Handler(android.os.Looper.getMainLooper()).post(callback);
     }
 
+    /** Whether periodic automatic runtime checks are enabled. */
+    public static boolean isEnabled(Context context) {
+        return context.getApplicationContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getBoolean("enabled", true);
+    }
+
     /** Enables/disables automatic runtime checks. A disable setting never removes installed versions. */
     public static void setEnabled(Context context, boolean enabled) {
         context.getApplicationContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -231,7 +238,7 @@ public final class HorizonRuntimeUpdateService {
             return BuildConfig.HORIZON_TEST_OLD_RUNTIME
                     ? BuildConfig.HORIZON_PC_RELEASE_TAG : "runtime Android ainda não instalada";
         }
-        return tag;
+        return OFFICIAL_NIGHTLY_TAG.equals(tag) ? "Nightly" : tag;
     }
 
     /** Last official Horizon release successfully checked against upstream GitHub. */
@@ -242,7 +249,8 @@ public final class HorizonRuntimeUpdateService {
         if (tag == null || tag.trim().isEmpty()) {
             return "Último release oficial verificado: ainda não consultado";
         }
-        return "Último release oficial verificado: " + tag;
+        return "Último release oficial verificado: "
+                + (OFFICIAL_NIGHTLY_TAG.equals(tag) ? "Nightly" : tag);
     }
 
     private static void checkAndInstall(Context context, SharedPreferences preferences) throws Exception {
@@ -274,7 +282,7 @@ public final class HorizonRuntimeUpdateService {
                         .apply();
             } catch (Exception error) {
                 Log.w(TAG, "Não foi possível consultar o release oficial do Horizon em "
-                        + OFFICIAL_RELEASE_URL + "; a próxima tentativa automática será em até cinco minutos.", error);
+                        + OFFICIAL_NIGHTLY_RELEASE_URL + "; a próxima tentativa automática será em até cinco minutos.", error);
             }
         }
 
@@ -286,8 +294,8 @@ public final class HorizonRuntimeUpdateService {
         if (BuildConfig.HORIZON_TEST_OLD_RUNTIME) {
             latest = testFixtureRuntime(BuildConfig.HORIZON_PC_RELEASE_TAG);
         } else if (official != null) {
-            // A stable runtime must follow the exact stable Horizon tag, not merely the newest
-            // Android artifact. Otherwise the launcher can install v0.2.65 while Horizon is on
+            // The Nightly runtime must follow the exact current Horizon channel, not merely the newest
+            // Android artifact. Otherwise the launcher can install an older engine while Horizon is on
             // v0.2.66 and then report success without ever catching up to the official release.
             latest = latestRuntimeRelease(official.tag);
             if (latest == null) {
@@ -378,26 +386,20 @@ public final class HorizonRuntimeUpdateService {
     }
 
     private static OfficialRelease latestOfficialRelease() throws Exception {
-        // Resolve from the canonical repository-ID releases endpoint rather than relying on
-        // GitHub's permanent redirect from the old owner/repository URL. Pick by publication
-        // time, not git commit date or semantic-version text.
-        JSONArray releases = new JSONArray(readUrl(OFFICIAL_RELEASE_URL, 4 * 1024 * 1024));
-        OfficialRelease latest = null;
-        for (int i = 0; i < releases.length(); i++) {
-            JSONObject release = releases.optJSONObject(i);
-            if (release == null || release.optBoolean("draft", false)
-                    || release.optBoolean("prerelease", false)) continue;
-            String tag = release.optString("tag_name", "");
-            String publishedAt = release.optString("published_at", "");
-            if (!isValidUpstreamTag(tag) || publishedAt.isEmpty()) continue;
-            if (latest == null || comparePublicationDates(publishedAt, latest.publishedAt) > 0) {
-                latest = new OfficialRelease(tag, publishedAt);
-            }
+        // Since 2026-10-28 Horizon uses the moving "nightly" pre-release as its only
+        // player-facing game channel. The previous vX.Y.Z release remains GitHub's
+        // stable/latest release, so scanning stable releases silently misses every update.
+        JSONObject release = new JSONObject(readUrl(
+                OFFICIAL_NIGHTLY_RELEASE_URL, 1024 * 1024));
+        String tag = release.optString("tag_name", "");
+        String publishedAt = release.optString("published_at", "");
+        if (release.optBoolean("draft", false)
+                || !release.optBoolean("prerelease", false)
+                || !OFFICIAL_NIGHTLY_TAG.equals(tag)
+                || publishedAt.isEmpty()) {
+            throw new IOException("A release Nightly oficial do Horizon não está publicada ou é inválida.");
         }
-        if (latest == null) {
-            throw new IOException("A API do Horizon não retornou uma release estável válida.");
-        }
-        return latest;
+        return new OfficialRelease(tag, publishedAt);
     }
 
     private static void installRelease(Context context, SharedPreferences preferences,
@@ -574,9 +576,10 @@ public final class HorizonRuntimeUpdateService {
     }
 
     static boolean isValidUpstreamTag(String tag) {
-        // Horizon currently uses both semver tags (v0.2.57) and date-based tags
-        // (v2026.10.22.07). Accept only bounded, path-safe tags beginning with "v".
-        return tag != null && tag.matches("v[0-9][A-Za-z0-9._+-]{0,50}");
+        // "nightly" is the moving official channel; older installed runtimes keep their
+        // immutable semantic/date-based v-tags for rollback and version identification.
+        return OFFICIAL_NIGHTLY_TAG.equals(tag)
+                || (tag != null && tag.matches("v[0-9][A-Za-z0-9._+-]{0,50}"));
     }
 
     static String upstreamTagFromRuntimeVersion(String version) {

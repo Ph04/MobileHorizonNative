@@ -90,16 +90,24 @@ public final class MainActivity extends Activity {
     private Button runtimeUpdateButton;
     private boolean runtimeUpdateRequestBusy;
     private Button viewLogsButton;
-    private ScrollView dashboardScroll;
+    private FrameLayout tabContent;
+    private LinearLayout[] tabPages;
+    private ScrollView[] tabScrolls;
+    private int activeTabIndex;
     private FrameLayout heroPanel;
     private LinearLayout mobileNavigation;
     private TextView[] mobileNavigationItems;
+    private Button[] sidebarNavigationItems;
+    private TextView sidebarInstanceNameText;
     private Typeface bodyTypeface = Typeface.DEFAULT;
     private Typeface pixelTypeface = Typeface.DEFAULT_BOLD;
     private Typeface buttonTypeface = Typeface.DEFAULT_BOLD;
     private Typeface monoTypeface = Typeface.MONOSPACE;
     private View downloadSectionView;
+    private View instanceSectionView;
+    private View worldsSectionView;
     private View resourcesSectionView;
+    private View accountSectionView;
     private View logsSectionView;
     private View runtimeUpdateSectionView;
     private ProgressBar progressBar;
@@ -117,6 +125,7 @@ public final class MainActivity extends Activity {
     private Button microsoftLoginButton;
     private Button microsoftSignOutButton;
     private TextView accountStatusText;
+    private TextView instanceSummaryText;
     private TextView offlineStatusText;
     private Button offlineNameButton;
     private Button offlinePlayButton;
@@ -194,6 +203,7 @@ public final class MainActivity extends Activity {
                 "Baixe os arquivos oficiais do Minecraft 26.3, prepare as entradas para conversão ou importe uma saída Horizon já preparada.");
         refreshAccountUi();
         refreshOfflineUi();
+        refreshInstanceSummary();
         updateActionEnablement();
         HorizonRuntimeUpdateService.checkAtStartup(this, () -> {
             refreshRuntimeUpdateStatus();
@@ -243,6 +253,9 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshRuntimeUpdateStatus();
+        refreshInstanceSummary();
+        refreshOfflineUi();
+        refreshAccountUi();
         HorizonRuntimeUpdateService.checkInBackground(this, () -> {
             refreshRuntimeUpdateStatus();
             updateActionEnablement();
@@ -435,16 +448,38 @@ public final class MainActivity extends Activity {
         root.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         root.setBackgroundColor(backgroundColor);
 
-        dashboardScroll = new ScrollView(this);
-        dashboardScroll.setFillViewport(true);
-        dashboardScroll.setClipToPadding(false);
-        dashboardScroll.setBackgroundColor(backgroundColor);
-
-        LinearLayout page = new LinearLayout(this);
-        page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(landscape ? 18 : 12), dp(landscape ? 16 : 12),
-                dp(landscape ? 18 : 12), dp(24));
-        dashboardScroll.addView(page);
+        tabContent = new FrameLayout(this);
+        tabContent.setBackgroundColor(backgroundColor);
+        tabPages = new LinearLayout[6];
+        tabScrolls = new ScrollView[6];
+        for (int i = 0; i < tabPages.length; i++) {
+            ScrollView tabScroll = new ScrollView(this);
+            tabScroll.setFillViewport(true);
+            tabScroll.setClipToPadding(false);
+            tabScroll.setBackgroundColor(backgroundColor);
+            LinearLayout tabPage = new LinearLayout(this);
+            tabPage.setOrientation(LinearLayout.VERTICAL);
+            tabPage.setPadding(dp(landscape ? 18 : 12), dp(landscape ? 16 : 12),
+                    dp(landscape ? 18 : 12), dp(24));
+            tabScroll.addView(tabPage);
+            tabContent.addView(tabScroll, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT));
+            tabPages[i] = tabPage;
+            tabScrolls[i] = tabScroll;
+            tabScroll.setVisibility(i == 0 ? View.VISIBLE : View.GONE);
+        }
+        LinearLayout page = tabPages[0];
+        addTabHeader(tabPages[1], "MOBILEHORIZON  /  INSTÂNCIAS", "Instâncias",
+                "Perfis de jogo independentes, com mundos e configurações próprios.");
+        addTabHeader(tabPages[2], "MOBILEHORIZON  /  MINECRAFT", "Downloads e preparação",
+                "Baixe os arquivos oficiais e prepare os recursos para o motor Horizon.");
+        addTabHeader(tabPages[3], "MOBILEHORIZON  /  BIBLIOTECA", "Biblioteca",
+                "Mundos, conteúdo local, capturas e ferramentas da instância ativa.");
+        addTabHeader(tabPages[4], "MOBILEHORIZON  /  CONTA", "Perfis e contas",
+                "Gerencie perfis locais, autenticação Microsoft, skins e capas.");
+        addTabHeader(tabPages[5], "MOBILEHORIZON  /  SISTEMA", "Sistema",
+                "Diagnóstico, registros e preferências do launcher.");
 
         if (!landscape) {
             LinearLayout topBar = new LinearLayout(this);
@@ -536,12 +571,12 @@ public final class MainActivity extends Activity {
         TextView readyHeading = text("PRONTO PARA JOGAR", 11, 0xffc6b8ef, true);
         LinearLayout.LayoutParams readyHeadingParams = params(-1, -2);
         readyHeadingParams.topMargin = dp(15);
-        page.addView(readyHeading, readyHeadingParams);
+        tabPages[2].addView(readyHeading, readyHeadingParams);
 
         LinearLayout statusCard = card();
         LinearLayout.LayoutParams statusCardParams = params(-1, -2);
         statusCardParams.topMargin = dp(8);
-        page.addView(statusCard, statusCardParams);
+        tabPages[2].addView(statusCard, statusCardParams);
         LinearLayout statusHeader = new LinearLayout(this);
         statusHeader.setOrientation(LinearLayout.HORIZONTAL);
         statusHeader.setGravity(Gravity.CENTER_VERTICAL);
@@ -633,13 +668,21 @@ public final class MainActivity extends Activity {
         refreshRuntimeActionButton();
         addSpaced(runtimeCard, runtimeUpdateButton, 40, 8);
 
-        // Atalhos redundantes para Multiplayer e Minecraft folder foram removidos:
-        // jogar/servidores são acessados pelo botão principal e downloads pela seção abaixo.
-        addDashboardRow(page, "Resources", resourceReadySummary(),
+        // Each profile gets its own worlds, options, logs and local packs while prepared
+        // Minecraft assets and the downloaded native runtime stay shared.
+        instanceSectionView = addDashboardRow(tabPages[1], "Instâncias",
+                "Cada perfil mantém seus mundos, opções, logs e pacotes separados.",
+                "Gerenciar", v -> startActivity(new Intent(this, InstancesActivity.class)),
+                landscape);
+        worldsSectionView = addDashboardRow(tabPages[3], "Biblioteca",
+                "Mundos, servidores favoritos, conteúdo, capturas e console da instância ativa.",
+                "Abrir", v -> startActivity(new Intent(this, LibraryActivity.class)),
+                landscape);
+        addDashboardRow(tabPages[3], "Resources", resourceReadySummary(),
                 "Gerenciar", v -> startActivity(new Intent(this, ResourceManagerActivity.class)),
                 landscape);
 
-        downloadSectionView = collapsibleSection(page, "Downloads e preparação",
+        downloadSectionView = collapsibleSection(tabPages[2], "Downloads e preparação",
                 "Arquivos oficiais do Minecraft 26.3, assets e conversão para o Horizon.", true);
         LinearLayout setup = (LinearLayout) downloadSectionView;
         setup.addView(text(
@@ -662,7 +705,7 @@ public final class MainActivity extends Activity {
         fullConvertButton = button("Conversão completa", true, v -> prepareFullConversion());
         addButtonPair(setup, prepareInputsButton, fullConvertButton, 46, 8);
 
-        resourcesSectionView = collapsibleSection(page, "Gerenciador de recursos",
+        resourcesSectionView = collapsibleSection(tabPages[2], "Importar recursos preparados",
                 "Importar, inspecionar e organizar recursos já preparados.", false);
         LinearLayout resourcesSection = (LinearLayout) resourcesSectionView;
         resourcesSection.addView(text(
@@ -676,8 +719,9 @@ public final class MainActivity extends Activity {
         addSpaced(resourcesSection, importFolderButton, 44, 6);
         addSpaced(resourcesSection, importZipButton, 44, 6);
 
-        LinearLayout accountSection = collapsibleSection(page, "Contas",
+        accountSectionView = collapsibleSection(tabPages[4], "Contas",
                 "Conta Microsoft opcional; o perfil offline continua disponível.", false);
+        LinearLayout accountSection = (LinearLayout) accountSectionView;
         accountStatusText = text("Nenhuma conta verificada neste dispositivo.", 13, 0xffb9b3d1, false);
         accountSection.addView(accountStatusText, params(-1, -2));
         TextView accountNote = text(
@@ -691,8 +735,11 @@ public final class MainActivity extends Activity {
         microsoftSignOutButton = button("Remover conta salva", false, v -> signOutMicrosoft());
         microsoftSignOutButton.setVisibility(View.GONE);
         addSpaced(accountSection, microsoftSignOutButton, 40, 6);
+        Button manageProfilesButton = button("Gerenciar perfis e cosméticos", false,
+                v -> startActivity(new Intent(this, ProfilesActivity.class)));
+        addSpaced(accountSection, manageProfilesButton, 46, 7);
 
-        logsSectionView = collapsibleSection(page, "Logs e diagnóstico",
+        logsSectionView = collapsibleSection(tabPages[5], "Logs e diagnóstico",
                 "Consultar logs locais, testar o renderizador e exportar um pacote de diagnóstico.", false);
         LinearLayout tools = (LinearLayout) logsSectionView;
         smokeTestButton = button("Testar Vulkan", false, v -> openNativeSmokeTest());
@@ -705,6 +752,9 @@ public final class MainActivity extends Activity {
         addSpaced(tools, diagnosticNote, -2, 8);
         exportDiagnosticsButton = button("Exportar diagnóstico", true, v -> exportDiagnostics());
         addSpaced(tools, exportDiagnosticsButton, 44, 6);
+        Button settingsButton = button("Configurações e novidades", false,
+                v -> startActivity(new Intent(this, SettingsActivity.class)));
+        addSpaced(tools, settingsButton, 46, 7);
 
         LinearLayout compatibilityCard = card();
         LinearLayout.LayoutParams compatParams = params(-1, -2);
@@ -724,15 +774,15 @@ public final class MainActivity extends Activity {
         page.addView(footer, footerParams);
 
         if (landscape) {
-            root.addView(buildSidebar(dashboardScroll), params(184, -1));
-            root.addView(dashboardScroll, new LinearLayout.LayoutParams(0, -1, 1f));
+            root.addView(buildSidebar(), params(184, -1));
+            root.addView(tabContent, new LinearLayout.LayoutParams(0, -1, 1f));
         } else {
-            root.addView(dashboardScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
-            root.addView(buildMobileNavigation(), params(-1, 56));
+            root.addView(tabContent, new LinearLayout.LayoutParams(-1, 0, 1f));
+            root.addView(buildMobileNavigation(), params(-1, 58));
         }
         setContentView(root);
+        selectTab(0);
         applyDashboardWindowInsets(root);
-        if (!landscape) updateMobileNavigation(heroPanel);
     }
 
     /** Keeps dashboard cards and bottom navigation out of Android's status/navigation bars. */
@@ -749,6 +799,19 @@ public final class MainActivity extends Activity {
         root.requestApplyInsets();
     }
 
+    private void addTabHeader(LinearLayout page, String eyebrow, String title,
+                              String description) {
+        page.addView(text(eyebrow, 10, 0xff9e88ff, true), params(-1, -2));
+        page.addView(text(title, 25, 0xfff0ecff, true), params(-1, -2));
+        page.addView(text(description, 12, 0xffb9b3d1, false), params(-1, -2));
+        View divider = new View(this);
+        divider.setBackgroundColor(0xff342d52);
+        LinearLayout.LayoutParams dividerParams = params(-1, dp(1));
+        dividerParams.topMargin = dp(12);
+        dividerParams.bottomMargin = dp(5);
+        page.addView(divider, dividerParams);
+    }
+
     private boolean resourcesPrepared() {
         File resources = new File(getFilesDir(),
                 ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
@@ -763,7 +826,7 @@ public final class MainActivity extends Activity {
         return "Ainda não preparado • baixe e prepare os recursos antes de jogar";
     }
 
-    private void addDashboardRow(LinearLayout parent, String title, String description,
+    private LinearLayout addDashboardRow(LinearLayout parent, String title, String description,
                                  String actionLabel, View.OnClickListener action,
                                  boolean landscape) {
         LinearLayout rowCard = card();
@@ -784,19 +847,21 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams detailParams = params(-1, -2);
         detailParams.topMargin = dp(4);
         info.addView(detail, detailParams);
+        if ("Instâncias".equals(title)) instanceSummaryText = detail;
         Button actionButton = button(actionLabel, false, action);
         LinearLayout.LayoutParams actionParams = params(landscape ? 116 : -1, 38);
         if (landscape) actionParams.setMargins(dp(10), 0, 0, 0);
         else actionParams.topMargin = dp(8);
         rowCard.addView(actionButton, actionParams);
+        return rowCard;
     }
 
-    private LinearLayout buildSidebar(ScrollView scroll) {
+    private LinearLayout buildSidebar() {
         LinearLayout sidebar = new LinearLayout(this);
         sidebar.setOrientation(LinearLayout.VERTICAL);
         sidebar.setPadding(dp(10), dp(14), dp(10), dp(14));
         sidebar.setBackgroundColor(0xff0b0a11);
-        sidebar.addView(text("INSTÂNCIAS", 10, 0xff8b82aa, true), params(-1, -2));
+        sidebar.addView(text("AMBIENTE DO JOGO", 10, 0xff8b82aa, true), params(-1, -2));
 
         LinearLayout instance = new LinearLayout(this);
         instance.setOrientation(LinearLayout.HORIZONTAL);
@@ -808,7 +873,7 @@ public final class MainActivity extends Activity {
         selected.setCornerRadius(0);
         instance.setBackground(selected);
         instance.setClickable(true);
-        instance.setOnClickListener(v -> scrollToSection(heroPanel));
+        instance.setOnClickListener(v -> selectTab(0));
         LinearLayout.LayoutParams instanceParams = params(-1, -2);
         instanceParams.topMargin = dp(10);
         sidebar.addView(instance, instanceParams);
@@ -821,17 +886,22 @@ public final class MainActivity extends Activity {
         instanceTextParams.setMargins(dp(7), 0, 0, 0);
         instance.addView(instanceText, instanceTextParams);
         instanceText.addView(text("Horizon", 12, 0xfff0ecff, true), params(-1, -2));
-        instanceText.addView(text("Vanilla • READY", 9, 0xffb8a9d8, false), params(-1, -2));
+        instanceText.addView(text("Minecraft Java • 26.3", 9, 0xffb8a9d8, false), params(-1, -2));
+        sidebarInstanceNameText = text("Perfil: " + currentInstanceName(), 9, 0xffb8a9d8, false);
+        instanceText.addView(sidebarInstanceNameText, params(-1, -2));
 
         TextView navigationTitle = text("NAVEGAÇÃO", 10, 0xff8b82aa, true);
         LinearLayout.LayoutParams navTitleParams = params(-1, -2);
         navTitleParams.topMargin = dp(24);
         sidebar.addView(navigationTitle, navTitleParams);
-        addSpaced(sidebar, button("Início", true, v -> scrollToSection(heroPanel)), 40, 8);
-        addSpaced(sidebar, button("Downloads", false, v -> scrollToSection(downloadSectionView)), 40, 5);
-        addSpaced(sidebar, button("Recursos", false, v -> scrollToSection(resourcesSectionView)), 40, 5);
-        addSpaced(sidebar, button("Logs", false, v -> scrollToSection(logsSectionView)), 40, 5);
-        addSpaced(sidebar, button("Atualizações", false, v -> scrollToSection(runtimeUpdateSectionView)), 40, 5);
+        String[] labels = {"Início", "Instâncias", "Downloads", "Biblioteca", "Conta", "Sistema"};
+        sidebarNavigationItems = new Button[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            final int tab = i;
+            Button item = button(labels[i], false, v -> selectTab(tab));
+            addSpaced(sidebar, item, 42, i == 0 ? 8 : 5);
+            sidebarNavigationItems[i] = item;
+        }
 
         View spacer = new View(this);
         sidebar.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1f));
@@ -851,62 +921,91 @@ public final class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        mobileNavigation.addView(row, params(-1, 55));
+        mobileNavigation.addView(row, params(-1, 57));
 
-        String[] labels = {"Início", "Downloads", "Recursos", "Logs", "Atualizações"};
-        View[] targets = {heroPanel, downloadSectionView, resourcesSectionView,
-                logsSectionView, runtimeUpdateSectionView};
+        String[] labels = {"Início", "Inst.", "Baixar", "Bibli.", "Conta", "Sistema"};
+        String[] descriptions = {"Início", "Instâncias", "Downloads", "Biblioteca", "Conta", "Sistema"};
         mobileNavigationItems = new TextView[labels.length];
         for (int i = 0; i < labels.length; i++) {
-            final View target = targets[i];
-            TextView item = text(labels[i], 10, 0xffa29cb8, true);
+            final int tab = i;
+            TextView item = text(labels[i], 8, 0xffa29cb8, true);
             item.setTypeface(buttonTypeface);
             item.setGravity(Gravity.CENTER);
             item.setSingleLine(true);
+            item.setEllipsize(android.text.TextUtils.TruncateAt.END);
             item.setPadding(dp(1), 0, dp(1), 0);
             item.setFocusable(true);
             item.setClickable(true);
-            item.setOnClickListener(v -> scrollToSection(target));
+            item.setContentDescription(UiLanguage.translate(this, descriptions[i]));
+            item.setOnClickListener(v -> selectTab(tab));
             row.addView(item, new LinearLayout.LayoutParams(0, -1, 1f));
             mobileNavigationItems[i] = item;
         }
         return mobileNavigation;
     }
 
-    private void updateMobileNavigation(View target) {
-        if (mobileNavigationItems == null) return;
-        String selected = "Início";
-        if (target == downloadSectionView) selected = "Downloads";
-        else if (target == resourcesSectionView) selected = "Recursos";
-        else if (target == logsSectionView) selected = "Logs";
-        else if (target == runtimeUpdateSectionView) selected = "Atualizações";
-        for (TextView item : mobileNavigationItems) {
-            boolean active = selected.contentEquals(item.getText());
-            if (active) {
-                item.setBackground(new HorizonBlockDrawable(0xff221e34, 0xff3d3560,
+    private void selectTab(int index) {
+        if (tabScrolls == null || index < 0 || index >= tabScrolls.length) return;
+        activeTabIndex = index;
+        for (int i = 0; i < tabScrolls.length; i++) {
+            tabScrolls[i].setVisibility(i == index ? View.VISIBLE : View.GONE);
+        }
+        updateNavigationSelection(index);
+    }
+
+    private void updateNavigationSelection(int selectedIndex) {
+        if (mobileNavigationItems != null) {
+            for (int i = 0; i < mobileNavigationItems.length; i++) {
+                TextView item = mobileNavigationItems[i];
+                boolean active = selectedIndex == i;
+                if (active) {
+                    item.setBackground(new HorizonBlockDrawable(0xff221e34, 0xff3d3560,
+                            0xff07060b, 0xff05040a, dp(1), dp(1), dp(2)));
+                    item.setTextColor(0xffecedf3);
+                } else {
+                    item.setBackgroundColor(0xff0b0a11);
+                    item.setTextColor(0xffa29cb8);
+                }
+            }
+        }
+        if (sidebarNavigationItems != null) {
+            for (int i = 0; i < sidebarNavigationItems.length; i++) {
+                Button item = sidebarNavigationItems[i];
+                boolean active = selectedIndex == i;
+                item.setBackground(new HorizonBlockDrawable(
+                        active ? 0xff29243e : 0xff151321,
+                        active ? 0xff7561c7 : 0xff3d3560,
                         0xff07060b, 0xff05040a, dp(1), dp(1), dp(2)));
-                item.setTextColor(0xffecedf3);
-            } else {
-                item.setBackgroundColor(0xff0b0a11);
-                item.setTextColor(0xffa29cb8);
+                item.setTextColor(active ? 0xfff0ecff : 0xffb7b0cc);
             }
         }
     }
 
-    private void scrollToSection(View target) {
-        if (dashboardScroll == null || target == null) return;
-        updateMobileNavigation(target);
-        View anchor = target;
-        if (target.getTag() instanceof View) {
-            anchor = (View) target.getTag();
-            if (target.getVisibility() != View.VISIBLE && anchor instanceof LinearLayout) {
-                LinearLayout shell = (LinearLayout) anchor;
-                if (shell.getChildCount() > 0) shell.getChildAt(0).performClick();
+    private String currentInstanceName() {
+        try {
+            return GameInstanceManager.getSelectedInstance(this).name;
+        } catch (Exception error) {
+            return "Padrão";
+        }
+    }
+
+    private void refreshInstanceSummary() {
+        try {
+            GameInstanceManager.Instance active = GameInstanceManager.getSelectedInstance(this);
+            if (instanceSummaryText != null) {
+                instanceSummaryText.setText(UiLanguage.translate(this, "Instância ativa: ")
+                        + active.name + "\n"
+                        + UiLanguage.translate(this, "Mundos, opções e pacotes ficam separados neste perfil."));
+            }
+            if (sidebarInstanceNameText != null) {
+                sidebarInstanceNameText.setText(UiLanguage.translate(this, "Perfil: ") + active.name);
+            }
+        } catch (Exception error) {
+            if (instanceSummaryText != null) {
+                instanceSummaryText.setText(UiLanguage.translate(this,
+                        "Não foi possível ler as instâncias: ") + safeMessage(error));
             }
         }
-        final View scrollTarget = anchor;
-        dashboardScroll.post(() -> dashboardScroll.smoothScrollTo(
-                0, Math.max(0, scrollTarget.getTop())));
     }
 
     private void addButtonPair(LinearLayout parent, View left, View right, int heightDp, int topMarginDp) {
@@ -1627,7 +1726,9 @@ public final class MainActivity extends Activity {
     private void launchOfflineClientAfterValidation(String resourceSummary) {
         try {
             String playerName = OfflineProfile.loadName(this);
-            MobilePerformanceProfile.applyInitialOptions(this);
+            GameInstanceManager.Instance instance = GameInstanceManager.getSelectedInstance(this);
+            GameInstanceManager.markLastPlayed(this, instance.id);
+            MobilePerformanceProfile.applyInitialOptions(this, instance.id);
             new File(getFilesDir(), "horizon-client-result.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke.flag").delete();
@@ -1639,6 +1740,7 @@ public final class MainActivity extends Activity {
             offlineNameEnvSet = true;
             Intent intent = new Intent(this, NativeGameActivity.class);
             intent.putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true);
+            intent.putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instance.id);
             intent.putExtra(NativeGameActivity.EXTRA_PLAYER_NAME, playerName);
             startActivity(intent);
             setStatus("Iniciando cliente em modo offline",
@@ -1671,7 +1773,12 @@ public final class MainActivity extends Activity {
         }
         String refreshToken;
         try {
-            refreshToken = EncryptedRefreshTokenStore.load(this);
+            MicrosoftAccountStore.Account active = MicrosoftAccountStore.active(this);
+            if (active == null) {
+                refreshToken = null;
+            } else {
+                refreshToken = EncryptedRefreshTokenStore.load(this, active.uuid);
+            }
         } catch (Exception error) {
             showRuntimeError("Não foi possível ler a sessão salva", safeMessage(error));
             return;
@@ -1785,14 +1892,16 @@ public final class MainActivity extends Activity {
 
     private void refreshAccountUi() {
         if (accountStatusText == null) return;
-        android.content.SharedPreferences prefs = getSharedPreferences("microsoft_account_state", MODE_PRIVATE);
-        boolean signedIn = prefs.getBoolean("hasAccount", false);
-        String name = prefs.getString("accountName", "");
-        accountStatusText.setText(UiLanguage.translate(this, signedIn && !name.isEmpty()
-                ? "Conta verificada: " + name + "\nA licença foi verificada durante o último login."
-                : "Nenhuma conta verificada neste dispositivo."));
+        List<MicrosoftAccountStore.Account> accounts = MicrosoftAccountStore.list(this);
+        MicrosoftAccountStore.Account active = MicrosoftAccountStore.active(this);
+        boolean signedIn = active != null;
+        String detail = signedIn
+                ? "Conta selecionada: " + active.name + "\nContas Microsoft salvas: " + accounts.size()
+                    + "\nA licença é verificada novamente antes de iniciar o jogo."
+                : "Nenhuma conta verificada neste dispositivo.";
+        accountStatusText.setText(UiLanguage.translate(this, detail));
         if (microsoftLoginButton != null) microsoftLoginButton.setText(UiLanguage.translate(this, signedIn
-                ? "Atualizar sessão Microsoft" : "Entrar com Microsoft"));
+                ? "Adicionar/atualizar conta Microsoft" : "Entrar com Microsoft"));
         if (microsoftSignOutButton != null) microsoftSignOutButton.setVisibility(signedIn ? View.VISIBLE : View.GONE);
         updateActionEnablement();
     }
@@ -1841,6 +1950,11 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
         String stage = intent.getStringExtra("stage");
         String detail = intent.getStringExtra("detail");
+        if (accountStatusText != null) {
+            accountStatusText.setText(UiLanguage.translate(this,
+                    (stage == null ? "Login Microsoft" : stage)
+                            + (detail == null || detail.isEmpty() ? "" : " • " + detail)));
+        }
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setIndeterminate(true);
         progressDetails.setText(UiLanguage.translate(this, stage == null ? "Login Microsoft" : stage)
@@ -1911,15 +2025,21 @@ public final class MainActivity extends Activity {
     private void signOutMicrosoft() {
         if (authBusy || launchBusy) return;
         new AlertDialog.Builder(this)
-                .setTitle(UiLanguage.translate(this, "Remover conta salva?"))
-                .setMessage(UiLanguage.translate(this, "O token de renovação criptografado e os dados públicos da conta serão removidos deste dispositivo."))
+                .setTitle(UiLanguage.translate(this, "Remover conta selecionada?"))
+                .setMessage(UiLanguage.translate(this, "Somente a conta Microsoft ativa e seu token criptografado serão removidos. Outras contas e perfis offline serão preservados."))
                 .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
                 .setPositiveButton(UiLanguage.translate(this, "Remover"), (dialog, which) -> {
                     try {
-                        EncryptedRefreshTokenStore.clear(this);
-                        getSharedPreferences("microsoft_account_state", MODE_PRIVATE).edit().clear().commit();
+                        MicrosoftAccountStore.Account active = MicrosoftAccountStore.active(this);
+                        if (active != null) {
+                            EncryptedRefreshTokenStore.clear(this, active.uuid);
+                            MicrosoftAccountStore.remove(this, active.uuid);
+                        } else {
+                            EncryptedRefreshTokenStore.clear(this);
+                            getSharedPreferences("microsoft_account_state", MODE_PRIVATE).edit().clear().commit();
+                        }
                         refreshAccountUi();
-                        setStatus("Conta removida", "Entre novamente pela Microsoft para iniciar o cliente online.");
+                        setStatus("Conta removida", "As demais contas salvas continuam disponíveis no gerenciador de perfis.");
                     } catch (Exception error) {
                         showRuntimeError("Falha ao remover conta", safeMessage(error));
                     }
@@ -1942,14 +2062,18 @@ public final class MainActivity extends Activity {
                             if (isFinishing() || isDestroyed()) return;
                             progressDetails.setText(stage + "\n" + detail);
                         }));
-                EncryptedRefreshTokenStore.save(this, account.refreshToken);
+                EncryptedRefreshTokenStore.save(this, account.uuid, account.refreshToken);
+                MicrosoftAccountStore.upsert(this, account.uuid, account.name, account.xuid,
+                        System.currentTimeMillis());
                 runOnUiThread(() -> {
                     launchBusy = false;
                     updateActionEnablement();
                     refreshAccountUi();
                     File sessionFile = null;
                     try {
-                        MobilePerformanceProfile.applyInitialOptions(this);
+                        GameInstanceManager.Instance instance = GameInstanceManager.getSelectedInstance(this);
+                        GameInstanceManager.markLastPlayed(this, instance.id);
+                        MobilePerformanceProfile.applyInitialOptions(this, instance.id);
                         new File(getFilesDir(), "horizon-client-result.txt").delete();
                         new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
                         new File(getFilesDir(), "horizon-native-smoke.flag").delete();
@@ -1960,6 +2084,7 @@ public final class MainActivity extends Activity {
                         sessionEnvSet = true;
                         startActivity(new Intent(this, NativeGameActivity.class)
                                 .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, true)
+                                .putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instance.id)
                                 .putExtra(NativeGameActivity.EXTRA_SESSION_FILE, sessionFile.getAbsolutePath())
 );
                         setStatus("Iniciando cliente Horizon",
@@ -1980,8 +2105,13 @@ public final class MainActivity extends Activity {
                     String message = safeMessage(error);
                     setStatus("Sessão não válida", message);
                     if (message.contains("Entre novamente")) {
-                        try { EncryptedRefreshTokenStore.clear(this); } catch (Exception ignored) {}
-                        getSharedPreferences("microsoft_account_state", MODE_PRIVATE).edit().clear().commit();
+                        try {
+                            MicrosoftAccountStore.Account active = MicrosoftAccountStore.active(this);
+                            if (active != null) {
+                                EncryptedRefreshTokenStore.clear(this, active.uuid);
+                                MicrosoftAccountStore.remove(this, active.uuid);
+                            }
+                        } catch (Exception ignored) {}
                         refreshAccountUi();
                     }
                 });
@@ -2025,7 +2155,13 @@ public final class MainActivity extends Activity {
         report.append("Runtime updater: ").append(HorizonRuntimeUpdateService.lastStatus(this)).append("\n");
         report.append("Aviso: logs podem conter endereços de servidores, nicknames e mensagens de chat.\n\n");
 
-        File gameHome = new File(getFilesDir(), "horizon");
+        File gameHome;
+        try {
+            gameHome = GameInstanceManager.getSelectedInstanceHome(this);
+        } catch (IOException error) {
+            showRuntimeError("Não foi possível abrir os logs da instância", safeMessage(error));
+            return;
+        }
         File latestLog = new File(new File(gameHome, "logs"), "latest.log");
         appendLogTail(report, "Client log: logs/latest.log", latestLog, 96 * 1024);
         if (!latestLog.isFile()) {
@@ -2123,7 +2259,7 @@ public final class MainActivity extends Activity {
                 String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
                 archive = new File(directory, "MobileHorizon-multiplayer-" + stamp + ".zip");
 
-                File horizonHome = new File(getFilesDir(), "horizon");
+                File horizonHome = GameInstanceManager.getSelectedInstanceHome(this);
                 File logsDirectory = new File(horizonHome, "logs");
                 File latestLog = new File(logsDirectory, "latest.log");
                 File[] archivedLogs = logsDirectory.listFiles((dir, name) ->
@@ -2347,8 +2483,10 @@ public final class MainActivity extends Activity {
         pendingNativeSmokeResult = true;
         pendingNativeClientResult = false;
         try {
+            String instanceId = GameInstanceManager.getSelectedInstance(this).id;
             startActivity(new Intent(this, NativeGameActivity.class)
                     .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, false)
+                    .putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instanceId)
                     .putExtra(NativeGameActivity.EXTRA_NATIVE_SMOKE_TEST, true));
             setStatus("Teste Vulkan iniciado", "Este teste cria uma superfície WGPU, solicita um adaptador Vulkan e tenta apresentar um frame de cor simples; não carrega os recursos do Minecraft.");
         } catch (Exception error) {

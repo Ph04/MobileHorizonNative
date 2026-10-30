@@ -24,6 +24,33 @@
         </activity>
 
         <activity
+            android:name=".WorldsActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="Mundos" />
+
+        <activity android:name=".LibraryActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Biblioteca" />
+        <activity android:name=".SettingsActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Configurações e novidades" />
+
+        <activity android:name=".ProfilesActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Perfis e contas" />
+
+        <activity android:name=".SkinCapeActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Skins e capas" />
+
+        <activity android:name=".ServerFavoritesActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Servidores favoritos" />
+
+        <activity android:name=".ContentBrowserActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Explorar conteúdo" />
+
+        <activity android:name=".ScreenshotsActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Capturas de tela" />
+
+        <activity android:name=".ConsoleActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Console e logs" />
+
+        <activity
+            android:name=".InstancesActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="Instâncias" />
+
+        <activity
             android:name=".ResourceManagerActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"

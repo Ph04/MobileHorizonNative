@@ -101,7 +101,15 @@ public final class MicrosoftAuthService extends Service {
                     MicrosoftAuthentication.waitForSignIn(clientId, code, cancelled,
                             this::updateProgress);
             checkCancelled();
-            EncryptedRefreshTokenStore.save(this, account.refreshToken);
+            // Migrate the previous single-account token before the active metadata changes.
+            MicrosoftAccountStore.Account previous = MicrosoftAccountStore.active(this);
+            if (previous != null && !previous.uuid.equalsIgnoreCase(account.uuid)) {
+                try { EncryptedRefreshTokenStore.load(this, previous.uuid); }
+                catch (Exception ignored) { /* A damaged old token must not block a new login. */ }
+            }
+            EncryptedRefreshTokenStore.save(this, account.uuid, account.refreshToken);
+            MicrosoftAccountStore.upsert(this, account.uuid, account.name, account.xuid,
+                    System.currentTimeMillis());
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putBoolean("hasAccount", true)
                     .putString("accountName", account.name)
