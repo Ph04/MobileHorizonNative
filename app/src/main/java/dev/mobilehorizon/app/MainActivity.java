@@ -922,6 +922,11 @@ public final class MainActivity extends Activity {
         Button manage = button("Gerenciamento completo", false,
                 v -> startActivity(new Intent(this, InstancesActivity.class)));
         addButtonPair(actions, create, manage, BUTTON_MEDIUM_DP, 9);
+        Button refresh = button("Atualizar lista de instâncias", false, v -> {
+            refreshInstanceDashboard();
+            setStatus("Lista atualizada", "As instâncias disponíveis foram relidas.");
+        });
+        addSpaced(actions, refresh, BUTTON_SMALL_DP, 7);
         page.addView(actions, top(-1, -2, 9));
         instanceDashboardStatus = text("Carregando instâncias…", 11, 0xffaaa2c6, false);
         page.addView(instanceDashboardStatus, top(-1, -2, 10));
