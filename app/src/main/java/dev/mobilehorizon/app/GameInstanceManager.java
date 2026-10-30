@@ -112,9 +112,19 @@ public final class GameInstanceManager {
         if (entry == null) throw new IOException("Não existe uma instância válida do jogo.");
         File home = homeFor(context, entry.id).getCanonicalFile();
         File filesRoot = context.getApplicationContext().getFilesDir().getCanonicalFile();
-        String prefix = filesRoot.getPath() + File.separator;
-        if (!home.getPath().startsWith(prefix)) {
-            throw new IOException("O caminho da instância saiu do armazenamento privado do aplicativo.");
+        if (entry.id.equals(DEFAULT_ID)) {
+            if (!home.equals(new File(filesRoot, "horizon").getCanonicalFile())) {
+                throw new IOException("O caminho do perfil padrão não é válido.");
+            }
+        } else {
+            File profilesRoot = instancesRoot(context).getCanonicalFile();
+            File profileDirectory = new File(profilesRoot, entry.id).getCanonicalFile();
+            if (!profileDirectory.getName().equals(entry.id)
+                    || !profilesRoot.equals(profileDirectory.getParentFile())
+                    || !"game".equals(home.getName())
+                    || !profileDirectory.equals(home.getParentFile())) {
+                throw new IOException("O caminho da instância saiu do diretório privado esperado.");
+            }
         }
         return home;
     }
@@ -188,9 +198,11 @@ public final class GameInstanceManager {
             throw new IOException("Selecione outra instância antes de excluir esta.");
         }
         File profileRoot = new File(instancesRoot(context), entry.id);
-        deleteTreeSafely(context, profileRoot);
+        // Remove the profile from the durable catalog first. If file cleanup is interrupted,
+        // only an unreferenced orphan remains; the catalog never points at half-deleted data.
         catalog.entries.remove(entry);
         writeCatalog(context, catalog);
+        deleteTreeSafely(context, profileRoot);
     }
 
     static String validateName(String requestedName) {
@@ -260,10 +272,11 @@ public final class GameInstanceManager {
             return initial;
         }
 
-        byte[] bytes = Files.readAllBytes(index.toPath());
-        if (bytes.length <= 0 || bytes.length > 1024 * 1024) {
+        long indexSize = index.length();
+        if (indexSize <= 0L || indexSize > 1024L * 1024L) {
             throw new IOException("O catálogo de instâncias está vazio ou excede 1 MiB.");
         }
+        byte[] bytes = Files.readAllBytes(index.toPath());
         try {
             JSONObject json = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
             if (json.optInt("format", -1) != FORMAT) {
@@ -331,8 +344,7 @@ public final class GameInstanceManager {
         File target = indexFile(context);
         File temporary = new File(root, INDEX_FILE + ".tmp");
         try (FileOutputStream output = new FileOutputStream(temporary, false)) {
-            output.write((json.toString(2) + "
-").getBytes(StandardCharsets.UTF_8));
+            output.write((json.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
             output.flush();
             output.getFD().sync();
         }
@@ -349,25 +361,31 @@ public final class GameInstanceManager {
     }
 
     private static void deleteTreeSafely(Context context, File target) throws IOException {
-        File root = instancesRoot(context).getCanonicalFile();
-        File canonical = target.getCanonicalFile();
-        String prefix = root.getPath() + File.separator;
-        if (!canonical.getPath().startsWith(prefix)) {
-            throw new IOException("O diretório de exclusão saiu da pasta de instâncias.");
+        File profilesRoot = instancesRoot(context).getCanonicalFile();
+        File canonicalProfile = target.getCanonicalFile();
+        if (!canonicalProfile.getName().matches("i-[0-9a-f]{32}")
+                || !profilesRoot.equals(canonicalProfile.getParentFile())) {
+            throw new IOException("O diretório de exclusão não corresponde a uma instância.");
         }
-        deleteRecursively(root, canonical);
+        deleteRecursively(canonicalProfile, canonicalProfile);
     }
 
-    private static void deleteRecursively(File safeRoot, File target) throws IOException {
+    private static void deleteRecursively(File safeProfileRoot, File target) throws IOException {
+        // A symbolic link is removed as a link and is never traversed. This prevents a
+        // malicious/corrupt profile from redirecting cleanup into another profile.
+        if (Files.isSymbolicLink(target.toPath())) {
+            if (!target.delete()) throw new IOException("Não foi possível remover um link da instância.");
+            return;
+        }
         File canonical = target.getCanonicalFile();
-        String prefix = safeRoot.getPath() + File.separator;
-        if (!canonical.getPath().startsWith(prefix)) {
+        String prefix = safeProfileRoot.getPath() + File.separator;
+        if (!canonical.equals(safeProfileRoot) && !canonical.getPath().startsWith(prefix)) {
             throw new IOException("Foi encontrado um caminho externo dentro da instância.");
         }
         if (target.isDirectory()) {
             File[] children = target.listFiles();
             if (children == null) throw new IOException("Não foi possível listar " + target);
-            for (File child : children) deleteRecursively(safeRoot, child);
+            for (File child : children) deleteRecursively(safeProfileRoot, child);
         }
         if (target.exists() && !target.delete()) {
             throw new IOException("Não foi possível excluir " + target.getName());
