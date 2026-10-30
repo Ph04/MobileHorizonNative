@@ -48,6 +48,7 @@ jobs:
       runtime_version: ${{ steps.resolve.outputs.runtime_version }}
       runtime_tag: ${{ steps.resolve.outputs.runtime_tag }}
       overlay_sha: ${{ steps.resolve.outputs.overlay_sha }}
+      overlay_commit: ${{ steps.resolve.outputs.overlay_commit }}
     steps:
       - name: Checkout overlay sources
         uses: actions/checkout@v4
@@ -216,10 +217,13 @@ jobs:
               out.write(f"runtime_version={runtime_version}\n")
               out.write(f"runtime_tag={runtime_tag}\n")
               out.write(f"overlay_sha={overlay_sha}\n")
+              overlay_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+              out.write(f"overlay_commit={overlay_commit}\n")
 
           print("Upstream channel:", upstream_tag)
           print("Upstream commit:", upstream_commit)
           print("Runtime version:", runtime_version)
+          print("Overlay commit:", overlay_commit)
           print("Existing runtime release is verified and complete:", not build)
           print("Runtime build required:", build)
           PY
@@ -239,7 +243,7 @@ jobs:
       - name: Checkout MobileHorizonNative overlay
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_ref || github.ref_name }}
+          ref: ${{ needs.resolve.outputs.overlay_commit }}
 
       - name: Set up Rust for Android ARM64
         uses: dtolnay/rust-toolchain@stable

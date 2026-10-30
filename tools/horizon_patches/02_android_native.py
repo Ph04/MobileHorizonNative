@@ -632,20 +632,50 @@ if len(matched_close_chat) != 1:
         f"{chat}: expected one known close_chat layout, found {len(matched_close_chat)}"
     )
 replace_once(chat, *matched_close_chat[0])
-replace_once(chat,
-    """                if let Some(text) = typed_text
+chat_key_code_anchors = [
+    (
+        """                if let Some(text) = typed_text
                     && !ctrl
                 {
                     screen.type_text(&m, &c, text);
                 }
                 self.ui.chat_screen = Some(screen);""",
-    """                if let Some(text) = typed_text
+        """                if let Some(text) = typed_text
                     && !ctrl
                 {
                     screen.type_text(&m, &c, text);
                 }
                 horizon_client::set_android_chat_draft(screen.value());
-                self.ui.chat_screen = Some(screen);""")
+                self.ui.chat_screen = Some(screen);""",
+    ),
+    (
+        """                if let Some(text) = typed_text
+                    && self.types_text()
+                {
+                    screen.type_text(&m, &c, text);
+                }
+                self.ui.chat_screen = Some(screen);""",
+        """                if let Some(text) = typed_text
+                    && self.types_text()
+                {
+                    screen.type_text(&m, &c, text);
+                }
+                horizon_client::set_android_chat_draft(screen.value());
+                self.ui.chat_screen = Some(screen);""",
+    ),
+]
+chat_key_content = chat.read_text(encoding="utf-8")
+matched_chat_key = [
+    pair for pair in chat_key_code_anchors
+    if chat_key_content.count(pair[0]) == 1
+]
+if len(matched_chat_key) != 1:
+    raise SystemExit(
+        f"{chat}: expected one supported chat_key_code text-input anchor, "
+        f"legacy={chat_key_content.count(chat_key_code_anchors[0][0])}, "
+        f"current={chat_key_content.count(chat_key_code_anchors[1][0])}"
+    )
+replace_once(chat, *matched_chat_key[0])
 replace_once(chat,
     """        if let Some(screen) = self.ui.chat_screen.as_mut() {
             screen.type_text(&m, &c, text);
