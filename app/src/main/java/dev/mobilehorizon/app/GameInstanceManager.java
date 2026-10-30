@@ -376,8 +376,14 @@ public final class GameInstanceManager {
         if (Files.isSymbolicLink(target.toPath()) || Files.isSymbolicLink(temporary.toPath())) {
             throw new IOException("Os arquivos do catálogo não podem ser links simbólicos.");
         }
+        final byte[] serialized;
+        try {
+            serialized = (json.toString(2) + "\n").getBytes(StandardCharsets.UTF_8);
+        } catch (JSONException error) {
+            throw new IOException("Não foi possível serializar o catálogo de instâncias.", error);
+        }
         try (FileOutputStream output = new FileOutputStream(temporary, false)) {
-            output.write((json.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
+            output.write(serialized);
             output.flush();
             output.getFD().sync();
         }

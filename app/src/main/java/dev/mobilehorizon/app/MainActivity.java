@@ -102,6 +102,7 @@ public final class MainActivity extends Activity {
     private Typeface monoTypeface = Typeface.MONOSPACE;
     private View downloadSectionView;
     private View instanceSectionView;
+    private View worldsSectionView;
     private View resourcesSectionView;
     private View accountSectionView;
     private View logsSectionView;
@@ -646,6 +647,10 @@ public final class MainActivity extends Activity {
                 "Cada perfil mantém seus mundos, opções, logs e pacotes separados.",
                 "Gerenciar", v -> startActivity(new Intent(this, InstancesActivity.class)),
                 landscape);
+        worldsSectionView = addDashboardRow(page, "Mundos",
+                "Visualize seus mundos, crie backups e restaure cópias da instância ativa.",
+                "Gerenciar", v -> startActivity(new Intent(this, WorldsActivity.class)),
+                landscape);
         addDashboardRow(page, "Resources", resourceReadySummary(),
                 "Gerenciar", v -> startActivity(new Intent(this, ResourceManagerActivity.class)),
                 landscape);
@@ -845,7 +850,7 @@ public final class MainActivity extends Activity {
         navTitleParams.topMargin = dp(24);
         sidebar.addView(navigationTitle, navTitleParams);
         String[] sidebarLabels = {"Início", "Instâncias", "Biblioteca", "Conta", "Sistema"};
-        View[] sidebarTargets = {heroPanel, instanceSectionView, resourcesSectionView,
+        View[] sidebarTargets = {heroPanel, instanceSectionView, worldsSectionView,
                 accountSectionView, logsSectionView};
         sidebarNavigationItems = new Button[sidebarLabels.length];
         for (int i = 0; i < sidebarLabels.length; i++) {
@@ -878,7 +883,7 @@ public final class MainActivity extends Activity {
         // Top-level destinations are grouped by player task, not by implementation detail.
         // The Horizon runtime card lives on Home; it does not need a separate navigation tab.
         String[] labels = {"Início", "Instâncias", "Biblioteca", "Conta", "Sistema"};
-        View[] targets = {heroPanel, instanceSectionView, resourcesSectionView,
+        View[] targets = {heroPanel, instanceSectionView, worldsSectionView,
                 accountSectionView, logsSectionView};
         mobileNavigationItems = new TextView[labels.length];
         for (int i = 0; i < labels.length; i++) {
@@ -901,7 +906,8 @@ public final class MainActivity extends Activity {
     private void updateMobileNavigation(View target) {
         String selected = UiLanguage.translate(this, "Início");
         if (target == instanceSectionView) selected = UiLanguage.translate(this, "Instâncias");
-        else if (target == resourcesSectionView) selected = UiLanguage.translate(this, "Biblioteca");
+        else if (target == worldsSectionView || target == resourcesSectionView)
+            selected = UiLanguage.translate(this, "Biblioteca");
         else if (target == accountSectionView) selected = UiLanguage.translate(this, "Conta");
         else if (target == logsSectionView) selected = UiLanguage.translate(this, "Sistema");
         if (mobileNavigationItems != null) {
