@@ -53,20 +53,27 @@ final class MobilePerformanceProfile {
     private MobilePerformanceProfile() {}
 
     static void applyInitialOptions(Context context) throws Exception {
-        File root = context.getFilesDir();
-        File marker = new File(root, MARKER);
-        if (marker.isFile()) return;
+        GameInstanceManager.Instance active = GameInstanceManager.getSelectedInstance(context);
+        applyInitialOptions(context, active.id);
+    }
 
-        // Horizon's NativeActivity runs with HORIZON_HOME=<filesDir>/horizon.
-        // options.txt must live beside the game's logs and saves, not at filesDir.
-        File gameHome = new File(root, "horizon");
+    static void applyInitialOptions(Context context, String instanceId) throws Exception {
+        File root = context.getFilesDir();
+        File gameHome = GameInstanceManager.getInstanceHome(context, instanceId);
         if (!gameHome.isDirectory() && !gameHome.mkdirs()) {
-            throw new java.io.IOException("Não foi possível criar a pasta de configuração do Horizon.");
+            throw new java.io.IOException("Não foi possível criar a pasta de configuração da instância.");
         }
+        File marker = new File(gameHome, MARKER);
+        // Older versions stored this marker globally. Preserve already-tuned default options,
+        // while giving each newly-created profile its own one-time performance setup.
+        File legacyMarker = new File(root, MARKER);
+        if (marker.isFile() || (GameInstanceManager.DEFAULT_ID.equals(instanceId)
+                && legacyMarker.isFile())) return;
+
         File options = new File(gameHome, "options.txt");
         String oldText = options.isFile() ? read(options) : "version:4000\n";
         String tuned = tuneOptionsText(oldText);
-        File temporary = new File(root, "options.txt.mobilehorizon.tmp");
+        File temporary = new File(gameHome, "options.txt.mobilehorizon.tmp");
         try (FileOutputStream output = new FileOutputStream(temporary, false)) {
             output.write(tuned.getBytes(StandardCharsets.UTF_8));
             output.getFD().sync();
