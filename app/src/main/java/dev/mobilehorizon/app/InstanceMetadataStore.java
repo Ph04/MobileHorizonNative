@@ -43,7 +43,7 @@ final class InstanceMetadataStore {
         JSONObject all=read(c),item=all.optJSONObject(id);
         if(item==null)item=new JSONObject();
         put(item,"group",safeGroup(group));put(item,"icon",safeIcon(icon));put(item,"color",safeColor(color));
-        all.put(id,item);write(c,all);
+        put(all,id,item);write(c,all);
     }
 
     static synchronized void setPinnedVersion(Context c,String id,String version)throws IOException{
@@ -51,7 +51,7 @@ final class InstanceMetadataStore {
         JSONObject all=read(c),item=all.optJSONObject(id);
         if(item==null)item=new JSONObject();
         put(item,"pinned_version",safeVersion(version));
-        all.put(id,item);write(c,all);
+        put(all,id,item);write(c,all);
     }
 
     static synchronized void markStarted(Context c,String id)throws IOException{
@@ -61,7 +61,7 @@ final class InstanceMetadataStore {
         long now=System.currentTimeMillis();
         if(item.optLong("playing_since",0L)<=0L)put(item,"playing_since",now);
         put(item,"last_played_at",now);
-        all.put(id,item);write(c,all);
+        put(all,id,item);write(c,all);
     }
 
     static synchronized void markStopped(Context c,String id)throws IOException{
@@ -73,7 +73,7 @@ final class InstanceMetadataStore {
         long elapsed=Math.max(0L,Math.min(24L*60L*60L*1000L,System.currentTimeMillis()-started));
         put(item,"played_ms",Math.max(0L,item.optLong("played_ms",0L))+elapsed);
         put(item,"playing_since",0L);
-        all.put(id,item);write(c,all);
+        put(all,id,item);write(c,all);
     }
 
     static synchronized void remove(Context c,String id)throws IOException{
