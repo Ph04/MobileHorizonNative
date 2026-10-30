@@ -71,6 +71,19 @@ public final class SettingsActivity extends Activity {
                 v -> clearBackground()), top(-1, 44, 6));
         page.addView(appearance, top(-1, -2, 12));
 
+        LinearLayout network = card();
+        network.addView(text("Rede e proxy", 16, 0xfff0ecff, true), lp(-1, -2));
+        String currentProxy = LauncherNetworkSettings.configuredProxy(this);
+        network.addView(text(currentProxy.isEmpty() ? "Proxy HTTP desativado"
+                        : "Proxy HTTP: " + currentProxy,
+                11, 0xffaaa2c6, false), top(-1, -2, 6));
+        network.addView(text("O proxy será usado em downloads, consultas Modrinth, login Microsoft e próximas sessões do Horizon. Endereços locais continuam diretos. Use http://host:porta; SOCKS e usuário/senha embutidos não são aceitos.", 11, 0xffaaa2c6, false), top(-1, -2, 5));
+        network.addView(button("Configurar proxy HTTP", true,
+                v -> showProxyDialog()), top(-1, 48, 8));
+        network.addView(button("Desativar proxy", false,
+                v -> saveProxy("")), top(-1, 44, 6));
+        page.addView(network, top(-1, -2, 12));
+
         CheckBox autoUpdates = new CheckBox(this);
         autoUpdates.setText(UiLanguage.translate(this, "Verificar atualizações da runtime automaticamente"));
         autoUpdates.setTextColor(0xffeee9ff);
@@ -117,6 +130,37 @@ public final class SettingsActivity extends Activity {
         page.addView(limitations, top(-1, -2, 12));
 
         page.addView(text("Versão instalada: " + appVersion(), 10, 0xff817a9e, false), top(-1, -2, 8));
+    }
+
+    private void showProxyDialog() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        input.setHint("http://127.0.0.1:7890");
+        input.setText(LauncherNetworkSettings.configuredProxy(this));
+        input.setSelection(input.length());
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this, "Proxy HTTP"))
+                .setMessage(UiLanguage.translate(this,
+                        "Informe o endereço completo com http:// e a porta. Deixe vazio para usar a conexão direta."))
+                .setView(input)
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Salvar"),
+                        (dialog, which) -> saveProxy(input.getText().toString()))
+                .show();
+    }
+
+    private void saveProxy(String value) {
+        try {
+            LauncherNetworkSettings.setProxy(this, value);
+            buildUi();
+        } catch (Exception error) {
+            new AlertDialog.Builder(this)
+                    .setTitle(UiLanguage.translate(this, "Proxy inválido"))
+                    .setMessage(error.getMessage() == null ? error.toString() : error.getMessage())
+                    .setPositiveButton(UiLanguage.translate(this, "Fechar"), null).show();
+        }
     }
 
     private void showAccentPicker() {
