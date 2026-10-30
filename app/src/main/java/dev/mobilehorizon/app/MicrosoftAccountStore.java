@@ -83,6 +83,21 @@ final class MicrosoftAccountStore {
         Account match = null;
         for (Account account : list(context)) if (account.uuid.equalsIgnoreCase(uuid)) match = account;
         if (match == null) throw new IllegalArgumentException("A conta Microsoft não está salva neste dispositivo.");
+
+        // If this installation still has a legacy single-account token, migrate it for
+        // the UUID currently recorded with that token before changing the compatibility
+        // metadata to another account. This prevents the old token being attributed to
+        // the newly selected profile.
+        String legacyId = legacyPrefs(context).getString("accountUuid", "");
+        if (validId(legacyId)) {
+            try {
+                EncryptedRefreshTokenStore.load(context, legacyId);
+            } catch (Exception error) {
+                throw new IllegalStateException(
+                        "Não foi possível migrar a sessão da conta atual antes de alternar. Entre novamente com essa conta e tente outra vez.",
+                        error);
+            }
+        }
         prefs(context).edit().putString(KEY_ACTIVE, match.uuid).commit();
         legacyPrefs(context).edit().putBoolean("hasAccount", true).putString("accountName", match.name)
                 .putString("accountUuid", match.uuid).putString("accountXuid", match.xuid)
