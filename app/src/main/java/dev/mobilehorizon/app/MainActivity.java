@@ -99,6 +99,7 @@ public final class MainActivity extends Activity {
     private LinearLayout[] tabPages;
     private ScrollView[] tabScrolls;
     private int activeTabIndex;
+    private int lastAppearanceSignature = Integer.MIN_VALUE;
     private FrameLayout heroPanel;
     private LinearLayout mobileNavigation;
     private TextView[] mobileNavigationItems;
@@ -203,6 +204,7 @@ public final class MainActivity extends Activity {
                     | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         }
         buildUi();
+        lastAppearanceSignature = LauncherAppearance.signature(this);
         updateCompatibility();
         setStatus("Pronto",
                 "Baixe os arquivos oficiais do Minecraft 26.3, prepare as entradas para conversão ou importe uma saída Horizon já preparada.");
@@ -327,6 +329,15 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        int appearanceSignature = LauncherAppearance.signature(this);
+        if (appearanceSignature != lastAppearanceSignature) {
+            buildUi();
+            lastAppearanceSignature = appearanceSignature;
+            updateCompatibility();
+            setStatus("Pronto",
+                    "A aparência do launcher foi atualizada. As configurações do Minecraft permanecem inalteradas.");
+            updateActionEnablement();
+        }
         refreshRuntimeUpdateStatus();
         refreshInstanceSummary();
         refreshOfflineUi();
@@ -509,7 +520,7 @@ public final class MainActivity extends Activity {
         boolean landscape = getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_LANDSCAPE
                 && getResources().getConfiguration().screenWidthDp >= 600;
-        final int backgroundColor = 0xff0f0d17;
+        final int backgroundColor = LauncherAppearance.backgroundColor(this);
         getWindow().setStatusBarColor(0xff0b0a11);
         getWindow().setNavigationBarColor(0xff0b0a11);
         if (Build.VERSION.SDK_INT >= 30) {
@@ -521,17 +532,19 @@ public final class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        root.setBackgroundColor(backgroundColor);
+        Drawable customBackground = LauncherAppearance.createBackgroundDrawable(this);
+        if (customBackground != null) root.setBackground(customBackground);
+        else root.setBackgroundColor(backgroundColor);
 
         tabContent = new FrameLayout(this);
-        tabContent.setBackgroundColor(backgroundColor);
+        tabContent.setBackgroundColor(Color.TRANSPARENT);
         tabPages = new LinearLayout[6];
         tabScrolls = new ScrollView[6];
         for (int i = 0; i < tabPages.length; i++) {
             ScrollView tabScroll = new ScrollView(this);
             tabScroll.setFillViewport(true);
             tabScroll.setClipToPadding(false);
-            tabScroll.setBackgroundColor(backgroundColor);
+            tabScroll.setBackgroundColor(Color.TRANSPARENT);
             LinearLayout tabPage = new LinearLayout(this);
             tabPage.setOrientation(LinearLayout.VERTICAL);
             tabPage.setPadding(dp(landscape ? 18 : 12), dp(landscape ? 16 : 12),
@@ -2798,7 +2811,9 @@ public final class MainActivity extends Activity {
         button.setPadding(dp(10), 0, dp(10), 0);
         button.setStateListAnimator(null);
         if (primary) {
-            button.setBackground(new HorizonBlockDrawable(0xff5b3fd6, 0xff8a74ff,
+            int accent = LauncherAppearance.accentColor(this);
+            int border = LauncherAppearance.accentBorderColor(this);
+            button.setBackground(new HorizonBlockDrawable(accent, border,
                     0xff3a2694, 0xff05040a, dp(2), dp(2), dp(4)));
         } else {
             button.setBackground(new HorizonBlockDrawable(0xff2b2641, 0xff3d3560,
