@@ -1,11 +1,15 @@
 package dev.mobilehorizon.app;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.net.Uri;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -16,6 +20,8 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -26,6 +32,8 @@ public final class ConsoleActivity extends Activity {
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Runnable poll=()->refresh();
+    private static final int EXPORT_LOG = 801;
+    private String pendingExportText;
     private EditText filter;
     private TextView output;
     private TextView status;
@@ -50,8 +58,17 @@ public final class ConsoleActivity extends Activity {
         LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
         filter=new EditText(this);filter.setSingleLine(true);filter.setTextColor(0xfff0ecff);filter.setHintTextColor(0xff827b9f);filter.setHint("Filtrar logs…");
         filter.setBackgroundColor(0xff151321);row.addView(filter,new LinearLayout.LayoutParams(0,dp(48),1f));
-        Button refresh=button("Atualizar",true,v->refresh());LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(dp(112),dp(48));rp.leftMargin=dp(7);row.addView(refresh,rp);
+        Button refresh=button("Atualizar",true,v->refresh());LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(dp(104),dp(48));rp.leftMargin=dp(6);row.addView(refresh,rp);
         page.addView(row,top(-1,-2,8));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button copy = button("Copiar trecho",false,v->copyVisible());
+        actions.addView(copy,new LinearLayout.LayoutParams(0,dp(44),1f));
+        Button export = button("Exportar log",false,v->exportLog());
+        LinearLayout.LayoutParams exportParams = new LinearLayout.LayoutParams(0,dp(44),1f);
+        exportParams.leftMargin=dp(6);
+        actions.addView(export,exportParams);
+        page.addView(actions,top(-1,-2,6));
         status=text("",11,0xffb9b3d1,false);page.addView(status,top(-1,-2,6));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.setBackgroundColor(0xff100f1a);
         output=text("Aguardando logs…",10,0xffe2dcf8,false);output.setTypeface(Typeface.MONOSPACE);output.setTextIsSelectable(true);output.setPadding(dp(10),dp(10),dp(10),dp(10));scroll.addView(output,lp(-1,-2));
@@ -84,6 +101,66 @@ public final class ConsoleActivity extends Activity {
                 if(resumed){handler.removeCallbacks(poll);handler.postDelayed(poll,2200);}
             });
         });
+    }
+
+    private void copyVisible() {
+        if (output == null) return;
+        CharSequence visible = output.getText();
+        if (visible == null || visible.length() == 0) {
+            status.setText(UiLanguage.translate(this, "Não há linhas para copiar."));
+            return;
+        }
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(ClipData.newPlainText("Horizon log", visible));
+            status.setText(UiLanguage.translate(this, "Trecho visível copiado."));
+        }
+    }
+
+    private void exportLog() {
+        String query = filter == null ? "" : filter.getText().toString().trim();
+        String content = latest == null ? "" : latest;
+        if (content.isEmpty()) {
+            status.setText(UiLanguage.translate(this, "Não há log para exportar."));
+            return;
+        }
+        if (!query.isEmpty()) {
+            StringBuilder filtered = new StringBuilder();
+            for (String line : content.split("\\r?\\n")) {
+                if (line.toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT))) {
+                    filtered.append(line).append('\n');
+                }
+            }
+            content = filtered.toString();
+        }
+        pendingExportText = content;
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TITLE, "mobilehorizon-latest.log");
+        try { startActivityForResult(intent, EXPORT_LOG); }
+        catch (Exception error) {
+            pendingExportText = null;
+            status.setText(UiLanguage.translate(this, "Não foi possível abrir o seletor: ")
+                    + error.getMessage());
+        }
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != EXPORT_LOG) return;
+        String content = pendingExportText;
+        pendingExportText = null;
+        if (result != RESULT_OK || data == null || data.getData() == null || content == null) return;
+        try (OutputStream out = getContentResolver().openOutputStream(data.getData(), "w")) {
+            if (out == null) throw new java.io.IOException("Destino de exportação indisponível.");
+            out.write(content.getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            status.setText(UiLanguage.translate(this, "Log exportado."));
+        } catch (Exception error) {
+            status.setText(UiLanguage.translate(this, "Falha ao exportar log: ")
+                    + error.getMessage());
+        }
     }
 
     private void render(){
