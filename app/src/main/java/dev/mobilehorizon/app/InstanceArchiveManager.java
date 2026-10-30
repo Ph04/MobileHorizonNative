@@ -54,9 +54,10 @@ final class InstanceArchiveManager {
                 manifest.put("instance_name",instanceName(c,id));
                 InstanceMetadataStore.Metadata m=InstanceMetadataStore.get(c,id);
                 manifest.put("group",m.group);manifest.put("icon",m.icon);manifest.put("color",m.color);
+                byte[] manifestBytes = (manifest.toString(2)+"\n").getBytes(StandardCharsets.UTF_8);
+                zip.putNextEntry(new ZipEntry(MANIFEST));
+                zip.write(manifestBytes);
             }catch(JSONException error){throw new IOException("Manifesto de instância inválido.",error);}
-            zip.putNextEntry(new ZipEntry(MANIFEST));
-            zip.write((manifest.toString(2)+"\n").getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
             long[] totals={0L,0L};
             for(String root:ROOTS){
