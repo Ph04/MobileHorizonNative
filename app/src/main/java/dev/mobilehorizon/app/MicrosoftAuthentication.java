@@ -270,7 +270,7 @@ final class MicrosoftAuthentication {
         if (url == null || !url.startsWith("https://")) {
             throw new IllegalArgumentException("Um endpoint de autenticação inseguro foi recusado.");
         }
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        HttpURLConnection connection = (HttpURLConnection) LauncherNetworkSettings.open(new URL(url));
         connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
         connection.setReadTimeout(READ_TIMEOUT_MS);
         connection.setInstanceFollowRedirects(false);
