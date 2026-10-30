@@ -24,6 +24,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -116,7 +117,7 @@ public final class InstalledPacksActivity extends Activity {
             JSONArray enabled = enabledResources(new File(home, "options.txt"));
             String selectedShader = graphicsValue(new File(home, "horizon-graphics.txt"), "pickedShaderPack");
             for (Pack pack : resourcePacks) {
-                boolean active = enabled.optStringListContains("file/" + pack.file.getName());
+                boolean active = containsJsonString(enabled, "file/" + pack.file.getName());
                 resources.addView(packRow(pack, active), top(-1, -2, 5));
             }
             for (Pack pack : shaderPacks) {
@@ -178,7 +179,9 @@ public final class InstalledPacksActivity extends Activity {
         if (!name.endsWith(".zip")) return false;
         try (ZipFile zip = new ZipFile(file)) {
             java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            int count = 0;
             while (entries.hasMoreElements()) {
+                if (++count > 20000) return false;
                 String path = entries.nextElement().getName();
                 if (path.startsWith("shaders/")) return true;
             }
@@ -350,9 +353,6 @@ public final class InstalledPacksActivity extends Activity {
                 boolean resource = isResourcePack(stage);
                 if (!shader && !resource) throw new IllegalArgumentException(
                         "O ZIP não contém pack.mcmeta nem uma pasta shaders/ reconhecida.");
-                if (shader && lower.endsWith(".hshader") && !lower.endsWith(".hshader")) {
-                    throw new IllegalArgumentException("Extensão de shader inválida.");
-                }
                 File home = GameInstanceManager.getSelectedInstanceHome(this);
                 File folder = new File(home, shader ? "shaderpacks" : "resourcepacks");
                 if (!folder.isDirectory() && !folder.mkdirs()) throw new java.io.IOException("Não foi possível criar a pasta do pacote.");
@@ -403,6 +403,13 @@ public final class InstalledPacksActivity extends Activity {
         return name;
     }
 
+    private boolean containsJsonString(JSONArray values, String wanted) {
+        for (int i = 0; i < values.length(); i++) {
+            if (wanted.equals(values.optString(i, ""))) return true;
+        }
+        return false;
+    }
+
     private JSONArray enabledResources(File file) throws Exception {
         String line = readKeyLine(file, "resourcePacks");
         return line == null ? new JSONArray() : new JSONArray(line);
@@ -443,9 +450,13 @@ public final class InstalledPacksActivity extends Activity {
             output.flush();
             output.getFD().sync();
         }
-        if (!temporary.renameTo(file)) {
-            if (file.exists() && !file.delete()) throw new java.io.IOException("Não foi possível atualizar " + key);
-            if (!temporary.renameTo(file)) throw new java.io.IOException("Não foi possível finalizar " + key);
+        try {
+            Files.move(temporary.toPath(), file.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+            Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            if (temporary.exists()) temporary.delete();
         }
     }
 

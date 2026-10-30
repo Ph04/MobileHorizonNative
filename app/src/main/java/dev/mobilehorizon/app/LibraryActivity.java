@@ -24,7 +24,8 @@ public final class LibraryActivity extends Activity {
         page.addView(text("Biblioteca", 27, 0xfff0ecff, true), top(-1, -2, 5));
         page.addView(text("Mundos, conteúdo local, capturas e ferramentas da instância ativa.", 13, 0xffb9b3d1, false), top(-1, -2, 6));
         page.addView(button("Voltar", false, v -> finish()), top(-1, 52, 12));
-        addEntry(page, "Mundos e backups", "Criar, restaurar e excluir mundos da instância ativa.", WorldsActivity.class);
+        addEntry(page, "Mundos e backups", "Criar, restaurar, copiar e excluir mundos da instância ativa.", WorldsActivity.class);
+        addEntry(page, "Pacotes instalados", "Ativar, desativar e remover resource packs e shaders.", InstalledPacksActivity.class);
         addEntry(page, "Servidores favoritos", "Guardar servidores e sincronizar a lista Multiplayer do jogo.", ServerFavoritesActivity.class);
         addEntry(page, "Conteúdo e pacotes", "Explorar resource packs, shaders e modpacks sem mods.", ContentBrowserActivity.class);
         addEntry(page, "Capturas de tela", "Visualizar, exportar e remover screenshots locais.", ScreenshotsActivity.class);

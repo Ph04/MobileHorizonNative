@@ -30,6 +30,8 @@
             android:label="Mundos" />
 
         <activity android:name=".LibraryActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Biblioteca" />
+        <activity android:name=".InstalledPacksActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Pacotes instalados" />
+        <activity android:name=".InstalledPacksActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Pacotes instalados" />
         <activity android:name=".SettingsActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Configurações e novidades" />
 
         <activity android:name=".ProfilesActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Perfis e contas" />
