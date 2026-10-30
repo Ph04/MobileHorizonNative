@@ -727,6 +727,9 @@ public final class MainActivity extends Activity {
         addSpaced(tools, diagnosticNote, -2, 8);
         exportDiagnosticsButton = button("Exportar diagnóstico", true, v -> exportDiagnostics());
         addSpaced(tools, exportDiagnosticsButton, 44, 6);
+        Button settingsButton = button("Configurações e novidades", false,
+                v -> startActivity(new Intent(this, SettingsActivity.class)));
+        addSpaced(tools, settingsButton, 46, 7);
 
         LinearLayout compatibilityCard = card();
         LinearLayout.LayoutParams compatParams = params(-1, -2);

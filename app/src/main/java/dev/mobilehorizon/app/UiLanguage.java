@@ -874,6 +874,24 @@ final class UiLanguage {
         pair("Não foi possível substituir o plano anterior.", "Could not replace the previous plan.");
         pair("Não foi possível ativar o plano de conversão.", "Could not activate the conversion plan.");
         pair("Preparação para conversão cancelada.", "Conversion preparation cancelled.");
+        pair("Configurações e novidades", "Settings and what's new");
+        pair("Configurações", "Settings");
+        pair("Novidades desta compilação", "What's new in this build");
+        pair("Preferências", "Preferences");
+        pair("Idioma da interface", "Interface language");
+        pair("Alternar português / inglês", "Switch Portuguese / English");
+        pair("Verificar atualizações da runtime automaticamente", "Check for runtime updates automatically");
+        pair("As verificações automáticas estão ativas. A runtime é atualizada separadamente do APK.", "Automatic checks are enabled. The runtime updates separately from the APK.");
+        pair("As verificações automáticas estão pausadas. A primeira instalação da runtime continua obrigatória; reative esta opção para voltar a receber verificações.", "Automatic checks are paused. The first runtime installation remains required; re-enable this option to resume update checks.");
+        pair("Versão instalada: ", "Installed version: ");
+        pair("Runtime Horizon Nightly", "Horizon Nightly runtime");
+        pair("Instâncias e mundos", "Instances and worlds");
+        pair("Perfis e contas", "Profiles and accounts");
+        pair("Skins e capas", "Skins and capes");
+        pair("Servidores favoritos", "Favorite servers");
+        pair("Biblioteca e sistema", "Library and system");
+        pair("Limitações conhecidas", "Known limitations");
+
         pair("Biblioteca", "Library");
         pair("Perfis e contas", "Profiles and accounts");
         pair("Perfis offline", "Offline profiles");

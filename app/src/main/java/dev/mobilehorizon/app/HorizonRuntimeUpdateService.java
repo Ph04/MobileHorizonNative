@@ -151,6 +151,12 @@ public final class HorizonRuntimeUpdateService {
         new android.os.Handler(android.os.Looper.getMainLooper()).post(callback);
     }
 
+    /** Whether periodic automatic runtime checks are enabled. */
+    public static boolean isEnabled(Context context) {
+        return context.getApplicationContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getBoolean("enabled", true);
+    }
+
     /** Enables/disables automatic runtime checks. A disable setting never removes installed versions. */
     public static void setEnabled(Context context, boolean enabled) {
         context.getApplicationContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)

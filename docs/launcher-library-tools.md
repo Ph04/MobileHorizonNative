@@ -32,3 +32,7 @@ Modpacks .mrpack só são aceitos quando o manifesto identifica Minecraft 26.3 e
 ## Limitações conhecidas
 
 O gerenciador de skins dá suporte às duas variantes de modelo, mas ainda não inclui um renderizador 3D giratório. A tela de servidores mantém favoritos e atualiza servers.dat, mas uma ação de conexão direta depende de futura API no motor Horizon. Modpacks que exigem carregadores ou mods são bloqueados intencionalmente.
+
+## Settings and build notes
+
+The System section exposes a settings page with the interface-language switch, installed launcher version, and an opt-in switch for periodic Horizon runtime update checks. Disabling periodic checks does not remove installed runtimes and does not bypass the mandatory first runtime installation. The page also summarizes the features and known integration limits in the current build.
