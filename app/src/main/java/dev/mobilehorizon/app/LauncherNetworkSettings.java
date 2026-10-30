@@ -14,7 +14,12 @@ import java.util.Locale;
 final class LauncherNetworkSettings {
     private static final String PREFS = "mobilehorizon_interface";
     private static final String KEY_HTTP_PROXY = "http_proxy";
+    private static volatile Context applicationContext;
     private LauncherNetworkSettings() {}
+
+    static void initialize(Context context) {
+        applicationContext = context.getApplicationContext();
+    }
 
     static String configuredProxy(Context context) {
         return context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -55,6 +60,11 @@ final class LauncherNetworkSettings {
     static URLConnection open(URL url) throws IOException {
         Proxy proxy = proxyFor(url);
         return url.openConnection(proxy);
+    }
+
+    static URLConnection open(URL url) throws IOException {
+        Context context = applicationContext;
+        return context == null ? url.openConnection() : open(context, url);
     }
 
     static URLConnection open(Context context, URL url) throws IOException {
