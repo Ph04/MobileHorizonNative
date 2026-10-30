@@ -979,6 +979,24 @@ final class UiLanguage {
         pair("Capturas exportadas: ", "Screenshots exported: ");
         pair("Falha ao criar ZIP de capturas: ", "Could not create screenshot ZIP: ");
         pair("Capturas exportadas: ", "Screenshots exported: ");
+        pair("Minecraft 26.3 • versões do motor", "Minecraft 26.3 • engine versions");
+        pair("O Horizon Rust executa Minecraft Java Edition 26.3. Os controles abaixo selecionam releases do motor Horizon para essa mesma versão do jogo; não são versões diferentes do Minecraft.", "Horizon Rust runs Minecraft Java Edition 26.3. The controls below select Horizon engine releases for that same game version; they are not different Minecraft versions.");
+        pair("Versão do Minecraft", "Minecraft version");
+        pair("Minecraft Java Edition 26.3", "Minecraft Java Edition 26.3");
+        pair("Mundos de 1.8 a 26.2 podem ser atualizados para 26.3; o motor não executa essas versões antigas.", "Worlds from 1.8 to 26.2 can be upgraded to 26.3; the engine does not run those older versions.");
+        pair("As versões listadas abaixo são releases do motor Horizon para Minecraft 26.3, não versões do jogo. Runtimes baixadas pelo launcher só são consideradas instaladas depois de validar manifesto, ELF ARM64 e SHA-256. Uma versão fixada é ativada apenas quando esta instância inicia.", "The versions listed below are Horizon engine releases for Minecraft 26.3, not game versions. Runtimes downloaded by the launcher are considered installed only after validating the manifest, ARM64 ELF and SHA-256. A pinned version is activated only when this instance starts.");
+        pair("Prévia 3D da skin ativa. Arraste para girar o avatar inteiro.", "3D preview of the active skin. Drag to rotate the entire avatar.");
+        pair("O avatar gira como um único modelo. Arraste para controlar a rotação; o modelo clássico e o slim são detectados automaticamente.", "The avatar rotates as one model. Drag to control its rotation; classic and slim models are detected automatically.");
+        pair("Jogar pela rede Tailscale", "Play over Tailscale");
+        pair("Conecte este aparelho e o anfitrião ao mesmo tailnet usando o aplicativo Tailscale. Depois adicione aos favoritos o endereço Tailscale do anfitrião e a porta do servidor. O MobileHorizon apenas abre o aplicativo oficial; a conexão VPN e a conta permanecem sob controle do Tailscale.", "Connect this device and the host to the same tailnet using the Tailscale app. Then add the host's Tailscale address and server port to favorites. MobileHorizon only opens the official app; the VPN connection and account remain managed by Tailscale.");
+        pair("Abrir Tailscale", "Open Tailscale");
+        pair("Jogar com amigos / hospedar mundo", "Play with friends / host a world");
+        pair("Para abrir um mundo na rede local, entre nele, pause e use Open to LAN. Para conexões por VPN, o Horizon documenta o uso de Tailscale ou ZeroTier: os participantes devem estar na mesma rede privada e usar o endereço e a porta do anfitrião.", "To open a world on the local network, enter it, pause and choose Open to LAN. For VPN connections, Horizon documents Tailscale or ZeroTier: participants must be on the same private network and use the host's address and port.");
+        pair("Servidor dedicado separado ainda não está disponível no Android. O release upstream publica horizon-server para Linux x86-64, sem binário Android ARM64.", "A separate dedicated server is not available on Android yet. The upstream release publishes horizon-server for Linux x86-64, with no Android ARM64 binary.");
+        pair("Tailscale não instalado", "Tailscale is not installed");
+        pair("Instale o aplicativo oficial Tailscale para Android. A VPN é conectada e administrada pelo próprio Tailscale.", "Install the official Tailscale app for Android. The VPN is connected and managed by Tailscale itself.");
+        pair("Google Play", "Google Play");
+        pair("Tailscale aberto. Conecte-se à mesma rede privada do anfitrião.", "Tailscale opened. Connect to the same private network as the host.");
         pair("Aparência e pacotes", "Appearance and packs");
 
     }
