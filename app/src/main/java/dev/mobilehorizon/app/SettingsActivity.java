@@ -101,7 +101,6 @@ public final class SettingsActivity extends Activity {
         autoStatus = text("", 11, 0xffaaa2c6, false);
         preferences.addView(autoStatus, top(-1, -2, 2));
         updateAutoStatus(autoUpdates.isChecked());
-        page.addView(preferences, top(-1, -2, 12));
 
         LinearLayout notes = card();
         notes.addView(text("Novidades desta compilação", 16, 0xfff0ecff, true), lp(-1, -2));
