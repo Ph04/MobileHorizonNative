@@ -50,6 +50,7 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_QUICK_PLAY_SERVER = "dev.mobilehorizon.app.EXTRA_QUICK_PLAY_SERVER";
     static final String EXTRA_QUICK_PLAY_WORLD = "dev.mobilehorizon.app.EXTRA_QUICK_PLAY_WORLD";
     private String runningInstanceId;
+    private boolean runtimePinnedForSession;
     private NativeTouchControlsView touchControls;
     private PopupWindow touchControlsPopup;
     private PopupWindow keyboardInputPopup;
@@ -68,6 +69,22 @@ public final class NativeGameActivity extends NativeActivity {
                 throw new java.io.IOException("Não foi possível criar o diretório privado do jogo.");
             }
 
+            String instanceId = launchIntent == null ? GameInstanceManager.DEFAULT_ID
+                    : launchIntent.getStringExtra(EXTRA_INSTANCE_ID);
+            if (instanceId == null || instanceId.trim().isEmpty()) instanceId = GameInstanceManager.DEFAULT_ID;
+            if (!GameInstanceManager.isValidInstanceId(instanceId)) {
+                throw new java.io.IOException("Identificador de instância inválido.");
+            }
+            InstanceMetadataStore.Metadata instanceMetadata = InstanceMetadataStore.get(this, instanceId);
+            if (!instanceMetadata.pinnedVersion.isEmpty()) {
+                if (!HorizonRuntimeManager.hasInstalledVersion(this, instanceMetadata.pinnedVersion)) {
+                    throw new java.io.IOException("A runtime fixada para esta instância não está instalada ou não passou na verificação. Abra Instâncias > Versões para corrigir.");
+                }
+                HorizonRuntimeManager.activateInstalledVersion(this, instanceMetadata.pinnedVersion);
+                runtimePinnedForSession = true;
+            } else {
+                HorizonRuntimeUpdateService.restoreAutomaticRuntimeVersion(this);
+            }
             // Select only a downloaded, hash-verified engine. During upgrades, the previous
             // downloaded version is kept as a fallback; no game engine binary is bundled in the APK.
             HorizonRuntimeManager.PreparedRuntime runtime = HorizonRuntimeManager.prepare(this);
@@ -82,11 +99,6 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.setenv("HORIZON_RUNTIME_STATUS_FILE", runtime.statusFile.getAbsolutePath(), true);
             android.system.Os.setenv("HORIZON_RUNTIME_VERSION", runtime.activeVersion, true);
 
-            String instanceId = launchIntent == null ? GameInstanceManager.DEFAULT_ID
-                    : launchIntent.getStringExtra(EXTRA_INSTANCE_ID);
-            if (instanceId == null || instanceId.trim().isEmpty()) {
-                instanceId = GameInstanceManager.DEFAULT_ID;
-            }
             runningInstanceId = instanceId;
             boolean smokeTest = launchIntent != null
                     && launchIntent.getBooleanExtra(EXTRA_NATIVE_SMOKE_TEST, false);
@@ -443,6 +455,13 @@ public final class NativeGameActivity extends NativeActivity {
                 android.util.Log.w("MobileHorizon", "Não foi possível atualizar o tempo de jogo da instância", error);
             }
             runningInstanceId = null;
+        }
+        if (runtimePinnedForSession) {
+            try { HorizonRuntimeUpdateService.restoreAutomaticRuntimeVersion(this); }
+            catch (Exception error) {
+                android.util.Log.e("MobileHorizon", "Não foi possível restaurar a runtime padrão após encerrar a instância.", error);
+            }
+            runtimePinnedForSession = false;
         }
         super.onDestroy();
     }
