@@ -61,8 +61,14 @@ public final class RuntimeVersionsActivity extends Activity {
         setContentView(scroll);
 
         page.addView(text("MOBILEHORIZON  /  MOTOR", 11, 0xff9e88ff, true), lp(-1, -2));
-        page.addView(text("Versões da runtime", 26, 0xfff0ecff, true), top(-1, -2, 5));
-        page.addView(text("Escolha uma runtime Android ARM64 verificada para esta instância. A versão fixada não altera o APK nem a versão padrão usada pelas outras instâncias.", 12, 0xffb9b3d1, false), top(-1, -2, 6));
+        page.addView(text("Minecraft 26.3 • versões do motor", 26, 0xfff0ecff, true), top(-1, -2, 5));
+        page.addView(text("O Horizon Rust executa Minecraft Java Edition 26.3. Os controles abaixo selecionam releases do motor Horizon para essa mesma versão do jogo; não são versões diferentes do Minecraft.", 12, 0xffb9b3d1, false), top(-1, -2, 6));
+
+        LinearLayout gameVersionCard = card();
+        gameVersionCard.addView(text("Versão do Minecraft", 15, 0xfff0ecff, true), lp(-1, -2));
+        gameVersionCard.addView(text("Minecraft Java Edition 26.3", 18, 0xffbcaaff, true), top(-1, -2, 6));
+        gameVersionCard.addView(text("Mundos de 1.8 a 26.2 podem ser atualizados para 26.3; o motor não executa essas versões antigas.", 11, 0xffaaa2c6, false), top(-1, -2, 4));
+        page.addView(gameVersionCard, top(-1, -2, 10));
         page.addView(button("Voltar", false, v -> finish()), top(-1, 48, 10));
 
         LinearLayout actions = card();
@@ -80,7 +86,7 @@ public final class RuntimeVersionsActivity extends Activity {
         list.setOrientation(LinearLayout.VERTICAL);
         page.addView(list, top(-1, -2, 6));
 
-        page.addView(text("Runtimes baixadas pelo launcher só são consideradas instaladas depois de validar o manifesto, a arquitetura ELF ARM64 e o SHA-256. Uma versão fixada é ativada apenas quando esta instância inicia.", 11, 0xffaaa2c6, false), top(-1, -2, 10));
+        page.addView(text("As versões listadas abaixo são releases do motor Horizon para Minecraft 26.3, não versões do jogo. Runtimes baixadas pelo launcher só são consideradas instaladas depois de validar manifesto, ELF ARM64 e SHA-256. Uma versão fixada é ativada apenas quando esta instância inicia.", 11, 0xffaaa2c6, false), top(-1, -2, 10));
     }
 
     private void refresh() {
