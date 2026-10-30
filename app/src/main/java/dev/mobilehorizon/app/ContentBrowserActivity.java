@@ -346,7 +346,7 @@ public final class ContentBrowserActivity extends Activity {
     private HttpURLConnection open(String url) throws Exception {
         if (!url.startsWith("https://api.modrinth.com/") && !url.startsWith(CDN))
             throw new IllegalArgumentException("Origem de rede não permitida.");
-        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        HttpURLConnection c = (HttpURLConnection) LauncherNetworkSettings.open(this, new URL(url));
         c.setConnectTimeout(20000); c.setReadTimeout(60000);
         c.setRequestProperty("User-Agent","MobileHorizonNative/1.0 (Android launcher)");
         c.setRequestProperty("Accept","application/json");
