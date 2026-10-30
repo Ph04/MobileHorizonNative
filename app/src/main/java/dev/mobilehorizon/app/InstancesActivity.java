@@ -190,6 +190,14 @@ public final class InstancesActivity extends Activity {
         edit.setEnabled(!busy);
         export.setEnabled(!busy);
 
+        Button versions = button("Versão da runtime", false, v -> {
+            Intent intent = new Intent(this, RuntimeVersionsActivity.class)
+                    .putExtra(RuntimeVersionsActivity.EXTRA_INSTANCE_ID, instance.id);
+            startActivity(intent);
+        });
+        versions.setEnabled(!busy);
+        card.addView(versions, topParams(-1, 46, 7));
+
         Button delete = button("Excluir", false, v -> confirmDelete(instance));
         setProminentActionSize(delete);
         delete.setEnabled(!busy && !active && !instance.isDefault());
