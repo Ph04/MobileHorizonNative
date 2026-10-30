@@ -233,7 +233,7 @@ public final class ScreenshotsActivity extends Activity {
                             throw new java.io.IOException("Uma captura saiu da pasta segura de origem.");
                         }
                         String name = source.getName();
-                        if (name.isEmpty() || name.contains("/") || name.contains("\\\\")
+                        if (name.isEmpty() || name.contains("/") || name.contains("\\")
                                 || name.equals(".") || name.equals("..")) {
                             throw new java.io.IOException("Nome de captura inválido no ZIP.");
                         }
