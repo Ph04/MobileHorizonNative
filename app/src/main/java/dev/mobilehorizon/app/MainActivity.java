@@ -228,6 +228,9 @@ public final class MainActivity extends Activity {
         if (intent == null) return;
         String server = intent.getStringExtra(EXTRA_QUICK_PLAY_SERVER);
         String world = intent.getStringExtra(EXTRA_QUICK_PLAY_WORLD);
+        intent.removeExtra(EXTRA_QUICK_PLAY_SERVER);
+        intent.removeExtra(EXTRA_QUICK_PLAY_WORLD);
+        setIntent(intent);
         boolean hasServer = server != null && !server.trim().isEmpty();
         boolean hasWorld = world != null && !world.trim().isEmpty();
         if (!hasServer && !hasWorld) return;
