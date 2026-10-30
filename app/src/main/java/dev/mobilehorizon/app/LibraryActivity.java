@@ -20,6 +20,7 @@ public final class LibraryActivity extends Activity {
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(0xff090911);
         LinearLayout page = new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(dp(16), dp(18), dp(16), dp(28)); scroll.addView(page); setContentView(scroll);
+        LauncherButtonStyle.install(this);
         page.addView(text("MOBILEHORIZON  /  BIBLIOTECA", 11, 0xff9e88ff, true), lp(-1, -2));
         page.addView(text("Biblioteca", 27, 0xfff0ecff, true), top(-1, -2, 5));
         page.addView(text("Mundos, conteúdo local, capturas e ferramentas da instância ativa.", 13, 0xffb9b3d1, false), top(-1, -2, 6));

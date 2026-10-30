@@ -135,6 +135,7 @@ public final class ResourceManagerActivity extends Activity {
         page.setPadding(dp(16), dp(18), dp(16), dp(24));
         scroll.addView(page);
         setContentView(scroll);
+        LauncherButtonStyle.install(this);
 
         page.addView(text("MOBILEHORIZON  /  RECURSOS", 12, 0xff5363bd, true), params(-1, -2));
         TextView title = text("Gerenciador de recursos", 25, 0xff17213b, true);
