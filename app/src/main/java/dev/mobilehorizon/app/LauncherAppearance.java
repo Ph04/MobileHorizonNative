@@ -38,6 +38,19 @@ final class LauncherAppearance {
 
     private LauncherAppearance() {}
 
+    static int signature(Context context) {
+        android.content.SharedPreferences preferences =
+                context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        File image = backgroundFile(context);
+        long modified = image.isFile() ? image.lastModified() : 0L;
+        long length = image.isFile() ? image.length() : 0L;
+        int result = preferences.getInt(KEY_ACCENT, 0);
+        result = 31 * result + (preferences.getBoolean(KEY_CUSTOM_BACKGROUND, false) ? 1 : 0);
+        result = 31 * result + (int) (modified ^ (modified >>> 32));
+        result = 31 * result + (int) (length ^ (length >>> 32));
+        return result;
+    }
+
     static int backgroundColor(Context context) {
         return DEFAULT_BACKGROUND;
     }
