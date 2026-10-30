@@ -7,6 +7,7 @@ import android.content.ClipboardManager;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.text.InputType;
 import android.view.Gravity;
 import android.widget.Button;
@@ -39,9 +40,50 @@ public final class ServerFavoritesActivity extends Activity {
         page.addView(button("Voltar", false, v -> finish()), top(-1, 48, 12));
         page.addView(button("Adicionar servidor", true, v -> addDialog()), top(-1, 52, 8));
         page.addView(button("Sincronizar lista no Minecraft", false, v -> sync()), top(-1, 52, 7));
+
+        LinearLayout tailscaleCard = card();
+        tailscaleCard.addView(text("Jogar pela rede Tailscale", 16, 0xfff0ecff, true), lp(-1, -2));
+        tailscaleCard.addView(text("Conecte este aparelho e o anfitrião ao mesmo tailnet usando o aplicativo Tailscale. Depois adicione aos favoritos o endereço Tailscale do anfitrião e a porta do servidor. O MobileHorizon apenas abre o aplicativo oficial; a conexão VPN e a conta permanecem sob controle do Tailscale.", 11, 0xffb9b3d1, false), top(-1, -2, 5));
+        tailscaleCard.addView(button("Abrir Tailscale", true, v -> openTailscale()), top(-1, 46, 8));
+        page.addView(tailscaleCard, top(-1, -2, 12));
+
+        LinearLayout hostingCard = card();
+        hostingCard.addView(text("Jogar com amigos / hospedar mundo", 16, 0xfff0ecff, true), lp(-1, -2));
+        hostingCard.addView(text("Para abrir um mundo na rede local, entre nele, pause e use Open to LAN. Para conexões por VPN, o Horizon documenta o uso de Tailscale ou ZeroTier: os participantes devem estar na mesma rede privada e usar o endereço e a porta do anfitrião.", 11, 0xffb9b3d1, false), top(-1, -2, 5));
+        hostingCard.addView(text("Servidor dedicado separado ainda não está disponível no Android. O release upstream publica horizon-server para Linux x86-64, sem binário Android ARM64.", 11, 0xffffc49a, false), top(-1, -2, 7));
+        page.addView(hostingCard, top(-1, -2, 10));
+
         status = text("", 12, 0xffc7bce6, false); page.addView(status, top(-1, -2, 8));
         list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); page.addView(list, top(-1, -2, 4));
         page.addView(text("Entrar inicia o cliente diretamente no servidor. Para servidores online, selecione uma conta Microsoft com licença Java; o modo offline depende da configuração do servidor.", 11, 0xffaaa2c6, false), top(-1, -2, 12));
+    }
+
+    private void openTailscale() {
+        try {
+            Intent launch = getPackageManager().getLaunchIntentForPackage("com.tailscale.ipn");
+            if (launch != null) {
+                startActivity(launch);
+                status.setText(UiLanguage.translate(this, "Tailscale aberto. Conecte-se à mesma rede privada do anfitrião."));
+                return;
+            }
+        } catch (Exception error) {
+            showError(error.getMessage() == null ? error.toString() : error.getMessage());
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this, "Tailscale não instalado"))
+                .setMessage(UiLanguage.translate(this,
+                        "Instale o aplicativo oficial Tailscale para Android. A VPN é conectada e administrada pelo próprio Tailscale."))
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Google Play"), (dialog, which) -> {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW,
+                                Uri.parse("https://play.google.com/store/apps/details?id=com.tailscale.ipn")));
+                    } catch (Exception error) {
+                        showError(error.getMessage() == null ? error.toString() : error.getMessage());
+                    }
+                }).show();
     }
 
     private void refresh() {
