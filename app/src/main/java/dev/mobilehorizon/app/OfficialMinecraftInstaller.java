@@ -441,7 +441,7 @@ final class OfficialMinecraftInstaller {
     private static byte[] readUrl(String url, int limit, AtomicBoolean cancelled) throws Exception {
         checkCancelled(cancelled);
         requireOfficialUrl(url, "URL de metadados");
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        HttpURLConnection connection = (HttpURLConnection) LauncherNetworkSettings.open(new URL(url));
         connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
         connection.setReadTimeout(READ_TIMEOUT_MS);
         connection.setInstanceFollowRedirects(true);
