@@ -34,7 +34,7 @@ final class MinecraftCosmeticsService {
 
     static android.graphics.Bitmap fetchSkinTexture(String textureUrl) throws Exception {
         textureUrl = secureTextureUrl(textureUrl);
-        HttpURLConnection connection = (HttpURLConnection) new URL(textureUrl).openConnection();
+        HttpURLConnection connection = (HttpURLConnection) LauncherNetworkSettings.open(new URL(textureUrl));
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(30000);
         connection.setInstanceFollowRedirects(false);
