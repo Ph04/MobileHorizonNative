@@ -126,6 +126,8 @@ public final class NativeGameActivity extends NativeActivity {
             // NativeActivity already starts the runtime with the app's private working directory
             // on supported builds; Os.chdir is not exposed by Android's public SDK.
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
+            // Pass the same user-configured HTTP proxy to native Horizon/reqwest clients.
+            LauncherNetworkSettings.applyToNativeProcess(this);
             // Quick-play values are set only after strict Java-side validation. Clear any
             // previous activity values because the :game process can be reused.
             android.system.Os.unsetenv("HORIZON_QUICK_PLAY_SERVER");
