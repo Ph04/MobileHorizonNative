@@ -144,6 +144,7 @@ public final class HorizonRuntimeUpdateService {
                     IN_FLIGHT.set(false);
                     callbacks = new ArrayList<>(PENDING_CALLBACKS);
                     PENDING_CALLBACKS.clear();
+                    CHECK_LOCK.notifyAll();
                 }
                 for (Runnable callback : callbacks) postFinished(callback);
             }
@@ -823,8 +824,18 @@ public final class HorizonRuntimeUpdateService {
             throw new IOException("Identificador de runtime inválido.");
         }
         synchronized (CHECK_LOCK) {
+            long deadline = android.os.SystemClock.elapsedRealtime() + 180000L;
+            while (IN_FLIGHT.get()
+                    && android.os.SystemClock.elapsedRealtime() < deadline) {
+                try {
+                    CHECK_LOCK.wait(500L);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("A instalação manual da runtime foi interrompida.", interrupted);
+                }
+            }
             if (IN_FLIGHT.get()) {
-                throw new IOException("Já existe uma atualização de runtime em andamento. Tente novamente após sua conclusão.");
+                throw new IOException("A verificação automática continua ocupada. Tente novamente após a conclusão.");
             }
             IN_FLIGHT.set(true);
         }
