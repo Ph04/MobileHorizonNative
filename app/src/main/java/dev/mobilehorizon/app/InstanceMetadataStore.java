@@ -59,7 +59,9 @@ final class InstanceMetadataStore {
         JSONObject all=read(c),item=all.optJSONObject(id);
         if(item==null)item=new JSONObject();
         long now=System.currentTimeMillis();
-        if(item.optLong("playing_since",0L)<=0L)put(item,"playing_since",now);
+        // A previous STARTING marker may remain if Android killed the game process.
+        // Do not charge time spent away from the game to this new session.
+        put(item,"playing_since",now);
         put(item,"last_played_at",now);
         put(all,id,item);write(c,all);
     }
