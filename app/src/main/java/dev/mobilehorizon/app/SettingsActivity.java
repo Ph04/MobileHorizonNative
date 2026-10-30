@@ -1,6 +1,7 @@
 package dev.mobilehorizon.app;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
 import android.content.pm.PackageInfo;
