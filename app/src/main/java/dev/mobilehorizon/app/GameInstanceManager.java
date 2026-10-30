@@ -294,16 +294,38 @@ public final class GameInstanceManager {
             JSONArray items = json.optJSONArray("instances");
             if (items == null) throw new IOException("O catálogo de instâncias está incompleto.");
             Catalog catalog = new Catalog();
+            boolean repaired = false;
             for (int i = 0; i < items.length(); i++) {
                 JSONObject item = items.optJSONObject(i);
-                if (item == null) continue;
+                if (item == null) {
+                    repaired = true;
+                    continue;
+                }
                 String id = item.optString("id", "");
-                if (!isValidInstanceId(id) || find(catalog, id) != null) continue;
-                if (!DEFAULT_ID.equals(id) && catalog.entries.size() >= MAX_INSTANCES - 1) break;
+                if (!isValidInstanceId(id) || find(catalog, id) != null) {
+                    repaired = true;
+                    continue;
+                }
+                if (!DEFAULT_ID.equals(id) && catalog.entries.size() >= MAX_INSTANCES - 1) {
+                    repaired = true;
+                    break;
+                }
                 String name;
                 try {
                     name = validateName(item.optString("name", ""));
                 } catch (IllegalArgumentException invalidName) {
+                    repaired = true;
+                    continue;
+                }
+                boolean duplicateName = false;
+                for (Entry existing : catalog.entries) {
+                    if (existing.name.equalsIgnoreCase(name)) {
+                        duplicateName = true;
+                        break;
+                    }
+                }
+                if (duplicateName) {
+                    repaired = true;
                     continue;
                 }
                 long created = Math.max(0L, item.optLong("created_at", 0L));
@@ -313,15 +335,16 @@ public final class GameInstanceManager {
             if (find(catalog, DEFAULT_ID) == null) {
                 catalog.entries.add(0, new Entry(
                         DEFAULT_ID, "Padrão", System.currentTimeMillis(), 0L));
+                repaired = true;
             }
             String selected = json.optString("selected_id", DEFAULT_ID);
             catalog.selectedId = find(catalog, selected) == null ? DEFAULT_ID : selected;
-            // Persist safe repairs (missing default or invalid selected ID), without moving
-            // or deleting any existing game data.
-            if (!selected.equals(catalog.selectedId)
-                    || json.optJSONArray("instances").length() != catalog.entries.size()) {
-                writeCatalog(context, catalog);
+            if (!selected.equals(catalog.selectedId) || items.length() != catalog.entries.size()) {
+                repaired = true;
             }
+            // Persist safe repairs (invalid IDs/names, duplicates, missing default or selection)
+            // without moving or deleting any existing game data.
+            if (repaired) writeCatalog(context, catalog);
             return catalog;
         } catch (JSONException error) {
             throw new IOException("O catálogo de instâncias não pôde ser lido sem risco.", error);
