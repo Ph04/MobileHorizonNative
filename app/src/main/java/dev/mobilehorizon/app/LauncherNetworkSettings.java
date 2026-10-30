@@ -57,21 +57,6 @@ final class LauncherNetworkSettings {
         return url.openConnection(proxy);
     }
 
-    static Proxy proxyFor(URL url) throws IOException {
-        if (isDirectHost(url.getHost())) return Proxy.NO_PROXY;
-        String configured = configuredProxyFromUrlContext();
-        if (configured.isEmpty()) return Proxy.NO_PROXY;
-        URI uri = URI.create(validate(configured));
-        return new Proxy(Proxy.Type.HTTP,
-                InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort()));
-    }
-
-    private static String configuredProxyFromUrlContext() {
-        // HTTP clients pass through open(Context, URL) where the preference can be read.
-        // Kept as a separate hook to make the no-context overload impossible to accidentally use.
-        return "";
-    }
-
     static URLConnection open(Context context, URL url) throws IOException {
         if (isDirectHost(url.getHost())) return url.openConnection(Proxy.NO_PROXY);
         String configured = configuredProxy(context);
@@ -79,12 +64,6 @@ final class LauncherNetworkSettings {
         URI uri = URI.create(validate(configured));
         return url.openConnection(new Proxy(Proxy.Type.HTTP,
                 InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort())));
-    }
-
-    static void applyToNativeProcess(android.system.Os ignored, Context context)
-            throws android.system.ErrnoException {
-        // Placeholder retained only for source compatibility; use applyToNativeProcess(context).
-        applyToNativeProcess(context);
     }
 
     static void applyToNativeProcess(Context context) throws android.system.ErrnoException {
