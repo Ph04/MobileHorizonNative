@@ -953,6 +953,11 @@ final class UiLanguage {
         pair("O proxy será usado em downloads, consultas Modrinth, login Microsoft e próximas sessões do Horizon. Endereços locais continuam diretos. Use http://host:porta; SOCKS e usuário/senha embutidos não são aceitos.",
                 "The proxy is used for downloads, Modrinth queries, Microsoft sign-in and future Horizon sessions. Local addresses bypass it. Use http://host:port; SOCKS and embedded credentials are not supported.");
         pair("Cor de destaque", "Accent color");
+        pair("Violeta", "Violet");
+        pair("Azul", "Blue");
+        pair("Turquesa", "Turquoise");
+        pair("Verde", "Green");
+        pair("Âmbar", "Amber");
         pair("Escolher cor de destaque", "Choose accent color");
         pair("Escolher imagem de fundo", "Choose background image");
         pair("Restaurar fundo padrão", "Restore default background");
