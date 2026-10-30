@@ -40,7 +40,8 @@ public final class InstancesActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
-        if (!busy) io.shutdown();
+        // shutdown() lets an already-running deletion finish without leaking the executor.
+        io.shutdown();
         super.onDestroy();
     }
 
@@ -226,6 +227,17 @@ public final class InstancesActivity extends Activity {
         if (list != null) {
             for (int i = 0; i < list.getChildCount(); i++) {
                 list.getChildAt(i).setAlpha(value ? 0.55f : 1f);
+                setChildrenEnabled(list.getChildAt(i), !value);
+            }
+        }
+    }
+
+    private void setChildrenEnabled(View view, boolean enabled) {
+        view.setEnabled(enabled);
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                setChildrenEnabled(group.getChildAt(i), enabled);
             }
         }
     }
