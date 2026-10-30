@@ -769,7 +769,6 @@ public final class HorizonRuntimeUpdateService {
         Log.i(TAG, status);
     }
 
-    private static final class OfficialRelease {
     public static final class PublishedRuntime {
         public final String version;
         public final String upstreamTag;
@@ -841,6 +840,16 @@ public final class HorizonRuntimeUpdateService {
         }
         Context app = context.getApplicationContext();
         SharedPreferences preferences = app.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        String previousAutomatic = automaticRuntimeVersion(app);
+        if (!setAsAutomaticDefault && (previousAutomatic == null || previousAutomatic.isEmpty())) {
+            try {
+                previousAutomatic = HorizonRuntimeManager.currentVersion(app);
+                if (previousAutomatic != null && !previousAutomatic.isEmpty()) {
+                    preferences.edit().putString(LAST_AUTOMATIC_VERSION, previousAutomatic).apply();
+                }
+            } catch (Exception ignored) {}
+        }
+        final String restoreVersion = previousAutomatic;
         try {
             Release release = findRuntimeRelease(requestedVersion);
             publishProgress(app, preferences, "manual-runtime",
@@ -858,6 +867,14 @@ public final class HorizonRuntimeUpdateService {
             setStatus(preferences, "Falha ao instalar a runtime selecionada: " + error.getMessage());
             throw error;
         } finally {
+            if (!setAsAutomaticDefault && restoreVersion != null && !restoreVersion.isEmpty()
+                    && HorizonRuntimeManager.hasInstalledVersion(app, restoreVersion)) {
+                try {
+                    HorizonRuntimeManager.activateInstalledVersion(app, restoreVersion);
+                } catch (Exception restoreError) {
+                    Log.e(TAG, "Não foi possível restaurar a runtime automática após instalar a versão fixada.", restoreError);
+                }
+            }
             finishProgress(app, preferences);
             List<Runnable> callbacks;
             synchronized (CHECK_LOCK) {
