@@ -940,6 +940,31 @@ final class UiLanguage {
         pair("Excluir captura?", "Delete screenshot?");
         pair("Excluir favorito?", "Delete favorite?");
         pair("Voltar", "Back");
+        pair("Aparência do launcher", "Launcher appearance");
+        pair("Cor de destaque", "Accent color");
+        pair("Escolher cor de destaque", "Choose accent color");
+        pair("Escolher imagem de fundo", "Choose background image");
+        pair("Restaurar fundo padrão", "Restore default background");
+        pair("Importando imagem de fundo…", "Importing background image…");
+        pair("Não foi possível usar a imagem", "Could not use the image");
+        pair("Cor de destaque: ", "Accent color: ");
+        pair(" • fundo personalizado", " • custom background");
+        pair(" • fundo padrão", " • default background");
+        pair("Não há linhas para copiar.", "There are no log lines to copy.");
+        pair("Trecho visível copiado.", "Visible log excerpt copied.");
+        pair("Exportar log", "Export log");
+        pair("Copiar trecho", "Copy excerpt");
+        pair("Não há log para exportar.", "There is no log to export.");
+        pair("Não foi possível abrir o seletor: ", "Could not open the file picker: ");
+        pair("Log exportado.", "Log exported.");
+        pair("Falha ao exportar log: ", "Failed to export log: ");
+        pair("Exportar todas em ZIP", "Export all as ZIP");
+        pair("Não há capturas para exportar.", "There are no screenshots to export.");
+        pair("Capturas exportadas: ", "Screenshots exported: ");
+        pair("Falha ao criar ZIP de capturas: ", "Could not create screenshot ZIP: ");
+        pair("Capturas exportadas: ", "Screenshots exported: ");
+        pair("Aparência e pacotes", "Appearance and packs");
+
     }
 
     private UiLanguage() { }
