@@ -1,6 +1,8 @@
 package dev.mobilehorizon.app;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
 import android.content.pm.PackageInfo;
 import android.os.Bundle;
 import android.view.View;
@@ -10,17 +12,27 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.graphics.Color;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import android.graphics.drawable.GradientDrawable;
 
 /** Application preferences and the changelog for the current launcher build. */
 public final class SettingsActivity extends Activity {
+    private static final int PICK_BACKGROUND = 901;
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
     private TextView autoStatus;
+    private TextView appearanceStatus;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setStatusBarColor(0xff090911);
         getWindow().setNavigationBarColor(0xff090911);
         buildUi();
+    }
+
+    @Override protected void onDestroy() {
+        io.shutdown();
+        super.onDestroy();
     }
 
     private void buildUi() {
@@ -42,6 +54,21 @@ public final class SettingsActivity extends Activity {
         preferences.addView(text("Preferências", 16, 0xfff0ecff, true), lp(-1, -2));
         preferences.addView(text("Idioma da interface", 13, 0xffb9b3d1, true), top(-1, -2, 9));
         preferences.addView(button("Alternar português / inglês", true, v -> UiLanguage.toggle(this)), top(-1, 50, 5));
+
+        LinearLayout appearance = card();
+        appearance.addView(text("Aparência do launcher", 16, 0xfff0ecff, true), lp(-1, -2));
+        appearanceStatus = text("Cor de destaque: " + LauncherAppearance.accentName(this)
+                + (LauncherAppearance.hasCustomBackground(this)
+                    ? " • fundo personalizado" : " • fundo padrão"),
+                11, 0xffaaa2c6, false);
+        appearance.addView(appearanceStatus, top(-1, -2, 6));
+        appearance.addView(button("Escolher cor de destaque", true,
+                v -> showAccentPicker()), top(-1, 48, 8));
+        appearance.addView(button("Escolher imagem de fundo", false,
+                v -> chooseBackground()), top(-1, 48, 6));
+        appearance.addView(button("Restaurar fundo padrão", false,
+                v -> clearBackground()), top(-1, 44, 6));
+        page.addView(appearance, top(-1, -2, 12));
 
         CheckBox autoUpdates = new CheckBox(this);
         autoUpdates.setText(UiLanguage.translate(this, "Verificar atualizações da runtime automaticamente"));
@@ -78,11 +105,72 @@ public final class SettingsActivity extends Activity {
         LinearLayout limitations = card();
         limitations.addView(text("Limitações conhecidas", 15, 0xfff0ecff, true), lp(-1, -2));
         limitations.addView(text(
-                "A runtime Android atual ainda não oferece um ponto de integração documentado para conexão direta a servidores; os favoritos são escritos em servers.dat para aparecerem na lista Multiplayer. A prévia de skin mostra a textura 64 × 64, não um personagem 3D giratório. Modpacks que exigem carregadores ou mods são bloqueados nesta linha vanilla.",
+                "A entrada direta em servidores e mundos já usa a ponte de Quick Play do Horizon. Servidores online exigem conta Microsoft com licença Java; servidores offline dependem da configuração do servidor. A hospedagem local de servidores ainda não está disponível: requer um motor dedicado ARM64 e um serviço Android próprios. A prévia de skin mostra a textura 64 × 64, não um personagem 3D giratório. Modpacks com mods ou carregadores continuam bloqueados na linha vanilla.",
                 11, 0xffaaa2c6, false), top(-1, -2, 6));
         page.addView(limitations, top(-1, -2, 12));
 
         page.addView(text("Versão instalada: " + appVersion(), 10, 0xff817a9e, false), top(-1, -2, 8));
+    }
+
+    private void showAccentPicker() {
+        String[] choices = LauncherAppearance.accentNames();
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this, "Cor de destaque"))
+                .setItems(choices, (dialog, which) -> {
+                    try {
+                        LauncherAppearance.setAccent(this, which);
+                        buildUi();
+                    } catch (Exception error) {
+                        new AlertDialog.Builder(this)
+                                .setMessage(error.getMessage() == null ? error.toString() : error.getMessage())
+                                .setPositiveButton(UiLanguage.translate(this, "Fechar"), null).show();
+                    }
+                }).show();
+    }
+
+    private void chooseBackground() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try { startActivityForResult(intent, PICK_BACKGROUND); }
+        catch (Exception error) {
+            new AlertDialog.Builder(this).setMessage(error.getMessage() == null
+                    ? error.toString() : error.getMessage())
+                    .setPositiveButton(UiLanguage.translate(this, "Fechar"), null).show();
+        }
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != PICK_BACKGROUND || result != RESULT_OK || data == null
+                || data.getData() == null) return;
+        Uri uri = data.getData();
+        if (appearanceStatus != null) {
+            appearanceStatus.setText(UiLanguage.translate(this, "Importando imagem de fundo…"));
+        }
+        io.execute(() -> {
+            Exception failure = null;
+            try { LauncherAppearance.importBackground(this, uri); }
+            catch (Exception error) { failure = error; }
+            final Exception error = failure;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (error != null) {
+                    new AlertDialog.Builder(this)
+                            .setTitle(UiLanguage.translate(this, "Não foi possível usar a imagem"))
+                            .setMessage(error.getMessage() == null ? error.toString() : error.getMessage())
+                            .setPositiveButton(UiLanguage.translate(this, "Fechar"), null).show();
+                } else {
+                    buildUi();
+                }
+            });
+        });
+    }
+
+    private void clearBackground() {
+        LauncherAppearance.clearBackground(this);
+        buildUi();
     }
 
     private void updateAutoStatus(boolean enabled) {
@@ -128,9 +216,9 @@ public final class SettingsActivity extends Activity {
         b.setMinHeight(0);
         b.setMinimumHeight(0);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(primary ? 0xff5b3fd6 : 0xff2b2641);
+        bg.setColor(primary ? LauncherAppearance.accentColor(this) : 0xff2b2641);
         bg.setCornerRadius(dp(5));
-        bg.setStroke(dp(1), primary ? 0xff8a74ff : 0xff3d3560);
+        bg.setStroke(dp(1), primary ? LauncherAppearance.accentBorderColor(this) : 0xff3d3560);
         b.setBackground(bg);
         b.setOnClickListener(action);
         return b;
