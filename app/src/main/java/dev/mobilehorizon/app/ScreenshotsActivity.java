@@ -220,7 +220,12 @@ public final class ScreenshotsActivity extends Activity {
                 if (raw == null) throw new java.io.IOException("Destino de exportação indisponível.");
                 try (ZipOutputStream zip = new ZipOutputStream(raw)) {
                     byte[] buffer = new byte[32768];
+                    long totalBytes = 0L;
+                    int entryCount = 0;
                     for (File source : files) {
+                        if (++entryCount > 10000) {
+                            throw new java.io.IOException("A galeria contém capturas demais para um único ZIP.");
+                        }
                         File canonical = source.getCanonicalFile();
                         if (!root.equals(canonical.getParentFile())
                                 || java.nio.file.Files.isSymbolicLink(source.toPath())
@@ -235,7 +240,13 @@ public final class ScreenshotsActivity extends Activity {
                         zip.putNextEntry(new ZipEntry(name));
                         try (FileInputStream input = new FileInputStream(source)) {
                             int count;
-                            while ((count = input.read(buffer)) != -1) zip.write(buffer, 0, count);
+                            while ((count = input.read(buffer)) != -1) {
+                                totalBytes += count;
+                                if (totalBytes > 2L * 1024L * 1024L * 1024L) {
+                                    throw new java.io.IOException("A exportação excede o limite de 2 GiB.");
+                                }
+                                zip.write(buffer, 0, count);
+                            }
                         }
                         zip.closeEntry();
                         exported++;
