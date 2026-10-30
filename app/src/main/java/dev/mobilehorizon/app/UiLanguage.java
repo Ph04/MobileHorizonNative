@@ -68,6 +68,12 @@ final class UiLanguage {
         pair("AMBIENTE DO JOGO", "GAME ENVIRONMENT");
         pair("Instâncias", "Instances");
         pair("Perfil: ", "Profile: ");
+        pair("Cada instância mantém seus próprios mundos, opções, logs e pacotes. Os arquivos preparados do Minecraft e o motor Horizon continuam compartilhados para economizar espaço.", "Each instance keeps its own worlds, options, logs and packs. Prepared Minecraft files and the Horizon engine remain shared to save storage.");
+        pair("Perfil padrão preservado", "Default profile preserved");
+        pair("A instância Padrão continua usando a pasta antiga filesDir/horizon. Nenhum mundo, configuração ou pacote existente é movido durante esta migração.", "The Default instance continues using the existing filesDir/horizon folder. No existing world, setting or pack is moved during this migration.");
+        pair("Não foi possível ler o catálogo: ", "Could not read the catalog: ");
+        pair("O nome deve ter de 1 a 24 caracteres.", "The name must be 1 to 24 characters.");
+        pair("O nome contém caracteres não permitidos.", "The name contains invalid characters.");
         pair("Instância ativa: ", "Active instance: ");
         pair("Mundos, opções e pacotes ficam separados neste perfil.", "Worlds, options and packs are isolated in this profile.");
         pair("Não foi possível ler as instâncias: ", "Could not read instances: ");
