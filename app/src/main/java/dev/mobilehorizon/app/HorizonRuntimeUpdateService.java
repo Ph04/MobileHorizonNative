@@ -232,7 +232,7 @@ public final class HorizonRuntimeUpdateService {
             return BuildConfig.HORIZON_TEST_OLD_RUNTIME
                     ? BuildConfig.HORIZON_PC_RELEASE_TAG : "runtime Android ainda não instalada";
         }
-        return tag;
+        return OFFICIAL_NIGHTLY_TAG.equals(tag) ? "Nightly" : tag;
     }
 
     /** Last official Horizon release successfully checked against upstream GitHub. */
@@ -243,7 +243,8 @@ public final class HorizonRuntimeUpdateService {
         if (tag == null || tag.trim().isEmpty()) {
             return "Último release oficial verificado: ainda não consultado";
         }
-        return "Último release oficial verificado: " + tag;
+        return "Último release oficial verificado: "
+                + (OFFICIAL_NIGHTLY_TAG.equals(tag) ? "Nightly" : tag);
     }
 
     private static void checkAndInstall(Context context, SharedPreferences preferences) throws Exception {
