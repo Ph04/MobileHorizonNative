@@ -25,6 +25,7 @@ public final class SettingsActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        LauncherNetworkSettings.initialize(this);
         getWindow().setStatusBarColor(0xff090911);
         getWindow().setNavigationBarColor(0xff090911);
         buildUi();
