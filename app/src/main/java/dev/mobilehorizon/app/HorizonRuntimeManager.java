@@ -400,7 +400,7 @@ public final class HorizonRuntimeManager {
         File temporary = new File(versionDirectory, "runtime.json.partial");
         File target = new File(versionDirectory, "runtime.json");
         try (FileOutputStream output = new FileOutputStream(temporary, false)) {
-            output.write((json.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
+            output.write((json.toString() + "\n").getBytes(StandardCharsets.UTF_8));
             output.flush();
             output.getFD().sync();
         }
