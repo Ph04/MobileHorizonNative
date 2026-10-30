@@ -251,6 +251,8 @@ public final class MainActivity extends Activity {
         super.onResume();
         refreshRuntimeUpdateStatus();
         refreshInstanceSummary();
+        refreshOfflineUi();
+        refreshAccountUi();
         HorizonRuntimeUpdateService.checkInBackground(this, () -> {
             refreshRuntimeUpdateStatus();
             updateActionEnablement();
