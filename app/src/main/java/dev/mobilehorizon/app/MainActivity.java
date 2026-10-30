@@ -100,6 +100,7 @@ public final class MainActivity extends Activity {
     private Typeface monoTypeface = Typeface.MONOSPACE;
     private View downloadSectionView;
     private View resourcesSectionView;
+    private View accountSectionView;
     private View logsSectionView;
     private View runtimeUpdateSectionView;
     private ProgressBar progressBar;
@@ -676,8 +677,9 @@ public final class MainActivity extends Activity {
         addSpaced(resourcesSection, importFolderButton, 44, 6);
         addSpaced(resourcesSection, importZipButton, 44, 6);
 
-        LinearLayout accountSection = collapsibleSection(page, "Contas",
+        accountSectionView = collapsibleSection(page, "Contas",
                 "Conta Microsoft opcional; o perfil offline continua disponível.", false);
+        LinearLayout accountSection = (LinearLayout) accountSectionView;
         accountStatusText = text("Nenhuma conta verificada neste dispositivo.", 13, 0xffb9b3d1, false);
         accountSection.addView(accountStatusText, params(-1, -2));
         TextView accountNote = text(
@@ -796,7 +798,7 @@ public final class MainActivity extends Activity {
         sidebar.setOrientation(LinearLayout.VERTICAL);
         sidebar.setPadding(dp(10), dp(14), dp(10), dp(14));
         sidebar.setBackgroundColor(0xff0b0a11);
-        sidebar.addView(text("INSTÂNCIAS", 10, 0xff8b82aa, true), params(-1, -2));
+        sidebar.addView(text("AMBIENTE DO JOGO", 10, 0xff8b82aa, true), params(-1, -2));
 
         LinearLayout instance = new LinearLayout(this);
         instance.setOrientation(LinearLayout.HORIZONTAL);
@@ -821,17 +823,17 @@ public final class MainActivity extends Activity {
         instanceTextParams.setMargins(dp(7), 0, 0, 0);
         instance.addView(instanceText, instanceTextParams);
         instanceText.addView(text("Horizon", 12, 0xfff0ecff, true), params(-1, -2));
-        instanceText.addView(text("Vanilla • READY", 9, 0xffb8a9d8, false), params(-1, -2));
+        instanceText.addView(text("Minecraft Java • 26.3", 9, 0xffb8a9d8, false), params(-1, -2));
 
         TextView navigationTitle = text("NAVEGAÇÃO", 10, 0xff8b82aa, true);
         LinearLayout.LayoutParams navTitleParams = params(-1, -2);
         navTitleParams.topMargin = dp(24);
         sidebar.addView(navigationTitle, navTitleParams);
         addSpaced(sidebar, button("Início", true, v -> scrollToSection(heroPanel)), 40, 8);
-        addSpaced(sidebar, button("Downloads", false, v -> scrollToSection(downloadSectionView)), 40, 5);
-        addSpaced(sidebar, button("Recursos", false, v -> scrollToSection(resourcesSectionView)), 40, 5);
-        addSpaced(sidebar, button("Logs", false, v -> scrollToSection(logsSectionView)), 40, 5);
-        addSpaced(sidebar, button("Atualizações", false, v -> scrollToSection(runtimeUpdateSectionView)), 40, 5);
+        addSpaced(sidebar, button("Instalar", false, v -> scrollToSection(downloadSectionView)), 40, 5);
+        addSpaced(sidebar, button("Biblioteca", false, v -> scrollToSection(resourcesSectionView)), 40, 5);
+        addSpaced(sidebar, button("Conta", false, v -> scrollToSection(accountSectionView)), 40, 5);
+        addSpaced(sidebar, button("Sistema", false, v -> scrollToSection(logsSectionView)), 40, 5);
 
         View spacer = new View(this);
         sidebar.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1f));
@@ -853,16 +855,19 @@ public final class MainActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         mobileNavigation.addView(row, params(-1, 55));
 
-        String[] labels = {"Início", "Downloads", "Recursos", "Logs", "Atualizações"};
+        // Top-level destinations are grouped by player task, not by implementation detail.
+        // The Horizon runtime card lives on Home; it does not need a separate navigation tab.
+        String[] labels = {"Início", "Instalar", "Biblioteca", "Conta", "Sistema"};
         View[] targets = {heroPanel, downloadSectionView, resourcesSectionView,
-                logsSectionView, runtimeUpdateSectionView};
+                accountSectionView, logsSectionView};
         mobileNavigationItems = new TextView[labels.length];
         for (int i = 0; i < labels.length; i++) {
             final View target = targets[i];
-            TextView item = text(labels[i], 10, 0xffa29cb8, true);
+            TextView item = text(labels[i], 9, 0xffa29cb8, true);
             item.setTypeface(buttonTypeface);
             item.setGravity(Gravity.CENTER);
             item.setSingleLine(true);
+            item.setEllipsize(android.text.TextUtils.TruncateAt.END);
             item.setPadding(dp(1), 0, dp(1), 0);
             item.setFocusable(true);
             item.setClickable(true);
@@ -875,11 +880,11 @@ public final class MainActivity extends Activity {
 
     private void updateMobileNavigation(View target) {
         if (mobileNavigationItems == null) return;
-        String selected = "Início";
-        if (target == downloadSectionView) selected = "Downloads";
-        else if (target == resourcesSectionView) selected = "Recursos";
-        else if (target == logsSectionView) selected = "Logs";
-        else if (target == runtimeUpdateSectionView) selected = "Atualizações";
+        String selected = UiLanguage.translate(this, "Início");
+        if (target == downloadSectionView) selected = UiLanguage.translate(this, "Instalar");
+        else if (target == resourcesSectionView) selected = UiLanguage.translate(this, "Biblioteca");
+        else if (target == accountSectionView) selected = UiLanguage.translate(this, "Conta");
+        else if (target == logsSectionView) selected = UiLanguage.translate(this, "Sistema");
         for (TextView item : mobileNavigationItems) {
             boolean active = selected.contentEquals(item.getText());
             if (active) {
