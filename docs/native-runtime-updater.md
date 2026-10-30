@@ -9,9 +9,12 @@ A downloaded engine is intended to use the same manifest fields:
 ```json
 {
   "format": 1,
-  "version": "horizon-<unique-build-id>",
-  "commit": "<upstream-commit-sha>",
-  "library": "libhorizon_engine.so",
+  "version": "horizon-nightly-c<commit8>-o<overlay8>",
+  "upstream_tag": "nightly",
+  "upstream_commit": "<40-character upstream commit SHA>",
+  "overlay": "<8-character Android overlay fingerprint>",
+  "abi": "arm64-v8a",
+  "library": "horizon-runtime-arm64-v8a.so",
   "sha256": "<64 lowercase hexadecimal characters>"
 }
 ```
