@@ -57,6 +57,7 @@ public final class SettingsActivity extends Activity {
         preferences.addView(text("Preferências", 16, 0xfff0ecff, true), lp(-1, -2));
         preferences.addView(text("Idioma da interface", 13, 0xffb9b3d1, true), top(-1, -2, 9));
         preferences.addView(button("Alternar português / inglês", true, v -> UiLanguage.toggle(this)), top(-1, 50, 5));
+        page.addView(preferences, top(-1, -2, 12));
 
         LinearLayout appearance = card();
         appearance.addView(text("Aparência do launcher", 16, 0xfff0ecff, true), lp(-1, -2));
