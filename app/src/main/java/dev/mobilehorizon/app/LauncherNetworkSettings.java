@@ -78,7 +78,8 @@ final class LauncherNetworkSettings {
                 InetSocketAddress.createUnresolved(host, uri.getPort())));
     }
 
-    static void applyToNativeProcess(Context context) throws android.system.ErrnoException {
+    static void applyToNativeProcess(Context context)
+            throws IOException, android.system.ErrnoException {
         String configured = configuredProxy(context);
         android.system.Os.setenv("NO_PROXY", "localhost,127.0.0.1,::1", true);
         android.system.Os.setenv("no_proxy", "localhost,127.0.0.1,::1", true);
