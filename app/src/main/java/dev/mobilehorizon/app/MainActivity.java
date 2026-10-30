@@ -664,6 +664,7 @@ public final class MainActivity extends Activity {
         heroBrand.addView(heroDescription, heroDescriptionParams);
 
         offlinePlayButton = button("▶  Jogar", true, v -> openOfflineClient());
+        LauncherButtonStyle.keepOriginalSize(offlinePlayButton);
         offlinePlayButton.setTextSize(17);
         int heroPlayWidth = landscape ? 156
                 : (getResources().getConfiguration().screenWidthDp < 360 ? 110 : 124);
@@ -838,6 +839,7 @@ public final class MainActivity extends Activity {
             root.addView(buildMobileNavigation(), params(-1, 58));
         }
         setContentView(root);
+        LauncherButtonStyle.install(this);
         selectTab(0);
         applyDashboardWindowInsets(root);
     }

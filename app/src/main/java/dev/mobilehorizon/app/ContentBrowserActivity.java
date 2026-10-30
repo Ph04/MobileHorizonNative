@@ -64,6 +64,7 @@ public final class ContentBrowserActivity extends Activity {
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(0xff090911);
         LinearLayout page = new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(dp(14), dp(16), dp(14), dp(24)); scroll.addView(page); setContentView(scroll);
+        LauncherButtonStyle.install(this);
         page.addView(text("MOBILEHORIZON  /  CONTEÚDO", 11, 0xff9e88ff, true), lp(-1, -2));
         page.addView(text("Explorar conteúdo", 25, 0xfff0ecff, true), top(-1, -2, 4));
         page.addView(text("Catálogo Modrinth para Minecraft 26.3. Instalação segura de pacotes de recursos e shaders; modpacks somente sem mods/carregadores.", 12, 0xffb9b3d1, false), top(-1, -2, 5));

@@ -51,6 +51,7 @@ public final class ConsoleActivity extends Activity {
 
     private void buildUi(){
         LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);page.setPadding(dp(14),dp(16),dp(14),dp(16));page.setBackgroundColor(0xff090911);setContentView(page);
+        LauncherButtonStyle.install(this);
         page.addView(text("MOBILEHORIZON  /  SISTEMA",11,0xff9e88ff,true),lp(-1,-2));
         page.addView(text("Console e logs",25,0xfff0ecff,true),top(-1,-2,4));
         page.addView(text("Acompanhe logs do cliente da instância ativa. Atualização automática a cada poucos segundos.",12,0xffb9b3d1,false),top(-1,-2,5));

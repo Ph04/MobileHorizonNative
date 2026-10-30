@@ -61,6 +61,7 @@ public final class InstancesActivity extends Activity {
         page.setPadding(dp(16), dp(18), dp(16), dp(28));
         scroll.addView(page);
         setContentView(scroll);
+        LauncherButtonStyle.install(this);
 
         page.addView(text("MOBILEHORIZON  /  INSTÂNCIAS", 11, 0xff9e88ff, true),
                 params(-1, -2));

@@ -68,6 +68,7 @@ public final class InstalledPacksActivity extends Activity {
         page.setPadding(dp(16), dp(18), dp(16), dp(26));
         scroll.addView(page);
         setContentView(scroll);
+        LauncherButtonStyle.install(this);
 
         page.addView(text("MOBILEHORIZON  /  PACOTES", 11, 0xff9e88ff, true), lp(-1, -2));
         page.addView(text("Pacotes instalados", 26, 0xfff0ecff, true), top(-1, -2, 5));
