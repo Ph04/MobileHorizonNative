@@ -71,6 +71,7 @@ public final class TouchControlsEditorActivity extends Activity {
         root.addView(hint, hintParams);
 
         setContentView(root);
+        LauncherButtonStyle.install(this);
     }
 
     private GradientDrawable makePill(int color) {
