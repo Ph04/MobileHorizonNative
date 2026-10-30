@@ -186,7 +186,7 @@ public final class RuntimeVersionsActivity extends Activity {
         pinButton.setEnabled(!item.version.equals(pin) && !busy);
         actions.addView(pinButton, new LinearLayout.LayoutParams(0, dp(40), 1f));
         Button defaultButton = button("Usar como padrão", false,
-                v -> setDefault(item.version));
+                v -> installAsDefault(item.version));
         LinearLayout.LayoutParams defaultParams = new LinearLayout.LayoutParams(0, dp(40), 1f);
         defaultParams.leftMargin = dp(6);
         defaultButton.setEnabled(!item.version.equals(automatic) && !busy);
