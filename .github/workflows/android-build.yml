@@ -459,7 +459,7 @@ jobs:
           echo "$APK signer certificate SHA-256: $CERT_SHA256"
           test -s "$RUNNER_TEMP/horizon-runtime-stage/libhorizon_engine.so"
           test -s "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
-          if [[ "$GITHUB_REF" == "refs/heads/feature/fabric-java-bridge-test" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/feature/fabric-java-bridge-test" || "${GITHUB_BASE_REF:-}" == "feature/fabric-java-bridge-test" ]]; then
             grep -Fq "upstream_repository" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
             grep -Fq "fabric_loader_version" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
           else
