@@ -178,6 +178,11 @@ public final class NativeGameActivity extends NativeActivity {
                     throw new java.io.IOException("A preparação dos mods não corresponde ao que o Java Bridge consegue ler: "
                             + modCount + " link(s) preparados, " + visibleJars + " JAR(s) acessíveis em mods-java.");
                 }
+                if (visibleJars == 0) {
+                    android.util.Log.w("MobileHorizon",
+                            "Java Bridge By:iaxivers: nenhum JAR ativo em mods-java; o Horizon upstream "
+                                    + "vai pular a inicialização do JVM/Fabric até existir ao menos um mod ativo.");
+                }
                 JdkRuntimeInstaller.RuntimePaths javaRuntime =
                         JdkRuntimeInstaller.getInstalledIfReady(this);
                 if (javaRuntime == null) {
