@@ -270,7 +270,6 @@ final class NativeTouchControlsView extends View {
         }
         floatingMenuX = clamp(prefs.getFloat(KEY_FLOAT_MENU_X, 0.52f), 0.04f, 0.96f);
         floatingMenuY = clamp(prefs.getFloat(KEY_FLOAT_MENU_Y, 0.14f), 0.06f, 0.94f);
-        gameplayMode = gameActivity != null && gameActivity.isGameplayMode();
         if (previewOnly) {
             controlsVisible = true;
             editingControls = true;
@@ -318,7 +317,6 @@ final class NativeTouchControlsView extends View {
     /** High-contrast virtual cursor, hidden whenever Minecraft currently captures the native cursor. */
     private void drawMouseCursor(Canvas canvas) {
         if (previewOnly || getWidth() <= 0 || getHeight() <= 0 || !cursorInitialized) return;
-        if (gameActivity != null) gameplayMode = gameActivity.isGameplayMode();
         if (gameplayMode && !editingControls) return;
         float size = dp(24);
         float x = clamp(virtualMouseX, dp(3), Math.max(dp(3), getWidth() - size - dp(2)));
