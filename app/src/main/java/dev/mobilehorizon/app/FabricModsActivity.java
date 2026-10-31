@@ -99,6 +99,9 @@ public final class FabricModsActivity extends Activity {
         page.addView(back, topParams(-1, 42, 12));
         importButton = button("＋  Importar mods .jar", true, 52, v -> openPicker());
         page.addView(importButton, topParams(-1, 52, 8));
+        Button diagnosticsButton = button("Ver diagnóstico de inicialização", false, 42,
+                v -> showStartupLog());
+        page.addView(diagnosticsButton, topParams(-1, 42, 7));
 
         progress = new ProgressBar(this);
         progress.setIndeterminate(true);
@@ -137,6 +140,61 @@ public final class FabricModsActivity extends Activity {
                 "Nem todo mod Fabric funciona neste bridge. Mods que exigem renderizadores próprios, APIs não mapeadas ou mixins fora da cobertura podem falhar. Importe apenas arquivos de fontes confiáveis.",
                 12, 0xffc7bce6, false), topParams(-1, -2, 5));
         page.addView(warning, topParams(-1, -2, 9));
+    }
+
+    private void showStartupLog() {
+        File logFile = new File(getFilesDir(), "logs/java-bridge-startup.log");
+        if (!logFile.isFile()) {
+            new AlertDialog.Builder(this)
+                    .setTitle(UiLanguage.translate(this, "Diagnóstico do Java Bridge"))
+                    .setMessage(UiLanguage.translate(this,
+                            "Ainda não existe um log. Inicie o jogo usando esta instância Java Bridge para registrar a próxima inicialização."))
+                    .setPositiveButton(UiLanguage.translate(this, "Fechar"), null)
+                    .show();
+            return;
+        }
+
+        final String contents;
+        try (java.io.RandomAccessFile input = new java.io.RandomAccessFile(logFile, "r")) {
+            long length = input.length();
+            long offset = Math.max(0, length - 256L * 1024L);
+            input.seek(offset);
+            byte[] bytes = new byte[(int) (length - offset)];
+            input.readFully(bytes);
+            String prefix = offset > 0 ? "[Exibindo os 256 KiB finais do arquivo]\n" : "";
+            contents = prefix + new String(bytes, StandardCharsets.UTF_8);
+        } catch (Exception error) {
+            new AlertDialog.Builder(this)
+                    .setTitle(UiLanguage.translate(this, "Falha ao ler o diagnóstico"))
+                    .setMessage(safeMessage(error))
+                    .setPositiveButton(UiLanguage.translate(this, "Fechar"), null)
+                    .show();
+            return;
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        TextView body = text(contents, 11, 0xffd8d2eb, false);
+        body.setTypeface(android.graphics.Typeface.MONOSPACE);
+        body.setTextIsSelectable(true);
+        body.setPadding(dp(12), dp(10), dp(12), dp(10));
+        scroll.addView(body);
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this, "Diagnóstico do Java Bridge"))
+                .setView(scroll)
+                .setPositiveButton(UiLanguage.translate(this, "Copiar log"), (dialog, which) -> {
+                    android.content.ClipboardManager clipboard =
+                            (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(ClipData.newPlainText(
+                                "MobileHorizon Java Bridge diagnostic", contents));
+                        android.widget.Toast.makeText(this,
+                                UiLanguage.translate(this, "Log copiado."),
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton(UiLanguage.translate(this, "Fechar"), null)
+                .show();
     }
 
     private void openPicker() {
