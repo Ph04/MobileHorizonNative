@@ -1230,151 +1230,49 @@ final class NativeTouchControlsView extends View {
 
     /** Open the movable text panel; Android's IME is hosted by a separate, non-focusable panel. */
     private void showKeyboardDialog() {
-        if (previewOnly || gameActivity == null) return;
-        if (activeKeyboardPanel != null && activeKeyboardPanel.isShowing()) activeKeyboardPanel.dismiss();
+        EditText input = new EditText(activity);
+        input.setSingleLine(true);
+        input.setHint("Texto para o campo selecionado ou mensagem");
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
 
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dpInt(14), dpInt(12), dpInt(14), dpInt(12));
-        GradientDrawable surface = new GradientDrawable();
-        surface.setColor(0xff151321);
-        surface.setCornerRadius(dp(16));
-        surface.setStroke(dpInt(1), 0xff51466f);
-        panel.setBackground(surface);
-        panel.setElevation(dp(12));
+        panel.setPadding((int) dp(20), (int) dp(8), (int) dp(20), (int) dp(4));
+        panel.addView(input, new LinearLayout.LayoutParams(-1, -2));
 
-        LinearLayout header = new LinearLayout(activity);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = new TextView(activity);
-        title.setText(UiLanguage.translate(activity, "Painel de teclado"));
-        title.setTextColor(0xfff4f0ff);
-        title.setTextSize(16);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        header.addView(title, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
-        TextView close = new TextView(activity);
-        close.setText("×");
-        close.setTextColor(0xfff0eaff);
-        close.setTextSize(24);
-        close.setGravity(Gravity.CENTER);
-        close.setContentDescription(UiLanguage.translate(activity, "Fechar painel de teclado"));
-        header.addView(close, new LinearLayout.LayoutParams(dpInt(38), dpInt(38)));
-        panel.addView(header, new LinearLayout.LayoutParams(-1, dpInt(40)));
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle("Teclado do Minecraft")
+                .setView(panel)
+                .setNegativeButton("Cancelar", (d, which) -> { })
+                .setPositiveButton("Aplicar / enviar", (d, which) -> {
+                    if (gameActivity != null) gameActivity.injectKeyboardText(input.getText().toString());
+                })
+                .create();
 
-        TextView hint = new TextView(activity);
-        hint.setText(UiLanguage.translate(activity,
-                "Digite sua mensagem ou comando e envie pelo teclado do Android."));
-        hint.setTextColor(0xffb8b1cf);
-        hint.setTextSize(12);
-        hint.setLineSpacing(dp(2), 1f);
-        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(-1, -2);
-        hintParams.topMargin = dpInt(5);
-        panel.addView(hint, hintParams);
-
-        EditText input = new EditText(activity);
-        input.setSingleLine(true);
-        input.setHint(UiLanguage.translate(activity, "Mensagem, comando ou texto…"));
-        input.setTextSize(15);
-        input.setTextColor(0xfff5f1ff);
-        input.setHintTextColor(0xff918aa9);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEND
-                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-        input.setPadding(dpInt(12), dpInt(10), dpInt(12), dpInt(10));
-        GradientDrawable inputBackground = new GradientDrawable();
-        inputBackground.setColor(0xff1c192b);
-        inputBackground.setCornerRadius(dp(10));
-        inputBackground.setStroke(dpInt(1), 0xff51466f);
-        input.setBackground(inputBackground);
-        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(-1, -2);
-        inputParams.topMargin = dpInt(10);
-        panel.addView(input, inputParams);
-
-        LinearLayout actions = new LinearLayout(activity);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams actionsParams = new LinearLayout.LayoutParams(-1, dpInt(40));
-        actionsParams.topMargin = dpInt(10);
-        TextView cancel = new TextView(activity);
-        cancel.setText(UiLanguage.translate(activity, "Fechar"));
-        cancel.setTextColor(0xffe5dfff);
-        cancel.setTextSize(13);
-        cancel.setGravity(Gravity.CENTER);
-        GradientDrawable cancelBg = new GradientDrawable();
-        cancelBg.setColor(0xff242035);
-        cancelBg.setCornerRadius(dp(9));
-        cancelBg.setStroke(dpInt(1), 0xff51466f);
-        cancel.setBackground(cancelBg);
-        actions.addView(cancel, new LinearLayout.LayoutParams(0, -1, 1f));
-
-        TextView send = new TextView(activity);
-        send.setText(UiLanguage.translate(activity, "Enviar"));
-        send.setTextColor(Color.WHITE);
-        send.setTextSize(13);
-        send.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        send.setGravity(Gravity.CENTER);
-        GradientDrawable sendBg = new GradientDrawable();
-        sendBg.setColor(LauncherAppearance.accentColor(activity));
-        sendBg.setCornerRadius(dp(9));
-        sendBg.setStroke(dpInt(1), LauncherAppearance.accentBorderColor(activity));
-        send.setBackground(sendBg);
-        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(0, -1, 1f);
-        sendParams.leftMargin = dpInt(8);
-        actions.addView(send, sendParams);
-        panel.addView(actions, actionsParams);
-
-        int width = Math.min(dpInt(340), Math.max(dpInt(240),
-                activity.getResources().getDisplayMetrics().widthPixels - dpInt(24)));
-        final PopupWindow popup = new PopupWindow(panel, width,
-                ViewGroup.LayoutParams.WRAP_CONTENT, true);
-        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-        popup.setFocusable(true);
-        popup.setTouchable(true);
-        popup.setOutsideTouchable(true);
-        popup.setClippingEnabled(true);
-        popup.setElevation(dpInt(10));
-        popup.setInputMethodMode(PopupWindow.INPUT_METHOD_NEEDED);
-        popup.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        panel.setAlpha(LauncherAppearance.panelOpacity(activity));
-        activeKeyboardPanel = popup;
-        popup.setOnDismissListener(() -> {
-            if (activeKeyboardPanel == popup) activeKeyboardPanel = null;
-        });
-
-        Runnable dismiss = () -> {
-            InputMethodManager manager = (InputMethodManager)
-                    activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (manager != null) manager.hideSoftInputFromWindow(input.getWindowToken(), 0);
-            if (popup.isShowing()) popup.dismiss();
-        };
-        Runnable submit = () -> {
-            String value = input.getText() == null ? "" : input.getText().toString();
-            if (!value.isEmpty()) gameActivity.injectKeyboardText(value);
-            dismiss.run();
-        };
-        cancel.setOnClickListener(v -> dismiss.run());
-        close.setOnClickListener(v -> dismiss.run());
-        send.setOnClickListener(v -> submit.run());
         input.setOnEditorActionListener((view, actionId, event) -> {
-            boolean enterKey = event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+            boolean enterKey = event != null
+                    && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
                     && event.getAction() == KeyEvent.ACTION_UP;
-            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
-                    || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || enterKey) {
-                submit.run();
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+                    || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+                    || enterKey) {
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
                 return true;
             }
             return false;
         });
-        showDraggablePanel(popup, header, KEY_KEYBOARD_PANEL_X, KEY_KEYBOARD_PANEL_Y,
-                0.5f, 0.42f);
-        input.requestFocus();
-        input.postDelayed(() -> {
-            InputMethodManager manager = (InputMethodManager)
-                    activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (manager != null && popup.isShowing()) {
-                manager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
-            }
-        }, 140);
+
+        dialog.setOnShowListener(ignored -> {
+            input.requestFocus();
+            input.postDelayed(() -> {
+                InputMethodManager manager = (InputMethodManager)
+                        activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (manager != null) manager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+            }, 120);
+        });
+        dialog.show();
     }
 
     private void showAddButtonDialog() {
@@ -1579,165 +1477,44 @@ final class NativeTouchControlsView extends View {
 
     private void showGameControlMenu() {
         if (gameActivity == null || previewOnly) return;
-        dismissGameControlMenu();
-
-        LinearLayout panel = new LinearLayout(activity);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dpInt(14), dpInt(14), dpInt(14), dpInt(12));
-        GradientDrawable panelBackground = new GradientDrawable();
-        panelBackground.setColor(panelSurfaceColor(0xff121a29));
-        panelBackground.setCornerRadius(dp(20));
-        panelBackground.setStroke(dpInt(1), panelSurfaceColor(0xff433969));
-        panel.setBackground(panelBackground);
-        panel.setElevation(dp(12));
-        panel.setFocusable(false);
-        panel.setFocusableInTouchMode(false);
-        panel.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
-
-        LinearLayout header = new LinearLayout(activity);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView logo = new TextView(activity);
-        logo.setText("MH");
-        logo.setTextColor(Color.WHITE);
-        logo.setTextSize(15);
-        logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        logo.setGravity(Gravity.CENTER);
-        GradientDrawable logoBackground = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR, new int[] {0xff8b6cff, 0xff6045d8});
-        logoBackground.setCornerRadius(dp(13));
-        logo.setBackground(logoBackground);
-        header.addView(logo, new LinearLayout.LayoutParams(dpInt(44), dpInt(44)));
-
-        LinearLayout brand = new LinearLayout(activity);
-        brand.setOrientation(LinearLayout.VERTICAL);
-        brand.setGravity(Gravity.CENTER_VERTICAL);
-        TextView brandName = new TextView(activity);
-        brandName.setText("MOBILEHORIZON");
-        brandName.setTextColor(0xffb9adff);
-        brandName.setTextSize(10);
-        brandName.setLetterSpacing(0.08f);
-        brandName.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        TextView menuTitle = new TextView(activity);
-        menuTitle.setText(UiLanguage.translate(activity, "Menu do jogo"));
-        menuTitle.setTextColor(0xfff6f7ff);
-        menuTitle.setTextSize(18);
-        menuTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        brand.addView(brandName, new LinearLayout.LayoutParams(-1, -2));
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
-        titleParams.topMargin = dpInt(2);
-        brand.addView(menuTitle, titleParams);
-        LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(0, -2, 1f);
-        brandParams.leftMargin = dpInt(11);
-        header.addView(brand, brandParams);
-
-        TextView close = new TextView(activity);
-        close.setText("×");
-        close.setTextSize(25);
-        close.setTextColor(0xffd8deed);
-        close.setGravity(Gravity.CENTER);
-        GradientDrawable closeBackground = new GradientDrawable();
-        closeBackground.setColor(0xff263148);
-        closeBackground.setCornerRadius(dp(12));
-        close.setBackground(closeBackground);
-        close.setContentDescription(UiLanguage.translate(activity, "Fechar menu"));
-        close.setOnClickListener(v -> dismissGameControlMenu());
-        header.addView(close, new LinearLayout.LayoutParams(dpInt(38), dpInt(38)));
-        panel.addView(header, new LinearLayout.LayoutParams(-1, dpInt(46)));
-
-        View divider = new View(activity);
-        divider.setBackgroundColor(0xff2a3449);
-        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dpInt(1));
-        dividerParams.topMargin = dpInt(13);
-        dividerParams.bottomMargin = dpInt(11);
-        panel.addView(divider, dividerParams);
-
-        TextView sessionState = new TextView(activity);
-        sessionState.setText(UiLanguage.translate(activity,
-                controlsVisible ? "●  CONTROLES ATIVOS" : "○  CONTROLES OCULTOS"));
-        sessionState.setTextColor(controlsVisible ? 0xff8be0bb : 0xffa8b2c7);
-        sessionState.setTextSize(10);
-        sessionState.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        sessionState.setPadding(dpInt(11), dpInt(8), dpInt(11), dpInt(8));
-        GradientDrawable stateBackground = new GradientDrawable();
-        stateBackground.setColor(controlsVisible ? 0xff17352f : 0xff252d3e);
-        stateBackground.setCornerRadius(dp(10));
-        sessionState.setBackground(stateBackground);
-        panel.addView(sessionState, new LinearLayout.LayoutParams(-1, -2));
-
-        LinearLayout menuItems = new LinearLayout(activity);
-        menuItems.setOrientation(LinearLayout.VERTICAL);
-        ScrollView scroller = new ScrollView(activity);
-        scroller.setFillViewport(false);
-        scroller.setVerticalScrollBarEnabled(false);
-        scroller.setClipToPadding(false);
-        scroller.addView(menuItems, new ScrollView.LayoutParams(-1, -2));
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, dpInt(230));
-        scrollParams.topMargin = dpInt(12);
-        scrollParams.bottomMargin = dpInt(9);
-        panel.addView(scroller, scrollParams);
-        LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(-1, -2);
-        itemParams.bottomMargin = dpInt(8);
-
-        menuItems.addView(createGameMenuItem("✥", "Personalizar layout",
-                "Mover, redimensionar e configurar os botões", false, () -> {
-                    controlsVisible = true;
-                    editingControls = true;
-                    snapGuideX = Float.NaN;
-                    snapGuideY = Float.NaN;
-                    Toast.makeText(activity,
-                            UiLanguage.translate(activity, "Arraste os controles; toque em um para configurar. ✓ salva."),
-                            Toast.LENGTH_LONG).show();
-                    invalidate();
-                }), new LinearLayout.LayoutParams(itemParams));
-        menuItems.addView(createGameMenuItem("⚙", "Ajustes dos controles",
-                "Sensibilidade, opacidade e preferências", false, this::showGlobalSettingsDialog),
-                new LinearLayout.LayoutParams(itemParams));
-        menuItems.addView(createGameMenuItem(controlsVisible ? "◉" : "○",
+        String[] items = new String[] {
+                "Personalizar layout",
+                "Ajustes gerais dos controles",
                 controlsVisible ? "Ocultar controles" : "Mostrar controles",
-                controlsVisible ? "Deixar a tela do jogo mais livre" : "Exibir os botões de toque",
-                false, () -> {
-                    controlsVisible = !controlsVisible;
-                    if (!controlsVisible) {
-                        editingControls = false;
-                        releaseHeldControls();
+                "Fechar jogo"
+        };
+        new AlertDialog.Builder(gameActivity)
+                .setTitle("Configurações do jogo")
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) {
+                        controlsVisible = true;
+                        editingControls = true;
+                        snapGuideX = Float.NaN;
+                        snapGuideY = Float.NaN;
+                        Toast.makeText(activity, "Arraste os controles; toque em um para configurar. ✓ salva.", Toast.LENGTH_LONG).show();
+                        invalidate();
+                    } else if (which == 1) {
+                        showGlobalSettingsDialog();
+                    } else if (which == 2) {
+                        controlsVisible = !controlsVisible;
+                        if (!controlsVisible) {
+                            editingControls = false;
+                            releaseHeldControls();
+                        }
+                        invalidate();
+                    } else if (which == 3) {
+                        new AlertDialog.Builder(gameActivity)
+                                .setTitle("Fechar o jogo?")
+                                .setMessage("Você voltará à tela inicial do MobileHorizon.")
+                                .setNegativeButton("Cancelar", (d, w) -> { })
+                                .setPositiveButton("Fechar jogo", (d, w) -> {
+                                    releaseAllInputs();
+                                    gameActivity.finish();
+                                })
+                                .show();
                     }
-                    invalidate();
-                }), new LinearLayout.LayoutParams(itemParams));
-        menuItems.addView(createGameMenuItem("↩", "Fechar jogo",
-                "Encerrar a sessão e voltar à tela inicial", true, () ->
-                    new AlertDialog.Builder(gameActivity)
-                            .setTitle(UiLanguage.translate(activity, "Fechar o jogo?"))
-                            .setMessage(UiLanguage.translate(activity, "Você voltará à tela inicial do MobileHorizon."))
-                            .setNegativeButton(UiLanguage.translate(activity, "Cancelar"), (d, w) -> { })
-                            .setPositiveButton(UiLanguage.translate(activity, "Fechar jogo"), (d, w) -> {
-                                releaseAllInputs();
-                                gameActivity.finish();
-                            }).show()), new LinearLayout.LayoutParams(itemParams));
-
-        TextView dragHint = new TextView(activity);
-        dragHint.setText(UiLanguage.translate(activity, "Arraste o cabeçalho para mover o painel"));
-        dragHint.setTextColor(0xff7885a0);
-        dragHint.setTextSize(9);
-        dragHint.setGravity(Gravity.CENTER);
-        panel.addView(dragHint, new LinearLayout.LayoutParams(-1, dpInt(18)));
-
-        int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-        int width = Math.min(dpInt(390), Math.max(dpInt(250), screenWidth - dpInt(24)));
-        final PopupWindow menu = new PopupWindow(panel, width,
-                ViewGroup.LayoutParams.WRAP_CONTENT, false);
-        menu.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-        menu.setTouchable(true);
-        menu.setFocusable(false);
-        menu.setOutsideTouchable(true);
-        menu.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
-        menu.setClippingEnabled(true);
-        menu.setElevation(dpInt(12));
-        activeGameMenu = menu;
-        menu.setOnDismissListener(() -> {
-            if (activeGameMenu == menu) activeGameMenu = null;
-        });
-        showDraggablePanel(menu, header, KEY_MENU_PANEL_X, KEY_MENU_PANEL_Y, 0.04f, 0.16f);
+                })
+                .show();
     }
 
     private void showDraggablePanel(PopupWindow popup, View handle,
