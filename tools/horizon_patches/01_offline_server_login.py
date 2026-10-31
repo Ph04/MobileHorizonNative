@@ -3,25 +3,19 @@
 # to the default runtime while they are being developed separately.
 replace_once(net,
     'pub const NOT_SIGNED_IN: &str = "This server is in online mode. Sign in with your Microsoft account in the Horizon launcher to join it.";',
-    'pub const NOT_SIGNED_IN: &str = "This server is in online mode and requires official Microsoft/Minecraft authentication. Sign in with a verified account to join it.";',
+    'pub const NOT_SIGNED_IN: &str = "This server requires Microsoft/Minecraft authentication for online-mode login. Sign in with a verified account to join it.";',
 )
 
-replace_once(net,
-    """                if hello.should_authenticate {
-                    let account = auth.ok_or_else(|| NOT_SIGNED_IN.to_owned())?;
-                    let hash = server_hash(&hello.server_id, &secret, &hello.public_key);
-                    if let Err(err) = crate::auth::join_server(account, &hash) {
-                        let reason = match err.reason() {
-                            Ok(key) => tr(lang, key),
-                            Err(message) => message.to_owned(),
-                        };
-                        return Err(plain(
-                            &translatable("disconnect.loginFailedInfo", &[&reason]),
-                            lang,
-                        ));
-                    }
-                }""",
-    """                if hello.should_authenticate {
+net_source = net.read_text(encoding="utf-8")
+auth_start_marker = "                if hello.should_authenticate {"
+auth_end_marker = "\n                status(send, &tr(lang, \"connect.encrypting\"));"
+auth_start = net_source.find(auth_start_marker)
+auth_end = net_source.find(auth_end_marker, auth_start + len(auth_start_marker))
+if auth_start < 0 or auth_end < 0:
+    raise SystemExit(f"{net}: online authentication block was not found")
+auth_block = net_source[auth_start:auth_end]
+if "auth.ok_or_else(|| NOT_SIGNED_IN.to_owned())?" in auth_block:
+    auth_replacement = """                if hello.should_authenticate {
                     if let Some(account) = auth {
                         let hash = server_hash(&hello.server_id, &secret, &hello.public_key);
                         if let Err(err) = crate::auth::join_server(account, &hash) {
@@ -35,9 +29,11 @@ replace_once(net,
                             ));
                         }
                     } else {
-                        log::warn!(
-                            "Horizon: server requested online authentication but no Microsoft session is present; sending the normal encrypted login response and letting the server decide whether offline fallback is allowed"
-                        );
+                        log::warn!("Horizon: online-mode challenge received without a Microsoft session; sending the normal encrypted response and allowing the server to decide whether offline fallback is configured");
                     }
-                }""",
-)
+                }"""
+    net.write_text(net_source[:auth_start] + auth_replacement + net_source[auth_end:], encoding="utf-8")
+elif "if let Some(account) = auth" in auth_block:
+    pass
+else:
+    raise SystemExit(f"{net}: unsupported online authentication block layout")
