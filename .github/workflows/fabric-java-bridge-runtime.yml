@@ -58,6 +58,7 @@ jobs:
           # This fork already contains Fabric/JVM integration. Apply only the
           # MobileHorizon offline-login and Android NativeActivity adaptations.
           export HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE=1
+          export HORIZON_ANDROID_PATCH_APPLY_JAVA_BRIDGE=1
           python3 -m py_compile tools/patch_horizon_android_touch.py \
             tools/horizon_patches/01_offline_server_login.py \
             tools/horizon_patches/02_android_native.py
