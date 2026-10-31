@@ -5,11 +5,11 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Intent;
 import android.database.Cursor;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
-import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -22,7 +22,6 @@ import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,7 +35,7 @@ import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-/** Per-instance import/catalogue for real Fabric .jar mods used by iaxivers' Java bridge. */
+/** Per-instance Fabric mod manager with explicit enable/disable controls. */
 public final class FabricModsActivity extends Activity {
     static final String EXTRA_INSTANCE_ID = "dev.mobilehorizon.app.FABRIC_MOD_INSTANCE_ID";
     private static final int REQUEST_IMPORT = 8107;
@@ -46,7 +45,10 @@ public final class FabricModsActivity extends Activity {
     private String instanceId;
     private LinearLayout list;
     private TextView status;
+    private TextView activeCount;
+    private TextView disabledCount;
     private ProgressBar progress;
+    private Button importButton;
     private boolean busy;
 
     @Override protected void onCreate(Bundle state) {
@@ -56,12 +58,21 @@ public final class FabricModsActivity extends Activity {
             finish();
             return;
         }
+        LauncherButtonStyle.install(this);
+        getWindow().setStatusBarColor(0xff090911);
+        getWindow().setNavigationBarColor(0xff090911);
         buildUi();
         refreshMods();
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        LauncherButtonStyle.install(this);
+        refreshMods();
+    }
+
     @Override protected void onDestroy() {
-        io.shutdown();
+        io.shutdownNow();
         super.onDestroy();
     }
 
@@ -69,36 +80,63 @@ public final class FabricModsActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(0xff090911);
+
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(16), dp(18), dp(16), dp(26));
+        page.setPadding(dp(16), dp(18), dp(16), dp(28));
         scroll.addView(page);
         setContentView(scroll);
 
-        page.addView(text("MOBILEHORIZON  /  FABRIC", 11, 0xff9e88ff, true), params(-1, -2));
-        page.addView(text("Mods Fabric", 27, 0xfff0ecff, true), topParams(-1, -2, 5));
-        page.addView(text("Os arquivos .jar são guardados somente nesta instância. O bridge cria links em mods-java/ e carrega Fabric Loader 0.20.1 junto com a Fabric API fixada no motor.", 13, 0xffb9b3d1, false), topParams(-1, -2, 6));
+        page.addView(text("MOBILEHORIZON  /  FABRIC", 11, 0xff9e88ff, true),
+                params(-1, -2));
+        page.addView(text("Gerenciador de mods", 25, 0xfff0ecff, true),
+                topParams(-1, -2, 5));
+        page.addView(text(
+                "Ative ou desative cada mod para esta instância. Mods desativados ficam guardados e não são carregados pelo jogo.",
+                13, 0xffb9b3d1, false), topParams(-1, -2, 6));
 
-        Button back = button("Voltar", false, v -> finish());
-        page.addView(back, topParams(-1, 52, 12));
-        Button add = button("Importar mods .jar", true, v -> openPicker());
-        page.addView(add, topParams(-1, 58, 8));
+        Button back = button("Voltar", false, 42, v -> finish());
+        page.addView(back, topParams(-1, 42, 12));
+        importButton = button("＋  Importar mods .jar", true, 52, v -> openPicker());
+        page.addView(importButton, topParams(-1, 52, 8));
 
         progress = new ProgressBar(this);
         progress.setIndeterminate(true);
         progress.setVisibility(View.GONE);
         page.addView(progress, topParams(-1, 4, 10));
+
         status = text("", 12, 0xffc7bce6, false);
-        page.addView(status, topParams(-1, -2, 8));
+        page.addView(status, topParams(-1, -2, 10));
+
+        LinearLayout counters = new LinearLayout(this);
+        counters.setOrientation(LinearLayout.HORIZONTAL);
+        counters.setGravity(Gravity.CENTER_VERTICAL);
+        counters.setPadding(0, dp(5), 0, dp(2));
+        activeCount = text("Ativos: 0", 12, 0xff9be0b0, true);
+        disabledCount = text("Desativados: 0", 12, 0xffffcb83, true);
+        counters.addView(activeCount, new LinearLayout.LayoutParams(0, -2, 1f));
+        counters.addView(disabledCount, new LinearLayout.LayoutParams(0, -2, 1f));
+        page.addView(counters, topParams(-1, -2, 5));
 
         list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-        page.addView(list, topParams(-1, -2, 6));
+        page.addView(list, topParams(-1, -2, 7));
 
         LinearLayout note = card();
-        note.addView(text("Compatibilidade ainda experimental", 14, 0xffffd18b, true), params(-1, -2));
-        note.addView(text("O bridge suporta Fabric para Minecraft 26.3 e traduz parte do comportamento dos mods para o mundo Horizon. Nem todo mod Fabric funciona: mods que exigem GPU, renderizadores próprios, classes Java não espelhadas ou mixins fora da cobertura podem falhar. Importe apenas JARs de fontes confiáveis.", 12, 0xffc7bce6, false), topParams(-1, -2, 5));
+        note.addView(text("Como funciona", 14, 0xffeee9ff, true),
+                params(-1, -2));
+        note.addView(text(
+                "O Fabric Loader 0.20.1 e a Fabric API 0.165.0+26.3 já acompanham o runtime experimental. Aqui você gerencia somente os mods adicionais. Alterações entram em vigor na próxima inicialização do jogo.",
+                12, 0xffb9b3d1, false), topParams(-1, -2, 5));
         page.addView(note, topParams(-1, -2, 12));
+
+        LinearLayout warning = card();
+        warning.addView(text("Compatibilidade experimental", 14, 0xffffd18b, true),
+                params(-1, -2));
+        warning.addView(text(
+                "Nem todo mod Fabric funciona neste bridge. Mods que exigem renderizadores próprios, APIs não mapeadas ou mixins fora da cobertura podem falhar. Importe apenas arquivos de fontes confiáveis.",
+                12, 0xffc7bce6, false), topParams(-1, -2, 5));
+        page.addView(warning, topParams(-1, -2, 9));
     }
 
     private void openPicker() {
@@ -127,7 +165,7 @@ public final class FabricModsActivity extends Activity {
 
         busy = true;
         setBusy(true);
-        status.setText("Validando os mods Fabric selecionados…");
+        status.setText(UiLanguage.translate(this, "Validando os mods Fabric selecionados…"));
         io.execute(() -> {
             int imported = 0;
             Exception failure = null;
@@ -146,23 +184,26 @@ public final class FabricModsActivity extends Activity {
                 busy = false;
                 setBusy(false);
                 status.setText(error == null
-                        ? "Mods importados: " + count
-                        : "Importados " + count + "; falha: " + safeMessage(error));
+                        ? UiLanguage.translate(this, "Mods importados e ativados: ") + count
+                        : UiLanguage.translate(this, "Importados ") + count + "; "
+                            + UiLanguage.translate(this, "falha: ") + safeMessage(error));
                 refreshMods();
             });
         });
     }
 
     private void importMod(Uri uri) throws Exception {
-        String displayName = displayName(uri);
-        String safeName = safeJarName(displayName);
-        File home = GameInstanceManager.getInstanceHome(this, instanceId).getCanonicalFile();
-        File mods = safeDirectory(home, "mods");
+        String safeName = safeJarName(displayName(uri));
+        File mods = FabricModManager.getDirectory(this, instanceId, true);
         File target = new File(mods, safeName);
-        if (Files.isSymbolicLink(target.toPath())) throw new IOException("O destino do mod usa link simbólico.");
+        if (Files.isSymbolicLink(target.toPath())) {
+            throw new IOException("O destino do mod usa link simbólico.");
+        }
         File temporary = new File(mods, "." + safeName + ".importing");
         if (target.exists()) throw new IOException("Já existe um mod com o nome " + safeName + ".");
-        if (temporary.exists()) temporary.delete();
+        if (temporary.exists() && !temporary.delete()) {
+            throw new IOException("Não foi possível limpar a importação anterior de " + safeName + ".");
+        }
 
         long total = 0;
         try (InputStream input = new BufferedInputStream(getContentResolver().openInputStream(uri));
@@ -222,30 +263,63 @@ public final class FabricModsActivity extends Activity {
         if (list == null || isFinishing() || isDestroyed()) return;
         list.removeAllViews();
         try {
-            File home = GameInstanceManager.getInstanceHome(this, instanceId).getCanonicalFile();
-            File mods = safeDirectory(home, "mods");
-            File[] files = mods.listFiles();
-            int count = 0;
-            if (files != null) {
-                for (File file : files) {
-                    if (!file.isFile() || !file.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
-                    list.addView(modCard(file), topParams(-1, -2, 8));
-                    count++;
+            File enabled = FabricModManager.getDirectory(this, instanceId, true);
+            File disabled = FabricModManager.getDirectory(this, instanceId, false);
+            List<File> activeFiles = listJars(enabled);
+            List<File> disabledFiles = listJars(disabled);
+
+            activeCount.setText(UiLanguage.translate(this, "Ativos: ") + activeFiles.size());
+            disabledCount.setText(UiLanguage.translate(this, "Desativados: ") + disabledFiles.size());
+            status.setText(UiLanguage.translate(this, "Total de mods nesta instância: ")
+                    + (activeFiles.size() + disabledFiles.size()));
+
+            if (activeFiles.isEmpty() && disabledFiles.isEmpty()) {
+                list.addView(text(
+                        "Nenhum mod instalado. Use Importar mods .jar para adicionar arquivos Fabric.",
+                        13, 0xffb9b3d1, false), params(-1, -2));
+                return;
+            }
+
+            if (!activeFiles.isEmpty()) {
+                list.addView(sectionTitle("MODS ATIVOS", 0xff9be0b0), topParams(-1, -2, 2));
+                for (File jar : activeFiles) {
+                    list.addView(modCard(jar, true), topParams(-1, -2, 7));
                 }
             }
-            status.setText("Mods instalados nesta instância: " + count);
-            if (count == 0) {
-                list.addView(text("Nenhum mod Fabric instalado. Importe arquivos .jar para começar.", 13, 0xffb9b3d1, false), params(-1, -2));
+            if (!disabledFiles.isEmpty()) {
+                list.addView(sectionTitle("MODS DESATIVADOS", 0xffffcb83),
+                        topParams(-1, -2, activeFiles.isEmpty() ? 2 : 13));
+                for (File jar : disabledFiles) {
+                    list.addView(modCard(jar, false), topParams(-1, -2, 7));
+                }
             }
         } catch (Exception error) {
-            status.setText("Não foi possível listar os mods: " + safeMessage(error));
+            status.setText(UiLanguage.translate(this, "Não foi possível listar os mods: ")
+                    + safeMessage(error));
         }
     }
 
-    private View modCard(File jar) {
+    private List<File> listJars(File directory) throws IOException {
+        File[] entries = directory.listFiles();
+        if (entries == null) throw new IOException("Não foi possível listar " + directory.getName() + ".");
+        List<File> jars = new ArrayList<>();
+        for (File file : entries) {
+            if (!file.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
+            if (Files.isSymbolicLink(file.toPath()) || !file.isFile()
+                    || file.length() <= 0 || file.length() > FabricModManager.MAX_MOD_JAR_BYTES) {
+                continue;
+            }
+            if (!directory.equals(file.getCanonicalFile().getParentFile())) continue;
+            jars.add(file);
+        }
+        jars.sort((left, right) -> left.getName().compareToIgnoreCase(right.getName()));
+        return jars;
+    }
+
+    private View modCard(File jar, boolean enabled) {
         LinearLayout card = card();
         String title = jar.getName();
-        String details = "Arquivo JAR • " + human(jar.length());
+        String details = UiLanguage.translate(this, "Arquivo JAR") + " • " + human(jar.length());
         try {
             JSONObject descriptor = readFabricDescriptor(jar);
             title = descriptor.optString("name", descriptor.optString("id", jar.getName()));
@@ -253,25 +327,83 @@ public final class FabricModsActivity extends Activity {
                     + descriptor.optString("version", "versão desconhecida")
                     + " • " + human(jar.length());
         } catch (Exception ignored) {
-            // Preserve the entry in the list so it can be removed after an interrupted import.
+            // Keep invalid older entries visible so the user can remove them.
         }
-        card.addView(text(title, 15, 0xfff0ecff, true), params(-1, -2));
-        card.addView(text(details, 11, 0xffaaa2c6, false), topParams(-1, -2, 4));
-        Button remove = button("Remover", false, v -> confirmRemove(jar));
-        card.addView(remove, topParams(-1, 42, 8));
+
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.HORIZONTAL);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = text(title, 15, 0xfff0ecff, true);
+        heading.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView state = text(enabled ? "ATIVO" : "DESATIVADO", 10,
+                enabled ? 0xff9be0b0 : 0xffffcb83, true);
+        state.setGravity(Gravity.CENTER);
+        heading.addView(state, params(-2, -2));
+        card.addView(heading, params(-1, -2));
+        card.addView(text(details, 11, 0xffaaa2c6, false), topParams(-1, -2, 5));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button toggle = button(enabled ? "Desativar" : "Ativar", true, 42,
+                v -> toggleMod(jar, enabled));
+        Button remove = button("Remover", false, 42, v -> confirmRemove(jar));
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(0, dp(42), 1f);
+        actionParams.topMargin = dp(10);
+        actionParams.rightMargin = dp(5);
+        actions.addView(toggle, actionParams);
+        LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(0, dp(42), 1f);
+        removeParams.topMargin = dp(10);
+        removeParams.leftMargin = dp(5);
+        actions.addView(remove, removeParams);
+        card.addView(actions, params(-1, -2));
         return card;
+    }
+
+    private TextView sectionTitle(String value, int color) {
+        TextView title = text(value, 11, color, true);
+        title.setLetterSpacing(0.08f);
+        return title;
+    }
+
+    private void toggleMod(File jar, boolean currentlyEnabled) {
+        if (busy) return;
+        try {
+            FabricModManager.setEnabled(this, instanceId, jar, !currentlyEnabled);
+            status.setText(UiLanguage.translate(this,
+                    currentlyEnabled ? "Mod desativado; não será carregado no próximo início."
+                            : "Mod ativado; será carregado no próximo início."));
+            refreshMods();
+        } catch (Exception error) {
+            status.setText(UiLanguage.translate(this, "Não foi possível alterar o mod: ")
+                    + safeMessage(error));
+        }
     }
 
     private void confirmRemove(File jar) {
         new AlertDialog.Builder(this)
-                .setTitle("Remover mod Fabric?")
-                .setMessage("O arquivo " + jar.getName() + " será removido apenas desta instância.")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Remover", (dialog, which) -> {
-                    if (Files.isSymbolicLink(jar.toPath()) || !jar.isFile() || !jar.delete()) {
-                        status.setText("Não foi possível remover o arquivo selecionado.");
-                    } else {
-                        status.setText("Mod removido.");
+                .setTitle(UiLanguage.translate(this, "Remover mod Fabric?"))
+                .setMessage(UiLanguage.translate(this, "O arquivo ")
+                        + jar.getName() + UiLanguage.translate(this,
+                        " será removido apenas desta instância."))
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Remover"), (dialog, which) -> {
+                    File enabled;
+                    File disabled;
+                    try {
+                        enabled = FabricModManager.getDirectory(this, instanceId, true);
+                        disabled = FabricModManager.getDirectory(this, instanceId, false);
+                        File canonical = jar.getCanonicalFile();
+                        if (Files.isSymbolicLink(jar.toPath())
+                                || (!enabled.equals(canonical.getParentFile())
+                                && !disabled.equals(canonical.getParentFile()))
+                                || !canonical.isFile() || !canonical.delete()) {
+                            status.setText(UiLanguage.translate(this,
+                                    "Não foi possível remover o arquivo selecionado."));
+                        } else {
+                            status.setText(UiLanguage.translate(this, "Mod removido."));
+                        }
+                    } catch (Exception error) {
+                        status.setText(UiLanguage.translate(this, "Falha: ") + safeMessage(error));
                     }
                     refreshMods();
                 }).show();
@@ -296,17 +428,20 @@ public final class FabricModsActivity extends Activity {
         return value;
     }
 
-    private File safeDirectory(File root, String name) throws IOException {
-        File target = new File(root, name);
-        if (Files.isSymbolicLink(target.toPath())) throw new IOException("A pasta " + name + " usa link simbólico.");
-        if (!target.isDirectory() && !target.mkdirs()) throw new IOException("Não foi possível criar a pasta " + name + ".");
-        File canonical = target.getCanonicalFile();
-        if (!root.equals(canonical.getParentFile())) throw new IOException("Pasta fora do diretório privado da instância.");
-        return canonical;
-    }
-
     private void setBusy(boolean value) {
         if (progress != null) progress.setVisibility(value ? View.VISIBLE : View.GONE);
+        if (importButton != null) importButton.setEnabled(!value);
+        if (list != null) setChildrenEnabled(list, !value);
+    }
+
+    private void setChildrenEnabled(View view, boolean enabled) {
+        view.setEnabled(enabled);
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int index = 0; index < group.getChildCount(); index++) {
+                setChildrenEnabled(group.getChildAt(index), enabled);
+            }
+        }
     }
 
     private String safeMessage(Exception error) {
@@ -329,20 +464,26 @@ public final class FabricModsActivity extends Activity {
         return card;
     }
 
-    private Button button(String label, boolean primary, View.OnClickListener action) {
+    private Button button(String label, boolean primary, int heightDp, View.OnClickListener action) {
         Button button = new Button(this);
         button.setAllCaps(false);
         button.setText(UiLanguage.translate(this, label));
         button.setTextSize(12);
+        button.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         button.setMinHeight(0);
         button.setMinimumHeight(0);
+        button.setPadding(dp(10), dp(2), dp(10), dp(2));
+        button.setGravity(Gravity.CENTER);
+        button.setSingleLine(true);
+        button.setTextColor(Color.WHITE);
         GradientDrawable background = new GradientDrawable();
         background.setColor(primary ? 0xff5b3fd6 : 0xff2b2641);
         background.setCornerRadius(dp(5));
         background.setStroke(dp(1), primary ? 0xff8a74ff : 0xff3d3560);
         button.setBackground(background);
-        button.setTextColor(Color.WHITE);
         button.setOnClickListener(action);
+        LauncherButtonStyle.keepOriginalSize(button);
+        button.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(heightDp)));
         return button;
     }
 
@@ -351,7 +492,8 @@ public final class FabricModsActivity extends Activity {
         view.setText(UiLanguage.translate(this, value));
         view.setTextSize(size);
         view.setTextColor(color);
-        view.setTypeface(bold ? android.graphics.Typeface.DEFAULT_BOLD : android.graphics.Typeface.DEFAULT);
+        view.setTypeface(bold ? android.graphics.Typeface.DEFAULT_BOLD
+                : android.graphics.Typeface.DEFAULT);
         return view;
     }
 
