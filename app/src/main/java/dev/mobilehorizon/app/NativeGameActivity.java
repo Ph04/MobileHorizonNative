@@ -255,6 +255,10 @@ public final class NativeGameActivity extends NativeActivity {
                 try { popup.dismiss(); } catch (RuntimeException ignored) { }
                 touchControlsPopup = null;
             }
+            if (touchControls != null) {
+                touchControls.dispose();
+                touchControls = null;
+            }
         }
     }
 
@@ -533,7 +537,7 @@ public final class NativeGameActivity extends NativeActivity {
         java.io.File report = new java.io.File(getFilesDir(), "horizon-launch-error.txt");
         try (java.io.FileOutputStream output = new java.io.FileOutputStream(report, false)) {
             String detail = "Falha antes de iniciar o motor nativo: "
-                    + error.getClass().getSimpleName() + ": " + error.getMessage() + "\\n\\n"
+                    + error.getClass().getSimpleName() + ": " + error.getMessage() + "\n\n"
                     + android.util.Log.getStackTraceString(error);
             output.write(detail.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             output.flush();
