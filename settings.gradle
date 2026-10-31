@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "MobileHorizonNative"
-include(":app", ":core")
+include(":app", ":core", ":compatibility-api")
