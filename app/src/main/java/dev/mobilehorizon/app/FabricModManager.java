@@ -60,7 +60,8 @@ final class FabricModManager {
 
     /**
      * Rebuilds mods-java/ using links only for enabled JARs. Zero enabled mods is
-     * valid: the Fabric runtime may start without third-party mods installed.
+     * valid: Horizon starts normally, but upstream skips JVM/Fabric startup while this folder
+     * has no JARs.
      */
     static int prepareInstance(Context context, String instanceId) throws IOException {
         File mods = getDirectory(context, instanceId, true);
