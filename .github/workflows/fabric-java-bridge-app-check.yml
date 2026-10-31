@@ -1,4 +1,4 @@
-name: Validate Fabric bridge Android Java integration (no APK)
+name: Validate Java Bridge By:iaxivers Android integration (no APK)
 
 on:
   push:
