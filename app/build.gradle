@@ -23,6 +23,9 @@ def horizonUiAssetNames = [
 ]
 
 def compatibilityApiAssetsDir = layout.buildDirectory.dir('generated/compatibility-api-assets')
+// The app is evaluated before compatibility-api in settings.gradle. Evaluate the plain
+// Java subproject first so its 'jar' task is registered before taking the task provider.
+evaluationDependsOn(':compatibility-api')
 def compatibilityApiJar = project(':compatibility-api').tasks.named('jar')
 def packageCompatibilityApi = tasks.register('packageCompatibilityApi', Copy) {
     dependsOn(compatibilityApiJar)
