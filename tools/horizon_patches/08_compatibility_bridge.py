@@ -778,8 +778,6 @@ hook_steps = [
             "phase": format!("{phase:?}"),
             "authority": format!("{:?}", context.authority),
             "lifecycle_context": format!("{context:?}"),
-            "authority": format!("{:?}", context.authority),
-            "lifecycle_context": format!("{context:?}"),
             "error": error_text
         }).to_string();
         crate::compatibility_bridge::emit_event("world_lifecycle", &payload);
@@ -800,7 +798,9 @@ hook_steps = [
         phase: ServerTickPhase,
     ) {
         let payload = serde_json::json!({
-            "phase": format!("{phase:?}")
+            "phase": format!("{phase:?}"),
+            "authority": format!("{:?}", context.authority),
+            "lifecycle_context": format!("{context:?}")
         }).to_string();
         crate::compatibility_bridge::emit_event("server_tick", &payload);
     }''',
