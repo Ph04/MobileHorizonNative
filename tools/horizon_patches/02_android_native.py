@@ -252,7 +252,16 @@ keybinds_new = """pub fn learn_layout(event: &winit::event::KeyEvent) {
         _ => {}
     }
 }"""
-replace_once(keybinds, keybinds_old, keybinds_new)
+# This compatibility edit is needed only on revisions that still track the
+# physical-key -> unmodified-layout mapping in this file. The external java-bridge
+# fork has no learn_layout function or desktop modifier-supplement import here.
+keybinds_source = keybinds.read_text(encoding="utf-8")
+if keybinds_old in keybinds_source:
+    replace_once(keybinds, keybinds_old, keybinds_new)
+elif "KeyEventExtModifierSupplement" in keybinds_source or "key_without_modifiers()" in keybinds_source:
+    raise SystemExit(f"{keybinds}: desktop modifier-supplement code changed; review Android key layout handling")
+else:
+    print(f"{keybinds}: no desktop learn_layout hook to adapt; skipping that optional edit")
 
 # The Android keyboard can edit title/menu fields before a world exists, including world names
 # and multiplayer names/addresses. Use Horizon's own focused-field editing APIs.
