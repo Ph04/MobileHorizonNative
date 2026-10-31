@@ -208,7 +208,6 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.unsetenv("HORIZON_APP_FILES_DIR");
             android.system.Os.unsetenv("HORIZON_JAVA_EXECUTABLE");
             android.system.Os.unsetenv("HORIZON_JAVA_HOME");
-            android.system.Os.unsetenv("HORIZON_JAVA_BRIDGE_LOG_FILE");
             android.system.Os.unsetenv("HORIZON_JAVA_LIBRARY_PATH");
             android.system.Os.unsetenv("HORIZON_JAVA_TMP");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_JAR");
