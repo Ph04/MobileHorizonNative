@@ -435,7 +435,7 @@ fn read_frame(reader: &mut BufReader<UnixStream>) -> Result<String, String> {
     if line.len() > MAX_FRAME_BYTES {
         return Err("Java compatibility bridge frame exceeds 512 KiB".to_owned());
     }
-    Ok(line.trim_end_matches(['\r', '\n']).to_owned())
+    Ok(line.trim_end_matches(&['\r', '\n'][..]).to_owned())
 }
 
 fn decode_error_frame(frame: &str) -> String {
@@ -517,7 +517,7 @@ fn bridge_io_loop(
         match reader.read_line(&mut line) {
             Ok(0) => break,
             Ok(_) if line.len() <= MAX_FRAME_BYTES => {
-                let frame = line.trim_end_matches(['\r', '\n']);
+    Ok(line.trim_end_matches(&['\r', '\n'][..]).to_owned())
                 if let Some(encoded) = frame.strip_prefix("LOG|") {
                     match decode_hex(encoded) {
                         Ok(message) => log::info!("Compatibility module: {message}"),
@@ -630,7 +630,7 @@ pub fn shutdown() {
 #[cfg(target_os = "android")]
 fn required_env(key: &str) -> Result<String, String> {
     let value = env::var(key).map_err(|_| format!("required compatibility environment variable {key} is missing"))?;
-    if value.is_empty() || value.len() > 4096 || value.contains(['\0', '\n', '\r', '|']) {
+    if value.is_empty() || value.len() > 4096 || value.contains('\0') || value.contains('\n') || value.contains('\r') || value.contains('|') {
         return Err(format!("compatibility environment variable {key} has an invalid value"));
     }
     Ok(value)
