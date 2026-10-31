@@ -1,0 +1,171 @@
+name: Compatibility bridge contract tests
+
+on:
+  push:
+    branches: ["feature/compatibility-plugin-loader"]
+    paths:
+      - "compatibility-api/**"
+      - "forge-adapter/**"
+      - "app/src/main/java/dev/mobilehorizon/app/CompatibilityApiRuntime.java"
+      - "app/src/main/java/dev/mobilehorizon/app/JdkRuntimeInstaller.java"
+      - "app/src/main/java/dev/mobilehorizon/app/NativeGameActivity.java"
+      - "android-native/**"
+      - "android-bootstrap/**"
+      - "tools/patch_horizon_android_touch.py"
+      - "tools/horizon_patches/01_offline_server_login.py"
+      - "tools/horizon_patches/02_android_native.py"
+      - "tools/horizon_patches/08_compatibility_bridge.py"
+      - "tools/compatibility-horizon-revision.env"
+      - ".github/workflows/compatibility-contract-tests.yml"
+  pull_request:
+    paths:
+      - "compatibility-api/**"
+      - "forge-adapter/**"
+      - "app/src/main/java/dev/mobilehorizon/app/CompatibilityApiRuntime.java"
+      - "app/src/main/java/dev/mobilehorizon/app/JdkRuntimeInstaller.java"
+      - "app/src/main/java/dev/mobilehorizon/app/NativeGameActivity.java"
+      - "android-native/**"
+      - "android-bootstrap/**"
+      - "tools/patch_horizon_android_touch.py"
+      - "tools/horizon_patches/01_offline_server_login.py"
+      - "tools/horizon_patches/02_android_native.py"
+      - "tools/horizon_patches/08_compatibility_bridge.py"
+      - "tools/compatibility-horizon-revision.env"
+      - ".github/workflows/compatibility-contract-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compatibility-contract-tests
+  cancel-in-progress: true
+
+jobs:
+  java-module:
+    name: Test Java API and package Forge module (no APK)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out MobileHorizonNative
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Test the API and package the standalone Forge diagnostic module
+        run: gradle --no-daemon :compatibility-api:test :forge-adapter:packageMhplugin
+
+      - name: Verify the .mhplugin descriptor and payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE="forge-adapter/build/distributions/forge-compatibility-26.3-0.1.0.mhplugin"
+          test -s "$PACKAGE"
+          python3 - "$PACKAGE" <<'PY'
+          import json
+          import sys
+          import zipfile
+
+          package = sys.argv[1]
+          with zipfile.ZipFile(package) as archive:
+              names = set(archive.namelist())
+              descriptor_name = "mobilehorizon-plugin.json"
+              assert descriptor_name in names, "module descriptor is missing"
+              descriptor = json.loads(archive.read(descriptor_name))
+              assert descriptor["loader"] == "forge"
+              assert descriptor["loaderVersion"] == "66.1.2"
+              assert descriptor["apiVersion"] == 1
+              assert "26.3" in descriptor["minecraftVersions"]
+              entrypoint = "payload/" + descriptor["entrypointJar"]
+              assert entrypoint in names, f"entrypoint JAR is missing: {entrypoint}"
+              assert descriptor["entrypointClass"] == "dev.mobilehorizon.forge.ForgeCompatibilityPlugin"
+          print("Verified Forge 26.3 diagnostic .mhplugin package.")
+          PY
+
+      - name: Upload the independent Forge module package
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-compatibility-26.3-0.1.0
+          path: forge-adapter/build/distributions/forge-compatibility-26.3-0.1.0.mhplugin
+          if-no-files-found: error
+          retention-days: 30
+
+  horizon-arm64:
+    name: Apply bridge overlay and check Horizon for Android ARM64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out MobileHorizonNative
+        uses: actions/checkout@v4
+
+      - name: Set up Rust for Android ARM64
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Android NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "ndk;27.2.12479018"
+
+      - name: Fetch the pinned Horizon Nightly source
+        shell: bash
+        run: |
+          set -euo pipefail
+          source tools/compatibility-horizon-revision.env
+          SOURCE="$RUNNER_TEMP/horizon-compatibility-source"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin https://github.com/ludovic111/horizon.git
+          git -C "$SOURCE" fetch --depth 1 origin "$HORIZON_COMPATIBILITY_NIGHTLY_TAG"
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          ACTUAL="$(git -C "$SOURCE" rev-parse HEAD)"
+          test "$ACTUAL" = "$HORIZON_COMPATIBILITY_NIGHTLY_COMMIT"
+          echo "HORIZON_COMPAT_SOURCE=$SOURCE" >> "$GITHUB_ENV"
+          echo "Validated Horizon source commit $ACTUAL."
+
+      - name: Validate patch scripts and apply the ordered Android overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py
+          python3 tools/patch_horizon_android_touch.py "$HORIZON_COMPAT_SOURCE"
+          test -s "$HORIZON_COMPAT_SOURCE/crates/horizon-client/src/compatibility_bridge.rs"
+          grep -Fq 'pub mod compatibility_bridge;' "$HORIZON_COMPAT_SOURCE/crates/horizon-client/src/lib.rs"
+          grep -Fq 'emit_event("world_lifecycle"' "$HORIZON_COMPAT_SOURCE/crates/horizon-client/src/game/native_hooks.rs"
+          grep -Fq 'emit_event("server_tick"' "$HORIZON_COMPAT_SOURCE/crates/horizon-client/src/game/native_hooks.rs"
+          echo "The bridge overlay applied to the pinned Horizon Nightly."
+
+      - name: Check the patched Horizon client for Android ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/horizon-cargo-target"
+          cargo check --locked --manifest-path "$HORIZON_COMPAT_SOURCE/crates/horizon-client/Cargo.toml" --target aarch64-linux-android
+
+      - name: Publish validation summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Compatibility bridge validation"
+            echo
+            echo "- Java API tests and standalone Forge module packaging run separately."
+            echo "- The bridge overlay is applied to Horizon Nightly 2026-10-30."
+            echo "- The patched Horizon client is checked for Android ARM64."
+            echo "- No Android application or APK build task is invoked."
+          } >> "$GITHUB_STEP_SUMMARY"
