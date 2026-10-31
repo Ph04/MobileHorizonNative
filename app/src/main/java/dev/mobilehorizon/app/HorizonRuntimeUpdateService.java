@@ -46,8 +46,13 @@ public final class HorizonRuntimeUpdateService {
     private static final String ENGINE_ASSET = "horizon-runtime-arm64-v8a.so";
     private static final String TEST_FIXTURE_TAG = "horizon-runtime-update-test";
     private static final String TEST_FIXTURE_URL = "https://api.github.com/repos/Ph04/MobileHorizonNative/releases/tags/" + TEST_FIXTURE_TAG;
+    // Machine identifiers stay separate from the human-readable Nightly name/date.
     private static final String PC_RELEASE_TAG = "pc_release_tag";
+    private static final String PC_RELEASE_LABEL = "pc_release_label";
+    private static final String PC_RELEASE_COMMIT_PREFIX = "pc_release_commit_prefix";
     private static final String OFFICIAL_LATEST_TAG = "official_latest_tag";
+    private static final String OFFICIAL_LATEST_LABEL = "official_latest_label";
+    private static final String OFFICIAL_LATEST_COMMIT = "official_latest_commit";
     private static final String OFFICIAL_CHECKED_AT = "official_checked_at_ms";
     private static final String TEST_SEED_DONE = "test_old_runtime_seed_done";
     private static final String PREFERENCES = "horizon_runtime_updates";
@@ -227,24 +232,26 @@ public final class HorizonRuntimeUpdateService {
         context.sendBroadcast(event);
     }
 
-    /** The PC release tag represented by the installed runtime, for the launcher UI. */
+    /** Human-readable upstream build represented by the currently installed runtime. */
     public static String pcReleaseLabel(Context context) {
         SharedPreferences preferences = context.getApplicationContext()
                 .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
-        String defaultTag = BuildConfig.HORIZON_TEST_OLD_RUNTIME
-                ? BuildConfig.HORIZON_PC_RELEASE_TAG : "";
-        String tag = preferences.getString(PC_RELEASE_TAG, defaultTag);
-        if (tag == null || tag.trim().isEmpty()) {
-            return BuildConfig.HORIZON_TEST_OLD_RUNTIME
-                    ? BuildConfig.HORIZON_PC_RELEASE_TAG : "runtime Android ainda não instalada";
-        }
+        String label = preferences.getString(PC_RELEASE_LABEL, "");
+        if (label != null && !label.trim().isEmpty()) return label;
+        String tag = preferences.getString(PC_RELEASE_TAG,
+                BuildConfig.HORIZON_TEST_OLD_RUNTIME ? BuildConfig.HORIZON_PC_RELEASE_TAG : "");
+        if (tag == null || tag.trim().isEmpty()) return "runtime Android ainda não instalada";
         return OFFICIAL_NIGHTLY_TAG.equals(tag) ? "Nightly" : tag;
     }
 
-    /** Last official Horizon release successfully checked against upstream GitHub. */
+    /** Human-readable current upstream publication; never used as a machine version key. */
     public static String latestOfficialReleaseLabel(Context context) {
         SharedPreferences preferences = context.getApplicationContext()
                 .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        String label = preferences.getString(OFFICIAL_LATEST_LABEL, "");
+        if (label != null && !label.trim().isEmpty()) {
+            return "Último release oficial verificado: " + label;
+        }
         String tag = preferences.getString(OFFICIAL_LATEST_TAG, "");
         if (tag == null || tag.trim().isEmpty()) {
             return "Último release oficial verificado: ainda não consultado";
@@ -258,6 +265,7 @@ public final class HorizonRuntimeUpdateService {
                 && !preferences.getBoolean(TEST_SEED_DONE, false)) {
             Release previous = testFixtureRuntime(BuildConfig.HORIZON_TEST_OLD_RELEASE_TAG);
             installRelease(context, preferences, previous);
+            recordInstalledRuntime(preferences, previous, null);
             preferences.edit().putBoolean(TEST_SEED_DONE, true).apply();
             setStatus(preferences, "Teste do atualizador: baixada a versão anterior do Horizon PC "
                     + previous.upstreamTag + ". A próxima verificação atualizará para "
@@ -265,24 +273,27 @@ public final class HorizonRuntimeUpdateService {
             return;
         }
 
-        // The official Horizon release and the Android-native runtime are different deliverables.
-        // Read upstream directly so a new PC release is visible even before its Android runtime
-        // has been built and published in this repository.
+        // Horizon's public release tag is a moving channel identifier ("nightly").
+        // The release name/date is presentation metadata; the resolved upstream commit
+        // is the immutable identity used to select the matching Android runtime.
         OfficialRelease official = null;
         if (!BuildConfig.HORIZON_TEST_OLD_RUNTIME) {
             publishProgress(context, preferences, "checking-official",
                     "Consultando o release oficial mais recente do Horizon…", 0L, -1L);
             try {
                 official = latestOfficialRelease();
-                Log.i(TAG, "Release oficial do Horizon detectada: " + official.tag
-                        + " (publicada em " + official.publishedAt + ").");
+                Log.i(TAG, "Release oficial do Horizon detectada: " + official.displayName
+                        + " [" + official.tag + ", commit " + official.commitSha + "].");
                 preferences.edit()
                         .putString(OFFICIAL_LATEST_TAG, official.tag)
+                        .putString(OFFICIAL_LATEST_LABEL, official.displayName)
+                        .putString(OFFICIAL_LATEST_COMMIT, official.commitSha)
                         .putLong(OFFICIAL_CHECKED_AT, System.currentTimeMillis())
                         .apply();
             } catch (Exception error) {
-                Log.w(TAG, "Não foi possível consultar o release oficial do Horizon em "
-                        + OFFICIAL_NIGHTLY_RELEASE_URL + "; a próxima tentativa automática será em até cinco minutos.", error);
+                Log.w(TAG, "Não foi possível consultar a publicação oficial do Horizon em "
+                        + OFFICIAL_NIGHTLY_RELEASE_URL
+                        + "; a próxima tentativa automática será em até cinco minutos.", error);
             }
         }
 
@@ -294,54 +305,53 @@ public final class HorizonRuntimeUpdateService {
         if (BuildConfig.HORIZON_TEST_OLD_RUNTIME) {
             latest = testFixtureRuntime(BuildConfig.HORIZON_PC_RELEASE_TAG);
         } else if (official != null) {
-            // The Nightly runtime must follow the exact current Horizon channel, not merely the newest
-            // Android artifact. Otherwise the launcher can install an older engine while Horizon is on
-            // v0.2.66 and then report success without ever catching up to the official release.
-            latest = latestRuntimeRelease(official.tag);
+            // A moving Nightly tag alone is not enough: every dated Nightly uses the same
+            // tag_name. Require the eight-character source commit embedded in the runtime ID.
+            latest = latestRuntimeRelease(official.tag, official.commitSha);
             if (latest == null) {
                 latestPublished = latestRuntimeRelease();
                 if (!HorizonRuntimeManager.hasActiveRuntimeMarker(context)
                         && latestPublished != null) {
-                    // A first launch still needs a runnable engine while the newest runtime builds.
+                    // Only a first install may use an older verified runtime while the exact
+                    // Nightly build is still compiling. Never replace an existing runtime with it.
                     latest = latestPublished;
                 } else {
                     String available = latestPublished == null ? ""
-                            : " A runtime Android publicada mais recente é para "
-                                + latestPublished.upstreamTag + ".";
-                    setStatus(preferences, "Release oficial " + official.tag
-                            + " detectada, mas a runtime Android ARM64 correspondente ainda não "
-                            + "foi publicada." + available
-                            + " A versão instalada será mantida e o launcher continuará verificando "
-                            + "automaticamente até encontrar a runtime exata.");
+                            : " A última runtime Android publicada é "
+                                + runtimeDisplayLabel(latestPublished.version, latestPublished.upstreamTag) + ".";
+                    setStatus(preferences, "A publicação oficial " + official.displayName
+                            + " (commit " + official.commitSha.substring(0, 8) + ") já foi detectada, "
+                            + "mas a runtime Android ARM64 desse commit ainda não foi publicada."
+                            + available + " A runtime instalada será mantida; o launcher continuará "
+                            + "verificando até encontrar a compilação exata.");
                     return;
                 }
             }
         } else {
-            // If GitHub's official release endpoint is temporarily unavailable, still permit a
-            // verified runtime check. As soon as the official endpoint returns, exact-tag matching
-            // resumes and prevents an older runtime from being mistaken for the current release.
+            // Network fallback: use the newest verified Android runtime, but do not claim it
+            // represents a particular dated Nightly until the official commit can be checked.
             latest = latestRuntimeRelease();
         }
+
         if (latest == null) {
             if (official != null) {
-                setStatus(preferences, "Release oficial " + official.tag
-                        + " detectada, mas nenhum pacote Android ARM64 verificado está disponível. "
-                        + "O launcher continuará verificando automaticamente.");
+                setStatus(preferences, "A publicação oficial " + official.displayName
+                        + " foi detectada, mas nenhum pacote Android ARM64 correspondente "
+                        + "e verificado está disponível. O launcher continuará verificando automaticamente.");
             } else {
                 setStatus(preferences, "Nenhum release Android do Horizon foi encontrado; "
-                        + "a consulta à versão oficial também não foi concluída.");
+                        + "a consulta à publicação oficial também não foi concluída.");
             }
             return;
         }
 
         boolean installNeeded = !latest.version.equals(currentVersion);
         if (installNeeded) {
-            Log.i(TAG, "Atualização de motor encontrada: PC " + latest.upstreamTag
-                    + ", motor " + latest.version + "; atual " + currentVersion);
+            Log.i(TAG, "Runtime Android encontrada: " + runtimeDisplayLabel(latest.version, latest.upstreamTag)
+                    + "; atual " + currentVersion);
             installRelease(context, preferences, latest);
-        } else {
-            preferences.edit().putString(PC_RELEASE_TAG, latest.upstreamTag).apply();
         }
+        recordInstalledRuntime(preferences, latest, official);
 
         if (BuildConfig.HORIZON_TEST_OLD_RUNTIME) {
             setStatus(preferences, "Horizon está atualizado — release PC " + latest.upstreamTag
@@ -351,44 +361,42 @@ public final class HorizonRuntimeUpdateService {
 
         if (official == null) {
             String runtimeMessage = installNeeded
-                    ? "O runtime Android para Horizon PC " + latest.upstreamTag
-                        + " foi baixado e verificado; será ativado na próxima abertura do jogo."
-                    : "O runtime Android instalado corresponde à release PC " + latest.upstreamTag + ".";
+                    ? "A runtime Android " + runtimeDisplayLabel(latest.version, latest.upstreamTag)
+                        + " foi baixada e verificada; será ativada na próxima abertura do jogo."
+                    : "A runtime Android instalada é " + runtimeDisplayLabel(latest.version, latest.upstreamTag) + ".";
             setStatus(preferences, runtimeMessage
-                    + " Não foi possível consultar agora a release oficial mais recente do Horizon.");
+                    + " Não foi possível consultar agora a publicação oficial mais recente do Horizon.");
             return;
         }
 
-        if (!official.tag.equals(latest.upstreamTag)) {
-            String status = "Release oficial " + official.tag
-                    + " detectada, mas o pacote Android ARM64 mais recente publicado é para "
-                    + latest.upstreamTag + ". ";
+        boolean exactNightly = runtimeVersionMatchesRelease(
+                latest.version, official.tag, official.commitSha);
+        if (!exactNightly) {
+            String currentRuntime = runtimeDisplayLabel(latest.version, latest.upstreamTag);
+            String status = "A publicação oficial atual é " + official.displayName
+                    + " (commit " + official.commitSha.substring(0, 8) + "), mas a runtime Android "
+                    + "disponível corresponde a " + currentRuntime + ". ";
             if (installNeeded) {
-                status += "Esse runtime foi baixado e verificado e será ativado na próxima "
-                        + "abertura do jogo. O pacote Android da release oficial mais nova ainda "
-                        + "não está disponível; o aplicativo continuará verificando automaticamente.";
+                status += "Ela foi instalada como alternativa inicial e será ativada na próxima "
+                        + "abertura. O launcher não a marcará como a Nightly atual.";
             } else {
-                status += "O runtime instalado permanece na versão " + latest.upstreamTag
-                        + " até que um pacote Android correspondente à release " + official.tag
-                        + " seja publicado. O aplicativo continuará verificando automaticamente.";
+                status += "A runtime instalada foi mantida. O launcher continuará procurando "
+                        + "uma compilação para o commit oficial exato.";
             }
             setStatus(preferences, status);
             return;
         }
 
         if (installNeeded) {
-            setStatus(preferences, "Runtime Android verificado para o release oficial "
-                    + official.tag + "; será ativado na próxima inicialização do jogo.");
+            setStatus(preferences, "Runtime Android verificada para " + official.displayName
+                    + "; será ativada na próxima inicialização do jogo.");
         } else {
-            setStatus(preferences, "Horizon está atualizado — release oficial "
-                    + official.tag + " e runtime Android " + latest.version + " instalado.");
+            setStatus(preferences, "Horizon está atualizado — " + official.displayName
+                    + " e runtime Android " + latest.version + " instalada.");
         }
     }
 
     private static OfficialRelease latestOfficialRelease() throws Exception {
-        // Since 2026-10-28 Horizon uses the moving "nightly" pre-release as its only
-        // player-facing game channel. The previous vX.Y.Z release remains GitHub's
-        // stable/latest release, so scanning stable releases silently misses every update.
         JSONObject release = new JSONObject(readUrl(
                 OFFICIAL_NIGHTLY_RELEASE_URL, 1024 * 1024));
         String tag = release.optString("tag_name", "");
@@ -399,7 +407,78 @@ public final class HorizonRuntimeUpdateService {
                 || publishedAt.isEmpty()) {
             throw new IOException("A release Nightly oficial do Horizon não está publicada ou é inválida.");
         }
-        return new OfficialRelease(tag, publishedAt);
+
+        String commitSha = resolveOfficialNightlyCommit();
+        String displayName = formatOfficialNightlyLabel(
+                release.optString("name", ""), publishedAt, commitSha);
+        return new OfficialRelease(tag, publishedAt, commitSha, displayName);
+    }
+
+    /** Resolves the moving 'nightly' ref to an immutable 40-character source commit. */
+    private static String resolveOfficialNightlyCommit() throws Exception {
+        String refUrl = "https://api.github.com/repos/horizon-rust/horizon/git/ref/tags/"
+                + OFFICIAL_NIGHTLY_TAG;
+        JSONObject ref = new JSONObject(readUrl(refUrl, 256 * 1024));
+        if (!("refs/tags/" + OFFICIAL_NIGHTLY_TAG).equals(ref.optString("ref", ""))) {
+            throw new IOException("A referência Git da Nightly oficial não corresponde à tag esperada.");
+        }
+        JSONObject object = ref.optJSONObject("object");
+        for (int depth = 0; depth < 8 && object != null; depth++) {
+            String type = object.optString("type", "");
+            String sha = object.optString("sha", "");
+            if ("commit".equals(type)) {
+                if (!sha.matches("(?i)[0-9a-f]{40}")) {
+                    throw new IOException("O commit da Nightly oficial não tem SHA completo.");
+                }
+                return sha.toLowerCase(java.util.Locale.ROOT);
+            }
+            if (!"tag".equals(type) || !sha.matches("(?i)[0-9a-f]{40}")) break;
+            String tagUrl = "https://api.github.com/repos/horizon-rust/horizon/git/tags/" + sha;
+            JSONObject annotated = new JSONObject(readUrl(tagUrl, 256 * 1024));
+            object = annotated.optJSONObject("object");
+        }
+        throw new IOException("Não foi possível resolver a tag móvel Nightly para um commit imutável.");
+    }
+
+    static String formatOfficialNightlyLabel(String name, String publishedAt, String commitSha) {
+        String source = name == null ? "" : name.trim();
+        java.util.regex.Matcher matcher = Pattern.compile(
+                "(?i)^Nightly\\s+(\\d{4}-\\d{2}-\\d{2})\\s*[·•-]\\s*([0-9a-f]{7,40}).*$")
+                .matcher(source);
+        if (matcher.matches() && commitSha != null
+                && commitSha.toLowerCase(java.util.Locale.ROOT)
+                        .startsWith(matcher.group(2).toLowerCase(java.util.Locale.ROOT))) {
+            return "Nightly " + matcher.group(1) + " · " + matcher.group(2).toLowerCase(java.util.Locale.ROOT);
+        }
+        String date = publishedAt == null ? "" : publishedAt.trim();
+        int separator = date.indexOf('T');
+        if (separator > 0) date = date.substring(0, separator);
+        if (!date.matches("\\d{4}-\\d{2}-\\d{2}")) date = "data desconhecida";
+        String shortCommit = commitSha == null || commitSha.length() < 7
+                ? "commit desconhecido" : commitSha.substring(0, 7);
+        return "Nightly " + date + " · " + shortCommit;
+    }
+
+    private static void recordInstalledRuntime(SharedPreferences preferences, Release release,
+                                               OfficialRelease official) {
+        String commitPrefix = runtimeCommitPrefixFromVersion(release.version);
+        boolean exactOfficial = official != null
+                && runtimeVersionMatchesRelease(release.version, official.tag, official.commitSha);
+        String label = exactOfficial ? official.displayName
+                : runtimeDisplayLabel(release.version, release.upstreamTag);
+        preferences.edit()
+                .putString(PC_RELEASE_TAG, release.upstreamTag)
+                .putString(PC_RELEASE_COMMIT_PREFIX, commitPrefix)
+                .putString(PC_RELEASE_LABEL, label)
+                .apply();
+    }
+
+    private static String runtimeDisplayLabel(String runtimeVersion, String upstreamTag) {
+        if (OFFICIAL_NIGHTLY_TAG.equals(upstreamTag)) {
+            String prefix = runtimeCommitPrefixFromVersion(runtimeVersion);
+            return prefix.isEmpty() ? "Nightly" : "Nightly · " + prefix;
+        }
+        return upstreamTag == null || upstreamTag.trim().isEmpty() ? runtimeVersion : upstreamTag;
     }
 
     private static void installRelease(Context context, SharedPreferences preferences,
@@ -457,18 +536,31 @@ public final class HorizonRuntimeUpdateService {
     }
 
     private static Release latestRuntimeRelease() throws Exception {
-        return latestRuntimeRelease("");
+        return latestRuntimeRelease("", "");
     }
 
-    /** Finds the most recent verified Android runtime for the required official Horizon tag. */
+    /** Compatibility overload for tests and stable/date-tag releases. */
     private static Release latestRuntimeRelease(String requiredUpstreamTag) throws Exception {
+        return latestRuntimeRelease(requiredUpstreamTag, "");
+    }
+
+    /**
+     * Finds the newest verified Android runtime. For Nightly, both the moving channel tag
+     * and the immutable upstream commit must match; a prior date's Nightly is not equivalent.
+     */
+    private static Release latestRuntimeRelease(String requiredUpstreamTag,
+                                                String requiredUpstreamCommit) throws Exception {
         Release latest = null;
         String requiredTag = requiredUpstreamTag == null ? "" : requiredUpstreamTag.trim();
+        String requiredCommit = requiredUpstreamCommit == null
+                ? "" : requiredUpstreamCommit.trim().toLowerCase(java.util.Locale.ROOT);
         if (!requiredTag.isEmpty() && !isValidUpstreamTag(requiredTag)) {
             throw new IOException("A tag oficial solicitada para a runtime não é válida.");
         }
-        // GitHub orders this endpoint newest-first. Usually page 1 is enough, but look farther
-        // back if the repository has many app releases and no runtime release is on page 1.
+        if (!requiredCommit.isEmpty() && !requiredCommit.matches("(?i)[0-9a-f]{40}")) {
+            throw new IOException("O commit oficial solicitado para a runtime não é válido.");
+        }
+
         for (int page = 1; page <= 10; page++) {
             JSONArray releases = new JSONArray(readUrl(RELEASES_URL + "&page=" + page,
                     4 * 1024 * 1024));
@@ -486,7 +578,7 @@ public final class HorizonRuntimeUpdateService {
                     continue;
                 }
                 if (!requiredTag.isEmpty()
-                        && !runtimeVersionMatchesRelease(version, requiredTag)) {
+                        && !runtimeVersionMatchesRelease(version, requiredTag, requiredCommit)) {
                     continue;
                 }
                 try {
@@ -497,12 +589,9 @@ public final class HorizonRuntimeUpdateService {
                         latest = candidate;
                     }
                 } catch (Exception invalidRelease) {
-                    // A draft-like/incomplete/old release must not hide later valid runtime releases.
                     Log.w(TAG, "Ignorando release Android incompleto: " + tag, invalidRelease);
                 }
             }
-            // Results are newest-first. If we found a valid release on this page, older pages
-            // cannot provide a more recent runtime build under the normal GitHub release ordering.
             if (latest != null || releases.length() < 100) break;
         }
         return latest;
@@ -592,9 +681,27 @@ public final class HorizonRuntimeUpdateService {
         return isValidUpstreamTag(tag) ? tag : "";
     }
 
+    static String runtimeCommitPrefixFromVersion(String version) {
+        if (version == null || !version.startsWith("horizon-")) return "";
+        Matcher matcher = Pattern.compile("^.+-c([0-9a-fA-F]{8})-o[0-9a-fA-F]{8}$")
+                .matcher(version.substring("horizon-".length()));
+        return matcher.matches() ? matcher.group(1).toLowerCase(java.util.Locale.ROOT) : "";
+    }
+
+    /** Channel-only comparison retained for immutable releases and legacy tests. */
     static boolean runtimeVersionMatchesRelease(String runtimeVersion, String officialTag) {
         return isValidUpstreamTag(officialTag)
                 && officialTag.equals(upstreamTagFromRuntimeVersion(runtimeVersion));
+    }
+
+    /** Nightly comparison: channel plus exact immutable source-commit prefix. */
+    static boolean runtimeVersionMatchesRelease(String runtimeVersion, String officialTag,
+                                                String officialCommit) {
+        if (!isValidUpstreamTag(officialTag)
+                || !officialTag.equals(upstreamTagFromRuntimeVersion(runtimeVersion))) return false;
+        if (officialCommit == null || !officialCommit.matches("(?i)[0-9a-f]{40}")) return false;
+        String prefix = runtimeCommitPrefixFromVersion(runtimeVersion);
+        return !prefix.isEmpty() && officialCommit.toLowerCase(java.util.Locale.ROOT).startsWith(prefix);
     }
 
     static int comparePublicationDates(String left, String right) {
@@ -757,10 +864,14 @@ public final class HorizonRuntimeUpdateService {
     private static final class OfficialRelease {
         final String tag;
         final String publishedAt;
+        final String commitSha;
+        final String displayName;
 
-        OfficialRelease(String tag, String publishedAt) {
+        OfficialRelease(String tag, String publishedAt, String commitSha, String displayName) {
             this.tag = tag;
             this.publishedAt = publishedAt;
+            this.commitSha = commitSha;
+            this.displayName = displayName;
         }
     }
 
