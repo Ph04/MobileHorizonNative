@@ -1230,18 +1230,16 @@ final class NativeTouchControlsView extends View {
 
     /** Open the movable text panel; Android's IME is hosted by a separate, non-focusable panel. */
     private void showKeyboardDialog() {
-        if (previewOnly || gameActivity == null || activity.isFinishing()) return;
-        if (activeKeyboardPanel != null && activeKeyboardPanel.isShowing()) {
-            activeKeyboardPanel.dismiss();
-        }
+        if (previewOnly || gameActivity == null) return;
+        if (activeKeyboardPanel != null && activeKeyboardPanel.isShowing()) activeKeyboardPanel.dismiss();
 
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dpInt(14), dpInt(12), dpInt(14), dpInt(12));
         GradientDrawable surface = new GradientDrawable();
-        surface.setColor(panelSurfaceColor(0xff151321));
+        surface.setColor(0xff151321);
         surface.setCornerRadius(dp(16));
-        surface.setStroke(dpInt(1), panelSurfaceColor(0xff51466f));
+        surface.setStroke(dpInt(1), 0xff51466f);
         panel.setBackground(surface);
         panel.setElevation(dp(12));
 
@@ -1265,7 +1263,7 @@ final class NativeTouchControlsView extends View {
 
         TextView hint = new TextView(activity);
         hint.setText(UiLanguage.translate(activity,
-                "Toque no campo para digitar com o teclado do celular. O texto aparece aqui em tempo real."));
+                "Digite sua mensagem ou comando e envie pelo teclado do Android."));
         hint.setTextColor(0xffb8b1cf);
         hint.setTextSize(12);
         hint.setLineSpacing(dp(2), 1f);
@@ -1284,16 +1282,10 @@ final class NativeTouchControlsView extends View {
                 | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         input.setPadding(dpInt(12), dpInt(10), dpInt(12), dpInt(10));
         GradientDrawable inputBackground = new GradientDrawable();
-        inputBackground.setColor(panelSurfaceColor(0xff1c192b));
+        inputBackground.setColor(0xff1c192b);
         inputBackground.setCornerRadius(dp(10));
-        inputBackground.setStroke(dpInt(1), panelSurfaceColor(0xff51466f));
+        inputBackground.setStroke(dpInt(1), 0xff51466f);
         input.setBackground(inputBackground);
-        // Keep this visible field non-focusable. A 2dp proxy owned by NativeGameActivity
-        // receives IME input, so the draggable popup never takes focus from NativeActivity.
-        input.setFocusable(false);
-        input.setFocusableInTouchMode(false);
-        input.setCursorVisible(false);
-        input.setClickable(true);
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(-1, -2);
         inputParams.topMargin = dpInt(10);
         panel.addView(input, inputParams);
@@ -1309,9 +1301,9 @@ final class NativeTouchControlsView extends View {
         cancel.setTextSize(13);
         cancel.setGravity(Gravity.CENTER);
         GradientDrawable cancelBg = new GradientDrawable();
-        cancelBg.setColor(panelSurfaceColor(0xff242035));
+        cancelBg.setColor(0xff242035);
         cancelBg.setCornerRadius(dp(9));
-        cancelBg.setStroke(dpInt(1), panelSurfaceColor(0xff51466f));
+        cancelBg.setStroke(dpInt(1), 0xff51466f);
         cancel.setBackground(cancelBg);
         actions.addView(cancel, new LinearLayout.LayoutParams(0, -1, 1f));
 
@@ -1333,32 +1325,56 @@ final class NativeTouchControlsView extends View {
 
         int width = Math.min(dpInt(340), Math.max(dpInt(240),
                 activity.getResources().getDisplayMetrics().widthPixels - dpInt(24)));
-        PopupWindow popup = new PopupWindow(panel, width, ViewGroup.LayoutParams.WRAP_CONTENT, false);
+        final PopupWindow popup = new PopupWindow(panel, width,
+                ViewGroup.LayoutParams.WRAP_CONTENT, true);
         popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-        popup.setFocusable(false);
+        popup.setFocusable(true);
         popup.setTouchable(true);
         popup.setOutsideTouchable(true);
         popup.setClippingEnabled(true);
         popup.setElevation(dpInt(10));
-        popup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
+        popup.setInputMethodMode(PopupWindow.INPUT_METHOD_NEEDED);
+        popup.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        panel.setAlpha(LauncherAppearance.panelOpacity(activity));
         activeKeyboardPanel = popup;
         popup.setOnDismissListener(() -> {
             if (activeKeyboardPanel == popup) activeKeyboardPanel = null;
-            gameActivity.dismissMinecraftKeyboard();
         });
 
-        input.setOnClickListener(v -> gameActivity.showMinecraftKeyboard(input));
         Runnable dismiss = () -> {
-            gameActivity.dismissMinecraftKeyboard();
+            InputMethodManager manager = (InputMethodManager)
+                    activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager != null) manager.hideSoftInputFromWindow(input.getWindowToken(), 0);
             if (popup.isShowing()) popup.dismiss();
+        };
+        Runnable submit = () -> {
+            String value = input.getText() == null ? "" : input.getText().toString();
+            if (!value.isEmpty()) gameActivity.injectKeyboardText(value);
+            dismiss.run();
         };
         cancel.setOnClickListener(v -> dismiss.run());
         close.setOnClickListener(v -> dismiss.run());
-        send.setOnClickListener(v -> gameActivity.submitKeyboardText());
-
+        send.setOnClickListener(v -> submit.run());
+        input.setOnEditorActionListener((view, actionId, event) -> {
+            boolean enterKey = event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                    && event.getAction() == KeyEvent.ACTION_UP;
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+                    || actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || enterKey) {
+                submit.run();
+                return true;
+            }
+            return false;
+        });
         showDraggablePanel(popup, header, KEY_KEYBOARD_PANEL_X, KEY_KEYBOARD_PANEL_Y,
                 0.5f, 0.42f);
-        gameActivity.showMinecraftKeyboard(input);
+        input.requestFocus();
+        input.postDelayed(() -> {
+            InputMethodManager manager = (InputMethodManager)
+                    activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager != null && popup.isShowing()) {
+                manager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+            }
+        }, 140);
     }
 
     private void showAddButtonDialog() {
@@ -1729,56 +1745,24 @@ final class NativeTouchControlsView extends View {
                                     float defaultX, float defaultY) {
         android.content.SharedPreferences prefs =
                 activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
-        View decor = activity.getWindow().getDecorView();
-        View content = popup.getContentView();
-        if (decor == null || content == null || handle == null) return;
-
-        Rect visible = new Rect();
-        decor.getWindowVisibleDisplayFrame(visible);
-        if (visible.width() <= 0 || visible.height() <= 0) {
-            int width = decor.getWidth() > 0 ? decor.getWidth()
-                    : activity.getResources().getDisplayMetrics().widthPixels;
-            int height = decor.getHeight() > 0 ? decor.getHeight()
-                    : activity.getResources().getDisplayMetrics().heightPixels;
-            visible.set(0, 0, width, height);
-        }
-
-        int requestedWidth = popup.getWidth();
-        int requestedHeight = popup.getHeight();
-        int maxContentWidth = Math.max(dpInt(180), visible.width() - dpInt(16));
-        int maxContentHeight = Math.max(dpInt(140), visible.height() - dpInt(16));
-        int widthSpec = requestedWidth > 0
-                ? MeasureSpec.makeMeasureSpec(Math.min(requestedWidth, maxContentWidth), MeasureSpec.EXACTLY)
-                : MeasureSpec.makeMeasureSpec(maxContentWidth, MeasureSpec.AT_MOST);
-        content.measure(widthSpec,
-                MeasureSpec.makeMeasureSpec(maxContentHeight, MeasureSpec.AT_MOST));
-
-        int panelW = requestedWidth > 0
-                ? Math.min(requestedWidth, maxContentWidth)
-                : Math.max(1, content.getMeasuredWidth());
-        int panelH = requestedHeight > 0
-                ? Math.min(requestedHeight, maxContentHeight)
-                : Math.max(dpInt(120), Math.min(maxContentHeight, content.getMeasuredHeight()));
-        if (requestedWidth <= 0 || requestedWidth > maxContentWidth) popup.setWidth(panelW);
-        if (requestedHeight <= 0 || requestedHeight > maxContentHeight) popup.setHeight(panelH);
-
-        int maxX = Math.max(0, visible.width() - panelW);
-        int maxY = Math.max(0, visible.height() - panelH);
+        int screenW = activity.getResources().getDisplayMetrics().widthPixels;
+        int screenH = activity.getResources().getDisplayMetrics().heightPixels;
+        int panelW = Math.max(1, popup.getWidth());
+        int panelH = Math.max(dpInt(120), popup.getHeight());
+        int maxX = Math.max(0, screenW - panelW);
+        int maxY = Math.max(0, screenH - panelH);
         final int[] position = {
-                visible.left + Math.round(clamp(prefs.getFloat(prefX, defaultX), 0f, 1f) * maxX),
-                visible.top + Math.round(clamp(prefs.getFloat(prefY, defaultY), 0f, 1f) * maxY)
+                Math.round(clamp(prefs.getFloat(prefX, defaultX), 0f, 1f) * maxX),
+                Math.round(clamp(prefs.getFloat(prefY, defaultY), 0f, 1f) * maxY)
         };
-        try {
-            popup.showAtLocation(decor, Gravity.TOP | Gravity.LEFT, position[0], position[1]);
-        } catch (RuntimeException error) {
+        try { popup.showAtLocation(this, Gravity.TOP | Gravity.LEFT, position[0], position[1]); }
+        catch (RuntimeException error) {
             android.util.Log.e("MobileHorizonTouch", "Falha ao abrir painel flutuante", error);
             return;
         }
-
         final float[] origin = new float[2];
         final int[] start = new int[2];
         handle.setOnTouchListener((view, event) -> {
-            if (!popup.isShowing()) return false;
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     origin[0] = event.getRawX();
@@ -1787,27 +1771,19 @@ final class NativeTouchControlsView extends View {
                     start[1] = position[1];
                     return true;
                 case MotionEvent.ACTION_MOVE:
-                    int boundX = Math.max(0, visible.right - panelW);
-                    int boundY = Math.max(0, visible.bottom - panelH);
-                    position[0] = Math.round(clamp(start[0] + event.getRawX() - origin[0],
-                            visible.left, boundX));
-                    position[1] = Math.round(clamp(start[1] + event.getRawY() - origin[1],
-                            visible.top, boundY));
-                    try {
-                        if (popup.isShowing()) popup.update(position[0], position[1], -1, -1);
-                    } catch (RuntimeException error) {
-                        android.util.Log.w("MobileHorizonTouch", "Painel deixou de aceitar movimento", error);
-                        return false;
-                    }
+                    int boundX = Math.max(0, screenW - Math.max(1, popup.getWidth()));
+                    int boundY = Math.max(0, screenH - Math.max(dpInt(120), popup.getHeight()));
+                    position[0] = Math.round(clamp(start[0] + event.getRawX() - origin[0], 0f, boundX));
+                    position[1] = Math.round(clamp(start[1] + event.getRawY() - origin[1], 0f, boundY));
+                    try { popup.update(position[0], position[1], -1, -1); }
+                    catch (RuntimeException ignored) { }
                     return true;
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
-                    int limitX = Math.max(1, visible.width() - panelW);
-                    int limitY = Math.max(1, visible.height() - panelH);
-                    prefs.edit()
-                            .putFloat(prefX, clamp((position[0] - visible.left) / (float) limitX, 0f, 1f))
-                            .putFloat(prefY, clamp((position[1] - visible.top) / (float) limitY, 0f, 1f))
-                            .apply();
+                    int limitX = Math.max(1, screenW - Math.max(1, popup.getWidth()));
+                    int limitY = Math.max(1, screenH - Math.max(dpInt(120), popup.getHeight()));
+                    prefs.edit().putFloat(prefX, position[0] / (float) limitX)
+                            .putFloat(prefY, position[1] / (float) limitY).apply();
                     return true;
                 default:
                     return true;
@@ -2238,30 +2214,26 @@ final class NativeTouchControlsView extends View {
     }
 
     void showGlobalSettingsDialog() {
-        android.content.SharedPreferences prefs =
-                activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        android.content.SharedPreferences prefs = activity.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
         LinearLayout panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dpInt(14), dpInt(4), dpInt(14), dpInt(4));
 
         android.widget.CheckBox enabled = new android.widget.CheckBox(activity);
         enabled.setText(UiLanguage.translate(activity, "Ativar controles na tela do jogo"));
-        enabled.setTextColor(0xffeaf0ff);
-        enabled.setFocusable(false);
+        enabled.setTextColor(0xff18213a);
         enabled.setChecked(prefs.getBoolean(KEY_ENABLED, true));
         panel.addView(enabled, new LinearLayout.LayoutParams(-1, -2));
 
         android.widget.CheckBox handed = new android.widget.CheckBox(activity);
         handed.setText(UiLanguage.translate(activity, "Layout canhoto (joystick à direita)"));
-        handed.setTextColor(0xffeaf0ff);
-        handed.setFocusable(false);
+        handed.setTextColor(0xff18213a);
         handed.setChecked(leftHanded);
         panel.addView(handed, new LinearLayout.LayoutParams(-1, -2));
 
         android.widget.CheckBox classicButtons = new android.widget.CheckBox(activity);
         classicButtons.setText(UiLanguage.translate(activity, "Botões Clássicos"));
-        classicButtons.setTextColor(0xffeaf0ff);
-        classicButtons.setFocusable(false);
+        classicButtons.setTextColor(0xff18213a);
         classicButtons.setChecked(classicButtonsEnabled);
         panel.addView(classicButtons, new LinearLayout.LayoutParams(-1, -2));
 
@@ -2288,19 +2260,16 @@ final class NativeTouchControlsView extends View {
         panel.addView(panelOpacityLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(panelOpacityBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
-        TextView sensitivityLabel = textSetting(
-                "Sensibilidade da câmera " + Math.round(sensitivity * 100) + "%");
+        TextView sensitivityLabel = textSetting("Sensibilidade da câmera " + Math.round(sensitivity * 100) + "%");
         SeekBar sensitivityBar = new SeekBar(activity);
         sensitivityBar.setMax(150);
         sensitivityBar.setProgress(Math.round((sensitivity - 0.50f) * 100f));
         panel.addView(sensitivityLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(sensitivityBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
-        Button manageButtons = panelActionButton("Gerenciar / restaurar botões predefinidos", false);
-        manageButtons.setOnClickListener(v -> {
-            if (activeGameSettingsPanel != null) activeGameSettingsPanel.dismiss();
-            showButtonVisibilityManager();
-        });
+        Button manageButtons = new Button(activity);
+        manageButtons.setText(UiLanguage.translate(activity, "Gerenciar / restaurar botões predefinidos"));
+        manageButtons.setOnClickListener(v -> showButtonVisibilityManager());
         panel.addView(manageButtons, new LinearLayout.LayoutParams(-1, dpInt(42)));
 
         TextView gapLabel = textSetting("Distância de encaixe " + Math.round(snapGapDp) + " dp");
@@ -2310,38 +2279,24 @@ final class NativeTouchControlsView extends View {
         panel.addView(gapLabel, new LinearLayout.LayoutParams(-1, dpInt(19)));
         panel.addView(gapBar, new LinearLayout.LayoutParams(-1, dpInt(30)));
 
-        size.setOnSeekBarChangeListener(simpleSeek(progress ->
-                sizeLabel.setText(UiLanguage.translate(activity, "Tamanho geral ") + (70 + progress) + "%")));
-        alpha.setOnSeekBarChangeListener(simpleSeek(progress ->
-                alphaLabel.setText(UiLanguage.translate(activity, "Opacidade geral ") + (35 + progress) + "%")));
+        size.setOnSeekBarChangeListener(simpleSeek(progress -> sizeLabel.setText(UiLanguage.translate(activity, "Tamanho geral ") + (70 + progress) + "%")));
+        alpha.setOnSeekBarChangeListener(simpleSeek(progress -> alphaLabel.setText(UiLanguage.translate(activity, "Opacidade geral ") + (35 + progress) + "%")));
         panelOpacityBar.setOnSeekBarChangeListener(simpleSeek(progress ->
                 panelOpacityLabel.setText(UiLanguage.translate(activity,
                         "Opacidade dos painéis ") + (25 + progress) + "%")));
-        sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress ->
-                sensitivityLabel.setText(UiLanguage.translate(activity,
-                        "Sensibilidade da câmera ") + (50 + progress) + "%")));
-        gapBar.setOnSeekBarChangeListener(simpleSeek(progress ->
-                gapLabel.setText(UiLanguage.translate(activity,
-                        "Distância de encaixe ") + (progress + 4) + " dp")));
-
+        sensitivityBar.setOnSeekBarChangeListener(simpleSeek(progress -> sensitivityLabel.setText(UiLanguage.translate(activity, "Sensibilidade da câmera ") + (50 + progress) + "%")));
+        gapBar.setOnSeekBarChangeListener(simpleSeek(progress -> gapLabel.setText(UiLanguage.translate(activity, "Distância de encaixe ") + (progress + 4) + " dp")));
         ScrollView settingsScroll = new ScrollView(activity);
         settingsScroll.setFillViewport(false);
         settingsScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
-        LinearLayout footer = new LinearLayout(activity);
-        footer.setOrientation(LinearLayout.HORIZONTAL);
-        footer.setGravity(Gravity.CENTER_VERTICAL);
-        Button cancel = panelActionButton("Cancelar", false);
-        Button save = panelActionButton("Salvar", true);
-        footer.addView(cancel, new LinearLayout.LayoutParams(0, dpInt(38), 1f));
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dpInt(38), 1f);
-        saveParams.leftMargin = dpInt(8);
-        footer.addView(save, saveParams);
 
-        PopupWindow[] popupRef = new PopupWindow[1];
-        popupRef[0] = showFloatingSettingsPanel("Ajustes dos controles", settingsScroll,
-                footer, KEY_SETTINGS_PANEL_X, KEY_SETTINGS_PANEL_Y, 0.08f, 0.10f, 560);
-        cancel.setOnClickListener(v -> popupRef[0].dismiss());
-        save.setOnClickListener(v -> {
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle(UiLanguage.translate(activity, "Ajustes dos controles"))
+                .setView(settingsScroll)
+                .setNegativeButton(UiLanguage.translate(activity, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(activity, "Salvar"), null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             scale = (size.getProgress() + 70) / 100f;
             opacity = (alpha.getProgress() + 35) / 100f;
             sensitivity = (sensitivityBar.getProgress() + 50) / 100f;
@@ -2350,7 +2305,6 @@ final class NativeTouchControlsView extends View {
             classicButtonsEnabled = classicButtons.isChecked();
             LauncherAppearance.setPanelOpacity(activity,
                     (panelOpacityBar.getProgress() + 25) / 100f);
-            updateFloatingPanelOpacity();
             prefs.edit()
                     .putBoolean(KEY_ENABLED, enabled.isChecked())
                     .putBoolean(KEY_LEFT_HANDED, leftHanded)
@@ -2361,10 +2315,10 @@ final class NativeTouchControlsView extends View {
                     .putFloat(KEY_SNAP_GAP, snapGapDp)
                     .apply();
             invalidate();
-            Toast.makeText(activity, UiLanguage.translate(activity,
-                    "Ajustes dos controles salvos."), Toast.LENGTH_SHORT).show();
-            popupRef[0].dismiss();
-        });
+            Toast.makeText(activity, UiLanguage.translate(activity, "Ajustes dos controles salvos."), Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+        }));
+        dialog.show();
     }
 
     private String[] localizedManagedButtonNames() {
