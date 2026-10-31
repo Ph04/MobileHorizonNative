@@ -55,8 +55,8 @@ public final class NativeGameActivity extends NativeActivity {
     private String lastKeyboardInput = "";
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // Horizon resolves options, saves, logs and prepared resources from these paths.
-        // Set them before NativeActivity loads the native game library.
+        // Resolve the instance before choosing the engine. Vanilla keeps the regular
+        // independently updated runtime; Fabric Java Bridge uses its own verified channel.
         try {
             android.content.Intent launchIntent = getIntent();
             android.system.Os.unsetenv("HORIZON_NATIVE_START_BLOCKED");
@@ -66,45 +66,50 @@ public final class NativeGameActivity extends NativeActivity {
                 throw new java.io.IOException("Não foi possível criar o diretório privado do jogo.");
             }
 
-            // Select only a downloaded, hash-verified engine. During upgrades, the previous
-            // downloaded version is kept as a fallback; no game engine binary is bundled in the APK.
-            HorizonRuntimeManager.PreparedRuntime runtime = HorizonRuntimeManager.prepare(this);
-            android.system.Os.setenv("HORIZON_RUNTIME_HOME", runtime.root.getAbsolutePath(), true);
-            android.system.Os.setenv("HORIZON_RUNTIME_LIBRARY", runtime.activeLibrary.getAbsolutePath(), true);
-            if (runtime.fallbackLibrary != null) {
-                android.system.Os.setenv("HORIZON_RUNTIME_FALLBACK_LIBRARY",
-                        runtime.fallbackLibrary.getAbsolutePath(), true);
-            } else {
-                android.system.Os.unsetenv("HORIZON_RUNTIME_FALLBACK_LIBRARY");
-            }
-            android.system.Os.setenv("HORIZON_RUNTIME_STATUS_FILE", runtime.statusFile.getAbsolutePath(), true);
-            android.system.Os.setenv("HORIZON_RUNTIME_VERSION", runtime.activeVersion, true);
-
             String instanceId = launchIntent == null ? GameInstanceManager.DEFAULT_ID
                     : launchIntent.getStringExtra(EXTRA_INSTANCE_ID);
             java.io.File home = GameInstanceManager.getInstanceHome(this, instanceId);
             if (!home.isDirectory() && !home.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório da instância Horizon.");
             }
-            // Use an explicit per-launch flag. The old marker file could survive a
-            // previous smoke test and accidentally suppress diagnostics for the real game.
-            boolean smokeTest = launchIntent != null
-                    && launchIntent.getBooleanExtra(EXTRA_NATIVE_SMOKE_TEST, false);
-            if (smokeTest) {
-                android.system.Os.setenv("HORIZON_NATIVE_SMOKE_TEST", "1", true);
-            } else {
-                android.system.Os.unsetenv("HORIZON_NATIVE_SMOKE_TEST");
-            }
-            // Clear leftovers from earlier versions/launches before the native entry point.
-            new java.io.File(gameRoot, "horizon-native-smoke.flag").delete();
-            new java.io.File(gameRoot, "horizon-native-smoke-result.txt").delete();
-            new java.io.File(gameRoot, "horizon-client-result.txt").delete();
+            GameProfileManager.LaunchProfile profile =
+                    GameProfileManager.prepareLaunch(this, instanceId);
+            boolean fabricJavaBridge = profile.profile.isFabricJavaBridge();
 
-            // NativeActivity already starts the runtime with the app's private working directory
-            // on supported builds; Os.chdir is not exposed by Android's public SDK.
-            android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
-            // Reset optional compatibility variables first so a reused :game process cannot
-            // accidentally inherit a previous instance's selected loader.
+            java.io.File runtimeRoot;
+            java.io.File runtimeLibrary;
+            java.io.File runtimeFallback = null;
+            java.io.File runtimeStatus;
+            String runtimeVersion;
+            if (fabricJavaBridge) {
+                FabricBridgeRuntimeManager.PreparedRuntime runtime =
+                        FabricBridgeRuntimeManager.prepare(this);
+                runtimeRoot = runtime.root;
+                runtimeLibrary = runtime.activeLibrary;
+                runtimeStatus = runtime.statusFile;
+                runtimeVersion = runtime.activeVersion;
+            } else {
+                HorizonRuntimeManager.PreparedRuntime runtime = HorizonRuntimeManager.prepare(this);
+                runtimeRoot = runtime.root;
+                runtimeLibrary = runtime.activeLibrary;
+                runtimeFallback = runtime.fallbackLibrary;
+                runtimeStatus = runtime.statusFile;
+                runtimeVersion = runtime.activeVersion;
+            }
+            android.system.Os.setenv("HORIZON_RUNTIME_HOME", runtimeRoot.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_RUNTIME_LIBRARY", runtimeLibrary.getAbsolutePath(), true);
+            if (runtimeFallback != null) {
+                android.system.Os.setenv("HORIZON_RUNTIME_FALLBACK_LIBRARY",
+                        runtimeFallback.getAbsolutePath(), true);
+            } else {
+                android.system.Os.unsetenv("HORIZON_RUNTIME_FALLBACK_LIBRARY");
+            }
+            android.system.Os.setenv("HORIZON_RUNTIME_STATUS_FILE", runtimeStatus.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_RUNTIME_VERSION", runtimeVersion, true);
+            android.system.Os.unsetenv("HORIZON_RUNTIME_USING_FALLBACK");
+
+            // NativeActivity runs in :game. Reset optional state before exporting the selected
+            // profile so a recycled process cannot inherit the last instance's loader/JVM.
             android.system.Os.unsetenv("HORIZON_INSTANCE_ID");
             android.system.Os.unsetenv("HORIZON_GAME_VERSION");
             android.system.Os.setenv("HORIZON_LOADER_ID", "vanilla", true);
@@ -123,12 +128,13 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.unsetenv("HORIZON_JAVA_LIBRARY_PATH");
             android.system.Os.unsetenv("HORIZON_JAVA_TMP");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_JAR");
+            android.system.Os.unsetenv("HORIZON_ROOT");
+            android.system.Os.unsetenv("HORIZON_JAVA_SIDE");
+            android.system.Os.unsetenv("JAVA_HOME");
+            android.system.Os.unsetenv("LD_LIBRARY_PATH");
+            android.system.Os.unsetenv("TMPDIR");
 
-            // Resolve the per-instance game/loader profile and prepare the runtime handoff.
-            // Compatibility modules are installed once under filesDir and referenced by path;
-            // they are never copied into every APK or every instance.
-            GameProfileManager.LaunchProfile profile =
-                    GameProfileManager.prepareLaunch(this, instanceId);
+            android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
             android.system.Os.setenv("HORIZON_INSTANCE_ID", profile.profile.instanceId, true);
             android.system.Os.setenv("HORIZON_GAME_VERSION",
                     profile.profile.minecraftVersion, true);
@@ -139,7 +145,40 @@ public final class NativeGameActivity extends NativeActivity {
                     profile.launchFile.getAbsolutePath(), true);
             android.system.Os.setenv("HORIZON_MODS_DIR",
                     profile.modsDirectory.getAbsolutePath(), true);
-            if (profile.moduleDirectory != null) {
+
+            if (fabricJavaBridge) {
+                int modCount = FabricModManager.prepareInstance(this, profile.profile.instanceId);
+                JdkRuntimeInstaller.RuntimePaths javaRuntime =
+                        JdkRuntimeInstaller.getInstalledIfReady(this);
+                if (javaRuntime == null) {
+                    throw new java.io.IOException("O Java 25 ainda não foi preparado. Conclua a preparação dos recursos oficiais antes de iniciar o perfil Fabric.");
+                }
+                java.io.File workspace = new java.io.File(gameRoot,
+                        ".local/horizon-prepare-workspace").getCanonicalFile();
+                java.io.File expectedLock = new java.io.File(workspace, "research-lock.json");
+                java.io.File expectedJar = new java.io.File(workspace,
+                        ".local/minecraft/26.3/jars/client.jar");
+                if (!expectedLock.isFile() || !expectedJar.isFile()) {
+                    throw new java.io.IOException("O bridge Fabric precisa do JAR cliente 26.3 original e do research-lock.json preparados pelo launcher. Reprepare os recursos oficiais.");
+                }
+                android.system.Os.setenv("HORIZON_ROOT", workspace.getAbsolutePath(), true);
+                android.system.Os.setenv("HORIZON_JAVA_HOME",
+                        javaRuntime.javaHome.getAbsolutePath(), true);
+                android.system.Os.setenv("JAVA_HOME",
+                        javaRuntime.javaHome.getAbsolutePath(), true);
+                android.system.Os.setenv("HORIZON_JAVA_SIDE", "client", true);
+                android.system.Os.setenv("HORIZON_MODS_DIR",
+                        new java.io.File(home, "mods-java").getAbsolutePath(), true);
+
+                java.util.Map<String, String> javaEnvironment =
+                        javaRuntime.processEnvironment(new java.io.File(javaRuntime.root, "tmp"));
+                for (java.util.Map.Entry<String, String> entry : javaEnvironment.entrySet()) {
+                    android.system.Os.setenv(entry.getKey(), entry.getValue(), true);
+                }
+                android.util.Log.i("MobileHorizon",
+                        "Fabric Java Bridge preparado: " + modCount + " JAR(s), Java 25 em "
+                                + javaRuntime.javaHome.getAbsolutePath());
+            } else if (profile.moduleDirectory != null) {
                 android.system.Os.setenv("HORIZON_COMPATIBILITY_MODULE_DIR",
                         profile.moduleDirectory.getAbsolutePath(), true);
                 android.system.Os.setenv("HORIZON_COMPATIBILITY_MODULE_ID",
@@ -153,8 +192,6 @@ public final class NativeGameActivity extends NativeActivity {
                 android.system.Os.setenv("HORIZON_COMPATIBILITY_API_VERSION",
                         Integer.toString(CompatibilityPluginManager.PLUGIN_API_VERSION), true);
 
-                // Resolve the packaged Java API and an already-installed Java 25 runtime.
-                // A loader instance never triggers APK generation or a JDK download here.
                 CompatibilityApiRuntime.Prepared bridge = CompatibilityApiRuntime.prepare(this);
                 java.io.File filesRoot = getFilesDir().getCanonicalFile();
                 android.system.Os.setenv("HORIZON_APP_FILES_DIR", filesRoot.getAbsolutePath(), true);
@@ -168,22 +205,29 @@ public final class NativeGameActivity extends NativeActivity {
                         bridge.javaTemp.getAbsolutePath(), true);
                 android.system.Os.setenv("HORIZON_COMPATIBILITY_API_JAR",
                         bridge.apiJar.getAbsolutePath(), true);
-            } else {
-                android.system.Os.unsetenv("HORIZON_COMPATIBILITY_MODULE_DIR");
-                android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_JAR");
-                android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_CLASS");
-                android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_VERSION");
             }
+
             android.util.Log.i("MobileHorizon", "Instância " + profile.profile.instanceId
                     + " preparada: Minecraft " + profile.profile.minecraftVersion
-                    + ", loader " + profile.profile.loaderId + " " + profile.profile.loaderVersion);
-            // Worlds, options, logs and local packs are isolated under this instance's
-            // HORIZON_HOME. Prepared Minecraft resources remain shared under filesDir/.local.
+                    + ", loader " + profile.profile.loaderId + " " + profile.profile.loaderVersion
+                    + ", runtime " + runtimeVersion);
+
             java.io.File resources = new java.io.File(
                     gameRoot, ".local/horizon-client/" + profile.profile.minecraftVersion);
             android.system.Os.setenv("HORIZON_RESOURCES", resources.getAbsolutePath(), true);
-            // NativeGameActivity runs in :game, so copy launch context explicitly:
-            // environment changes made in MainActivity are not inherited across processes.
+
+            boolean smokeTest = launchIntent != null
+                    && launchIntent.getBooleanExtra(EXTRA_NATIVE_SMOKE_TEST, false);
+            if (smokeTest) {
+                android.system.Os.setenv("HORIZON_NATIVE_SMOKE_TEST", "1", true);
+            } else {
+                android.system.Os.unsetenv("HORIZON_NATIVE_SMOKE_TEST");
+            }
+            new java.io.File(gameRoot, "horizon-native-smoke.flag").delete();
+            new java.io.File(gameRoot, "horizon-native-smoke-result.txt").delete();
+            new java.io.File(gameRoot, "horizon-client-result.txt").delete();
+
+            // Player identity/session belong to the Android app process, not the NativeActivity process.
             if (launchIntent != null) {
                 String playerName = launchIntent.getStringExtra(EXTRA_PLAYER_NAME);
                 if (playerName != null && playerName.matches("[A-Za-z0-9_]{1,16}")) {
