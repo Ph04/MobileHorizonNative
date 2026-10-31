@@ -19,7 +19,7 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 
 /**
- * Separate, opt-in runtime channel for iaxivers/horizon's Fabric Java bridge.
+ * Separate, opt-in runtime channel for Java Bridge By:iaxivers from iaxivers/horizon.
  * Vanilla continues to use HorizonRuntimeManager and its normal updater.
  */
 final class FabricBridgeRuntimeManager {
@@ -83,20 +83,20 @@ final class FabricBridgeRuntimeManager {
         Context app = context.getApplicationContext();
         File root = root(app);
         ensureDirectory(root);
-        publish(listener, "Consultando o runtime Fabric Java Bridge…", 0L, -1L);
+        publish(listener, "Consultando Java Bridge By:iaxivers…", 0L, -1L);
 
         JSONObject release = new JSONObject(new String(
                 readUrl(API_URL, 1024 * 1024), StandardCharsets.UTF_8));
         if (!RELEASE_TAG.equals(release.optString("tag_name", ""))
                 || release.optBoolean("draft", true)) {
-            throw new IOException("A release de teste do Fabric Java Bridge não está publicada.");
+            throw new IOException("A release de teste de Java Bridge By:iaxivers não está publicada.");
         }
         JSONArray assets = release.optJSONArray("assets");
         if (assets == null) throw new IOException("A release Fabric não contém arquivos.");
 
         String manifestUrl = findAssetUrl(assets, MANIFEST_ASSET);
         if (manifestUrl == null) throw new IOException("O manifesto do runtime Fabric está ausente.");
-        publish(listener, "Baixando manifesto do Fabric Java Bridge…", 0L, -1L);
+        publish(listener, "Baixando manifesto de Java Bridge By:iaxivers…", 0L, -1L);
         byte[] manifestBytes = readUrl(manifestUrl, MAX_MANIFEST_BYTES);
         JSONObject manifest = new JSONObject(new String(manifestBytes, StandardCharsets.UTF_8));
         String version = requireVersion(manifest.optString("version", ""));
@@ -119,7 +119,7 @@ final class FabricBridgeRuntimeManager {
                 || !overlay.matches("[0-9a-f]{8}")
                 || !digest.matches("[0-9a-f]{64}")
                 || !version.startsWith("fabric-java-bridge-" + UPSTREAM_COMMIT.substring(0, 8) + "-o")) {
-            throw new IOException("O manifesto não corresponde ao bridge Fabric Java esperado.");
+            throw new IOException("O manifesto não corresponde a Java Bridge By:iaxivers.");
         }
 
         String engineUrl = findAssetUrl(assets, ENGINE_ASSET);
@@ -139,7 +139,7 @@ final class FabricBridgeRuntimeManager {
         ensureDirectory(stage);
         File partial = new File(stage, ENGINE_FILE_NAME + ".part");
         try {
-            publish(listener, "Baixando motor Fabric Java Bridge…", 0L, -1L);
+            publish(listener, "Baixando motor Java Bridge By:iaxivers…", 0L, -1L);
             download(engineUrl, partial, digest, listener);
             if (!isArm64Elf(partial)) {
                 throw new IOException("O arquivo baixado não é uma biblioteca Android ARM64 válida.");
@@ -172,7 +172,7 @@ final class FabricBridgeRuntimeManager {
                 throw error;
             }
             deleteRecursively(previous);
-            publish(listener, "Runtime Fabric Java Bridge instalado e verificado.", 1L, 1L);
+            publish(listener, "Java Bridge By:iaxivers instalado e verificado.", 1L, 1L);
             return activeRuntime(app);
         } catch (Exception error) {
             deleteRecursively(stage);
@@ -190,7 +190,7 @@ final class FabricBridgeRuntimeManager {
         File active = new File(root, "active.json");
         if (Files.isSymbolicLink(active.toPath()) || !active.isFile()
                 || active.length() <= 0 || active.length() > 16 * 1024) {
-            throw new IOException("O runtime Fabric Java Bridge ainda não foi instalado. Abra Módulos de compatibilidade e instale-o antes de iniciar esta instância.");
+            throw new IOException("Java Bridge By:iaxivers ainda não foi instalado. Abra Módulos de compatibilidade e instale-o antes de iniciar esta instância.");
         }
         final JSONObject json;
         try {
@@ -247,7 +247,7 @@ final class FabricBridgeRuntimeManager {
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setConnectTimeout(20_000);
         connection.setReadTimeout(60_000);
-        connection.setRequestProperty("User-Agent", "MobileHorizonNative-FabricBridge/1.0");
+        connection.setRequestProperty("User-Agent", "MobileHorizonNative-JavaBridge/1.0");
         try {
             if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
                 throw new IOException("HTTP " + connection.getResponseCode() + " ao consultar o runtime Fabric.");
@@ -298,7 +298,7 @@ final class FabricBridgeRuntimeManager {
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setConnectTimeout(30_000);
         connection.setReadTimeout(60_000);
-        connection.setRequestProperty("User-Agent", "MobileHorizonNative-FabricBridge/1.0");
+        connection.setRequestProperty("User-Agent", "MobileHorizonNative-JavaBridge/1.0");
         try {
             int code = connection.getResponseCode();
             if (code != HttpURLConnection.HTTP_OK) {
@@ -323,7 +323,7 @@ final class FabricBridgeRuntimeManager {
                     }
                     digest.update(buffer, 0, count);
                     output.write(buffer, 0, count);
-                    publish(listener, "Baixando motor Fabric Java Bridge…", received, total);
+                    publish(listener, "Baixando motor Java Bridge By:iaxivers…", received, total);
                 }
                 output.flush();
                 output.getFD().sync();
