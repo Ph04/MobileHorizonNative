@@ -1,4 +1,4 @@
-# Testar o Fabric Java Bridge no MobileHorizonNative
+# Testar Java Bridge By:iaxivers no MobileHorizonNative
 
 Este branch integra, como runtime opcional, o bridge do fork [iaxivers/horizon](https://github.com/iaxivers/horizon/tree/java-bridge), fixado no commit `4bd3fee1b05ab89c047b8212d314b4de0912c077`.
 
@@ -15,21 +15,23 @@ O código Fabric/JVM é o do commit externo fixado. O overlay MobileHorizon mant
 ## Fluxo de teste no app
 
 1. Conclua a preparação oficial de Minecraft 26.3 no Gerenciador de recursos. Isso também instala o Java 25 e prepara o JAR cliente e as bibliotecas que o bridge usa para montar seu classpath.
-2. Abra **Instâncias → Módulos de compatibilidade → Instalar/atualizar Fabric Java Bridge**. A biblioteca é baixada de uma release separada, conferida por SHA-256 e ELF ARM64 e ativada sem substituir o runtime Vanilla.
-3. Crie uma nova instância e escolha **Fabric Java Bridge**. O perfil só aparece depois que o runtime especial estiver instalado. Não altere a instância padrão.
+2. Abra **Instâncias → Módulos de compatibilidade → Instalar/atualizar Java Bridge By:iaxivers**. A biblioteca é baixada de uma release separada, conferida por SHA-256 e ELF ARM64 e ativada sem substituir o runtime Vanilla.
+3. Crie uma nova instância e escolha **Java Bridge By:iaxivers**. O perfil só aparece depois que o Java Bridge By:iaxivers estiver instalado. Não altere a instância padrão.
 4. Na instância Fabric, abra **Gerenciar mods Fabric** e importe os JARs que deseja testar. Cada arquivo é copiado para a pasta `mods/` dessa instância e validado pela presença de `fabric.mod.json`. Os mods são ativados por padrão ao importar.
 5. Use **Desativar** ou **Ativar** no cartão de cada mod. Os desativados são mantidos em `mods-disabled/`; os ativos permanecem em `mods/`. A alteração vale na próxima inicialização do jogo.
-6. Inicie essa instância. Antes de abrir o Horizon, o launcher recria os links privados apenas dos mods ativos em `mods-java/`, fornece o Java 25 e aponta `HORIZON_ROOT` para o workspace de recursos preparados. É permitido iniciar com todos os mods de terceiros desativados.
+6. Inicie essa instância.
+
+O diretório de trabalho do processo é definido como a pasta da instância antes de abrir o cliente. Isso é obrigatório: o Rust do bridge resolve `options.txt` usando `current_dir()` e procura `mods-java/` ao lado desse arquivo. O wrapper de Prism do próprio projeto faz o mesmo com `cd "$HOME_DIR"`; definir apenas `HORIZON_HOME` ou `HORIZON_MODS_DIR` não substitui essa mudança de diretório. Antes de abrir o Horizon, o launcher recria os links privados apenas dos mods ativos em `mods-java/`, fornece o Java 25 e aponta `HORIZON_ROOT` para o workspace de recursos preparados. É permitido iniciar com todos os mods de terceiros desativados.
 
 Não é necessário incluir outro `fabric-api` no pacote: o bridge possui uma versão de Fabric API fixada para Minecraft 26.3. Os mods e suas configurações permanecem separados por instância.
 
 ## Isolamento e segurança
 
 - Vanilla continua usando `HorizonRuntimeManager` e o atualizador normal.
-- O perfil Fabric usa `FabricBridgeRuntimeManager` e o canal de release `fabric-java-bridge-4bd3fee1`.
+- O perfil Java Bridge By:iaxivers usa `FabricBridgeRuntimeManager` e o canal de release `fabric-java-bridge-4bd3fee1`.
 - O bridge não é iniciado num perfil Vanilla.
 - Os JARs são código executável de terceiros. Importe apenas arquivos de fontes confiáveis.
-- O runtime Fabric é experimental. O bridge implementa uma representação Java espelhada do mundo e um cliente Java sem janela; mods que dependam de APIs não mapeadas, renderização GPU própria, mixins fora da cobertura ou recursos ainda ausentes podem não funcionar.
+- Java Bridge By:iaxivers é experimental. O bridge implementa uma representação Java espelhada do mundo e um cliente Java sem janela; mods que dependam de APIs não mapeadas, renderização GPU própria, mixins fora da cobertura ou recursos ainda ausentes podem não funcionar.
 - Este teste não implica compatibilidade geral com qualquer modpack Fabric nem com Forge/NeoForge.
 - A Action de runtime compila e publica apenas a biblioteca nativa ARM64 e seu manifesto. Ela não compila nem publica APK.
 
