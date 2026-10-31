@@ -102,6 +102,17 @@ public final class NativeGameActivity extends NativeActivity {
             // NativeActivity already starts the runtime with the app's private working directory
             // on supported builds; Os.chdir is not exposed by Android's public SDK.
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
+            // Reset optional compatibility variables first so a reused :game process cannot
+            // accidentally inherit a previous instance's selected loader.
+            android.system.Os.setenv("HORIZON_LOADER_ID", "vanilla", true);
+            android.system.Os.setenv("HORIZON_LOADER_VERSION", "", true);
+            android.system.Os.unsetenv("HORIZON_INSTANCE_PROFILE");
+            android.system.Os.unsetenv("HORIZON_MODS_DIR");
+            android.system.Os.unsetenv("HORIZON_COMPATIBILITY_MODULE_DIR");
+            android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_JAR");
+            android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_CLASS");
+            android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_VERSION");
+
             // Resolve the per-instance game/loader profile and prepare the runtime handoff.
             // Compatibility modules are installed once under filesDir and referenced by path;
             // they are never copied into every APK or every instance.
