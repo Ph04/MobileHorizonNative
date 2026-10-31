@@ -1,0 +1,283 @@
+name: Build external Fabric Java Bridge runtime (Android ARM64)
+
+on:
+  push:
+    branches: ["feature/fabric-java-bridge-test"]
+    paths:
+      - "android-native/**"
+      - "tools/patch_horizon_android_touch.py"
+      - "tools/horizon_patches/01_offline_server_login.py"
+      - "tools/horizon_patches/02_android_native.py"
+      - "tools/fabric-java-bridge-revision.env"
+      - ".github/workflows/fabric-java-bridge-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fabric-java-bridge-runtime-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out MobileHorizonNative integration
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25 for the Fabric bridge build
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Rust for Android ARM64
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Android SDK and NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 ndk;27.2.12479018"
+
+      - name: Fetch and verify the pinned external Fabric bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          source tools/fabric-java-bridge-revision.env
+          SOURCE="$RUNNER_TEMP/horizon-fabric-source"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin "https://github.com/${FABRIC_HORIZON_REPOSITORY}.git"
+          git -C "$SOURCE" fetch --depth 1 origin "$FABRIC_HORIZON_COMMIT"
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$FABRIC_HORIZON_COMMIT"
+
+          # This fork already contains Fabric/JVM integration. Apply only the
+          # MobileHorizon offline-login and Android NativeActivity adaptations.
+          export HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE=1
+          python3 -m py_compile tools/patch_horizon_android_touch.py \
+            tools/horizon_patches/01_offline_server_login.py \
+            tools/horizon_patches/02_android_native.py
+          python3 tools/patch_horizon_android_touch.py "$SOURCE"
+
+          # Add MobileHorizon's Android NativeActivity entry point to this fork's workspace.
+          cp -a "$GITHUB_WORKSPACE/android-native" "$SOURCE/android-native"
+          python3 - "$SOURCE/Cargo.toml" <<'PY'
+          import pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+          marker = "members = [\\n"
+          if text.count(marker) != 1:
+              raise SystemExit("Could not locate exactly one Cargo workspace members list")
+          if '"android-native"' not in text:
+              text = text.replace(marker, marker + '    "android-native",\\n', 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+          grep -Fq 'features = ["audio", "java-mods"]' "$SOURCE/android-native/Cargo.toml"
+          ! grep -Fq 'compatibility_bridge::' "$SOURCE/android-native/src/lib.rs"
+          echo "Prepared pinned Fabric bridge $FABRIC_HORIZON_COMMIT with the Android overlay."
+
+      - name: Prepare temporary Minecraft 26.3 compile-time classpath
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/horizon-fabric-source"
+          python3 - "$SOURCE" <<'PY'
+          import hashlib, json, pathlib, sys, urllib.request
+
+          root = pathlib.Path(sys.argv[1])
+          base = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+
+          def fetch_json(url):
+              request = urllib.request.Request(
+                  url, headers={"User-Agent": "MobileHorizonNative-Fabric-CI"}
+              )
+              with urllib.request.urlopen(request, timeout=45) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          def download(url, path, expected_sha1):
+              if not url.startswith("https://"):
+                  raise RuntimeError("Minecraft metadata contains a non-HTTPS download URL")
+              request = urllib.request.Request(
+                  url, headers={"User-Agent": "MobileHorizonNative-Fabric-CI"}
+              )
+              digest = hashlib.sha1()
+              path.parent.mkdir(parents=True, exist_ok=True)
+              temporary = path.with_suffix(path.suffix + ".part")
+              with urllib.request.urlopen(request, timeout=90) as response, temporary.open("wb") as output:
+                  while True:
+                      chunk = response.read(1024 * 1024)
+                      if not chunk:
+                          break
+                      output.write(chunk)
+                      digest.update(chunk)
+              actual = digest.hexdigest()
+              if actual.lower() != expected_sha1.lower():
+                  temporary.unlink(missing_ok=True)
+                  raise RuntimeError(
+                      f"SHA-1 mismatch for {path.name}: {actual} != {expected_sha1}"
+                  )
+              temporary.replace(path)
+
+          version_id = "26.3"
+          global_manifest = fetch_json(base)
+          entry = next(
+              (item for item in global_manifest["versions"] if item["id"] == version_id),
+              None,
+          )
+          if entry is None:
+              raise SystemExit("Official Mojang manifest does not contain Minecraft 26.3")
+          version = fetch_json(entry["url"])
+          if (version.get("id") != version_id
+                  or version.get("javaVersion", {}).get("majorVersion") != 25):
+              raise SystemExit("Minecraft 26.3 metadata or Java major version is unexpected")
+
+          game = root / ".local" / "minecraft" / version_id
+          client = version["downloads"]["client"]
+          download(client["url"], game / "jars" / "client.jar", client["sha1"])
+
+          downloaded = 0
+          total_bytes = 0
+          for library in version.get("libraries", []):
+              artifact = library.get("downloads", {}).get("artifact")
+              if not artifact:
+                  continue
+              relative = pathlib.PurePosixPath(artifact["path"])
+              if relative.is_absolute() or ".." in relative.parts:
+                  raise RuntimeError("Unsafe library path in official Mojang metadata")
+              destination = game / "libraries" / "client" / pathlib.Path(*relative.parts)
+              download(artifact["url"], destination, artifact["sha1"])
+              downloaded += 1
+              total_bytes += destination.stat().st_size
+              if total_bytes > 700 * 1024 * 1024:
+                  raise RuntimeError("Minecraft client library classpath is unexpectedly large")
+
+          # horizon-jvm/build.rs needs only this version field to compile the platform JAR.
+          # The actual app uses its own full, verified research-lock.json and prepared game files.
+          (root / "research-lock.json").write_text(
+              json.dumps({"minecraft": {"version": version_id}}, indent=2) + "\\n",
+              encoding="utf-8",
+          )
+          print(f"Prepared temporary client.jar and {downloaded} client libraries for javac.")
+          print("These Mojang game files remain on the CI runner and are not published.")
+          PY
+
+      - name: Test Fabric Loader, entrypoints and Mixins on the pinned game
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/horizon-fabric-source"
+          export HORIZON_JAVA_HOME="$JAVA_HOME"
+          export JAVA_HOME
+          export PATH="$JAVA_HOME/bin:$PATH"
+          cargo test --manifest-path "$SOURCE/Cargo.toml" \
+            -p horizon-jvm --test fabric -- --nocapture
+
+      - name: Build the Fabric Java Bridge engine for Android ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/horizon-fabric-source"
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          export JAVA_HOME
+          export HORIZON_JAVA_HOME="$JAVA_HOME"
+
+          cargo build --release --no-default-features \
+            --manifest-path "$SOURCE/android-native/Cargo.toml" \
+            --target aarch64-linux-android
+
+          LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_engine.so"
+          test -s "$LIB"
+          "$TOOLCHAIN/llvm-readelf" -h "$LIB" > "$RUNNER_TEMP/fabric-engine-elf.txt"
+          grep -Fq "AArch64" "$RUNNER_TEMP/fabric-engine-elf.txt"
+          "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" > "$RUNNER_TEMP/fabric-engine-symbols.txt"
+          grep -Fq "android_main" "$RUNNER_TEMP/fabric-engine-symbols.txt"
+          grep -Fq "Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectCursorMove" "$RUNNER_TEMP/fabric-engine-symbols.txt"
+          grep -Fq "Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectKeyboardText" "$RUNNER_TEMP/fabric-engine-symbols.txt"
+          echo "Built the Java-mods-enabled Horizon engine for Android ARM64."
+
+      - name: Package and publish the versioned Fabric runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source tools/fabric-java-bridge-revision.env
+          SOURCE="$RUNNER_TEMP/horizon-fabric-source"
+          LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_engine.so"
+          RELEASE_DIR="$RUNNER_TEMP/fabric-runtime-release"
+          mkdir -p "$RELEASE_DIR"
+          cp "$LIB" "$RELEASE_DIR/$FABRIC_ENGINE_ASSET"
+          ENGINE_SHA="$(sha256sum "$LIB" | awk '{print $1}')"
+          OVERLAY_SHA="$(python3 - <<'PY'
+          import hashlib, pathlib, subprocess
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\\0")
+          paths = sorted(p for p in tracked if p and (
+              p.startswith(b"android-native/")
+              or p in {
+                  b"tools/patch_horizon_android_touch.py",
+                  b"tools/horizon_patches/01_offline_server_login.py",
+                  b"tools/horizon_patches/02_android_native.py",
+                  b"tools/fabric-java-bridge-revision.env",
+                  b".github/workflows/fabric-java-bridge-runtime.yml",
+              }
+          ))
+          h = hashlib.sha256()
+          for raw in paths:
+              path = pathlib.Path(raw.decode())
+              if not path.is_file():
+                  raise SystemExit("Missing runtime input: " + str(path))
+              h.update(raw + b"\\0" + path.read_bytes() + b"\\0")
+          print(h.hexdigest()[:8])
+          PY
+          )"
+          RUNTIME_VERSION="fabric-java-bridge-${FABRIC_HORIZON_COMMIT:0:8}-o${OVERLAY_SHA}"
+          python3 - "$RELEASE_DIR/$FABRIC_MANIFEST_ASSET" \
+            "$RUNTIME_VERSION" "$FABRIC_HORIZON_COMMIT" "$ENGINE_SHA" "$OVERLAY_SHA" \
+            "$FABRIC_LOADER_VERSION" "$FABRIC_API_VERSION" <<'PY'
+          import json, sys
+          path, version, commit, digest, overlay, loader, api = sys.argv[1:]
+          manifest = {
+              "format": 1,
+              "version": version,
+              "upstream_repository": "iaxivers/horizon",
+              "upstream_ref": "java-bridge",
+              "upstream_commit": commit,
+              "bridge_commit": commit,
+              "overlay": overlay,
+              "minecraft_version": "26.3",
+              "fabric_loader_version": loader,
+              "fabric_api_version": api,
+              "abi": "arm64-v8a",
+              "library": "fabric-horizon-runtime-arm64-v8a.so",
+              "sha256": digest.lower(),
+          }
+          with open(path, "w", encoding="utf-8") as stream:
+              json.dump(manifest, stream, indent=2)
+              stream.write("\\n")
+          print("Fabric runtime manifest:", version, "SHA-256:", digest)
+          PY
+
+          TAG="$FABRIC_RUNTIME_RELEASE_TAG"
+          NOTES="Experimental Android ARM64 runtime built from iaxivers/horizon java-bridge ($FABRIC_HORIZON_COMMIT). Includes Fabric Loader $FABRIC_LOADER_VERSION and Fabric API $FABRIC_API_VERSION for Minecraft 26.3. This is a runtime-only release; no APK is built or changed."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "$RELEASE_DIR/$FABRIC_ENGINE_ASSET" \
+              "$RELEASE_DIR/$FABRIC_MANIFEST_ASSET" --clobber
+            gh release edit "$TAG" --title "$RUNTIME_VERSION" --notes "$NOTES"
+          else
+            gh release create "$TAG" \
+              "$RELEASE_DIR/$FABRIC_ENGINE_ASSET" \
+              "$RELEASE_DIR/$FABRIC_MANIFEST_ASSET" \
+              --title "$RUNTIME_VERSION" --notes "$NOTES"
+          fi
+          echo "Published separate Fabric runtime $RUNTIME_VERSION (not an APK)."
