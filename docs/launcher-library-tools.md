@@ -21,7 +21,7 @@ Favoritos são armazenados por instância. A sincronização mescla os itens ao 
 
 A pesquisa consulta a API pública do Modrinth para Minecraft 26.3. Resource packs vão para resourcepacks/ e shaders para shaderpacks/ da instância ativa; os downloads do CDN exigem hash SHA-512 correspondente ao catálogo.
 
-Modpacks .mrpack só são aceitos quando o manifesto identifica Minecraft 26.3 e não declara carregadores adicionais. A instalação automática rejeita projetos com conteúdo em mods/ e extrai somente recursos e shaders de overrides/, client-overrides/ ou arquivos de conteúdo correspondentes no manifesto. Não há instalação de mods Fabric, Forge, Quilt ou NeoForge nesta linha vanilla do projeto. Os caminhos de arquivos ZIP são validados contra traversal e os tamanhos/quantidades são limitados.
+Modpacks .mrpack só são aceitos quando o manifesto identifica Minecraft 26.3 e não declara carregadores adicionais. A instalação automática rejeita projetos com conteúdo em mods/ e extrai somente recursos e shaders de overrides/, client-overrides/ ou arquivos de conteúdo correspondentes no manifesto. O gerenciador vanilla continua sem executar mods Fabric, Forge, Quilt ou NeoForge. A branch de desenvolvimento do plugin loader adiciona importação e associação de módulos de compatibilidade por instância, mas a execução real ainda depende da integração Rust/Java no runtime Horizon. Consulte docs/compatibility-plugin-loader.md. Os caminhos de arquivos ZIP são validados contra traversal e os tamanhos/quantidades são limitados.
 
 ## Capturas e console
 
