@@ -27,6 +27,8 @@ public final class GameProfileManager {
     private static final String PROFILE_DIRECTORY = ".mobilehorizon";
     private static final String PROFILE_FILE = "profile.json";
     private static final String LAUNCH_FILE = "launch-profile.json";
+    public static final String FABRIC_BRIDGE_MODULE_ID = "builtin.fabric-java-bridge";
+    public static final String FABRIC_BRIDGE_MODULE_VERSION = "4bd3fee1";
 
     public static final class Profile {
         public final String instanceId;
@@ -50,8 +52,18 @@ public final class GameProfileManager {
             return "vanilla".equals(loaderId);
         }
 
+        public boolean isFabricJavaBridge() {
+            return "fabric".equals(loaderId)
+                    && FABRIC_BRIDGE_MODULE_ID.equals(moduleId)
+                    && FABRIC_BRIDGE_MODULE_VERSION.equals(moduleVersion);
+        }
+
         public String displayName() {
             if (isVanilla()) return "Vanilla " + minecraftVersion;
+            if (isFabricJavaBridge()) {
+                return "Fabric Java Bridge " + FabricBridgeRuntimeManager.LOADER_VERSION
+                        + " • Minecraft " + minecraftVersion;
+            }
             return capitalize(loaderId) + " " + loaderVersion + " • Minecraft " + minecraftVersion;
         }
     }
@@ -116,6 +128,12 @@ public final class GameProfileManager {
         }
         ArrayList<LoaderChoice> choices = new ArrayList<>();
         choices.add(new LoaderChoice("vanilla", "", "", "", "Vanilla • Minecraft " + minecraftVersion));
+        if ("26.3".equals(minecraftVersion) && FabricBridgeRuntimeManager.isInstalled(context)) {
+            choices.add(new LoaderChoice("fabric", FabricBridgeRuntimeManager.LOADER_VERSION,
+                    FABRIC_BRIDGE_MODULE_ID, FABRIC_BRIDGE_MODULE_VERSION,
+                    "Fabric Java Bridge • Loader " + FabricBridgeRuntimeManager.LOADER_VERSION
+                            + " • experimental"));
+        }
         for (CompatibilityPluginManager.Module module
                 : CompatibilityPluginManager.listModules(context)) {
             if (!module.minecraftVersions.contains(minecraftVersion)) continue;
@@ -156,6 +174,17 @@ public final class GameProfileManager {
                 throw new IOException("Um perfil Vanilla não pode depender de um módulo.");
             }
             profile = new Profile(safeId, minecraftVersion, "vanilla", "", "", "");
+        } else if ("fabric".equals(choice.loaderId)
+                && FABRIC_BRIDGE_MODULE_ID.equals(choice.moduleId)
+                && FABRIC_BRIDGE_MODULE_VERSION.equals(choice.moduleVersion)) {
+            if (!"26.3".equals(minecraftVersion)
+                    || !FabricBridgeRuntimeManager.isInstalled(context)
+                    || !FabricBridgeRuntimeManager.LOADER_VERSION.equals(choice.loaderVersion)) {
+                throw new IOException("O runtime Fabric Java Bridge não está instalado ou não corresponde ao Minecraft 26.3.");
+            }
+            profile = new Profile(safeId, minecraftVersion, "fabric",
+                    FabricBridgeRuntimeManager.LOADER_VERSION,
+                    FABRIC_BRIDGE_MODULE_ID, FABRIC_BRIDGE_MODULE_VERSION);
         } else {
             CompatibilityPluginManager.Module module = CompatibilityPluginManager.findModule(
                     context, choice.moduleId, choice.moduleVersion);
@@ -186,7 +215,13 @@ public final class GameProfileManager {
         File launchFile = safeChild(profileDirectory, LAUNCH_FILE);
 
         CompatibilityPluginManager.Module module = null;
-        if (!profile.isVanilla()) {
+        if (profile.isFabricJavaBridge()) {
+            if (!"26.3".equals(profile.minecraftVersion)
+                    || !FabricBridgeRuntimeManager.isInstalled(context)
+                    || !FabricBridgeRuntimeManager.LOADER_VERSION.equals(profile.loaderVersion)) {
+                throw new IOException("O runtime Fabric Java Bridge não está instalado ou não corresponde a esta instância.");
+            }
+        } else if (!profile.isVanilla()) {
             module = CompatibilityPluginManager.findModule(
                     context, profile.moduleId, profile.moduleVersion);
             if (!module.supports(profile.minecraftVersion, profile.loaderId)
@@ -203,6 +238,7 @@ public final class GameProfileManager {
             launch.put("loader", profile.loaderId);
             launch.put("loader_version", profile.loaderVersion);
             launch.put("mods_directory", mods.getAbsolutePath());
+            launch.put("runtime", profile.isFabricJavaBridge() ? "fabric-java-bridge" : "vanilla-or-plugin");
             if (module != null) {
                 JSONObject plugin = new JSONObject();
                 plugin.put("id", module.id);
@@ -272,11 +308,20 @@ public final class GameProfileManager {
             } else {
                 try {
                     loader = CompatibilityPluginManager.requireLoaderId(loader);
-                    if (loaderVersion.isEmpty() || moduleId.isEmpty() || moduleVersion.isEmpty()) {
-                        throw new IOException("Perfil de compatibilidade incompleto.");
+                    if ("fabric".equals(loader)
+                            && FABRIC_BRIDGE_MODULE_ID.equals(moduleId)
+                            && FABRIC_BRIDGE_MODULE_VERSION.equals(moduleVersion)) {
+                        if (!FabricBridgeRuntimeManager.LOADER_VERSION.equals(loaderVersion)
+                                || !"26.3".equals(gameVersion)) {
+                            throw new IOException("Perfil Fabric Java Bridge incompatível.");
+                        }
+                    } else {
+                        if (loaderVersion.isEmpty() || moduleId.isEmpty() || moduleVersion.isEmpty()) {
+                            throw new IOException("Perfil de compatibilidade incompleto.");
+                        }
+                        CompatibilityPluginManager.requireId(moduleId);
+                        CompatibilityPluginManager.requireVersion(moduleVersion);
                     }
-                    CompatibilityPluginManager.requireId(moduleId);
-                    CompatibilityPluginManager.requireVersion(moduleVersion);
                 } catch (IOException invalid) {
                     throw new IOException("Loader ou módulo do perfil inválido.", invalid);
                 }
