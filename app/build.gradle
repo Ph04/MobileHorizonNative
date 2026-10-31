@@ -27,7 +27,7 @@ def compatibilityApiJar = project(':compatibility-api').tasks.named('jar')
 def packageCompatibilityApi = tasks.register('packageCompatibilityApi', Copy) {
     dependsOn(compatibilityApiJar)
     from(compatibilityApiJar.flatMap { it.archiveFile })
-    into(compatibilityApiAssetsDir)
+    into(compatibilityApiAssetsDir.map { it.dir('compatibility-runtime') })
     rename { 'compatibility-api.jar' }
 }
 
