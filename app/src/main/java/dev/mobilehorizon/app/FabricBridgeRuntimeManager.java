@@ -274,7 +274,8 @@ final class FabricBridgeRuntimeManager {
     private static void requireReleaseHost(URL url) throws IOException {
         String host = url.getHost().toLowerCase(java.util.Locale.ROOT);
         if (!"https".equalsIgnoreCase(url.getProtocol())
-                || !(host.equals("github.com") || host.equals("release-assets.githubusercontent.com")
+                || !(host.equals("api.github.com") || host.equals("github.com")
+                || host.equals("release-assets.githubusercontent.com")
                 || host.equals("objects.githubusercontent.com"))) {
             throw new IOException("O redirecionamento do download Fabric usou um host não permitido.");
         }
