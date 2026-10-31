@@ -77,6 +77,9 @@ steps = [
     "01_offline_server_login.py",
     "02_android_native.py",
 ]
+# The third patch only applies to the pinned iaxivers/java-bridge checkout.
+if os.environ.get("HORIZON_ANDROID_PATCH_APPLY_JAVA_BRIDGE") == "1":
+    steps.append("03_java_bridge_android.py")
 # The external iaxivers/java-bridge already provides the Fabric/JVM integration.
 # Do not layer MobileHorizon's separate experimental compatibility socket onto it.
 if os.environ.get("HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE") != "1":
