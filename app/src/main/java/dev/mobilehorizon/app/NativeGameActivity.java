@@ -102,10 +102,43 @@ public final class NativeGameActivity extends NativeActivity {
             // NativeActivity already starts the runtime with the app's private working directory
             // on supported builds; Os.chdir is not exposed by Android's public SDK.
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
+            // Resolve the per-instance game/loader profile and prepare the runtime handoff.
+            // Compatibility modules are installed once under filesDir and referenced by path;
+            // they are never copied into every APK or every instance.
+            GameProfileManager.LaunchProfile profile =
+                    GameProfileManager.prepareLaunch(this, instanceId);
+            android.system.Os.setenv("HORIZON_INSTANCE_ID", profile.profile.instanceId, true);
+            android.system.Os.setenv("HORIZON_GAME_VERSION",
+                    profile.profile.minecraftVersion, true);
+            android.system.Os.setenv("HORIZON_LOADER_ID", profile.profile.loaderId, true);
+            android.system.Os.setenv("HORIZON_LOADER_VERSION",
+                    profile.profile.loaderVersion, true);
+            android.system.Os.setenv("HORIZON_INSTANCE_PROFILE",
+                    profile.launchFile.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_MODS_DIR",
+                    profile.modsDirectory.getAbsolutePath(), true);
+            if (profile.moduleDirectory != null) {
+                android.system.Os.setenv("HORIZON_COMPATIBILITY_MODULE_DIR",
+                        profile.moduleDirectory.getAbsolutePath(), true);
+                android.system.Os.setenv("HORIZON_COMPATIBILITY_ENTRYPOINT_JAR",
+                        profile.entrypointJar, true);
+                android.system.Os.setenv("HORIZON_COMPATIBILITY_ENTRYPOINT_CLASS",
+                        profile.entrypointClass, true);
+                android.system.Os.setenv("HORIZON_COMPATIBILITY_API_VERSION",
+                        Integer.toString(CompatibilityPluginManager.PLUGIN_API_VERSION), true);
+            } else {
+                android.system.Os.unsetenv("HORIZON_COMPATIBILITY_MODULE_DIR");
+                android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_JAR");
+                android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_CLASS");
+                android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_VERSION");
+            }
+            android.util.Log.i("MobileHorizon", "Instância " + profile.profile.instanceId
+                    + " preparada: Minecraft " + profile.profile.minecraftVersion
+                    + ", loader " + profile.profile.loaderId + " " + profile.profile.loaderVersion);
             // Worlds, options, logs and local packs are isolated under this instance's
-            // HORIZON_HOME. The prepared Minecraft resource tree stays shared under filesDir/.local.
+            // HORIZON_HOME. Prepared Minecraft resources remain shared under filesDir/.local.
             java.io.File resources = new java.io.File(
-                    gameRoot, ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
+                    gameRoot, ".local/horizon-client/" + profile.profile.minecraftVersion);
             android.system.Os.setenv("HORIZON_RESOURCES", resources.getAbsolutePath(), true);
             // NativeGameActivity runs in :game, so copy launch context explicitly:
             // environment changes made in MainActivity are not inherited across processes.
