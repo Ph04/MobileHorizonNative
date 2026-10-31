@@ -626,6 +626,8 @@ current_typed_text_new = """                if let Some(text) = typed_text
 if chat_content.count(old_typed_text) == 1:
     replace_once(chat, old_typed_text, new_typed_text)
 elif chat_content.count(current_typed_text) == 1:
+    replace_once(chat, current_typed_text, current_typed_text_new)
+elif chat_content.count(current_typed_text_new) == 1:
     pass
 else:
     already_patched = chat_content.count("horizon_client::set_android_chat_draft(screen.value());") >= 2
