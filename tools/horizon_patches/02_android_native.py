@@ -1558,6 +1558,7 @@ emit_old = """fn emit(line: &str) {
     }
 }"""
 emit_new = """fn emit(line: &str) {
+    use std::io::Write as _;
     if let Some(path) = std::env::var_os("HORIZON_JAVA_BRIDGE_LOG_FILE") {
         let path = PathBuf::from(path);
         if let Some(parent) = path.parent() {
@@ -1581,7 +1582,7 @@ platform_export = platform_anchor + """
 
 /// Whether this runtime embeds the game-specific platform mod required for game events/content.
 pub fn platform_embedded() -> bool {
-    PLATFORM_JAR.starts_with(b"PK\\\\x03\\\\x04")
+    PLATFORM_JAR.len() > 4
 }"""
 if jvm_source.count(platform_anchor) != 1:
     raise SystemExit(f"{jvm_source_path}: embedded platform JAR anchor changed")
