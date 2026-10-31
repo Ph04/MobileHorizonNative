@@ -94,7 +94,14 @@ public final class ResourceManagerActivity extends Activity {
     private boolean busy;
 
 
-    private File home() { return new File(getFilesDir(), "horizon"); }
+    private File home() {
+        try {
+            return GameInstanceManager.getSelectedInstanceHome(this);
+        } catch (IOException error) {
+            throw new IllegalStateException(
+                    "Não foi possível resolver a instância selecionada com segurança.", error);
+        }
+    }
     private File textureDir() { return new File(home(), "resourcepacks"); }
     private File vanillaModDir() { return new File(home(), "horizon-mods"); }
     private File dataPackDir() { return new File(home(), "horizon-datapacks"); }
@@ -110,7 +117,9 @@ public final class ResourceManagerActivity extends Activity {
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(0xff090911);
+        
+        LauncherButtonStyle.install(this);
+getWindow().setStatusBarColor(0xff090911);
         getWindow().setNavigationBarColor(0xff090911);
         if (android.os.Build.VERSION.SDK_INT >= 23) {
             getWindow().getDecorView().setSystemUiVisibility(0);

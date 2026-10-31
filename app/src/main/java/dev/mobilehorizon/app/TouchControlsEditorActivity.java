@@ -24,7 +24,9 @@ public final class TouchControlsEditorActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        Window window = getWindow();
+        
+        LauncherButtonStyle.install(this);
+Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         window.setNavigationBarColor(Color.TRANSPARENT);
         window.setStatusBarColor(Color.TRANSPARENT);

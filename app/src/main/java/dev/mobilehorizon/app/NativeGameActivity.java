@@ -46,6 +46,7 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_PLAYER_NAME = "dev.mobilehorizon.app.EXTRA_PLAYER_NAME";
     static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
     static final String EXTRA_NATIVE_SMOKE_TEST = "dev.mobilehorizon.app.EXTRA_NATIVE_SMOKE_TEST";
+    static final String EXTRA_INSTANCE_ID = "dev.mobilehorizon.app.EXTRA_INSTANCE_ID";
     private NativeTouchControlsView touchControls;
     private PopupWindow touchControlsPopup;
     private PopupWindow keyboardInputPopup;
@@ -78,9 +79,11 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.setenv("HORIZON_RUNTIME_STATUS_FILE", runtime.statusFile.getAbsolutePath(), true);
             android.system.Os.setenv("HORIZON_RUNTIME_VERSION", runtime.activeVersion, true);
 
-            java.io.File home = new java.io.File(gameRoot, "horizon");
+            String instanceId = launchIntent == null ? GameInstanceManager.DEFAULT_ID
+                    : launchIntent.getStringExtra(EXTRA_INSTANCE_ID);
+            java.io.File home = GameInstanceManager.getInstanceHome(this, instanceId);
             if (!home.isDirectory() && !home.mkdirs()) {
-                throw new java.io.IOException("Não foi possível criar o diretório de dados Horizon.");
+                throw new java.io.IOException("Não foi possível criar o diretório da instância Horizon.");
             }
             // Use an explicit per-launch flag. The old marker file could survive a
             // previous smoke test and accidentally suppress diagnostics for the real game.
@@ -99,8 +102,8 @@ public final class NativeGameActivity extends NativeActivity {
             // NativeActivity already starts the runtime with the app's private working directory
             // on supported builds; Os.chdir is not exposed by Android's public SDK.
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
-            // Keep game saves/logs under filesDir/horizon but point the newly built
-            // Horizon client at the separately prepared resource tree under filesDir/.local.
+            // Worlds, options, logs and local packs are isolated under this instance's
+            // HORIZON_HOME. The prepared Minecraft resource tree stays shared under filesDir/.local.
             java.io.File resources = new java.io.File(
                     gameRoot, ".local/horizon-client/" + OfficialMinecraftInstaller.VERSION);
             android.system.Os.setenv("HORIZON_RESOURCES", resources.getAbsolutePath(), true);
