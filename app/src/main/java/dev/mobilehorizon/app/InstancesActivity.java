@@ -14,6 +14,8 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
@@ -38,6 +40,11 @@ public final class InstancesActivity extends Activity {
 getWindow().setStatusBarColor(0xff090911);
         getWindow().setNavigationBarColor(0xff090911);
         buildUi();
+        refreshList();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
         refreshList();
     }
 
@@ -74,6 +81,10 @@ getWindow().setStatusBarColor(0xff090911);
         Button create = button("Nova instância", true, v -> showNameDialog(null));
         setProminentActionSize(create);
         page.addView(create, topParams(-1, 60, 10));
+
+        Button modules = button("Módulos de compatibilidade", false,
+                v -> startActivity(new android.content.Intent(this, CompatibilityModulesActivity.class)));
+        page.addView(modules, topParams(-1, 52, 8));
 
         progress = new ProgressBar(this);
         progress.setIndeterminate(true);
@@ -127,6 +138,14 @@ getWindow().setStatusBarColor(0xff090911);
         String kind = instance.isDefault() ? "Padrão" : "Perfil separado";
         titleBox.addView(text(kind + "  •  " + (active ? "Em uso" : "Disponível"),
                 11, active ? 0xffc4adff : 0xffaaa2c6, true), topParams(-1, -2, 3));
+        try {
+            GameProfileManager.Profile profile = GameProfileManager.getProfile(this, instance.id);
+            titleBox.addView(text(profile.displayName(), 12, 0xff9ee0c0, true),
+                    topParams(-1, -2, 5));
+        } catch (Exception error) {
+            titleBox.addView(text("Perfil não validado: " + error.getMessage(),
+                    11, 0xffffb2a8, false), topParams(-1, -2, 5));
+        }
 
         String lastPlayed = instance.lastPlayed <= 0L
                 ? UiLanguage.translate(this, "Último uso: nunca")
@@ -147,6 +166,10 @@ getWindow().setStatusBarColor(0xff090911);
         LinearLayout.LayoutParams renameParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
         renameParams.leftMargin = dp(7);
         actions.addView(rename, renameParams);
+
+        Button configure = button("Versão e loader", false, v -> showProfileDialog(instance));
+        configure.setEnabled(!busy && !instance.isDefault());
+        card.addView(configure, topParams(-1, 42, 7));
 
         Button delete = button("Excluir", false, v -> confirmDelete(instance));
         setProminentActionSize(delete);
@@ -174,18 +197,64 @@ getWindow().setStatusBarColor(0xff090911);
         input.setHint(UiLanguage.translate(this, "Nome da instância"));
         if (editing != null) input.setText(editing.name);
         if (editing != null) input.setSelection(input.length());
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(20), dp(4), dp(20), 0);
+        content.addView(input, params(-1, -2));
+        Spinner loader = null;
+        List<GameProfileManager.LoaderChoice> choices = java.util.Collections.emptyList();
+        if (editing == null) {
+            try {
+                choices = GameProfileManager.listLoaderChoices(
+                        this, OfficialMinecraftInstaller.VERSION);
+            } catch (Exception error) {
+                showError("Não foi possível consultar os módulos", error);
+                return;
+            }
+            TextView loaderLabel = text("Versão: Minecraft " + OfficialMinecraftInstaller.VERSION
+                    + "  •  Tipo de instalação", 12, 0xffb9b3d1, true);
+            content.addView(loaderLabel, topParams(-1, -2, 12));
+            loader = new Spinner(this);
+            ArrayAdapter<GameProfileManager.LoaderChoice> adapter = new ArrayAdapter<>(
+                    this, android.R.layout.simple_spinner_item, choices);
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            loader.setAdapter(adapter);
+            content.addView(loader, topParams(-1, -2, 4));
+        }
+        final Spinner loaderPicker = loader;
+        final List<GameProfileManager.LoaderChoice> availableChoices = choices;
+
         new AlertDialog.Builder(this)
                 .setTitle(UiLanguage.translate(this,
                         editing == null ? "Criar instância" : "Renomear instância"))
-                .setMessage(UiLanguage.translate(this, "Use um nome de até 24 caracteres."))
-                .setView(input)
+                .setMessage(UiLanguage.translate(this, editing == null
+                        ? "Cada loader terá sua própria instância. Apenas módulos instalados aparecem nesta lista."
+                        : "Use um nome de até 24 caracteres."))
+                .setView(content)
                 .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
                 .setPositiveButton(UiLanguage.translate(this,
                         editing == null ? "Criar" : "Salvar"), (dialog, which) -> {
+                    GameInstanceManager.Instance created = null;
                     try {
                         if (editing == null) {
-                            GameInstanceManager.createInstance(this, input.getText().toString());
-                            status.setText(UiLanguage.translate(this, "Instância criada."));
+                            int selected = loaderPicker == null ? 0 : loaderPicker.getSelectedItemPosition();
+                            GameProfileManager.LoaderChoice choice = availableChoices.get(
+                                    Math.max(0, Math.min(selected, availableChoices.size() - 1)));
+                            created = GameInstanceManager.createInstance(
+                                    this, input.getText().toString());
+                            try {
+                                GameProfileManager.configureProfile(this, created.id,
+                                        OfficialMinecraftInstaller.VERSION, choice);
+                            } catch (Exception profileError) {
+                                try { GameInstanceManager.deleteInstance(this, created.id); }
+                                catch (Exception cleanupError) {
+                                    profileError.addSuppressed(cleanupError);
+                                }
+                                throw profileError;
+                            }
+                            status.setText(UiLanguage.translate(this, "Instância criada: ")
+                                    + choice.label);
                         } else {
                             GameInstanceManager.renameInstance(
                                     this, editing.id, input.getText().toString());
@@ -194,6 +263,56 @@ getWindow().setStatusBarColor(0xff090911);
                         refreshList();
                     } catch (Exception error) {
                         showError("Não foi possível salvar a instância", error);
+                    }
+                }).show();
+    }
+
+    private void showProfileDialog(GameInstanceManager.Instance instance) {
+        final List<GameProfileManager.LoaderChoice> choices;
+        final GameProfileManager.Profile current;
+        try {
+            current = GameProfileManager.getProfile(this, instance.id);
+            choices = GameProfileManager.listLoaderChoices(
+                    this, OfficialMinecraftInstaller.VERSION);
+        } catch (Exception error) {
+            showError("Não foi possível consultar os perfis disponíveis", error);
+            return;
+        }
+        Spinner loader = new Spinner(this);
+        ArrayAdapter<GameProfileManager.LoaderChoice> adapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, choices);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        loader.setAdapter(adapter);
+        for (int i = 0; i < choices.size(); i++) {
+            GameProfileManager.LoaderChoice choice = choices.get(i);
+            if (choice.loaderId.equals(current.loaderId)
+                    && choice.moduleId.equals(current.moduleId)
+                    && choice.moduleVersion.equals(current.moduleVersion)) {
+                loader.setSelection(i);
+                break;
+            }
+        }
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(20), dp(4), dp(20), 0);
+        content.addView(text("Minecraft " + OfficialMinecraftInstaller.VERSION
+                + "  •  Loader", 12, 0xffb9b3d1, true), params(-1, -2));
+        content.addView(loader, topParams(-1, -2, 5));
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this, "Alterar versão e loader"))
+                .setMessage(UiLanguage.translate(this,
+                        "A configuração afeta somente esta instância. Mundos e configurações permanecem na pasta dela."))
+                .setView(content)
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
+                .setPositiveButton(UiLanguage.translate(this, "Aplicar"), (dialog, which) -> {
+                    try {
+                        int selected = loader.getSelectedItemPosition();
+                        GameProfileManager.configureProfile(this, instance.id,
+                                OfficialMinecraftInstaller.VERSION, choices.get(selected));
+                        status.setText(UiLanguage.translate(this, "Perfil atualizado."));
+                        refreshList();
+                    } catch (Exception error) {
+                        showError("Não foi possível alterar o perfil", error);
                     }
                 }).show();
     }
