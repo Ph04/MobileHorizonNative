@@ -27,6 +27,9 @@ final class FabricBridgeRuntimeManager {
     static final String UPSTREAM_COMMIT = "4bd3fee1b05ab89c047b8212d314b4de0912c077";
     static final String RELEASE_TAG = "fabric-java-bridge-4bd3fee1";
     static final String ENGINE_ASSET = "fabric-horizon-runtime-arm64-v8a.so";
+    // The stable NativeActivity bootstrap requires this local basename, regardless of
+    // the downloaded release asset's name.
+    private static final String ENGINE_FILE_NAME = "libhorizon_engine.so";
     static final String MANIFEST_ASSET = "fabric-horizon-runtime-manifest.json";
 
     private static final String API_URL = "https://api.github.com/repos/Ph04/MobileHorizonNative/releases/tags/"
@@ -124,7 +127,7 @@ final class FabricBridgeRuntimeManager {
         File versions = new File(root, "versions");
         ensureDirectory(versions);
         File activeDirectory = new File(versions, version);
-        File activeLibrary = new File(activeDirectory, ENGINE_ASSET);
+        File activeLibrary = new File(activeDirectory, ENGINE_FILE_NAME);
         if (activeLibrary.isFile() && digest.equals(sha256(activeLibrary))
                 && isArm64Elf(activeLibrary)) {
             writeActive(root, version, digest);
@@ -134,14 +137,14 @@ final class FabricBridgeRuntimeManager {
         File stage = new File(root, "." + version + ".installing");
         deleteRecursively(stage);
         ensureDirectory(stage);
-        File partial = new File(stage, ENGINE_ASSET + ".part");
+        File partial = new File(stage, ENGINE_FILE_NAME + ".part");
         try {
             publish(listener, "Baixando motor Fabric Java Bridge…", 0L, -1L);
             download(engineUrl, partial, digest, listener);
             if (!isArm64Elf(partial)) {
                 throw new IOException("O arquivo baixado não é uma biblioteca Android ARM64 válida.");
             }
-            File stagedLibrary = new File(stage, ENGINE_ASSET);
+            File stagedLibrary = new File(stage, ENGINE_FILE_NAME);
             if (!partial.renameTo(stagedLibrary)) {
                 copyFile(partial, stagedLibrary);
                 if (!partial.delete()) partial.deleteOnExit();
@@ -205,7 +208,7 @@ final class FabricBridgeRuntimeManager {
         if (!versions.equals(directory.getParentFile())) {
             throw new IOException("O runtime Fabric saiu do diretório privado esperado.");
         }
-        File library = new File(directory, ENGINE_ASSET);
+        File library = new File(directory, ENGINE_FILE_NAME);
         if (Files.isSymbolicLink(directory.toPath()) || Files.isSymbolicLink(library.toPath())
                 || !library.isFile() || library.length() < 4096
                 || library.length() > MAX_ENGINE_BYTES) {
