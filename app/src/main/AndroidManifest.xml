@@ -51,6 +51,12 @@
             android:label="Instâncias" />
 
         <activity
+            android:name=".CompatibilityModulesActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="Módulos de compatibilidade" />
+
+        <activity
             android:name=".ResourceManagerActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
