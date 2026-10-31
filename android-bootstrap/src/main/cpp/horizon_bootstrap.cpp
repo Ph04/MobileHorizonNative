@@ -146,6 +146,51 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved_state,
         return;
     }
 
+    // iaxivers/horizon resolves mods-java/ beside options.txt using process cwd.
+    // This is specific to the Fabric Java Bridge: changing cwd for Vanilla breaks
+    // the regular Horizon launch layout and caused the launcher to return to Home.
+    const char *loader_id = getenv("HORIZON_LOADER_ID");
+    if (loader_id != nullptr && strcmp(loader_id, "fabric") == 0) {
+        const char *instance_home = getenv("HORIZON_HOME");
+        char canonical_home[PATH_MAX];
+        if (instance_home == nullptr || *instance_home == '\\0' ||
+            realpath(instance_home, canonical_home) == nullptr) {
+            const int error_code = errno;
+            char message[PATH_MAX + 160];
+            snprintf(message, sizeof(message),
+                     "ERROR: diretório da instância Java Bridge inválido (errno %d)", error_code);
+            write_status(status_path, message);
+            LOGE("%s", message);
+            ANativeActivity_finish(activity);
+            return;
+        }
+        if (chdir(canonical_home) != 0) {
+            const int error_code = errno;
+            char message[PATH_MAX + 160];
+            snprintf(message, sizeof(message),
+                     "ERROR: não foi possível acessar a pasta da instância Java Bridge (errno %d): %s",
+                     error_code, canonical_home);
+            write_status(status_path, message);
+            LOGE("%s", message);
+            ANativeActivity_finish(activity);
+            return;
+        }
+        char actual_cwd[PATH_MAX];
+        if (getcwd(actual_cwd, sizeof(actual_cwd)) == nullptr ||
+            strcmp(actual_cwd, canonical_home) != 0) {
+            const int error_code = errno;
+            char message[PATH_MAX + 160];
+            snprintf(message, sizeof(message),
+                     "ERROR: o diretório ativo não corresponde à instância Java Bridge (errno %d)",
+                     error_code);
+            write_status(status_path, message);
+            LOGE("%s", message);
+            ANativeActivity_finish(activity);
+            return;
+        }
+        LOGI("Java Bridge By:iaxivers: working directory da instância: %s", actual_cwd);
+    }
+
     std::string active_path;
     std::string fallback_path;
     if (!canonical_runtime_path(root, selected, &active_path)) {
