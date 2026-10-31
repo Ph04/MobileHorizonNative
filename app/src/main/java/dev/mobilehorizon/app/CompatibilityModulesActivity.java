@@ -69,6 +69,9 @@ public final class CompatibilityModulesActivity extends Activity {
         page.addView(back, topParams(-1, 52, 12));
         Button install = button("Importar módulo .mhplugin", true, v -> confirmImport());
         page.addView(install, topParams(-1, 58, 8));
+        Button fabric = button("Instalar/atualizar Fabric Java Bridge", false,
+                v -> installFabricBridge());
+        page.addView(fabric, topParams(-1, 54, 8));
 
         progress = new ProgressBar(this);
         progress.setIndeterminate(true);
@@ -89,11 +92,60 @@ public final class CompatibilityModulesActivity extends Activity {
         page.addView(warning, topParams(-1, -2, 14));
 
         LinearLayout info = card();
-        info.addView(text("Estado da integração", 14, 0xffeee9ff, true), params(-1, -2));
+        info.addView(text("Fabric Java Bridge externo", 14, 0xffeee9ff, true), params(-1, -2));
         info.addView(text(
-                "Esta etapa instala, cataloga e associa módulos às instâncias. O runtime Horizon ainda precisa implementar o contrato de inicialização do módulo antes que uma compatibilidade Fabric ou Forge seja executada dentro do jogo.",
+                "O bridge iaxivers/horizon é um runtime separado e experimental para Minecraft 26.3. Depois de instalá-lo, crie uma instância Fabric e use Gerenciar mods Fabric para importar JARs. O perfil Vanilla continua usando o motor normal.",
                 12, 0xffb9b3d1, false), topParams(-1, -2, 5));
+        info.addView(text(
+                "Versão instalada: " + (FabricBridgeRuntimeManager.installedVersion(this).isEmpty()
+                        ? "nenhuma" : FabricBridgeRuntimeManager.installedVersion(this)),
+                11, 0xffc4adff, true), topParams(-1, -2, 7));
         page.addView(info, topParams(-1, -2, 10));
+    }
+
+    private void installFabricBridge() {
+        if (busy) return;
+        busy = true;
+        setBusy(true);
+        status.setText("Consultando o release do Fabric Java Bridge…");
+        io.execute(() -> {
+            Exception failure = null;
+            FabricBridgeRuntimeManager.PreparedRuntime installed = null;
+            try {
+                installed = FabricBridgeRuntimeManager.install(this, (stage, bytes, total) -> {
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) return;
+                        if (total > 0) {
+                            status.setText(stage + "  "
+                                    + String.format(java.util.Locale.ROOT, "%.1f / %.1f MiB",
+                                            bytes / (1024.0 * 1024.0), total / (1024.0 * 1024.0)));
+                        } else {
+                            status.setText(stage);
+                        }
+                    });
+                });
+            } catch (Exception error) {
+                failure = error;
+            }
+            final Exception error = failure;
+            final FabricBridgeRuntimeManager.PreparedRuntime result = installed;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                busy = false;
+                setBusy(false);
+                if (error != null) {
+                    status.setText("Falha ao instalar Fabric Java Bridge: " + safeMessage(error));
+                } else {
+                    status.setText("Fabric Java Bridge instalado e verificado: " + result.activeVersion
+                            + ". Agora você pode criar uma instância Fabric.");
+                }
+                refreshModules();
+                if (error == null) {
+                    status.setText("Fabric Java Bridge instalado e verificado: " + result.activeVersion
+                            + ". Crie uma instância Fabric para começar.");
+                }
+            });
+        });
     }
 
     private void confirmImport() {
