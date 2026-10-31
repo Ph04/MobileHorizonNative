@@ -1,10 +1,20 @@
 # Ordered patch step. See README.md in this directory for scope and order.
 audio_source = audio.read_text(encoding="utf-8")
-audio_start_marker = '#[cfg(feature = "audio")]\nfn open_device('
-audio_end_marker = "\n/// The name of the system's default output device."
+audio_start_marker = '#[cfg(feature = "audio")]\\nfn open_device('
+audio_end_markers = (
+    "\\n/// The name of the system's default output device.",
+    '\\n#[cfg(feature = "audio")]\\nfn build_stream<',
+)
 audio_start = audio_source.find(audio_start_marker)
-audio_end = audio_source.find(audio_end_marker, audio_start + len(audio_start_marker))
-if audio_start < 0 or audio_end < 0 or audio_source.find(audio_start_marker, audio_start + 1) >= 0:
+audio_end_marker = next(
+    (marker for marker in audio_end_markers
+     if audio_source.find(marker, audio_start + len(audio_start_marker)) >= 0),
+    None,
+)
+audio_end = (-1 if audio_end_marker is None else
+             audio_source.find(audio_end_marker, audio_start + len(audio_start_marker)))
+if (audio_start < 0 or audio_end < 0
+        or audio_source.find(audio_start_marker, audio_start + 1) >= 0):
     raise SystemExit(f"{audio}: expected exactly one supported open_device function")
 android_open_device = """#[cfg(feature = "audio")]
 fn open_device(
@@ -66,6 +76,16 @@ fn open_device(
         Err(format!("no usable output audio configuration: {}", errors.join("; ")).into())
     }
 }"""
+if audio_end_marker == audio_end_markers[1]:
+    # The external java-bridge fork's Mixer has no desktop device-name/lost fields.
+    android_open_device = android_open_device.replace(
+        """                    if let Ok(mut state) = mixer.lock() {
+                        state.device_name = device.name().unwrap_or_default();
+                        state.device_lost = false;
+                    }
+""",
+        "",
+    )
 audio.write_text(audio_source[:audio_start] + android_open_device + audio_source[audio_end:], encoding="utf-8")
 
 replace_once(client_cargo, 'winit = "0.30.13"',
