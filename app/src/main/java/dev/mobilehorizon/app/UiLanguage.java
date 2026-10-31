@@ -1000,6 +1000,16 @@ final class UiLanguage {
         pair("Nem todo mod Fabric funciona neste bridge. Mods que exigem renderizadores próprios, APIs não mapeadas ou mixins fora da cobertura podem falhar. Importe apenas arquivos de fontes confiáveis.", "Not every Fabric mod works with this bridge. Mods requiring custom renderers, unmapped APIs or unsupported mixins may fail. Import files only from sources you trust.");
     }
 
+        pair("Java Bridge By:iaxivers", "Java Bridge By:iaxivers");
+        pair("Instalar/atualizar Java Bridge By:iaxivers", "Install/update Java Bridge By:iaxivers");
+        pair("Consultando o release de Java Bridge By:iaxivers…", "Checking the Java Bridge By:iaxivers release…");
+        pair("Falha ao instalar Java Bridge By:iaxivers: ", "Failed to install Java Bridge By:iaxivers: ");
+        pair("Java Bridge By:iaxivers instalado e verificado: ", "Java Bridge By:iaxivers installed and verified: ");
+        pair("O runtime Java Bridge By:iaxivers não está instalado ou não corresponde ao Minecraft 26.3.", "The Java Bridge By:iaxivers runtime is not installed or does not match Minecraft 26.3.");
+        pair("O runtime Java Bridge By:iaxivers não está instalado ou não corresponde a esta instância.", "The Java Bridge By:iaxivers runtime is not installed or does not match this instance.");
+        pair("Perfil Java Bridge By:iaxivers incompatível.", "Incompatible Java Bridge By:iaxivers profile.");
+        pair("Java Bridge By:iaxivers • Fabric Loader 0.20.1 • experimental", "Java Bridge By:iaxivers • Fabric Loader 0.20.1 • experimental");
+        pair("Java Bridge By:iaxivers é o runtime experimental de iaxivers/horizon para executar mods Fabric no Minecraft 26.3. Depois de instalá-lo, crie uma instância Java Bridge By:iaxivers e use Gerenciar mods Fabric para importar arquivos .jar. O perfil Vanilla continua usando o motor normal.", "Java Bridge By:iaxivers is the experimental iaxivers/horizon runtime for running Fabric mods on Minecraft 26.3. After installing it, create a Java Bridge By:iaxivers instance and use Manage Fabric mods to import .jar files. The Vanilla profile keeps using the normal engine.");
     private UiLanguage() { }
 
     private static void pair(String portuguese, String english) {
