@@ -1,0 +1,38 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'dev.mobilehorizon'
+version = '0.1.0'
+
+base {
+    archivesName = 'forge-compatibility-26.3'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+
+dependencies {
+    implementation project(':compatibility-api')
+}
+
+tasks.register('packageMhplugin', Zip) {
+    dependsOn(tasks.named('jar'))
+    archiveBaseName.set('forge-compatibility-26.3')
+    archiveVersion.set(project.version.toString())
+    archiveExtension.set('mhplugin')
+    destinationDirectory.set(layout.buildDirectory.dir('distributions'))
+
+    from('src/main/resources/mobilehorizon-plugin.json')
+    into('payload/bridge') {
+        from(tasks.named('jar'))
+    }
+}
