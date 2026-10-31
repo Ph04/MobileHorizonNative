@@ -1,0 +1,7 @@
+One-time APK build authorization
+
+Authorized by the repository owner in ChatGPT on 2026-10-31.
+Target branch: feature/fabric-java-bridge-test
+Source tree: 76bd7a2422da5b9077e97bcd6def9704a539ee59
+Purpose: build the standard Java Bridge test APK and run the workflow's unit tests.
+Scope: no application source changes are included in this approval record.
