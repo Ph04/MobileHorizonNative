@@ -22,6 +22,18 @@ def horizonUiAssetNames = [
         'OFL-Geist.txt', 'OFL-PixelifySans.txt'
 ]
 
+def compatibilityApiAssetsDir = layout.buildDirectory.dir('generated/compatibility-api-assets')
+def compatibilityApiJar = project(':compatibility-api').tasks.named('jar')
+def packageCompatibilityApi = tasks.register('packageCompatibilityApi', Copy) {
+    dependsOn(compatibilityApiJar)
+    from(compatibilityApiJar.flatMap { it.archiveFile })
+    into(compatibilityApiAssetsDir)
+    rename { 'compatibility-api.jar' }
+}
+
+// Compatibility modules are shipped as separate .mhplugin packages; only the stable,
+// versioned Java bridge API is included in the launcher so modules do not require new APKs.
+
 def downloadHorizonUiAssets = tasks.register('downloadHorizonUiAssets') {
     outputs.dir(horizonUiAssetsDir)
     doLast {
@@ -57,12 +69,13 @@ def downloadHorizonUiAssets = tasks.register('downloadHorizonUiAssets') {
     }
 }
 
-tasks.named('preBuild').configure { dependsOn(downloadHorizonUiAssets) }
+tasks.named('preBuild').configure { dependsOn(downloadHorizonUiAssets, packageCompatibilityApi) }
 
 android {
     sourceSets {
         main {
             assets.srcDir(horizonUiAssetsDir)
+            assets.srcDir(compatibilityApiAssetsDir)
         }
     }
     namespace 'dev.mobilehorizon.app'
