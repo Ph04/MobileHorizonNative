@@ -57,6 +57,12 @@
             android:label="Módulos de compatibilidade" />
 
         <activity
+            android:name=".FabricModsActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="Mods Fabric" />
+
+        <activity
             android:name=".ResourceManagerActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
