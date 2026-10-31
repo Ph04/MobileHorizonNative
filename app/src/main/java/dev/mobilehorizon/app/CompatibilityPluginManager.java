@@ -41,7 +41,7 @@ public final class CompatibilityPluginManager {
     public static final String DESCRIPTOR_NAME = "mobilehorizon-plugin.json";
     private static final String ROOT_NAME = "compatibility-modules";
     private static final long MAX_ARCHIVE_BYTES = 512L * 1024L * 1024L;
-    private static final long MAX_TOTAL_UNPACKED_BYTES = 768L * 1024L * 1024L;
+    private static final long MAX_TOTAL_UNPACKED_BYTES = 512L * 1024L * 1024L;
     private static final long MAX_FILE_BYTES = 256L * 1024L * 1024L;
     private static final int MAX_ENTRIES = 12000;
     private static final int MAX_DESCRIPTOR_BYTES = 64 * 1024;
@@ -173,11 +173,11 @@ public final class CompatibilityPluginManager {
             if (descriptorBytes == null) throw new IOException("O pacote não contém " + DESCRIPTOR_NAME + ".");
             JSONObject descriptor = new JSONObject(new String(descriptorBytes, StandardCharsets.UTF_8));
             Module parsed = parseModule(descriptor, staging);
-            File targetParent = new File(root, parsed.id);
+            File targetParent = safeChild(root, parsed.id);
             if (!targetParent.isDirectory() && !targetParent.mkdirs()) {
                 throw new IOException("Não foi possível criar a pasta do módulo instalado.");
             }
-            File target = new File(targetParent, parsed.version).getCanonicalFile();
+            File target = safeChild(targetParent, parsed.version);
             if (!targetParent.getCanonicalFile().equals(target.getParentFile())) {
                 throw new IOException("O destino do módulo está fora da pasta permitida.");
             }
@@ -201,12 +201,14 @@ public final class CompatibilityPluginManager {
         File[] pluginFolders = root.listFiles();
         if (pluginFolders == null) return Collections.emptyList();
         for (File pluginFolder : pluginFolders) {
-            if (!pluginFolder.isDirectory() || pluginFolder.getName().startsWith(".")) continue;
+            if (!pluginFolder.isDirectory() || Files.isSymbolicLink(pluginFolder.toPath())
+                    || pluginFolder.getName().startsWith(".")) continue;
             if (!pluginFolder.getName().matches("[a-z0-9][a-z0-9.-]{2,95}")) continue;
             File[] versions = pluginFolder.listFiles();
             if (versions == null) continue;
             for (File versionFolder : versions) {
-                if (!versionFolder.isDirectory() || versionFolder.getName().startsWith(".")) continue;
+                if (!versionFolder.isDirectory() || Files.isSymbolicLink(versionFolder.toPath())
+                        || versionFolder.getName().startsWith(".")) continue;
                 try {
                     Module module = readModule(versionFolder);
                     if (pluginFolder.getName().equals(module.id)
@@ -304,6 +306,9 @@ public final class CompatibilityPluginManager {
     }
 
     private static Module readModule(File directory) throws IOException {
+        if (!directory.isDirectory() || Files.isSymbolicLink(directory.toPath())) {
+            throw new IOException("Pasta do módulo ausente ou inválida.");
+        }
         File descriptor = new File(directory, DESCRIPTOR_NAME);
         if (!descriptor.isFile() || descriptor.length() <= 0
                 || descriptor.length() > MAX_DESCRIPTOR_BYTES
