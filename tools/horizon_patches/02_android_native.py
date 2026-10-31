@@ -192,6 +192,48 @@ clipboard_impl_new = """impl Clipboard for SystemClipboard {
 }"""
 replace_once(clipboard, clipboard_impl_old, clipboard_impl_new)
 
+# winit's modifier_supplement extension exists only on desktop backends.
+# Android uses KeyEvent.logical_key directly; desktop keeps the unmodified-layout API.
+keybinds_old = """pub fn learn_layout(event: &winit::event::KeyEvent) {
+    use winit::keyboard::{Key, PhysicalKey};
+    use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+    let PhysicalKey::Code(code) = event.physical_key else {
+        return;
+    };
+    let Some(name) = key_name(code) else {
+        return;
+    };
+    let learn = horizon_client_core::key_display::learn_layout;
+    match event.key_without_modifiers() {
+        Key::Character(text) => learn(name, &text),
+        Key::Dead(Some(c)) => learn(name, c.encode_utf8(&mut [0; 4])),
+        _ => {}
+    }
+}"""
+keybinds_new = """pub fn learn_layout(event: &winit::event::KeyEvent) {
+    use winit::keyboard::{Key, PhysicalKey};
+    let PhysicalKey::Code(code) = event.physical_key else {
+        return;
+    };
+    let Some(name) = key_name(code) else {
+        return;
+    };
+    let learn = horizon_client_core::key_display::learn_layout;
+    #[cfg(target_os = "android")]
+    let logical_key = event.logical_key.clone();
+    #[cfg(not(target_os = "android"))]
+    let logical_key = {
+        use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+        event.key_without_modifiers()
+    };
+    match logical_key {
+        Key::Character(text) => learn(name, &text),
+        Key::Dead(Some(c)) => learn(name, c.encode_utf8(&mut [0; 4])),
+        _ => {}
+    }
+}"""
+replace_once(keybinds, keybinds_old, keybinds_new)
+
 # The Android keyboard can edit title/menu fields before a world exists, including world names
 # and multiplayer names/addresses. Use Horizon's own focused-field editing APIs.
 replace_once(pad_menu,
