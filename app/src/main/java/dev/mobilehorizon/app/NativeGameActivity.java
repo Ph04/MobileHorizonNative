@@ -61,6 +61,7 @@ public final class NativeGameActivity extends NativeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         // Horizon resolves options, saves, logs and prepared resources from these paths.
         // Set them before NativeActivity loads the native game library.
+        String startupPreparationError = null;
         try {
             android.content.Intent launchIntent = getIntent();
 
@@ -179,11 +180,19 @@ public final class NativeGameActivity extends NativeActivity {
                 }
             }
         } catch (Exception error) {
-            android.util.Log.e("MobileHorizon", "Não foi possível preparar o diretório do jogo", error);
+            startupPreparationError = error.getClass().getSimpleName() + ": "
+                    + (error.getMessage() == null ? "sem detalhes" : error.getMessage());
+            android.util.Log.e("MobileHorizon", "Não foi possível preparar a inicialização do jogo", error);
+            persistNativeStartupError(error);
         }
         // Keep Android's Activity/UI thread at its normal scheduling priority. Raising it
         // before native renderer startup can starve system input/UI work on slower devices.
         super.onCreate(savedInstanceState);
+        if (startupPreparationError != null) {
+            // Do not create the touch overlay or leave a half-configured NativeActivity running.
+            getWindow().getDecorView().post(this::finish);
+            return;
+        }
         Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         window.setNavigationBarColor(Color.TRANSPARENT);
@@ -193,21 +202,33 @@ public final class NativeGameActivity extends NativeActivity {
                 || getIntent().getBooleanExtra(EXTRA_TOUCH_CONTROLS, true);
         SharedPreferences prefs = getSharedPreferences(NativeTouchControlsView.PREFERENCES, MODE_PRIVATE);
         if (requested && prefs.getBoolean(NativeTouchControlsView.KEY_ENABLED, true)) {
-            touchControls = new NativeTouchControlsView(this);
-            // NativeActivity takes the window's native input queue, so a view attached to its
-            // normal content hierarchy may draw above the game but never receive Android touches.
-            // Use a touchable application-panel window to give the controls their own input target.
-            touchControlsPopup = new PopupWindow(touchControls,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT, false);
-            touchControlsPopup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            touchControlsPopup.setTouchable(true);
-            touchControlsPopup.setFocusable(false);
-            touchControlsPopup.setOutsideTouchable(false);
-            touchControlsPopup.setClippingEnabled(false);
-            touchControlsPopup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
-            // Defer until the Activity's window token is attached; onCreate can be too early.
-            window.getDecorView().post(this::showTouchControlsPopupWhenAttached);
+            try {
+                touchControls = new NativeTouchControlsView(this);
+                // NativeActivity owns the native input queue, so the overlay remains a separate
+                // touchable but non-focusable application-panel window.
+                touchControlsPopup = new PopupWindow(touchControls,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT, false);
+                touchControlsPopup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+                touchControlsPopup.setTouchable(true);
+                touchControlsPopup.setFocusable(false);
+                touchControlsPopup.setOutsideTouchable(false);
+                touchControlsPopup.setClippingEnabled(false);
+                touchControlsPopup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
+                // Defer until the Activity's window token is attached; onCreate can be too early.
+                window.getDecorView().post(this::showTouchControlsPopupWhenAttached);
+            } catch (RuntimeException error) {
+                android.util.Log.e("MobileHorizon", "Controles touchscreen desativados nesta sessão: falha ao montar o overlay", error);
+                if (touchControlsPopup != null) {
+                    try { touchControlsPopup.dismiss(); } catch (RuntimeException ignored) { }
+                    touchControlsPopup = null;
+                }
+                if (touchControls != null) {
+                    touchControls.dispose();
+                    touchControls = null;
+                }
+                // An optional overlay must never terminate the native game process.
+            }
         }
     }
 
@@ -227,8 +248,12 @@ public final class NativeGameActivity extends NativeActivity {
                 || decor.getWindowToken() == null) return;
         try {
             popup.showAtLocation(decor, Gravity.TOP | Gravity.START, 0, 0);
-        } catch (WindowManager.BadTokenException error) {
+        } catch (RuntimeException error) {
             android.util.Log.w("MobileHorizon", "Não foi possível exibir os controles touchscreen", error);
+            if (touchControlsPopup == popup) {
+                try { popup.dismiss(); } catch (RuntimeException ignored) { }
+                touchControlsPopup = null;
+            }
         }
     }
 
@@ -441,8 +466,7 @@ public final class NativeGameActivity extends NativeActivity {
     @Override
     protected void onDestroy() {
         if (touchControls != null) {
-            touchControls.releaseAllInputs();
-            touchControls.dismissFloatingPanels();
+            touchControls.dispose();
         }
         if (keyboardInputPopup != null) {
             try { keyboardInputPopup.dismiss(); } catch (IllegalArgumentException ignored) { }
@@ -469,6 +493,20 @@ public final class NativeGameActivity extends NativeActivity {
             runtimePinnedForSession = false;
         }
         super.onDestroy();
+    }
+
+    private void persistNativeStartupError(Throwable error) {
+        java.io.File report = new java.io.File(getFilesDir(), "horizon-launch-error.txt");
+        try (java.io.FileOutputStream output = new java.io.FileOutputStream(report, false)) {
+            String detail = "Falha antes de iniciar o motor nativo: "
+                    + error.getClass().getSimpleName() + ": " + error.getMessage() + "\\n\\n"
+                    + android.util.Log.getStackTraceString(error);
+            output.write(detail.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            output.flush();
+            output.getFD().sync();
+        } catch (Exception writeError) {
+            android.util.Log.e("MobileHorizon", "Não foi possível salvar o relatório de inicialização", writeError);
+        }
     }
 
     private void applyImmersiveMode() {
