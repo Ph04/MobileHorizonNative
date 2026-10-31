@@ -96,9 +96,10 @@ public final class CompatibilityModulesActivity extends Activity {
         info.addView(text(
                 "Java Bridge By:iaxivers é o runtime experimental de iaxivers/horizon para executar mods Fabric no Minecraft 26.3. Depois de instalá-lo, crie uma instância Java Bridge By:iaxivers e use Gerenciar mods Fabric para importar arquivos .jar. O perfil Vanilla continua usando o motor normal.",
                 12, 0xffb9b3d1, false), topParams(-1, -2, 5));
-        info.addView(text(
-                "Versão instalada: " + (FabricBridgeRuntimeManager.installedVersion(this).isEmpty()
-                        ? "nenhuma" : FabricBridgeRuntimeManager.installedVersion(this)),
+        String installedVersion = FabricBridgeRuntimeManager.installedVersion(this);
+        String displayVersion = installedVersion.isEmpty() ? "nenhuma"
+                : installedVersion.replaceFirst("^fabric-java-bridge-", "Java Bridge By:iaxivers ");
+        info.addView(text("Versão instalada: " + displayVersion,
                 11, 0xffc4adff, true), topParams(-1, -2, 7));
         page.addView(info, topParams(-1, -2, 10));
     }
