@@ -2261,8 +2261,8 @@ public final class MainActivity extends Activity {
             GameInstanceManager.Instance instance = GameInstanceManager.getSelectedInstance(this);
             GameInstanceManager.markLastPlayed(this, instance.id);
             MobilePerformanceProfile.applyInitialOptions(this, instance.id);
-            nativeResultFile("horizon-client-result.txt").delete();
-            nativeResultFile("horizon-native-smoke-result.txt").delete();
+            clearNativeResultFile("horizon-client-result.txt");
+            clearNativeResultFile("horizon-native-smoke-result.txt");
             new File(getFilesDir(), "horizon-launch-error.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke.flag").delete();
             pendingNativeClientResult = true;
@@ -2619,9 +2619,9 @@ public final class MainActivity extends Activity {
                         GameInstanceManager.Instance instance = GameInstanceManager.getSelectedInstance(this);
                         GameInstanceManager.markLastPlayed(this, instance.id);
                         MobilePerformanceProfile.applyInitialOptions(this, instance.id);
-                        new File(getFilesDir(), "horizon-client-result.txt").delete();
+                        clearNativeResultFile("horizon-client-result.txt");
                         new File(getFilesDir(), "horizon-launch-error.txt").delete();
-                        new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
+                        clearNativeResultFile("horizon-native-smoke-result.txt");
                         new File(getFilesDir(), "horizon-native-smoke.flag").delete();
                         pendingNativeClientResult = true;
                         pendingNativeSmokeResult = false;
@@ -2971,11 +2971,23 @@ public final class MainActivity extends Activity {
     /** Native Horizon writes smoke/client reports inside the selected instance HORIZON_HOME. */
     private File nativeResultFile(String name) {
         try {
-            return new File(GameInstanceManager.getSelectedInstanceHome(this), name);
+            File instanceFile = new File(GameInstanceManager.getSelectedInstanceHome(this), name);
+            File legacyFile = new File(getFilesDir(), name);
+            if (instanceFile.isFile() || !legacyFile.isFile()) return instanceFile;
+            return legacyFile;
         } catch (Exception error) {
             android.util.Log.w("MobileHorizon", "Não foi possível resolver a pasta da instância para " + name, error);
             return new File(getFilesDir(), name);
         }
+    }
+
+    private void clearNativeResultFile(String name) {
+        try {
+            new File(GameInstanceManager.getSelectedInstanceHome(this), name).delete();
+        } catch (Exception error) {
+            android.util.Log.w("MobileHorizon", "Não foi possível limpar o resultado na pasta da instância: " + name, error);
+        }
+        new File(getFilesDir(), name).delete();
     }
 
     private String readNativeRuntimeStatus() {
