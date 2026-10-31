@@ -1,0 +1,119 @@
+name: Publish MobileHorizonNative 0.3.30
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/publish-stable-0.3.30.yml"
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: mobilehorizon-release-v0.3.30
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    permissions:
+      contents: write
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN_ID: "41166340370"
+      SOURCE_SHA: "9e518e8d9fb5e80196be57215fa6c6c15d26d016"
+      SOURCE_BRANCH: "feature/android-launcher-parity"
+      RELEASE_TARGET_SHA: "9e518e8d9fb5e80196be57215fa6c6c15d26d016"
+      RELEASE_TAG: "v0.3.30"
+      ARTIFACT_NAME: "mobilehorizon-native-offline1-update-safe"
+    steps:
+      - name: Verify successful source build and update-safe artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN="repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}"
+          RUN_SHA="$(gh api "${RUN}" --jq '.head_sha')"
+          RUN_STATUS="$(gh api "${RUN}" --jq '.status')"
+          RUN_CONCLUSION="$(gh api "${RUN}" --jq '.conclusion')"
+          RUN_BRANCH="$(gh api "${RUN}" --jq '.head_branch')"
+          [[ "${RUN_SHA}" == "${SOURCE_SHA}" ]]
+          [[ "${RUN_STATUS}" == "completed" && "${RUN_CONCLUSION}" == "success" ]]
+          [[ "${RUN_BRANCH}" == "${SOURCE_BRANCH}" ]]
+
+          ARTIFACT_ID="$(gh api "${RUN}/artifacts" --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\" and .expired == false) | .id" | head -1)"
+          [[ -n "${ARTIFACT_ID}" ]] || {
+            echo "::error::The signed update-safe APK artifact is missing or expired."
+            exit 1
+          }
+          echo "Verified successful Android build #1069 and update-safe artifact ${ARTIFACT_ID}."
+
+          if TAG_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha' 2>/dev/null)"; then
+            [[ "${TAG_SHA}" == "${RELEASE_TARGET_SHA}" ]] || {
+              echo "::error::Release tag already points to unexpected commit ${TAG_SHA}."
+              exit 1
+            }
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f "ref=refs/tags/${RELEASE_TAG}" \
+              -f "sha=${RELEASE_TARGET_SHA}" >/dev/null
+          fi
+
+      - name: Download and verify the original build 1069 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/mobilehorizon-0.3.30"
+          mkdir -p "${OUT}"
+          gh run download "${SOURCE_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "${ARTIFACT_NAME}" --dir "${OUT}"
+          mapfile -t APKS < <(find "${OUT}" -type f -name '*.apk' -print)
+          [[ "${#APKS[@]}" -eq 1 ]] || {
+            echo "::error::Expected exactly one APK, found ${#APKS[@]}."
+            exit 1
+          }
+          mv "${APKS[0]}" "${OUT}/MobileHorizonNative-0.3.30.apk"
+          cd "${OUT}"
+          unzip -tq "MobileHorizonNative-0.3.30.apk"
+          sha256sum "MobileHorizonNative-0.3.30.apk" > "SHA256SUMS.txt"
+          cat "SHA256SUMS.txt"
+          echo "Verified build 1069 APK archive integrity."
+
+      - name: Publish GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/mobilehorizon-0.3.30"
+          cat > "${OUT}/release-notes.md" <<'NOTES'
+          ## MobileHorizonNative 0.3.30
+
+          Versão estável Android ARM64, publicada a partir do APK assinado e validado da build **#1069**. O arquivo foi preservado da execução original do CI, sem recompilação.
+
+          ### APK
+          - Versão: **0.3.30** (versionCode **33**).
+          - Arquitetura: Android ARM64 (arm64-v8a).
+          - Origem: build #1069, concluída com sucesso.
+          - Artefato: mobilehorizon-native-offline1-update-safe.
+          - Commit de origem: 9e518e8d9fb5e80196be57215fa6c6c15d26d016.
+          - O APK mantém o runtime Horizon independente: o motor é obtido e atualizado pelo mecanismo interno do aplicativo, em vez de ficar fixado dentro do APK.
+          - Consulte SHA256SUMS.txt para verificar a integridade do arquivo.
+
+          ### Observações
+          MobileHorizonNative é um projeto Android independente e não oficial baseado em Horizon. O projeto não é afiliado à Mojang Studios nem à Microsoft.
+          NOTES
+
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" \
+              --title "MobileHorizonNative 0.3.30" \
+              --notes-file "${OUT}/release-notes.md"
+            gh release upload "${RELEASE_TAG}" "${OUT}/MobileHorizonNative-0.3.30.apk" \
+              "${OUT}/SHA256SUMS.txt" --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" \
+              "${OUT}/MobileHorizonNative-0.3.30.apk" "${OUT}/SHA256SUMS.txt" \
+              --repo "${GITHUB_REPOSITORY}" --title "MobileHorizonNative 0.3.30" \
+              --notes-file "${OUT}/release-notes.md"
+          fi
+          gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --json url --jq '.url'
