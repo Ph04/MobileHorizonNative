@@ -16,7 +16,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.UUID;
 import java.net.URL;
 import java.net.URLClassLoader;
 
@@ -67,7 +66,9 @@ public final class BridgeMain {
         }
 
         List<URL> jars = findPayloadJars(payloadRoot);
-        if (jars.isEmpty() || jars.stream().noneMatch(url -> url.toURI().equals(entrypointJar.toUri()))) {
+        URL expectedEntrypointUrl = entrypointJar.toUri().toURL();
+        if (jars.isEmpty() || jars.stream().noneMatch(
+                url -> url.toExternalForm().equals(expectedEntrypointUrl.toExternalForm()))) {
             throw new IOException("the installed payload does not contain its declared entrypoint JAR");
         }
 
