@@ -324,6 +324,11 @@ public final class NativeGameActivity extends NativeActivity {
         }, 100);
     }
 
+    private boolean isChatInputTarget() {
+        try { return nativeIsChatTarget(); }
+        catch (UnsatisfiedLinkError error) { return false; }
+    }
+
     private void ensureKeyboardInputProxy() {
         if (keyboardInputPopup != null && keyboardInput != null) return;
         EditText input = new EditText(this);
