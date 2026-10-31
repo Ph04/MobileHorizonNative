@@ -144,7 +144,7 @@ public final class NativeGameActivity extends NativeActivity {
             boolean fabricJavaBridge = profile.profile.isFabricJavaBridge();
             if (fabricJavaBridge) {
                 beginJavaBridgeLog(gameRoot);
-                bridgeLog("INFO", "Etapa 1/7: instância selecionada: "
+                bridgeLog("INFO", "Pré-checagem 1/7: instância selecionada: "
                         + profile.profile.instanceId + ", Minecraft "
                         + profile.profile.minecraftVersion + ", loader "
                         + profile.profile.loaderId + " " + profile.profile.loaderVersion
@@ -162,7 +162,7 @@ public final class NativeGameActivity extends NativeActivity {
             java.io.File runtimeStatus;
             String runtimeVersion;
             if (fabricJavaBridge) {
-                bridgeLog("INFO", "Etapa 2/7: verificando o runtime externo Java Bridge By:iaxivers.");
+                bridgeLog("INFO", "Pré-checagem 2/7: verificando o runtime externo Java Bridge By:iaxivers.");
                 FabricBridgeRuntimeManager.PreparedRuntime runtime =
                         FabricBridgeRuntimeManager.prepare(this);
                 bridgeLog("INFO", "Runtime verificado: " + runtime.activeVersion
@@ -230,7 +230,7 @@ public final class NativeGameActivity extends NativeActivity {
                     profile.modsDirectory.getAbsolutePath(), true);
 
             if (fabricJavaBridge) {
-                bridgeLog("INFO", "Etapa 3/7: preparando mods ativos e links para mods-java.");
+                bridgeLog("INFO", "Pré-checagem 3/7: preparando mods ativos e links para mods-java.");
                 int modCount = FabricModManager.prepareInstance(this, profile.profile.instanceId);
                 java.io.File bridgeModsDirectory = new java.io.File(
                         home, FabricModManager.BRIDGE_DIRECTORY).getCanonicalFile();
@@ -261,7 +261,7 @@ public final class NativeGameActivity extends NativeActivity {
                 if (!javaRuntime.libjvm.isFile()) {
                     throw new java.io.IOException("A biblioteca JNI lib/server/libjvm.so não foi encontrada no Java 25.");
                 }
-                bridgeLog("INFO", "Etapa 4/7: Java 25 pronto; JAVA_HOME="
+                bridgeLog("INFO", "Pré-checagem 4/7: Java 25 pronto; JAVA_HOME="
                         + javaRuntime.javaHome.getAbsolutePath() + ", libjvm="
                         + javaRuntime.libjvm.getAbsolutePath());
                 java.io.File workspace = new java.io.File(gameRoot,
@@ -287,7 +287,7 @@ public final class NativeGameActivity extends NativeActivity {
                 if (!clientLibraries.isDirectory() || libraryCount == 0) {
                     throw new java.io.IOException("As bibliotecas client de Minecraft 26.3 não foram preparadas.");
                 }
-                bridgeLog("INFO", "Etapa 5/7: dados de Minecraft validados; client.jar="
+                bridgeLog("INFO", "Pré-checagem 5/7: dados de Minecraft validados; client.jar="
                         + expectedJar.length() + " bytes, bibliotecas=" + libraryCount
                         + ", versão do lock=" + lockedVersion);
                 android.system.Os.setenv("HORIZON_ROOT", workspace.getAbsolutePath(), true);
@@ -304,7 +304,7 @@ public final class NativeGameActivity extends NativeActivity {
                 for (java.util.Map.Entry<String, String> entry : javaEnvironment.entrySet()) {
                     android.system.Os.setenv(entry.getKey(), entry.getValue(), true);
                 }
-                bridgeLog("INFO", "Etapa 6/7: ambiente exportado; HORIZON_HOME="
+                bridgeLog("INFO", "Pré-checagem 6/7: ambiente exportado; HORIZON_HOME="
                         + home.getAbsolutePath() + ", HORIZON_ROOT=" + workspace.getAbsolutePath()
                         + ", HORIZON_JAVA_HOME=" + javaRuntime.javaHome.getAbsolutePath()
                         + ", HORIZON_JAVA_SIDE=client, LD_LIBRARY_PATH configurado.");
@@ -375,7 +375,7 @@ public final class NativeGameActivity extends NativeActivity {
                 }
             }
             if (javaBridgeLogFile != null) {
-                bridgeLog("INFO", "Etapa 7/7: pré-verificação concluída; NativeActivity será iniciada.");
+                bridgeLog("INFO", "Pré-checagem 7/7: pré-verificação concluída; NativeActivity será iniciada.");
             }
         } catch (Exception error) {
             if (javaBridgeLogFile != null) {
