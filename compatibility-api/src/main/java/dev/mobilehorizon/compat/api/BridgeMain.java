@@ -200,7 +200,6 @@ public final class BridgeMain {
             }
             return line.toString();
         }
-        }
     }
 
     private static final class BridgeContext implements CompatibilityContext {
