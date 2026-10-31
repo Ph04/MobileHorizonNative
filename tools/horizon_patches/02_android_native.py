@@ -471,8 +471,7 @@ hud_batch_initializers = [
             glint_alpha: 0.75,
             blur_at: 0,
         }''',
-    ),,
-
+    ),
     (
         '''        Self {
             vertices: Vec::new(),
