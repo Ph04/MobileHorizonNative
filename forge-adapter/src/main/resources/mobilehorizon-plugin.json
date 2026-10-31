@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "kind": "compatibility",
+  "apiVersion": 1,
+  "id": "dev.mobilehorizon.forge26",
+  "name": "Horizon Forge 26.3 Adapter (diagnostic)",
+  "version": "0.1.0",
+  "loader": "forge",
+  "loaderVersion": "66.1.2",
+  "minecraftVersions": [
+    "26.3"
+  ],
+  "entrypointJar": "bridge/forge-compatibility-26.3-0.1.0.jar",
+  "entrypointClass": "dev.mobilehorizon.forge.ForgeCompatibilityPlugin",
+  "description": "Forge 26.3 bootstrap probe. Checks loader classes and reports which Java/Minecraft integration pieces are still missing."
+}
