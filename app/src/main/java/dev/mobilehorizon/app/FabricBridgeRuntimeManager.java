@@ -189,7 +189,12 @@ final class FabricBridgeRuntimeManager {
                 || active.length() <= 0 || active.length() > 16 * 1024) {
             throw new IOException("O runtime Fabric Java Bridge ainda não foi instalado. Abra Módulos de compatibilidade e instale-o antes de iniciar esta instância.");
         }
-        JSONObject json = new JSONObject(readSmallFile(active, 16 * 1024));
+        final JSONObject json;
+        try {
+            json = new JSONObject(readSmallFile(active, 16 * 1024));
+        } catch (org.json.JSONException invalidJson) {
+            throw new IOException("O marcador do runtime Fabric contém JSON inválido.", invalidJson);
+        }
         String version = requireVersion(json.optString("version", ""));
         String digest = json.optString("sha256", "").toLowerCase(java.util.Locale.ROOT);
         if (!digest.matches("[0-9a-f]{64}")) {
@@ -203,8 +208,11 @@ final class FabricBridgeRuntimeManager {
         File library = new File(directory, ENGINE_ASSET);
         if (Files.isSymbolicLink(directory.toPath()) || Files.isSymbolicLink(library.toPath())
                 || !library.isFile() || library.length() < 4096
-                || library.length() > MAX_ENGINE_BYTES
-                || !digest.equals(sha256(library)) || !isArm64Elf(library)) {
+                || library.length() > MAX_ENGINE_BYTES) {
+            throw new IOException("O runtime Fabric instalado não passou na validação de caminho/tamanho.");
+        }
+        String actualDigest = sha256(library);
+        if (!digest.equals(actualDigest) || !isArm64Elf(library)) {
             throw new IOException("O runtime Fabric instalado não passou na validação SHA-256/ELF.");
         }
         File status = new File(root, "loader-status.txt");
@@ -342,8 +350,13 @@ final class FabricBridgeRuntimeManager {
         }
     }
 
-    private static String sha256(File file) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    private static String sha256(File file) throws IOException {
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IOException("SHA-256 não está disponível neste Android.", impossible);
+        }
         try (InputStream input = new FileInputStream(file)) {
             byte[] buffer = new byte[BUFFER_SIZE];
             int count;
