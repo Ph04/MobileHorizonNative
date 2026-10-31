@@ -287,8 +287,18 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
         if (pendingNativeClientResult) {
             pendingNativeClientResult = false;
             if (!clientResultExists) {
-                setStatus("Cliente nativo encerrou sem relatório",
-                        "A atividade do jogo voltou sem entregar um relatório de inicialização. Isso sugere que o processo nativo terminou antes de registrar o resultado; ainda não é possível atribuir a causa ao Vulkan ou aos recursos do Minecraft.");
+                String loaderStatus = readRuntimeLoaderStatus();
+                String details = "A atividade do jogo voltou sem entregar um relatório de inicialização. "
+                        + "Isso sugere que o processo nativo terminou antes de registrar o resultado.";
+                if (!loaderStatus.isEmpty()) {
+                    details += "\n\nEstado do carregador da runtime: " + loaderStatus;
+                    if (loaderStatus.startsWith("STARTING:")) {
+                        details += "\nA biblioteca foi aberta, mas o motor não confirmou a entrada em android_main.";
+                    } else if (loaderStatus.startsWith("RUNNING:")) {
+                        details += "\nO motor alcançou android_main; a falha aconteceu depois desse ponto.";
+                    }
+                }
+                setStatus("Cliente nativo encerrou sem relatório", details);
             }
         }
     }
@@ -2838,6 +2848,24 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    /** Reads the native runtime loader's last state before a later launch clears it. */
+    private String readRuntimeLoaderStatus() {
+        File status = new File(new File(getFilesDir(), "horizon-runtime"), "loader-status.txt");
+        if (!status.isFile() || status.length() <= 0 || status.length() > 4096) return "";
+        try (FileInputStream input = new FileInputStream(status);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[512];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                if (output.size() + count > 4096) return "";
+                output.write(buffer, 0, count);
+            }
+            return new String(output.toByteArray(), StandardCharsets.UTF_8).trim();
+        } catch (IOException ignored) {
+            return "";
+        }
     }
 
     private String safeMessage(Throwable error) {
