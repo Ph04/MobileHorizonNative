@@ -249,6 +249,10 @@ public final class NativeGameActivity extends NativeActivity {
                 || decor.getWindowToken() == null) return;
         try {
             popup.showAtLocation(decor, Gravity.TOP | Gravity.START, 0, 0);
+            android.util.Log.i("MobileHorizon",
+                    "Overlay touchscreen anexado: decor=" + decor.getWidth() + "x" + decor.getHeight()
+                            + ", density=" + getResources().getDisplayMetrics().density
+                            + ", controls=" + (touchControls != null));
         } catch (RuntimeException error) {
             android.util.Log.w("MobileHorizon", "Não foi possível exibir os controles touchscreen", error);
             if (touchControlsPopup == popup) {
