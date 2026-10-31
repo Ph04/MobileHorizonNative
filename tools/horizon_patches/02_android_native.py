@@ -570,64 +570,79 @@ replace_once(chat,
         horizon_client::set_android_chat_open(true);
         horizon_client::set_android_chat_draft(initial);
         self.ui.chat_opened = Some(std::time::Instant::now());""")
-# The upstream chat close path gained a wake-up guard for the Leave Bed screen.
-# Insert the keyboard state transition at the same point the chat screen is cleared,
-# while retaining support for older Horizon releases that clear it immediately.
-close_chat_anchors = [
-    (
-        """    pub(super) fn close_chat(&mut self) {
-        self.ui.chat_screen = None;""",
-        """    pub(super) fn close_chat(&mut self) {
-        horizon_client::set_android_chat_open(false);
-        self.ui.chat_screen = None;""",
-    ),
-    (
-        """        if self.ui.in_bed_chat && self.sleeping.is_some() {
-            self.wake_up();
-            return;
-        }
-        self.ui.chat_screen = None;""",
-        """        if self.ui.in_bed_chat && self.sleeping.is_some() {
-            self.wake_up();
-            return;
-        }
-        horizon_client::set_android_chat_open(false);
-        self.ui.chat_screen = None;""",
-    ),
-]
+# Mirror Android IME visibility at the actual chat close transition. Newer
+# Nightlies keep drafts and pass a ChatExit reason, so insert at the clear point
+# inside close_chat rather than replacing the method's implementation.
 chat_content = chat.read_text(encoding="utf-8")
-matched_close_chat = [pair for pair in close_chat_anchors if chat_content.count(pair[0]) == 1]
-if len(matched_close_chat) != 1:
-    raise SystemExit(
-        f"{chat}: expected one known close_chat layout, found {len(matched_close_chat)}"
+close_start = chat_content.find("pub(super) fn close_chat(")
+if close_start < 0:
+    close_start = chat_content.find("fn close_chat(")
+close_end = chat_content.find("\n    /// ", close_start + 1)
+if close_start < 0 or close_end < 0:
+    raise SystemExit(f"{chat}: could not locate one supported close_chat method")
+close_block = chat_content[close_start:close_end]
+clear_chat_screen = "        self.ui.chat_screen = None;"
+if close_block.count(clear_chat_screen) != 1:
+    if "set_android_chat_open(false)" not in close_block:
+        raise SystemExit(f"{chat}: expected one chat_screen clear inside close_chat")
+elif "set_android_chat_open(false)" not in close_block:
+    close_block = close_block.replace(
+        clear_chat_screen,
+        "        horizon_client::set_android_chat_open(false);\n" + clear_chat_screen,
+        1,
     )
-replace_once(chat, *matched_close_chat[0])
-replace_once(chat,
-    """                if let Some(text) = typed_text
+    chat_content = chat_content[:close_start] + close_block + chat_content[close_end:]
+    chat.write_text(chat_content, encoding="utf-8")
+
+# Keep the Android chat draft synchronized after native keyboard input. The
+# current Nightly uses types_text() rather than the older !ctrl condition.
+chat_content = chat.read_text(encoding="utf-8")
+old_typed_text = """                if let Some(text) = typed_text
                     && !ctrl
                 {
                     screen.type_text(&m, &c, text);
                 }
-                self.ui.chat_screen = Some(screen);""",
-    """                if let Some(text) = typed_text
+                self.ui.chat_screen = Some(screen);"""
+new_typed_text = """                if let Some(text) = typed_text
                     && !ctrl
                 {
                     screen.type_text(&m, &c, text);
                 }
                 horizon_client::set_android_chat_draft(screen.value());
-                self.ui.chat_screen = Some(screen);""")
-replace_once(chat,
-    """        if let Some(screen) = self.ui.chat_screen.as_mut() {
+                self.ui.chat_screen = Some(screen);"""
+current_typed_text = """                if let Some(text) = typed_text
+                    && self.types_text()
+                {
+                    screen.type_text(&m, &c, text);
+                }
+                horizon_client::set_android_chat_draft(screen.value());
+                self.ui.chat_screen = Some(screen);"""
+if chat_content.count(old_typed_text) == 1:
+    replace_once(chat, old_typed_text, new_typed_text)
+elif chat_content.count(current_typed_text) == 1:
+    pass
+else:
+    already_patched = chat_content.count("horizon_client::set_android_chat_draft(screen.value());") >= 2
+    if not already_patched:
+        raise SystemExit(f"{chat}: unsupported typed chat text layout")
+
+old_chat_type = """        if let Some(screen) = self.ui.chat_screen.as_mut() {
             screen.type_text(&m, &c, text);
         }
     }
-    /// ChatScreen.handleChatInput:""",
-    """        if let Some(screen) = self.ui.chat_screen.as_mut() {
+    /// ChatScreen.handleChatInput:"""
+new_chat_type = """        if let Some(screen) = self.ui.chat_screen.as_mut() {
             screen.type_text(&m, &c, text);
             horizon_client::set_android_chat_draft(screen.value());
         }
     }
-    /// ChatScreen.handleChatInput:""")
+    /// ChatScreen.handleChatInput:"""
+if chat_content.count(old_chat_type) == 1:
+    replace_once(chat, old_chat_type, new_chat_type)
+elif chat_content.count("horizon_client::set_android_chat_draft(screen.value());") >= 3:
+    pass
+else:
+    raise SystemExit(f"{chat}: unsupported chat_type input method layout")
 
 impl_start = "impl ApplicationHandler for Game<'_> {"
 idx = game.read_text(encoding="utf-8").find(impl_start)
