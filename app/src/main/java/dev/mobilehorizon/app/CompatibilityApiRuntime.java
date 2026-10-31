@@ -1,7 +1,6 @@
 package dev.mobilehorizon.app;
 
 import android.content.Context;
-import android.system.Os;
 
 import java.io.File;
 import java.io.FileInputStream;
