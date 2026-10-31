@@ -75,6 +75,7 @@ patch_dir = Path(__file__).resolve().parent / "horizon_patches"
 steps = [
     "01_offline_server_login.py",
     "02_android_native.py",
+    "08_compatibility_bridge.py",
 ]
 context = dict(globals())
 for step in steps:
