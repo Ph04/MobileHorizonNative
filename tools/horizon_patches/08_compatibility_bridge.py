@@ -35,7 +35,7 @@ use std::{
         Arc, Mutex, OnceLock,
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 #[cfg(target_os = "android")]
@@ -47,10 +47,11 @@ use std::os::unix::{
 const API_VERSION: &str = "1";
 const MAX_FRAME_BYTES: usize = 512 * 1024;
 const MAX_ACTIONS: usize = 64;
-const ACCEPT_TIMEOUT: Duration = Duration::from_secs(20);
+const ACCEPT_TIMEOUT: Duration = Duration::from_secs(60);
 
 static BRIDGE: OnceLock<Mutex<Option<BridgeState>>> = OnceLock::new();
 static NEXT_EVENT: AtomicU64 = AtomicU64::new(1);
+static NEXT_SOCKET: AtomicU64 = AtomicU64::new(1);
 
 pub struct BridgeAction {
     pub kind: String,
@@ -88,7 +89,13 @@ pub fn start_from_environment() -> Result<(), String> {
 
     let config = BridgeConfig::from_environment(&loader)?;
     let (listener, socket_path) = create_private_listener(&config)?;
-    let mut child = spawn_java_bridge(&config, &socket_path)?;
+    let mut child = match spawn_java_bridge(&config, &socket_path) {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = fs::remove_file(&socket_path);
+            return Err(error);
+        }
+    };
     let stream = match accept_child(&listener, &mut child) {
         Ok(stream) => stream,
         Err(error) => {
@@ -290,12 +297,18 @@ impl BridgeConfig {
 
 #[cfg(target_os = "android")]
 fn create_private_listener(config: &BridgeConfig) -> Result<(UnixListener, PathBuf), String> {
-    let local = config.app_files.join(".local/compatibility-runtime");
+    let local_root = config.app_files.join(".local").canonicalize()
+        .map_err(|error| format!("private .local directory is unavailable: {error}"))?;
+    let local = local_root.join("compatibility-runtime");
     fs::create_dir_all(&local)
         .map_err(|error| format!("could not create private compatibility runtime folder: {error}"))?;
-    let nonce = SystemTime::now().duration_since(UNIX_EPOCH)
-        .unwrap_or_default().as_nanos();
-    let path = local.join(format!("bridge-{}-{nonce:x}.sock", std::process::id()));
+    let local = local.canonicalize()
+        .map_err(|error| format!("could not resolve private compatibility runtime folder: {error}"))?;
+    if !local.starts_with(&local_root) {
+        return Err("compatibility runtime folder escaped private .local storage".to_owned());
+    }
+    let nonce = NEXT_SOCKET.fetch_add(1, Ordering::Relaxed);
+    let path = local.join(format!("b-{}-{nonce:x}.sock", std::process::id()));
     if path.as_os_str().as_encoded_bytes().len() > 100 {
         return Err("private bridge socket path exceeds the Android Unix-socket limit".to_owned());
     }
@@ -372,9 +385,9 @@ fn accept_child(listener: &UnixListener, child: &mut Child) -> Result<UnixStream
     loop {
         match listener.accept() {
             Ok((stream, _)) => {
-                stream.set_read_timeout(Some(Duration::from_secs(8)))
+                stream.set_read_timeout(Some(Duration::from_secs(60)))
                     .map_err(|error| format!("could not set bridge read timeout: {error}"))?;
-                stream.set_write_timeout(Some(Duration::from_secs(8)))
+                stream.set_write_timeout(Some(Duration::from_secs(10)))
                     .map_err(|error| format!("could not set bridge write timeout: {error}"))?;
                 return Ok(stream);
             }
@@ -385,7 +398,7 @@ fn accept_child(listener: &UnixListener, child: &mut Child) -> Result<UnixStream
                     return Err(format!("Java compatibility bridge exited before connecting: {status}"));
                 }
                 if start.elapsed() > ACCEPT_TIMEOUT {
-                    return Err("Java compatibility bridge did not connect within 20 seconds".to_owned());
+                    return Err("Java compatibility bridge did not connect within 60 seconds".to_owned());
                 }
                 thread::sleep(Duration::from_millis(25));
             }
