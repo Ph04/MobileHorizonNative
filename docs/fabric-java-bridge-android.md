@@ -17,8 +17,9 @@ O código Fabric/JVM é o do commit externo fixado. O overlay MobileHorizon mant
 1. Conclua a preparação oficial de Minecraft 26.3 no Gerenciador de recursos. Isso também instala o Java 25 e prepara o JAR cliente e as bibliotecas que o bridge usa para montar seu classpath.
 2. Abra **Instâncias → Módulos de compatibilidade → Instalar/atualizar Fabric Java Bridge**. A biblioteca é baixada de uma release separada, conferida por SHA-256 e ELF ARM64 e ativada sem substituir o runtime Vanilla.
 3. Crie uma nova instância e escolha **Fabric Java Bridge**. O perfil só aparece depois que o runtime especial estiver instalado. Não altere a instância padrão.
-4. Na instância Fabric, abra **Gerenciar mods Fabric** e importe os JARs que deseja testar. Cada arquivo é copiado para a pasta `mods/` dessa instância e validado pela presença de `fabric.mod.json`.
-5. Inicie essa instância. Antes de abrir o Horizon, o launcher cria links privados dos JARs em `mods-java/`, fornece o Java 25 e aponta `HORIZON_ROOT` para o workspace de recursos preparados.
+4. Na instância Fabric, abra **Gerenciar mods Fabric** e importe os JARs que deseja testar. Cada arquivo é copiado para a pasta `mods/` dessa instância e validado pela presença de `fabric.mod.json`. Os mods são ativados por padrão ao importar.
+5. Use **Desativar** ou **Ativar** no cartão de cada mod. Os desativados são mantidos em `mods-disabled/`; os ativos permanecem em `mods/`. A alteração vale na próxima inicialização do jogo.
+6. Inicie essa instância. Antes de abrir o Horizon, o launcher recria os links privados apenas dos mods ativos em `mods-java/`, fornece o Java 25 e aponta `HORIZON_ROOT` para o workspace de recursos preparados. É permitido iniciar com todos os mods de terceiros desativados.
 
 Não é necessário incluir outro `fabric-api` no pacote: o bridge possui uma versão de Fabric API fixada para Minecraft 26.3. Os mods e suas configurações permanecem separados por instância.
 
