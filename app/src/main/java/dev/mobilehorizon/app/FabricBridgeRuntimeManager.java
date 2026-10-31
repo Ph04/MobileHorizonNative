@@ -82,7 +82,8 @@ final class FabricBridgeRuntimeManager {
         ensureDirectory(root);
         publish(listener, "Consultando o runtime Fabric Java Bridge…", 0L, -1L);
 
-        JSONObject release = new JSONObject(readUrl(API_URL, 1024 * 1024));
+        JSONObject release = new JSONObject(new String(
+                readUrl(API_URL, 1024 * 1024), StandardCharsets.UTF_8));
         if (!RELEASE_TAG.equals(release.optString("tag_name", ""))
                 || release.optBoolean("draft", true)) {
             throw new IOException("A release de teste do Fabric Java Bridge não está publicada.");
