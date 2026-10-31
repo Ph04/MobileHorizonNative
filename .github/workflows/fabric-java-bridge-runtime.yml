@@ -63,21 +63,11 @@ jobs:
             tools/horizon_patches/02_android_native.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
 
-          # Add MobileHorizon's Android NativeActivity entry point to this fork's workspace.
-          cp -a "$GITHUB_WORKSPACE/android-native" "$SOURCE/android-native"
-          python3 - "$SOURCE/Cargo.toml" <<'PY'
-          import pathlib, sys
-          path = pathlib.Path(sys.argv[1])
-          text = path.read_text(encoding="utf-8")
-          marker = "members = [\n"
-          if text.count(marker) != 1:
-              raise SystemExit("Could not locate exactly one Cargo workspace members list")
-          if '"android-native"' not in text:
-              text = text.replace(marker, marker + '    "android-native",\n', 1)
-          path.write_text(text, encoding="utf-8")
-          PY
-          grep -Fq 'features = ["audio", "java-mods"]' "$SOURCE/android-native/Cargo.toml"
-          ! grep -Fq 'compatibility_bridge::' "$SOURCE/android-native/src/lib.rs"
+          # The Android patch step already generates crates/mobilehorizon-android
+          # and registers it in the upstream Cargo workspace.
+          test -s "$SOURCE/crates/mobilehorizon-android/Cargo.toml"
+          grep -Fq 'features = ["audio", "java-mods"]' "$SOURCE/crates/mobilehorizon-android/Cargo.toml"
+          ! grep -Fq 'compatibility_bridge::' "$SOURCE/crates/mobilehorizon-android/src/lib.rs"
           echo "Prepared pinned Fabric bridge $FABRIC_HORIZON_COMMIT with the Android overlay."
 
       - name: Prepare temporary Minecraft 26.3 compile-time classpath
@@ -192,7 +182,7 @@ jobs:
           export HORIZON_JAVA_HOME="$JAVA_HOME"
 
           cargo build --release --no-default-features \
-            --manifest-path "$SOURCE/android-native/Cargo.toml" \
+            --manifest-path "$SOURCE/Cargo.toml" -p mobilehorizon-android \
             --target aarch64-linux-android
 
           LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_engine.so"
