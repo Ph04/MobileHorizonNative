@@ -10,7 +10,7 @@ name = "horizon_engine"
 crate-type = ["cdylib"]
 
 [dependencies]
-horizon-client = { path = "../horizon-client", default-features = false, features = ["audio"] }
+horizon-client = { path = "../crates/horizon-client", default-features = false, features = ["audio", "java-mods"] }
 jni = "0.21.1"
 pollster = "0.4"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "wgsl"] }
