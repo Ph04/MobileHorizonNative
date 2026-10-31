@@ -1,9 +1,10 @@
 name: Publish Android Horizon runtime
 
-# Resolve Horizon's latest stable release on every run; the Android runtime is published independently from APK releases.
+# Resolve Horizon's moving Nightly pre-release on every run; the Android runtime is published independently from APK releases.
 # A push to this workflow forces a fresh resolution/build; publish races re-queue the default-branch scheduler.
 # Builds are serialized per resolved runtime tag, not globally: a newer upstream release must not wait
 # for a slow build of an older tag, while duplicate builds for the same tag must not race at upload.
+# Updating this workflow intentionally changes the overlay fingerprint and forces a fresh build from the current Nightly.
 
 # Schedules must live on the default branch; scheduled-horizon-runtime.yml on main
 # calls this reusable workflow with the active runtime overlay branch.
@@ -81,36 +82,36 @@ jobs:
                   raise
 
           import re
-          releases = []
-          # The newest stable tag is normally on page 1, but rapid prerelease activity can push
-          # it beyond the first 100 records. Page until a short page or a bounded safety limit.
-          for page in range(1, 11):
-              batch = get_json(
-                  "https://api.github.com/repos/horizon-rust/horizon/releases?per_page=100&page=" + str(page)
-              )
-              if not isinstance(batch, list):
-                  raise SystemExit("Unexpected response while listing Horizon releases.")
-              releases.extend(batch)
-              if len(batch) < 100:
+          # Horizon's current player channel is a single moving pre-release named "nightly".
+          # The old stable vX.Y.Z release remains GitHub's "latest", so releases/latest
+          # and the stable release list are not valid update sources anymore.
+          nightly = get_json(
+              "https://api.github.com/repos/horizon-rust/horizon/releases/tags/nightly"
+          )
+          if not isinstance(nightly, dict):
+              raise SystemExit("The upstream Nightly release response is invalid.")
+          if (nightly.get("tag_name") != "nightly"
+                  or nightly.get("draft")
+                  or not nightly.get("prerelease")
+                  or not (nightly.get("published_at") or nightly.get("created_at"))):
+              raise SystemExit("The official Horizon Nightly is missing, unpublished, or malformed.")
+
+          upstream_tag = "nightly"
+          ref = get_json(
+              "https://api.github.com/repos/horizon-rust/horizon/git/ref/tags/"
+              + urllib.parse.quote(upstream_tag, safe="")
+          )
+          obj = ref.get("object", {})
+          # GitHub tags can be annotated; dereference until the immutable commit is reached.
+          for _ in range(8):
+              if obj.get("type") != "tag":
                   break
-          stable = [
-              release for release in releases
-              if not release.get("draft") and not release.get("prerelease")
-              and re.fullmatch(r"v[0-9][A-Za-z0-9._+-]{0,50}", release.get("tag_name", ""))
-              and (release.get("published_at") or release.get("created_at"))
-          ]
-          if not stable:
-              raise SystemExit("No published stable Horizon release was found.")
-          latest = max(stable, key=lambda item: item.get("published_at") or item.get("created_at", ""))
-          upstream_tag = latest["tag_name"]
-          encoded_tag = urllib.parse.quote(upstream_tag, safe="")
-          ref = get_json("https://api.github.com/repos/horizon-rust/horizon/git/ref/tags/" + encoded_tag)
-          obj = ref["object"]
-          while obj.get("type") == "tag":
-              obj = get_json("https://api.github.com/repos/horizon-rust/horizon/git/tags/" + obj["sha"])["object"]
-          if obj.get("type") != "commit":
-              raise SystemExit("Upstream tag did not resolve to a commit: " + upstream_tag)
-          upstream_commit = obj["sha"]
+              obj = get_json(
+                  "https://api.github.com/repos/horizon-rust/horizon/git/tags/" + obj["sha"]
+              ).get("object", {})
+          if obj.get("type") != "commit" or not re.fullmatch(r"[0-9a-fA-F]{40}", obj.get("sha", "")):
+              raise SystemExit("The official Nightly tag did not resolve to a full commit SHA.")
+          upstream_commit = obj["sha"].lower()
 
           # Hash every tracked build input, not a hard-coded patch list. This includes
           # newly added patch groups and any Android Rust source/config file that affects the
@@ -216,7 +217,7 @@ jobs:
               out.write(f"runtime_tag={runtime_tag}\n")
               out.write(f"overlay_sha={overlay_sha}\n")
 
-          print("Upstream release:", upstream_tag)
+          print("Upstream channel:", upstream_tag)
           print("Upstream commit:", upstream_commit)
           print("Runtime version:", runtime_version)
           print("Existing runtime release is verified and complete:", not build)
@@ -345,40 +346,62 @@ jobs:
           print(f"Runtime manifest: {version}, SHA-256 {digest}")
           PYMANIFEST
 
-      - name: Verify the selected Horizon release is still the latest stable release
+      - name: Verify the selected Horizon Nightly is still current
         env:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+          UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, os, urllib.request
+          import json, os, subprocess, urllib.parse, urllib.request
 
-          request = urllib.request.Request(
-              "https://api.github.com/repos/horizon-rust/horizon/releases/latest",
-              headers={
-                  "Accept": "application/vnd.github+json",
-                  "X-GitHub-Api-Version": "2022-11-28",
-                  "User-Agent": "MobileHorizonNative-runtime-release",
-                  "Authorization": "Bearer " + os.environ["GH_TOKEN"],
-              },
-          )
-          with urllib.request.urlopen(request, timeout=30) as response:
-              release = json.loads(response.read().decode("utf-8"))
-          latest_tag = release.get("tag_name", "")
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "MobileHorizonNative-runtime-release",
+              "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+          }
+
+          def get_json(url):
+              request = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          def tag_commit(tag):
+              ref = get_json(
+                  "https://api.github.com/repos/horizon-rust/horizon/git/ref/tags/"
+                  + urllib.parse.quote(tag, safe="")
+              )
+              obj = ref.get("object", {})
+              for _ in range(8):
+                  if obj.get("type") != "tag":
+                      break
+                  obj = get_json(
+                      "https://api.github.com/repos/horizon-rust/horizon/git/tags/" + obj["sha"]
+                  ).get("object", {})
+              return obj.get("sha", "") if obj.get("type") == "commit" else ""
+
           selected_tag = os.environ["UPSTREAM_TAG"]
-          if (release.get("draft") or release.get("prerelease")
-                  or latest_tag != selected_tag):
+          selected_commit = os.environ["UPSTREAM_COMMIT"]
+          latest = get_json(
+              "https://api.github.com/repos/horizon-rust/horizon/releases/tags/nightly"
+          )
+          latest_tag = latest.get("tag_name", "")
+          latest_commit = tag_commit("nightly")
+          if (selected_tag != "nightly" or latest_tag != "nightly"
+                  or latest.get("draft") or not latest.get("prerelease")
+                  or latest_commit.lower() != selected_commit.lower()):
               message = (
-                  "Horizon advanced during the Android runtime build: selected "
-                  + selected_tag + ", latest stable is " + latest_tag
+                  "Horizon published a newer Nightly during the Android runtime build. "
+                  "Selected commit " + selected_commit[:12] + ", current Nightly commit "
+                  + (latest_commit[:12] if latest_commit else "unavailable")
                   + ". Refusing to publish a stale runtime."
               )
               print("::warning::" + message, flush=True)
               # Scheduled workflows are only available from the default branch.
               # Queue a fresh resolution now instead of waiting for the next cron slot.
-              import subprocess
               dispatch = subprocess.run(
                   ["gh", "workflow", "run", "scheduled-horizon-runtime.yml",
                    "--repo", os.environ["GITHUB_REPOSITORY"], "--ref", "main"],
@@ -392,13 +415,13 @@ jobs:
                   raise SystemExit(
                       message + " Automatic retry dispatch failed; inspect Actions permissions."
                   )
-              print("Queued a new scheduler run to resolve and build the latest stable release.", flush=True)
+              print("Queued a new scheduler run to resolve and build the latest Nightly.", flush=True)
               with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-                  summary.write("### Horizon advanced during runtime compilation\n\n")
+                  summary.write("### Horizon Nightly advanced during runtime compilation\n\n")
                   summary.write(message + "\n\n")
                   summary.write("A fresh default-branch scheduler run was queued automatically.\n")
               raise SystemExit(message + " A fresh workflow run was queued automatically.")
-          print("Confirmed upstream stable release is still latest:", latest_tag)
+          print("Confirmed current Horizon Nightly:", latest_tag, latest_commit)
           PY
 
       - name: Publish versioned Horizon runtime
@@ -411,7 +434,7 @@ jobs:
         run: |
           set -euo pipefail
           RELEASE_DIR="$RUNNER_TEMP/runtime-release"
-          NOTES="Android ARM64 Horizon engine built from the upstream stable release and the MobileHorizonNative compatibility overlay. SHA-256 is exposed by the GitHub release asset metadata; install is staged for the next app launch. This release is not an APK."
+          NOTES="Android ARM64 Horizon engine built from the exact upstream Nightly commit and the MobileHorizonNative compatibility overlay. SHA-256 is exposed by the GitHub release asset metadata; install is staged for the next app launch. This release is not an APK."
           if [[ "$RELEASE_EXISTS" == "true" ]]; then
             gh release upload "$RUNTIME_TAG" \
               "$RELEASE_DIR/horizon-runtime-arm64-v8a.so" \

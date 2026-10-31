@@ -1042,9 +1042,7 @@ replace_once(game,
         );
     }""")
 
-replace_once(game,
-    "fn run_event_loop(mut game: Game<'_>) -> Result<()> {\n    EventLoop::new()?.run_app(&mut game)?;",
-    """fn new_event_loop<T: 'static + Send>() -> Result<EventLoop<T>> {
+event_loop_factory = """fn new_event_loop<T: 'static + Send>() -> Result<EventLoop<T>> {
     #[cfg(target_os = "android")]
     {
         use winit::platform::android::EventLoopBuilderExtAndroid;
@@ -1058,10 +1056,32 @@ replace_once(game,
     }
 }
 
-fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+"""
+legacy_event_loop = "fn run_event_loop(mut game: Game<'_>) -> Result<()> {\n    EventLoop::new()?.run_app(&mut game)?;"
+current_event_loop = """fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+    let result = EventLoop::new()?.run_app(&mut game);
+    leave_fullscreen_after(&result, &mut game.settings);
+    result?;"""
+game_source = game.read_text(encoding="utf-8")
+if game_source.count(current_event_loop) == 1:
+    replace_once(game, current_event_loop,
+                 event_loop_factory + """fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
+    horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
+    let result = event_loop.run_app(&mut game);
+    leave_fullscreen_after(&result, &mut game.settings);
+    result?;""")
+elif game_source.count(legacy_event_loop) == 1:
+    replace_once(game, legacy_event_loop,
+                 event_loop_factory + """fn run_event_loop(mut game: Game<'_>) -> Result<()> {
     let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
     horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
     event_loop.run_app(&mut game)?;""")
+else:
+    raise SystemExit(
+        f"{game}: expected exactly one supported run_event_loop anchor "
+        f"(current={game_source.count(current_event_loop)}, legacy={game_source.count(legacy_event_loop)})"
+    )
 replace_once(game,
     'impl ApplicationHandler for App {\n    fn resumed(&mut self, event_loop: &ActiveEventLoop) {',
     '''impl ApplicationHandler<horizon_client::AndroidInjectedInput> for App {
@@ -1079,11 +1099,24 @@ replace_once(game,
     }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {''')
 
-replace_once(game,
-    '    EventLoop::new()?.run_app(&mut app)?;',
-    '''    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
+legacy_app_loop = '    EventLoop::new()?.run_app(&mut app)?;'
+current_app_loop = '    let result = EventLoop::new()?.run_app(&mut app);'
+app_source = game.read_text(encoding="utf-8")
+if app_source.count(current_app_loop) == 1:
+    replace_once(game, current_app_loop,
+        """    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
+    horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
+    let result = event_loop.run_app(&mut app);""")
+elif app_source.count(legacy_app_loop) == 1:
+    replace_once(game, legacy_app_loop,
+        '''    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
     horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
     event_loop.run_app(&mut app)?;''')
+else:
+    raise SystemExit(
+        f"{game}: expected exactly one supported main App event-loop anchor "
+        f"(current={app_source.count(current_app_loop)}, legacy={app_source.count(legacy_app_loop)})"
+    )
 
 replace_once(workspace_cargo, '"crates/horizon-client",',
              '"crates/horizon-client", "crates/mobilehorizon-android",')
