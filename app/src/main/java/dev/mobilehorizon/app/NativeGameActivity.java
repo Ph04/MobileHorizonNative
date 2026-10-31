@@ -181,7 +181,7 @@ public final class NativeGameActivity extends NativeActivity {
                 JdkRuntimeInstaller.RuntimePaths javaRuntime =
                         JdkRuntimeInstaller.getInstalledIfReady(this);
                 if (javaRuntime == null) {
-                    throw new java.io.IOException("O Java 25 ainda não foi preparado. Conclua a preparação dos recursos oficiais antes de iniciar o perfil Fabric.");
+                    throw new java.io.IOException("O Java 25 ainda não foi preparado. Conclua a preparação dos recursos oficiais antes de iniciar Java Bridge By:iaxivers.");
                 }
                 java.io.File workspace = new java.io.File(gameRoot,
                         ".local/horizon-prepare-workspace").getCanonicalFile();
@@ -189,7 +189,7 @@ public final class NativeGameActivity extends NativeActivity {
                 java.io.File expectedJar = new java.io.File(workspace,
                         ".local/minecraft/26.3/jars/client.jar");
                 if (!expectedLock.isFile() || !expectedJar.isFile()) {
-                    throw new java.io.IOException("O bridge Fabric precisa do JAR cliente 26.3 original e do research-lock.json preparados pelo launcher. Reprepare os recursos oficiais.");
+                    throw new java.io.IOException("Java Bridge By:iaxivers precisa do JAR cliente 26.3 original e do research-lock.json preparados pelo launcher. Reprepare os recursos oficiais.");
                 }
                 android.system.Os.setenv("HORIZON_ROOT", workspace.getAbsolutePath(), true);
                 android.system.Os.setenv("HORIZON_JAVA_HOME",
