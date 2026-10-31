@@ -137,16 +137,6 @@ final class NativeTouchControlsView extends View {
     /** Alignment guide coordinates in view pixels; NaN means no active snap. */
     private float snapGuideX = Float.NaN;
     private float snapGuideY = Float.NaN;
-    private final Runnable modePoll = new Runnable() {
-        @Override public void run() {
-            boolean active = gameActivity != null && gameActivity.isGameplayMode();
-            if (active != gameplayMode) {
-                gameplayMode = active;
-                invalidate();
-            }
-            modeHandler.postDelayed(this, 50);
-        }
-    };
 
     private final float density;
     private float scale;
@@ -281,7 +271,6 @@ final class NativeTouchControlsView extends View {
         floatingMenuX = clamp(prefs.getFloat(KEY_FLOAT_MENU_X, 0.52f), 0.04f, 0.96f);
         floatingMenuY = clamp(prefs.getFloat(KEY_FLOAT_MENU_Y, 0.14f), 0.06f, 0.94f);
         gameplayMode = gameActivity != null && gameActivity.isGameplayMode();
-        if (gameActivity != null) modeHandler.post(modePoll);
         if (previewOnly) {
             controlsVisible = true;
             editingControls = true;
@@ -1730,7 +1719,6 @@ final class NativeTouchControlsView extends View {
         menu.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
         menu.setClippingEnabled(true);
         menu.setElevation(dpInt(12));
-        panel.setAlpha(LauncherAppearance.panelOpacity(activity));
         activeGameMenu = menu;
         menu.setOnDismissListener(() -> {
             if (activeGameMenu == menu) activeGameMenu = null;
@@ -2152,6 +2140,31 @@ final class NativeTouchControlsView extends View {
                 Color.red(color), Color.green(color), Color.blue(color));
     }
 
+    private int panelSurfaceColor(int color) {
+        float opacity = LauncherAppearance.panelOpacity(activity);
+        return Color.argb(Math.round(Color.alpha(color) * opacity),
+                Color.red(color), Color.green(color), Color.blue(color));
+    }
+
+    private void updatePopupPanelOpacity(PopupWindow popup, int baseColor) {
+        if (popup == null) return;
+        android.graphics.drawable.Drawable background = popup.getBackground();
+        if (background instanceof GradientDrawable) {
+            ((GradientDrawable) background).setColor(panelSurfaceColor(baseColor));
+        }
+        View content = popup.getContentView();
+        if (content != null && content.getBackground() instanceof GradientDrawable) {
+            ((GradientDrawable) content.getBackground()).setColor(panelSurfaceColor(baseColor));
+        }
+    }
+
+    private void updateFloatingPanelOpacity() {
+        updatePopupPanelOpacity(activeKeyboardPanel, 0xff151321);
+        updatePopupPanelOpacity(activeGameSettingsPanel, 0xff151321);
+        updatePopupPanelOpacity(activeGameMenu, 0xff121a29);
+        updatePopupPanelOpacity(activeButtonMenu, 0xff1c2638);
+    }
+
     private Button panelActionButton(String label, boolean primary) {
         Button button = new Button(activity);
         button.setAllCaps(false);
@@ -2345,6 +2358,7 @@ final class NativeTouchControlsView extends View {
             classicButtonsEnabled = classicButtons.isChecked();
             LauncherAppearance.setPanelOpacity(activity,
                     (panelOpacityBar.getProgress() + 25) / 100f);
+            updateFloatingPanelOpacity();
             prefs.edit()
                     .putBoolean(KEY_ENABLED, enabled.isChecked())
                     .putBoolean(KEY_LEFT_HANDED, leftHanded)
@@ -3160,13 +3174,11 @@ final class NativeTouchControlsView extends View {
 
     /** Idempotent cleanup for both normal detachment and a failed overlay installation. */
     void dispose() {
-        modeHandler.removeCallbacks(modePoll);
         releaseAllInputs();
         dismissFloatingPanels();
     }
 
     @Override protected void onDetachedFromWindow() {
-        modeHandler.removeCallbacks(modePoll);
         releaseAllInputs();
         if (activeKeyboardPanel != null) {
             try { if (activeKeyboardPanel.isShowing()) activeKeyboardPanel.dismiss(); }
