@@ -154,6 +154,21 @@ getWindow().setStatusBarColor(0xff090911);
                         .format(new Date(instance.lastPlayed));
         card.addView(text(lastPlayed, 11, 0xffa8a1c6, false), topParams(-1, -2, 8));
 
+        try {
+            GameProfileManager.Profile profile = GameProfileManager.getProfile(this, instance.id);
+            if (profile.isFabricJavaBridge()) {
+                Button manageMods = button("Gerenciar mods Fabric", false, v -> {
+                    android.content.Intent intent = new android.content.Intent(this, FabricModsActivity.class);
+                    intent.putExtra(FabricModsActivity.EXTRA_INSTANCE_ID, instance.id);
+                    startActivity(intent);
+                });
+                manageMods.setEnabled(!busy);
+                card.addView(manageMods, topParams(-1, 46, 8));
+            }
+        } catch (Exception ignored) {
+            // The profile validation line above already reports malformed profiles.
+        }
+
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
