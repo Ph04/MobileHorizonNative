@@ -36,6 +36,9 @@ item_draw = root / "crates/horizon-client/src/game/item_draw.rs"
 net = root / "crates/horizon-client/src/net.rs"
 client_cargo = root / "crates/horizon-client/Cargo.toml"
 client_input_cargo = root / "crates/horizon-client-input/Cargo.toml"
+legacy_keybinds = root / "crates/horizon-client/src/keybinds.rs"
+input_keybinds = root / "crates/horizon-client-input/src/keybinds.rs"
+keybinds = input_keybinds if input_keybinds.is_file() else legacy_keybinds
 legacy_clipboard = root / "crates/horizon-client/src/clipboard.rs"
 input_clipboard = root / "crates/horizon-client-input/src/clipboard.rs"
 # Horizon v0.2.92 moved the clipboard implementation into horizon-client-input.
@@ -49,7 +52,7 @@ startup_menu = root / "crates/horizon-client/src/game/startup_menu.rs"
 workspace_cargo = root / "Cargo.toml"
 
 required_sources = (game, lib, hud, audio, skins, remote, chat, names, item_draw,
-                    net, client_cargo, clipboard, pad_menu, startup_menu, workspace_cargo)
+                    net, client_cargo, clipboard, keybinds, pad_menu, startup_menu, workspace_cargo)
 for path in required_sources:
     if not path.is_file():
         raise SystemExit(f"Missing pinned Horizon source file: {path}")
