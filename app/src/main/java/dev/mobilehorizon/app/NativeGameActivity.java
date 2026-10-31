@@ -59,6 +59,7 @@ public final class NativeGameActivity extends NativeActivity {
         // Set them before NativeActivity loads the native game library.
         try {
             android.content.Intent launchIntent = getIntent();
+            android.system.Os.unsetenv("HORIZON_NATIVE_START_BLOCKED");
 
             java.io.File gameRoot = getApplicationContext().getFilesDir();
             if (!gameRoot.isDirectory() && !gameRoot.mkdirs()) {
@@ -114,6 +115,12 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_JAR");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_CLASS");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_VERSION");
+            android.system.Os.unsetenv("HORIZON_APP_FILES_DIR");
+            android.system.Os.unsetenv("HORIZON_JAVA_EXECUTABLE");
+            android.system.Os.unsetenv("HORIZON_JAVA_HOME");
+            android.system.Os.unsetenv("HORIZON_JAVA_LIBRARY_PATH");
+            android.system.Os.unsetenv("HORIZON_JAVA_TMP");
+            android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_JAR");
 
             // Resolve the per-instance game/loader profile and prepare the runtime handoff.
             // Compatibility modules are installed once under filesDir and referenced by path;
@@ -139,6 +146,22 @@ public final class NativeGameActivity extends NativeActivity {
                         profile.entrypointClass, true);
                 android.system.Os.setenv("HORIZON_COMPATIBILITY_API_VERSION",
                         Integer.toString(CompatibilityPluginManager.PLUGIN_API_VERSION), true);
+
+                // Resolve the packaged Java API and an already-installed Java 25 runtime.
+                // A loader instance never triggers APK generation or a JDK download here.
+                CompatibilityApiRuntime.Prepared bridge = CompatibilityApiRuntime.prepare(this);
+                java.io.File filesRoot = getFilesDir().getCanonicalFile();
+                android.system.Os.setenv("HORIZON_APP_FILES_DIR", filesRoot.getAbsolutePath(), true);
+                android.system.Os.setenv("HORIZON_JAVA_EXECUTABLE",
+                        bridge.javaExecutable.getAbsolutePath(), true);
+                android.system.Os.setenv("HORIZON_JAVA_HOME",
+                        bridge.javaHome.getAbsolutePath(), true);
+                android.system.Os.setenv("HORIZON_JAVA_LIBRARY_PATH",
+                        bridge.libraryPath, true);
+                android.system.Os.setenv("HORIZON_JAVA_TMP",
+                        bridge.javaTemp.getAbsolutePath(), true);
+                android.system.Os.setenv("HORIZON_COMPATIBILITY_API_JAR",
+                        bridge.apiJar.getAbsolutePath(), true);
             } else {
                 android.system.Os.unsetenv("HORIZON_COMPATIBILITY_MODULE_DIR");
                 android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_JAR");
@@ -171,6 +194,13 @@ public final class NativeGameActivity extends NativeActivity {
             }
         } catch (Exception error) {
             android.util.Log.e("MobileHorizon", "Não foi possível preparar o diretório do jogo", error);
+            try {
+                android.system.Os.setenv("HORIZON_NATIVE_START_BLOCKED",
+                        "ERROR: configuração da instância/compatibilidade inválida: "
+                                + (error.getMessage() == null ? error.toString() : error.getMessage()), true);
+            } catch (Exception envError) {
+                android.util.Log.e("MobileHorizon", "Não foi possível bloquear a inicialização nativa", envError);
+            }
         }
         // Keep Android's Activity/UI thread at its normal scheduling priority. Raising it
         // before native renderer startup can starve system input/UI work on slower devices.
