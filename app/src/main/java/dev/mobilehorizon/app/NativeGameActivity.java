@@ -149,6 +149,8 @@ public final class NativeGameActivity extends NativeActivity {
                         + profile.profile.minecraftVersion + ", loader "
                         + profile.profile.loaderId + " " + profile.profile.loaderVersion
                         + ", home=" + home.getAbsolutePath());
+            } else {
+                android.system.Os.unsetenv("HORIZON_JAVA_BRIDGE_LOG_FILE");
             }
             // Only the Java Bridge requires process cwd to point at the instance directory.
             // Vanilla keeps the exact startup working directory used by the regular launcher.
