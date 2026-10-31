@@ -139,7 +139,7 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved_state,
     // instance selected a compatibility loader but its Java 25/API setup failed.
     // Do not silently fall through to Vanilla: that would start the wrong profile.
     const char *startup_blocked = getenv("HORIZON_NATIVE_START_BLOCKED");
-    if (startup_blocked != nullptr && *startup_blocked != '\\0') {
+    if (startup_blocked != nullptr && *startup_blocked != '\0') {
         write_status(status_path, startup_blocked);
         LOGE("Inicialização nativa bloqueada pelo launcher: %s", startup_blocked);
         ANativeActivity_finish(activity);
@@ -153,7 +153,7 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved_state,
     if (loader_id != nullptr && strcmp(loader_id, "fabric") == 0) {
         const char *instance_home = getenv("HORIZON_HOME");
         char canonical_home[PATH_MAX];
-        if (instance_home == nullptr || *instance_home == '\\0' ||
+        if (instance_home == nullptr || *instance_home == '\0' ||
             realpath(instance_home, canonical_home) == nullptr) {
             const int error_code = errno;
             char message[PATH_MAX + 160];
