@@ -105,11 +105,16 @@ final class FabricBridgeRuntimeManager {
         if (manifest.optInt("format", -1) != 1
                 || !UPSTREAM_COMMIT.equals(upstreamCommit)
                 || !UPSTREAM_COMMIT.equals(bridgeCommit)
+                || !"iaxivers/horizon".equals(manifest.optString("upstream_repository", ""))
+                || !"java-bridge".equals(manifest.optString("upstream_ref", ""))
+                || !"26.3".equals(manifest.optString("minecraft_version", ""))
+                || !LOADER_VERSION.equals(manifest.optString("fabric_loader_version", ""))
+                || !"0.165.0+26.3".equals(manifest.optString("fabric_api_version", ""))
                 || !"arm64-v8a".equals(abi)
                 || !ENGINE_ASSET.equals(library)
                 || !overlay.matches("[0-9a-f]{8}")
                 || !digest.matches("[0-9a-f]{64}")
-                || !version.startsWith("fabric-java-bridge-")) {
+                || !version.startsWith("fabric-java-bridge-" + UPSTREAM_COMMIT.substring(0, 8) + "-o")) {
             throw new IOException("O manifesto não corresponde ao bridge Fabric Java esperado.");
         }
 
@@ -235,6 +240,7 @@ final class FabricBridgeRuntimeManager {
             if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
                 throw new IOException("HTTP " + connection.getResponseCode() + " ao consultar o runtime Fabric.");
             }
+            requireReleaseHost(connection.getURL());
             long length = connection.getContentLengthLong();
             if (length > limit) throw new IOException("Arquivo do runtime Fabric excede o limite permitido.");
             try (InputStream input = connection.getInputStream();
@@ -264,6 +270,15 @@ final class FabricBridgeRuntimeManager {
         return url;
     }
 
+    private static void requireReleaseHost(URL url) throws IOException {
+        String host = url.getHost().toLowerCase(java.util.Locale.ROOT);
+        if (!"https".equalsIgnoreCase(url.getProtocol())
+                || !(host.equals("github.com") || host.equals("release-assets.githubusercontent.com")
+                || host.equals("objects.githubusercontent.com"))) {
+            throw new IOException("O redirecionamento do download Fabric usou um host não permitido.");
+        }
+    }
+
     private static void download(String address, File target, String expectedSha,
                                  ProgressListener listener) throws Exception {
         URL url = checkedUrl(address);
@@ -276,6 +291,7 @@ final class FabricBridgeRuntimeManager {
             if (code != HttpURLConnection.HTTP_OK) {
                 throw new IOException("HTTP " + code + " ao baixar o motor Fabric.");
             }
+            requireReleaseHost(connection.getURL());
             long total = connection.getContentLengthLong();
             if (total <= 0 || total > MAX_ENGINE_BYTES) {
                 throw new IOException("Tamanho do motor Fabric inválido.");
