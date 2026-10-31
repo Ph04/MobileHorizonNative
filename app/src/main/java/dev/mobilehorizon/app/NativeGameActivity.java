@@ -112,6 +112,8 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.unsetenv("HORIZON_INSTANCE_PROFILE");
             android.system.Os.unsetenv("HORIZON_MODS_DIR");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_MODULE_DIR");
+            android.system.Os.unsetenv("HORIZON_COMPATIBILITY_MODULE_ID");
+            android.system.Os.unsetenv("HORIZON_COMPATIBILITY_MODULE_VERSION");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_JAR");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_ENTRYPOINT_CLASS");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_VERSION");
@@ -140,6 +142,10 @@ public final class NativeGameActivity extends NativeActivity {
             if (profile.moduleDirectory != null) {
                 android.system.Os.setenv("HORIZON_COMPATIBILITY_MODULE_DIR",
                         profile.moduleDirectory.getAbsolutePath(), true);
+                android.system.Os.setenv("HORIZON_COMPATIBILITY_MODULE_ID",
+                        profile.profile.moduleId, true);
+                android.system.Os.setenv("HORIZON_COMPATIBILITY_MODULE_VERSION",
+                        profile.profile.moduleVersion, true);
                 android.system.Os.setenv("HORIZON_COMPATIBILITY_ENTRYPOINT_JAR",
                         profile.entrypointJar, true);
                 android.system.Os.setenv("HORIZON_COMPATIBILITY_ENTRYPOINT_CLASS",
