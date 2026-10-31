@@ -35,7 +35,7 @@ import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-/** Per-instance Fabric mod manager with explicit enable/disable controls. */
+/** Per-instance Fabric mod manager with explicit enable/disable controls and consistent launcher styling. */
 public final class FabricModsActivity extends Activity {
     static final String EXTRA_INSTANCE_ID = "dev.mobilehorizon.app.FABRIC_MOD_INSTANCE_ID";
     private static final int REQUEST_IMPORT = 8107;
