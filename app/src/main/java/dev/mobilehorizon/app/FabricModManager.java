@@ -6,59 +6,101 @@ import android.system.Os;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Prepares the external bridge's expected mods-java/ folder without duplicating mod JARs. */
+/** Per-instance Fabric mod storage and links for the external bridge. */
 final class FabricModManager {
     static final long MAX_MOD_JAR_BYTES = 256L * 1024L * 1024L;
+    static final String ENABLED_DIRECTORY = "mods";
+    static final String DISABLED_DIRECTORY = "mods-disabled";
+    static final String BRIDGE_DIRECTORY = "mods-java";
 
     private FabricModManager() { }
 
-    static int prepareInstance(Context context, String instanceId) throws IOException {
+    static File getDirectory(Context context, String instanceId, boolean enabled) throws IOException {
         File home = GameInstanceManager.getInstanceHome(context, instanceId).getCanonicalFile();
-        File mods = childDirectory(home, "mods");
-        File modsJava = childDirectory(home, "mods-java");
+        return childDirectory(home, enabled ? ENABLED_DIRECTORY : DISABLED_DIRECTORY);
+    }
+
+    /**
+     * Moves a mod between the enabled and disabled folders. The move is atomic when
+     * supported by the filesystem, so the JAR is never left half-copied.
+     */
+    static void setEnabled(Context context, String instanceId, File jar, boolean enabled)
+            throws IOException {
+        File sourceDirectory = getDirectory(context, instanceId, !enabled);
+        File destinationDirectory = getDirectory(context, instanceId, enabled);
+        File canonicalJar = jar.getCanonicalFile();
+        if (Files.isSymbolicLink(jar.toPath())
+                || !sourceDirectory.equals(canonicalJar.getParentFile())
+                || !canonicalJar.isFile()
+                || !canonicalJar.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) {
+            throw new IOException("O arquivo do mod não pertence à pasta esperada desta instância.");
+        }
+        if (canonicalJar.length() <= 0 || canonicalJar.length() > MAX_MOD_JAR_BYTES) {
+            throw new IOException("Tamanho inválido para o mod " + canonicalJar.getName() + ".");
+        }
+
+        File target = new File(destinationDirectory, canonicalJar.getName());
+        if (Files.isSymbolicLink(target.toPath())) {
+            throw new IOException("O destino do mod usa um link simbólico.");
+        }
+        if (target.exists()) {
+            throw new IOException("Já existe um mod com o nome " + target.getName() + " no destino.");
+        }
+        try {
+            Files.move(canonicalJar.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+            Files.move(canonicalJar.toPath(), target.toPath());
+        }
+    }
+
+    /**
+     * Rebuilds mods-java/ using links only for enabled JARs. Zero enabled mods is
+     * valid: the Fabric runtime may start without third-party mods installed.
+     */
+    static int prepareInstance(Context context, String instanceId) throws IOException {
+        File mods = getDirectory(context, instanceId, true);
+        File modsJava = childDirectory(
+                GameInstanceManager.getInstanceHome(context, instanceId).getCanonicalFile(),
+                BRIDGE_DIRECTORY);
 
         File[] entries = mods.listFiles();
         if (entries == null) throw new IOException("Não foi possível listar os mods Fabric da instância.");
         List<File> jars = new ArrayList<>();
         for (File entry : entries) {
-            if (!entry.isFile() || !entry.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
+            if (!entry.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
+            if (Files.isSymbolicLink(entry.toPath()) || !entry.isFile()) {
+                throw new IOException("Entrada de mod inválida na pasta mods: " + entry.getName());
+            }
             File canonical = entry.getCanonicalFile();
-            if (!canonical.getPath().startsWith(mods.getCanonicalPath() + File.separator)
-                    || Files.isSymbolicLink(entry.toPath())) {
-                throw new IOException("Um mod Fabric aponta para fora da pasta privada da instância: "
-                        + entry.getName());
+            if (!mods.equals(canonical.getParentFile())) {
+                throw new IOException("Um mod Fabric saiu da pasta privada da instância: " + entry.getName());
             }
             if (canonical.length() <= 0 || canonical.length() > MAX_MOD_JAR_BYTES) {
                 throw new IOException("Tamanho inválido para o mod Fabric " + entry.getName());
             }
             jars.add(canonical);
         }
-        if (jars.isEmpty()) {
-            throw new IOException("Esta instância Fabric ainda não tem mods .jar. Abra Gerenciar mods Fabric e importe pelo menos um mod.");
-        }
 
         File[] existing = modsJava.listFiles();
-        if (existing != null) {
-            for (File file : existing) {
-                if (Files.isSymbolicLink(file.toPath())) {
-                    if (!file.delete()) throw new IOException("Não foi possível atualizar o link do mod " + file.getName());
+        if (existing == null) throw new IOException("Não foi possível listar a pasta interna mods-java.");
+        for (File file : existing) {
+            if (Files.isSymbolicLink(file.toPath())) {
+                if (!file.delete()) {
+                    throw new IOException("Não foi possível limpar o link anterior " + file.getName());
                 }
             }
         }
+
         for (File jar : jars) {
             File link = new File(modsJava, jar.getName());
             if (link.exists()) {
-                if (Files.isSymbolicLink(link.toPath())) {
-                    if (!link.delete()) throw new IOException("Não foi possível substituir o link " + jar.getName());
-                } else {
-                    throw new IOException("Já existe um arquivo em mods-java com o nome "
-                            + jar.getName() + ". Remova-o antes de atualizar os links da instância.");
-                }
+                throw new IOException("Já existe um arquivo em mods-java com o nome "
+                        + jar.getName() + ". Remova-o antes de atualizar os links da instância.");
             }
             try {
                 Os.symlink(jar.getAbsolutePath(), link.getAbsolutePath());
