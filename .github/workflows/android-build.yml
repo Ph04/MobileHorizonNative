@@ -51,7 +51,7 @@ jobs:
   android:
     # The Java Bridge test branch is deliberately prepared without assembling APKs.
     # A build is started there only by an explicit workflow_dispatch after approval.
-    if: github.event_name != 'push' || github.ref != 'refs/heads/feature/fabric-java-bridge-test'
+    if: github.event_name == 'workflow_dispatch' || (github.head_ref != 'feature/fabric-java-bridge-test' && github.ref != 'refs/heads/feature/fabric-java-bridge-test')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
