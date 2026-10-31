@@ -444,17 +444,31 @@ fn handshake(stream: UnixStream, config: &BridgeConfig)
 }
 
 #[cfg(target_os = "android")]
+fn read_limited_frame<R: BufRead>(reader: &mut R) -> std::io::Result<Option<String>> {
+    let mut bytes = Vec::new();
+    let count = (&mut *reader)
+        .take((MAX_FRAME_BYTES + 1) as u64)
+        .read_until(b'\n', &mut bytes)?;
+    if count == 0 {
+        return Ok(None);
+    }
+    if bytes.len() > MAX_FRAME_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "compatibility bridge frame exceeds 512 KiB",
+        ));
+    }
+    let line = String::from_utf8(bytes).map_err(|error| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, error)
+    })?;
+    Ok(Some(line.trim_end_matches(&['\r', '\n'][..]).to_owned()))
+}
+
+#[cfg(target_os = "android")]
 fn read_frame(reader: &mut BufReader<UnixStream>) -> Result<String, String> {
-    let mut line = String::new();
-    reader.read_line(&mut line)
-        .map_err(|error| format!("could not read compatibility bridge frame: {error}"))?;
-    if line.is_empty() {
-        return Err("Java compatibility bridge disconnected during handshake".to_owned());
-    }
-    if line.len() > MAX_FRAME_BYTES {
-        return Err("Java compatibility bridge frame exceeds 512 KiB".to_owned());
-    }
-    Ok(line.trim_end_matches(&['\r', '\n'][..]).to_owned())
+    read_limited_frame(reader)
+        .map_err(|error| format!("could not read compatibility bridge frame: {error}"))?
+        .ok_or_else(|| "Java compatibility bridge disconnected during handshake".to_owned())
 }
 
 fn decode_error_frame(frame: &str) -> String {
@@ -512,11 +526,10 @@ fn bridge_io_loop(
                         let _ = writer.flush();
                         let deadline = Instant::now() + Duration::from_secs(2);
                         while Instant::now() < deadline {
-                            let mut reply = String::new();
-                            match reader.read_line(&mut reply) {
-                                Ok(0) => break,
-                                Ok(_) if reply.trim_end_matches(&['\r', '\n'][..]) == "STOPPED" => break,
-                                Ok(_) => {}
+                            match read_limited_frame(&mut reader) {
+                                Ok(None) => break,
+                                Ok(Some(reply)) if reply == "STOPPED" => break,
+                                Ok(Some(_)) => {}
                                 Err(error) if matches!(
                                     error.kind(),
                                     std::io::ErrorKind::WouldBlock
@@ -548,11 +561,9 @@ fn bridge_io_loop(
             break;
         }
 
-        let mut line = String::new();
-        match reader.read_line(&mut line) {
-            Ok(0) => break,
-            Ok(_) if line.len() <= MAX_FRAME_BYTES => {
-                let frame = line.trim_end_matches(&['\r', '\n'][..]);
+        match read_limited_frame(&mut reader) {
+            Ok(None) => break,
+            Ok(Some(frame)) => {
                 if let Some(encoded) = frame.strip_prefix("LOG|") {
                     match decode_hex(encoded) {
                         Ok(message) => log::info!("Compatibility module: {message}"),
@@ -586,10 +597,6 @@ fn bridge_io_loop(
                 if frame == "STOPPED" {
                     break;
                 }
-            }
-            Ok(_) => {
-                log::warn!("Compatibility bridge sent an oversized frame");
-                break;
             }
             Err(error) if matches!(
                 error.kind(),
