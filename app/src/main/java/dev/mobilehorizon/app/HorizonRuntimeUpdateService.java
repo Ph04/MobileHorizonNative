@@ -345,6 +345,17 @@ public final class HorizonRuntimeUpdateService {
             return;
         }
 
+        String rejectedVersion = HorizonRuntimeManager.rejectedVersion(context);
+        if (isRejectedRuntimeVersion(latest.version, rejectedVersion)) {
+            String retained = currentVersion == null || currentVersion.isEmpty()
+                    ? "Nenhuma outra runtime Android íntegra está selecionada."
+                    : "A runtime íntegra selecionada permanece " + currentVersion + ".";
+            setStatus(preferences, "A runtime " + runtimeDisplayLabel(latest.version, latest.upstreamTag)
+                    + " já falhou ao iniciar nesta instalação. " + retained
+                    + " O mesmo binário não será baixado novamente; o launcher aguardará uma nova compilação.");
+            return;
+        }
+
         boolean installNeeded = !latest.version.equals(currentVersion);
         if (installNeeded) {
             Log.i(TAG, "Runtime Android encontrada: " + runtimeDisplayLabel(latest.version, latest.upstreamTag)
@@ -702,6 +713,11 @@ public final class HorizonRuntimeUpdateService {
         if (officialCommit == null || !officialCommit.matches("(?i)[0-9a-f]{40}")) return false;
         String prefix = runtimeCommitPrefixFromVersion(runtimeVersion);
         return !prefix.isEmpty() && officialCommit.toLowerCase(java.util.Locale.ROOT).startsWith(prefix);
+    }
+
+    static boolean isRejectedRuntimeVersion(String candidateVersion, String rejectedVersion) {
+        return candidateVersion != null && !candidateVersion.trim().isEmpty()
+                && candidateVersion.equals(rejectedVersion);
     }
 
     static int comparePublicationDates(String left, String right) {
