@@ -1,34 +1,19 @@
 # Ordered patch step. See README.md in this directory for scope and order.
-replace_once(audio,
-    """#[cfg(feature = "audio")]
-fn open_device(
-    device: &cpal::Device,
-    mixer: Arc<Mutex<Mixer>>,
-) -> Result<(cpal::Stream, cpal::SupportedStreamConfig)> {
-    use cpal::SampleFormat as F;
-    let config = device.default_output_config()?;
-    let stream = match config.sample_format() {
-        F::F32 => build_stream::<f32>(device, &config, mixer),
-        F::F64 => build_stream::<f64>(device, &config, mixer),
-        F::I16 => build_stream::<i16>(device, &config, mixer),
-        F::I32 => build_stream::<i32>(device, &config, mixer),
-        F::I8 => build_stream::<i8>(device, &config, mixer),
-        F::U16 => build_stream::<u16>(device, &config, mixer),
-        F::U32 => build_stream::<u32>(device, &config, mixer),
-        F::U8 => build_stream::<u8>(device, &config, mixer),
-        other => Err(format!("unsupported sample format {other}").into()),
-    }?;
-    stream.play()?;
-    Ok((stream, config))
-}""",
-    """#[cfg(feature = "audio")]
+audio_source = audio.read_text(encoding="utf-8")
+audio_start_marker = '#[cfg(feature = "audio")]\nfn open_device('
+audio_end_marker = "\n/// The name of the system's default output device."
+audio_start = audio_source.find(audio_start_marker)
+audio_end = audio_source.find(audio_end_marker, audio_start + len(audio_start_marker))
+if audio_start < 0 or audio_end < 0 or audio_source.find(audio_start_marker, audio_start + 1) >= 0:
+    raise SystemExit(f"{audio}: expected exactly one supported open_device function")
+android_open_device = """#[cfg(feature = "audio")]
 fn open_device(
     device: &cpal::Device,
     mixer: Arc<Mutex<Mixer>>,
 ) -> Result<(cpal::Stream, cpal::SupportedStreamConfig)> {
     use cpal::SampleFormat as F;
 
-    // Android may reject the preferred config: try the device's supported formats/rates.
+    // Android may reject the preferred config: try supported formats and sample rates.
     let preferred_rate = |range: &cpal::SupportedStreamConfigRange| {
         let min = range.min_sample_rate().0;
         let max = range.max_sample_rate().0;
@@ -64,6 +49,10 @@ fn open_device(
             Ok(stream) => match stream.play() {
                 Ok(()) => {
                     log::info!("Horizon: audio output {description}");
+                    if let Ok(mut state) = mixer.lock() {
+                        state.device_name = device.name().unwrap_or_default();
+                        state.device_lost = false;
+                    }
                     return Ok((stream, config));
                 }
                 Err(error) => errors.push(format!("{description}: stream start failed: {error}")),
@@ -76,7 +65,8 @@ fn open_device(
     } else {
         Err(format!("no usable output audio configuration: {}", errors.join("; ")).into())
     }
-}""")
+}"""
+audio.write_text(audio_source[:audio_start] + android_open_device + audio_source[audio_end:], encoding="utf-8")
 
 replace_once(client_cargo, 'winit = "0.30.13"',
              'winit = { version = "0.30.13", features = ["android-native-activity"] }')
@@ -481,6 +471,33 @@ hud_batch_initializers = [
             glint_alpha: 0.75,
             blur_at: 0,
         }''',
+    ),,
+
+    (
+        '''        Self {
+            vertices: Vec::new(),
+            scale: scale as f32,
+            width: (window[0] as f32 / scale as f32).ceil(),
+            height: (window[1] as f32 / scale as f32).ceil(),
+            patches: Vec::new(),
+            blends: Vec::new(),
+            end_portal: EndPortalFill::default(),
+            glint_alpha: 0.75,
+            blur_at: 0,
+            inline_profiles: Vec::new(),
+        }''',
+        '''        Self {
+            vertices: Vec::new(),
+            scale: scale as f32,
+            width: gui_width as f32,
+            height: gui_height as f32,
+            patches: Vec::new(),
+            blends: Vec::new(),
+            end_portal: EndPortalFill::default(),
+            glint_alpha: 0.75,
+            blur_at: 0,
+            inline_profiles: Vec::new(),
+        }''',
     ),
 ]
 hud_content = hud.read_text(encoding="utf-8")
@@ -539,9 +556,14 @@ replace_once(game, '            agent_pointer: false,\n',
              '            agent_pointer: false,\n            touch_mouse: None,\n            touch_auxiliary: None,\n            touch_is_right: false,\n')
 
 # Keep the Android IME proxy synchronized with Horizon's real chat field.
-replace_once(chat,
-    'fn chat_tree<\'a>(',
-    'pub(super) fn chat_tree<\'a>(')
+chat_source = chat.read_text(encoding="utf-8")
+if chat_source.count("fn chat_tree<'a>(") == 1:
+    replace_once(chat, "fn chat_tree<'a>(", "pub(super) fn chat_tree<'a>(")
+elif chat_source.count("pub(super) fn chat_tree(") == 1 or chat_source.count("pub(super) fn chat_tree<'a>(") == 1:
+    # Newer Nightlies already expose the helper to the parent game module.
+    pass
+else:
+    raise SystemExit(f"{chat}: expected one supported chat_tree visibility declaration")
 replace_once(chat,
     """        self.ui.chat_screen = Some(screen);
         self.ui.chat_opened = Some(std::time::Instant::now());""",
