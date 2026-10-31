@@ -101,6 +101,16 @@ public final class HorizonRuntimeUpdateServiceTest {
     }
 
     @Test
+    public void skipsOnlyTheRuntimeVersionPreviouslyRejectedAtStartup() {
+        String failed = "horizon-nightly-c1234abcd-o89abcdef";
+        String newer = "horizon-nightly-c5678abcd-o89abcdef";
+        assertTrue(HorizonRuntimeUpdateService.isRejectedRuntimeVersion(failed, failed));
+        assertFalse(HorizonRuntimeUpdateService.isRejectedRuntimeVersion(newer, failed));
+        assertFalse(HorizonRuntimeUpdateService.isRejectedRuntimeVersion("", failed));
+        assertFalse(HorizonRuntimeUpdateService.isRejectedRuntimeVersion(null, failed));
+    }
+
+    @Test
     public void comparesPublicationTimeInsteadOfDifferentTagSchemes() {
         String olderSemanticRelease = "2026-10-25T07:15:00Z";
         String newerDateRelease = "2026-10-25T13:47:23Z";
