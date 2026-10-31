@@ -72,20 +72,52 @@ A profile can be changed later from the instance card. The original default inst
 
 ## Native runtime handoff contract
 
-Before NativeGameActivity calls super.onCreate, it resolves and validates the selected profile, then exports:
+Before NativeGameActivity calls super.onCreate, it resolves and validates the selected profile, then exports the per-instance identity and module entrypoint. For a selected compatibility module it also stages the shared Java API from the APK and resolves the Java 25 runtime that the launcher has already installed. A loader profile does not trigger a JDK download during game startup.
 
-- HORIZON_INSTANCE_ID
-- HORIZON_GAME_VERSION
-- HORIZON_LOADER_ID
-- HORIZON_LOADER_VERSION
-- HORIZON_INSTANCE_PROFILE — absolute path to .mobilehorizon/launch-profile.json
-- HORIZON_MODS_DIR
-- HORIZON_COMPATIBILITY_MODULE_DIR
-- HORIZON_COMPATIBILITY_ENTRYPOINT_JAR
-- HORIZON_COMPATIBILITY_ENTRYPOINT_CLASS
+The handoff includes:
+
+- HORIZON_INSTANCE_ID and HORIZON_GAME_VERSION
+- HORIZON_LOADER_ID and HORIZON_LOADER_VERSION
+- HORIZON_INSTANCE_PROFILE and HORIZON_MODS_DIR
+- HORIZON_COMPATIBILITY_MODULE_DIR, MODULE_ID and MODULE_VERSION
+- HORIZON_COMPATIBILITY_ENTRYPOINT_JAR and ENTRYPOINT_CLASS
 - HORIZON_COMPATIBILITY_API_VERSION
+- HORIZON_APP_FILES_DIR
+- HORIZON_JAVA_EXECUTABLE, JAVA_HOME, JAVA_LIBRARY_PATH and JAVA_TMP
+- HORIZON_COMPATIBILITY_API_JAR
 
-The JSON launch profile contains the same identifiers and absolute paths. The Rust-side bridge must validate these values again; it must not trust environment values or paths blindly. It should load the Java bootstrap only for the selected instance and only after the user has selected that loader profile.
+If profile validation or Java/API preparation fails, the Android bootstrap receives a startup-blocked status and refuses to silently launch the instance as Vanilla.
+
+## Rust–Java bridge
+
+The ordered Horizon overlay now applies `08_compatibility_bridge.py` after the existing Android and offline-login patches. It adds `horizon_client::compatibility_bridge` to the native engine and connects it to the Android client entrypoint.
+
+For a Vanilla instance, the bridge returns immediately: it does not create a socket or start another process. For a selected compatibility module, the bridge:
+
+1. validates the module descriptor, module/version path, entrypoint JAR, Java 25 paths and API version again on the Rust side;
+2. opens a private Unix-domain socket in app-private storage, with restricted file permissions;
+3. starts the existing Java 25 runtime through Android's system linker;
+4. checks the module and instance identity in a versioned handshake before allowing the plugin entrypoint to run;
+5. forwards bounded frame, game tick, world lifecycle, server tick and key events;
+6. receives bounded module logs/actions and closes the Java process during normal shutdown.
+
+The Java API lives in the standalone `:compatibility-api` Gradle module. The app packages only that shared API JAR as an asset; individual compatibility modules remain separate `.mhplugin` files and do not require their own APK.
+
+The current bridge action allowlist is intentionally conservative. The `log` action is handled; other action types are reported as unsupported rather than changing game state from an ambiguous client/server thread. The protocol is an extension point, not a claim that Forge's full event bus or Minecraft Java API has been mapped.
+
+## First Forge adapter
+
+The independent `:forge-adapter` module produces `forge-compatibility-26.3-0.1.0.mhplugin`, pinned to Minecraft 26.3 and Forge 66.1.2. Version 0.1.0 is explicitly a diagnostic probe. It checks which ModLauncher/FML/Minecraft client classes are visible to its Java class loader and receives Horizon events. It does not invoke ModLauncher and does not run ordinary Forge mods.
+
+The validation target is recorded in `tools/compatibility-horizon-revision.env`: Horizon Nightly 2026-10-30, commit `587f81f9c69629e999584f30aae0c9edacfc1b1d`. This compatibility validation pin is separate from the app's production Horizon runtime pin.
+
+## Important implementation boundary
+
+This branch now contains the common Java API, a separate Java bridge process, the Rust event transport, module/instance handoff and the first Forge diagnostic package. It is an operational plugin bridge for modules written against the MobileHorizon compatibility API, not a general Forge runtime.
+
+Horizon is a Rust implementation and does not provide the full Java Minecraft class universe expected by Forge. Arbitrary Forge JARs therefore remain unsupported. The next substantial work is to map the classes and behaviors expected by real Forge mods—registries, resources, lifecycle/events, entities, blocks, rendering, networking and game-thread actions—to Horizon's native APIs, then verify that mapping with progressively more demanding test mods.
+
+The normal Vanilla profile continues to launch without requiring a compatibility module. No APK is generated for an individual module.
 
 ## Important implementation boundary
 
