@@ -124,12 +124,22 @@ public final class HorizonRuntimeManager {
                     Log.e(TAG, "A runtime atual falhou; revertendo para a última runtime baixada "
                             + "e verificada " + active.version + ": " + previousStatus);
                 } else {
-                    if (active != null) deleteSelection(root, ACTIVE_NAME);
-                    if (previous != null) deleteSelection(root, PREVIOUS_NAME);
-                    active = null;
-                    previous = null;
-                    Log.e(TAG, "A runtime falhou e não há uma versão anterior disponível: "
-                            + previousStatus);
+                    // A failed native start does not make a hash-verified file disappear.
+                    // When there is no distinct fallback, keep the installed runtime selected
+                    // so the launcher can retry/report the startup error instead of downloading
+                    // the exact same binary on every attempt.
+                    if (previous != null) {
+                        deleteSelection(root, PREVIOUS_NAME);
+                        previous = null;
+                    }
+                    if (active != null) {
+                        Log.e(TAG, "A runtime " + active.version + " não concluiu a inicialização "
+                                + "e não há uma versão anterior válida; mantendo o binário verificado "
+                                + "para evitar um ciclo de download: " + previousStatus);
+                    } else {
+                        Log.e(TAG, "A runtime falhou e não há uma versão válida disponível: "
+                                + previousStatus);
+                    }
                 }
             } else if (active == null && previous != null) {
                 writeActive(root, previous.version, previous.sha256);
