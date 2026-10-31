@@ -615,6 +615,12 @@ current_typed_text = """                if let Some(text) = typed_text
                 {
                     screen.type_text(&m, &c, text);
                 }
+                self.ui.chat_screen = Some(screen);"""
+current_typed_text_new = """                if let Some(text) = typed_text
+                    && self.types_text()
+                {
+                    screen.type_text(&m, &c, text);
+                }
                 horizon_client::set_android_chat_draft(screen.value());
                 self.ui.chat_screen = Some(screen);"""
 if chat_content.count(old_typed_text) == 1:
