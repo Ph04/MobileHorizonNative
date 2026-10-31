@@ -133,6 +133,17 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved_state,
     const char *fallback = getenv("HORIZON_RUNTIME_FALLBACK_LIBRARY");
     const char *status_path = getenv("HORIZON_RUNTIME_STATUS_FILE");
 
+    // NativeGameActivity sets this before NativeActivity loads the engine when an
+    // instance selected a compatibility loader but its Java 25/API setup failed.
+    // Do not silently fall through to Vanilla: that would start the wrong profile.
+    const char *startup_blocked = getenv("HORIZON_NATIVE_START_BLOCKED");
+    if (startup_blocked != nullptr && *startup_blocked != '\\0') {
+        write_status(status_path, startup_blocked);
+        LOGE("Inicialização nativa bloqueada pelo launcher: %s", startup_blocked);
+        ANativeActivity_finish(activity);
+        return;
+    }
+
     std::string active_path;
     std::string fallback_path;
     if (!canonical_runtime_path(root, selected, &active_path)) {
