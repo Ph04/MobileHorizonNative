@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: ["main", "feature/horizon-runtime-loader", "feature/android-launcher-parity", "feature/fabric-java-bridge-test"]
+    branches: ["main", "feature/horizon-runtime-loader", "feature/android-launcher-parity"]
     paths:
       - "app/**"
       - "core/**"
@@ -49,7 +49,6 @@ permissions:
 
 jobs:
   android:
-    if: github.ref != 'refs/heads/feature/fabric-java-bridge-test'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
