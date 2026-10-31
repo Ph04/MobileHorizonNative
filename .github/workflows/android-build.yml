@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: ["main", "feature/horizon-runtime-loader", "feature/android-launcher-parity"]
+    branches: ["main", "feature/horizon-runtime-loader", "feature/android-launcher-parity", "feature/fabric-java-bridge-test"]
     paths:
       - "app/**"
       - "core/**"
@@ -290,8 +290,7 @@ jobs:
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Build Horizon NativeActivity client with touch-to-mouse translation
-        if: github.ref != 'refs/heads/feature/fabric-java-bridge-test'
-        shell: bash
+            shell: bash
         env:
           HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
         run: |
