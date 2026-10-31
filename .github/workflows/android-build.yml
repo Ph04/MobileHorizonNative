@@ -293,7 +293,7 @@ jobs:
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Build Horizon NativeActivity client with touch-to-mouse translation
-        if: github.ref != 'refs/heads/feature/fabric-java-bridge-test'
+        if: github.ref != 'refs/heads/feature/fabric-java-bridge-test' && !(github.event_name == 'pull_request' && github.base_ref == 'feature/fabric-java-bridge-test')
         shell: bash
         env:
           HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
@@ -373,7 +373,7 @@ jobs:
           sha256sum "$RUNTIME_STAGE/libhorizon_engine.so" | tee "$RUNNER_TEMP/horizon-engine-sha256.txt"
 
       - name: Stage the already validated Fabric Java Bridge runtime
-        if: github.ref == 'refs/heads/feature/fabric-java-bridge-test'
+        if: github.ref == 'refs/heads/feature/fabric-java-bridge-test' || (github.event_name == 'pull_request' && github.base_ref == 'feature/fabric-java-bridge-test')
         shell: bash
         run: |
           set -euo pipefail
