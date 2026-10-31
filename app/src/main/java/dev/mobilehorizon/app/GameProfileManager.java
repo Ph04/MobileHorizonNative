@@ -61,8 +61,7 @@ public final class GameProfileManager {
         public String displayName() {
             if (isVanilla()) return "Vanilla " + minecraftVersion;
             if (isFabricJavaBridge()) {
-                return "Fabric Java Bridge " + FabricBridgeRuntimeManager.LOADER_VERSION
-                        + " • Minecraft " + minecraftVersion;
+                return "Java Bridge By:iaxivers • Minecraft " + minecraftVersion;
             }
             return capitalize(loaderId) + " " + loaderVersion + " • Minecraft " + minecraftVersion;
         }
@@ -131,7 +130,7 @@ public final class GameProfileManager {
         if ("26.3".equals(minecraftVersion) && FabricBridgeRuntimeManager.isInstalled(context)) {
             choices.add(new LoaderChoice("fabric", FabricBridgeRuntimeManager.LOADER_VERSION,
                     FABRIC_BRIDGE_MODULE_ID, FABRIC_BRIDGE_MODULE_VERSION,
-                    "Fabric Java Bridge • Loader " + FabricBridgeRuntimeManager.LOADER_VERSION
+                    "Java Bridge By:iaxivers • Fabric Loader " + FabricBridgeRuntimeManager.LOADER_VERSION
                             + " • experimental"));
         }
         for (CompatibilityPluginManager.Module module
@@ -180,7 +179,7 @@ public final class GameProfileManager {
             if (!"26.3".equals(minecraftVersion)
                     || !FabricBridgeRuntimeManager.isInstalled(context)
                     || !FabricBridgeRuntimeManager.LOADER_VERSION.equals(choice.loaderVersion)) {
-                throw new IOException("O runtime Fabric Java Bridge não está instalado ou não corresponde ao Minecraft 26.3.");
+                throw new IOException("O runtime Java Bridge By:iaxivers não está instalado ou não corresponde ao Minecraft 26.3.");
             }
             profile = new Profile(safeId, minecraftVersion, "fabric",
                     FabricBridgeRuntimeManager.LOADER_VERSION,
@@ -219,7 +218,7 @@ public final class GameProfileManager {
             if (!"26.3".equals(profile.minecraftVersion)
                     || !FabricBridgeRuntimeManager.isInstalled(context)
                     || !FabricBridgeRuntimeManager.LOADER_VERSION.equals(profile.loaderVersion)) {
-                throw new IOException("O runtime Fabric Java Bridge não está instalado ou não corresponde a esta instância.");
+                throw new IOException("O runtime Java Bridge By:iaxivers não está instalado ou não corresponde a esta instância.");
             }
         } else if (!profile.isVanilla()) {
             module = CompatibilityPluginManager.findModule(
@@ -313,7 +312,7 @@ public final class GameProfileManager {
                             && FABRIC_BRIDGE_MODULE_VERSION.equals(moduleVersion)) {
                         if (!FabricBridgeRuntimeManager.LOADER_VERSION.equals(loaderVersion)
                                 || !"26.3".equals(gameVersion)) {
-                            throw new IOException("Perfil Fabric Java Bridge incompatível.");
+                            throw new IOException("Perfil Java Bridge By:iaxivers incompatível.");
                         }
                     } else {
                         if (loaderVersion.isEmpty() || moduleId.isEmpty() || moduleVersion.isEmpty()) {
