@@ -195,9 +195,14 @@ public final class FabricModsActivity extends Activity {
     private void importMod(Uri uri) throws Exception {
         String safeName = safeJarName(displayName(uri));
         File mods = FabricModManager.getDirectory(this, instanceId, true);
+        File disabledMods = FabricModManager.getDirectory(this, instanceId, false);
         File target = new File(mods, safeName);
-        if (Files.isSymbolicLink(target.toPath())) {
+        File disabledCopy = new File(disabledMods, safeName);
+        if (Files.isSymbolicLink(target.toPath()) || Files.isSymbolicLink(disabledCopy.toPath())) {
             throw new IOException("O destino do mod usa link simbólico.");
+        }
+        if (target.exists() || disabledCopy.exists()) {
+            throw new IOException("Este mod já foi importado nesta instância: " + safeName);
         }
         File temporary = new File(mods, "." + safeName + ".importing");
         if (target.exists()) throw new IOException("Já existe um mod com o nome " + safeName + ".");
