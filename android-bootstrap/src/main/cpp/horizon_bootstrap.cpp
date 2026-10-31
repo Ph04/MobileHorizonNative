@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <unistd.h>
 #include <string>
 
 #define LOG_TAG "HorizonBootstrap"
@@ -176,6 +178,22 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved_state,
     write_status(status_path, "ERROR: não foi possível carregar a runtime ativa nem a anterior");
     LOGE("Não foi possível iniciar Horizon com a runtime ativa ou a anterior");
     ANativeActivity_finish(activity);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_dev_mobilehorizon_app_NativeGameActivity_nativeChangeWorkingDirectory(
+    JNIEnv *env, jclass, jstring path) {
+    if (path == nullptr) {
+        return static_cast<jint>(EINVAL);
+    }
+    const char *native_path = env->GetStringUTFChars(path, nullptr);
+    if (native_path == nullptr) {
+        return static_cast<jint>(ENOMEM);
+    }
+    const int result = chdir(native_path);
+    const int error_code = result == 0 ? 0 : errno;
+    env->ReleaseStringUTFChars(path, native_path);
+    return static_cast<jint>(error_code);
 }
 
 extern "C" JNIEXPORT void JNICALL
