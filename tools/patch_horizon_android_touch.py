@@ -7,6 +7,7 @@ target, the build stops and names the missing/duplicated anchor instead of
 silently shipping a partial runtime.
 """
 from pathlib import Path
+import os
 import runpy
 import shutil
 import sys
@@ -75,8 +76,11 @@ patch_dir = Path(__file__).resolve().parent / "horizon_patches"
 steps = [
     "01_offline_server_login.py",
     "02_android_native.py",
-    "08_compatibility_bridge.py",
 ]
+# The external iaxivers/java-bridge already provides the Fabric/JVM integration.
+# Do not layer MobileHorizon's separate experimental compatibility socket onto it.
+if os.environ.get("HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE") != "1":
+    steps.append("08_compatibility_bridge.py")
 context = dict(globals())
 for step in steps:
     step_path = patch_dir / step
