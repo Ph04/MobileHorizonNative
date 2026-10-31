@@ -940,6 +940,41 @@ final class UiLanguage {
         pair("Excluir captura?", "Delete screenshot?");
         pair("Excluir favorito?", "Delete favorite?");
         pair("Voltar", "Back");
+        pair("MOBILEHORIZON  /  MÓDULOS", "MOBILEHORIZON  /  MODULES");
+        pair("Módulos de compatibilidade", "Compatibility modules");
+        pair("Instale módulos uma vez e associe-os às instâncias que usam o loader correspondente. Os módulos não exigem um APK diferente.", "Install modules once and assign them to instances using the matching loader. Modules do not require a separate APK.");
+        pair("Importar módulo .mhplugin", "Import .mhplugin module");
+        pair("Importar módulo de compatibilidade?", "Import compatibility module?");
+        pair("O pacote pode fornecer código executável ao runtime do jogo. Continue somente se confiar na origem do arquivo.", "The package may provide executable code to the game runtime. Continue only if you trust the file source.");
+        pair("Escolher arquivo", "Choose file");
+        pair("Validando e instalando o pacote...", "Validating and installing package...");
+        pair("Falha ao instalar: ", "Installation failed: ");
+        pair("Módulo instalado: ", "Module installed: ");
+        pair("Módulos instalados: ", "Installed modules: ");
+        pair("Nenhum módulo instalado. Quando houver um pacote compatível, importe-o aqui para disponibilizá-lo nas instâncias.", "No modules installed. Import a compatible package here to make it available to instances.");
+        pair("Não foi possível ler os módulos: ", "Could not read modules: ");
+        pair("Desinstalar", "Uninstall");
+        pair("Desinstalar módulo?", "Uninstall module?");
+        pair("O pacote será removido do armazenamento compartilhado. Instâncias que ainda o utilizam precisam ser reconfiguradas primeiro.", "The package will be removed from shared storage. Instances still using it must be reconfigured first.");
+        pair("Módulo desinstalado.", "Module uninstalled.");
+        pair("Não foi possível desinstalar: ", "Could not uninstall: ");
+        pair("Entrada: ", "Entrypoint: ");
+        pair("Atenção: módulos de terceiros", "Warning: third-party modules");
+        pair("Um módulo pode conter código executável e alterar o comportamento do jogo. Importe apenas pacotes de fontes em que você confia. O launcher valida a estrutura e os caminhos do pacote, mas isso não equivale a uma assinatura do desenvolvedor.", "A module may contain executable code and change game behavior. Import packages only from sources you trust. The launcher validates package structure and paths, but this is not a developer signature.");
+        pair("Estado da integração", "Integration status");
+        pair("Esta etapa instala, cataloga e associa módulos às instâncias. O runtime Horizon ainda precisa implementar o contrato de inicialização do módulo antes que uma compatibilidade Fabric ou Forge seja executada dentro do jogo.", "This stage installs, catalogs and assigns modules to instances. The Horizon runtime still needs to implement the module startup contract before Fabric or Forge compatibility can run in-game.");
+        pair("Módulos de compatibilidade", "Compatibility modules");
+        pair("Instância criada: ", "Instance created: ");
+        pair("Versão e loader", "Version and loader");
+        pair("Alterar versão e loader", "Change version and loader");
+        pair("Minecraft 26.3  •  Tipo de instalação", "Minecraft 26.3  •  Installation type");
+        pair("Cada loader terá sua própria instância. Apenas módulos instalados aparecem nesta lista.", "Each loader gets its own instance. Only installed modules appear in this list.");
+        pair("A configuração afeta somente esta instância. Mundos e configurações permanecem na pasta dela.", "This setting affects only this instance. Worlds and settings stay in its own folder.");
+        pair("Perfil atualizado.", "Profile updated.");
+        pair("Não foi possível consultar os módulos", "Could not query installed modules");
+        pair("Não foi possível consultar os perfis disponíveis", "Could not query available profiles");
+        pair("Não foi possível salvar a instância", "Could not save instance");
+        pair("Não foi possível alterar o perfil", "Could not change profile");
     }
 
     private UiLanguage() { }
