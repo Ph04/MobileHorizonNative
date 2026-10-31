@@ -13,6 +13,7 @@ on:
       - "app/src/main/java/dev/mobilehorizon/app/CompatibilityModulesActivity.java"
       - "app/src/main/AndroidManifest.xml"
       - "app/src/test/**"
+      - "compatibility-api/**"
       - "app/build.gradle"
       - "settings.gradle"
       - ".github/workflows/fabric-java-bridge-app-check.yml"
