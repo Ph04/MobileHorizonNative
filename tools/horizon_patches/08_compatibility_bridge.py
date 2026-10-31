@@ -26,7 +26,7 @@ use std::{
     collections::VecDeque,
     env,
     fs,
-    io::{BufRead, BufReader, BufWriter, Write},
+    io::{BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
@@ -40,7 +40,7 @@ use std::{
 
 #[cfg(target_os = "android")]
 use std::os::unix::{
-    fs::{FileTypeExt, PermissionsExt},
+    fs::PermissionsExt,
     net::{UnixListener, UnixStream},
 };
 
@@ -309,7 +309,7 @@ fn create_private_listener(config: &BridgeConfig) -> Result<(UnixListener, PathB
     }
     let nonce = NEXT_SOCKET.fetch_add(1, Ordering::Relaxed);
     let path = local.join(format!("b-{}-{nonce:x}.sock", std::process::id()));
-    if path.as_os_str().as_encoded_bytes().len() > 100 {
+    if path.to_string_lossy().len() > 100 {
         return Err("private bridge socket path exceeds the Android Unix-socket limit".to_owned());
     }
     let listener = UnixListener::bind(&path)
@@ -344,12 +344,12 @@ fn spawn_java_bridge(config: &BridgeConfig, socket: &Path) -> Result<Child, Stri
         config.api_jar.to_str().ok_or("compatibility API path is not UTF-8")?,
         "dev.mobilehorizon.compat.api.BridgeMain",
         socket,
-        &config.module_id,
-        &config.module_version,
-        &config.instance_id,
-        &config.minecraft_version,
-        &config.loader_id,
-        &config.loader_version,
+        config.module_id.as_str(),
+        config.module_version.as_str(),
+        config.instance_id.as_str(),
+        config.minecraft_version.as_str(),
+        config.loader_id.as_str(),
+        config.loader_version.as_str(),
         config.module_dir.to_str().ok_or("module path is not UTF-8")?,
         config.entrypoint_jar.to_str().ok_or("entrypoint path is not UTF-8")?,
         &config.entrypoint_class,
@@ -616,7 +616,7 @@ fn bridge_io_loop(
 
 pub fn emit_event(event_type: &str, payload_json: &str) {
     if event_type.is_empty() || event_type.len() > 96
-        || event_type.contains(['|', '\n', '\r'])
+        || event_type.contains('|') || event_type.contains('\n') || event_type.contains('\r')
         || payload_json.len() > 256 * 1024
     {
         return;
@@ -744,13 +744,6 @@ hook_steps = [
         '''    pub(super) fn native_tick(&mut self) {
         for action in crate::compatibility_bridge::drain_actions() {
             match action.kind.as_str() {
-                "chat_message" => {
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&action.payload_json) {
-                        if let Some(text) = value.get("text").and_then(serde_json::Value::as_str) {
-                            self.native_chat(text);
-                        }
-                    }
-                }
                 "log" => log::info!("Compatibility action: {}", action.payload_json),
                 other => log::warn!("Compatibility action not handled by this Horizon build: {other}"),
             }
@@ -776,6 +769,10 @@ hook_steps = [
     ) {
         let payload = serde_json::json!({
             "phase": format!("{phase:?}"),
+            "authority": format!("{:?}", context.authority),
+            "lifecycle_context": format!("{context:?}"),
+            "authority": format!("{:?}", context.authority),
+            "lifecycle_context": format!("{context:?}"),
             "error": error_text
         }).to_string();
         crate::compatibility_bridge::emit_event("world_lifecycle", &payload);
