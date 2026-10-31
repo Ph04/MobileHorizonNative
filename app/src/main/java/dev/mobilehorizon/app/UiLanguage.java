@@ -975,6 +975,29 @@ final class UiLanguage {
         pair("Não foi possível consultar os perfis disponíveis", "Could not query available profiles");
         pair("Não foi possível salvar a instância", "Could not save instance");
         pair("Não foi possível alterar o perfil", "Could not change profile");
+        pair("Gerenciador de mods", "Mod manager");
+        pair("Ative ou desative cada mod para esta instância. Mods desativados ficam guardados e não são carregados pelo jogo.", "Enable or disable each mod for this instance. Disabled mods are kept in storage and are not loaded by the game.");
+        pair("＋  Importar mods .jar", "＋  Import .jar mods");
+        pair("Ativos: ", "Enabled: ");
+        pair("Desativados: ", "Disabled: ");
+        pair("Total de mods nesta instância: ", "Total mods in this instance: ");
+        pair("MODS ATIVOS", "ENABLED MODS");
+        pair("MODS DESATIVADOS", "DISABLED MODS");
+        pair("Ativar", "Enable");
+        pair("Desativar", "Disable");
+        pair("Remover", "Remove");
+        pair("ATIVO", "ENABLED");
+        pair("DESATIVADO", "DISABLED");
+        pair("Arquivo JAR", "JAR file");
+        pair("Mods importados e ativados: ", "Mods imported and enabled: ");
+        pair("Importados ", "Imported ");
+        pair("falha: ", "error: ");
+        pair("Mod ativado; será carregado no próximo início.", "Mod enabled; it will be loaded on the next launch.");
+        pair("Mod desativado; não será carregado no próximo início.", "Mod disabled; it will not be loaded on the next launch.");
+        pair("Não foi possível alterar o mod: ", "Could not change mod: ");
+        pair("O Fabric Loader 0.20.1 e a Fabric API 0.165.0+26.3 já acompanham o runtime experimental. Aqui você gerencia somente os mods adicionais. Alterações entram em vigor na próxima inicialização do jogo.", "Fabric Loader 0.20.1 and Fabric API 0.165.0+26.3 are already included with the experimental runtime. This screen manages additional mods only. Changes take effect the next time the game starts.");
+        pair("Compatibilidade experimental", "Experimental compatibility");
+        pair("Nem todo mod Fabric funciona neste bridge. Mods que exigem renderizadores próprios, APIs não mapeadas ou mixins fora da cobertura podem falhar. Importe apenas arquivos de fontes confiáveis.", "Not every Fabric mod works with this bridge. Mods requiring custom renderers, unmapped APIs or unsupported mixins may fail. Import files only from sources you trust.");
     }
 
     private UiLanguage() { }
