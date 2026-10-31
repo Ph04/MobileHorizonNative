@@ -57,6 +57,68 @@ public final class NativeGameActivity extends NativeActivity {
     private EditText keyboardInput;
     private boolean suppressKeyboardInputWatcher;
     private String lastKeyboardInput = "";
+    private java.io.File javaBridgeLogFile;
+
+    private void beginJavaBridgeLog(java.io.File filesDir) {
+        try {
+            java.io.File logDirectory = new java.io.File(filesDir, "logs");
+            if (!logDirectory.isDirectory() && !logDirectory.mkdirs()) {
+                throw new java.io.IOException("Não foi possível criar a pasta privada de logs.");
+            }
+            javaBridgeLogFile = new java.io.File(logDirectory, "java-bridge-startup.log");
+            try (java.io.FileOutputStream output =
+                         new java.io.FileOutputStream(javaBridgeLogFile, false)) {
+                String header = "MobileHorizonNative Java Bridge startup diagnostics\n"
+                        + "Started at " + new java.util.Date() + "\n";
+                output.write(header.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            android.system.Os.setenv("HORIZON_JAVA_BRIDGE_LOG_FILE",
+                    javaBridgeLogFile.getAbsolutePath(), true);
+            bridgeLog("INFO", "Log persistente iniciado em "
+                    + javaBridgeLogFile.getAbsolutePath());
+        } catch (Exception error) {
+            javaBridgeLogFile = null;
+            android.util.Log.e("MobileHorizon",
+                    "[JavaBridge][ERROR] Não foi possível criar o arquivo de diagnóstico.", error);
+        }
+    }
+
+    private void bridgeLog(String level, String message) {
+        String line = "[" + System.currentTimeMillis() + "][" + level
+                + "][JavaBridge] " + message;
+        if ("ERROR".equals(level)) {
+            android.util.Log.e("MobileHorizon", line);
+        } else if ("WARN".equals(level)) {
+            android.util.Log.w("MobileHorizon", line);
+        } else {
+            android.util.Log.i("MobileHorizon", line);
+        }
+        java.io.File logFile = javaBridgeLogFile;
+        if (logFile != null) {
+            try (java.io.FileOutputStream output = new java.io.FileOutputStream(logFile, true)) {
+                output.write((line + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            } catch (Exception error) {
+                android.util.Log.w("MobileHorizon",
+                        "[JavaBridge][WARN] Não foi possível gravar no log persistente.", error);
+            }
+        }
+    }
+
+    private static int countJarFiles(java.io.File directory) {
+        java.io.File[] entries = directory == null ? null : directory.listFiles();
+        if (entries == null) return 0;
+        int count = 0;
+        for (java.io.File entry : entries) {
+            if (entry.isDirectory()) {
+                count += countJarFiles(entry);
+            } else if (entry.isFile()
+                    && entry.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".jar")) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // Resolve the instance before choosing the engine. Vanilla keeps the regular
@@ -80,6 +142,14 @@ public final class NativeGameActivity extends NativeActivity {
             GameProfileManager.LaunchProfile profile =
                     GameProfileManager.prepareLaunch(this, instanceId);
             boolean fabricJavaBridge = profile.profile.isFabricJavaBridge();
+            if (fabricJavaBridge) {
+                beginJavaBridgeLog(gameRoot);
+                bridgeLog("INFO", "Etapa 1/7: instância selecionada: "
+                        + profile.profile.instanceId + ", Minecraft "
+                        + profile.profile.minecraftVersion + ", loader "
+                        + profile.profile.loaderId + " " + profile.profile.loaderVersion
+                        + ", home=" + home.getAbsolutePath());
+            }
             // Only the Java Bridge requires process cwd to point at the instance directory.
             // Vanilla keeps the exact startup working directory used by the regular launcher.
             if (fabricJavaBridge) {
@@ -92,8 +162,11 @@ public final class NativeGameActivity extends NativeActivity {
             java.io.File runtimeStatus;
             String runtimeVersion;
             if (fabricJavaBridge) {
+                bridgeLog("INFO", "Etapa 2/7: verificando o runtime externo Java Bridge By:iaxivers.");
                 FabricBridgeRuntimeManager.PreparedRuntime runtime =
                         FabricBridgeRuntimeManager.prepare(this);
+                bridgeLog("INFO", "Runtime verificado: " + runtime.activeVersion
+                        + ", biblioteca=" + runtime.activeLibrary.getAbsolutePath());
                 runtimeRoot = runtime.root;
                 runtimeLibrary = runtime.activeLibrary;
                 runtimeStatus = runtime.statusFile;
@@ -135,6 +208,7 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.unsetenv("HORIZON_APP_FILES_DIR");
             android.system.Os.unsetenv("HORIZON_JAVA_EXECUTABLE");
             android.system.Os.unsetenv("HORIZON_JAVA_HOME");
+            android.system.Os.unsetenv("HORIZON_JAVA_BRIDGE_LOG_FILE");
             android.system.Os.unsetenv("HORIZON_JAVA_LIBRARY_PATH");
             android.system.Os.unsetenv("HORIZON_JAVA_TMP");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_JAR");
@@ -157,6 +231,7 @@ public final class NativeGameActivity extends NativeActivity {
                     profile.modsDirectory.getAbsolutePath(), true);
 
             if (fabricJavaBridge) {
+                bridgeLog("INFO", "Etapa 3/7: preparando mods ativos e links para mods-java.");
                 int modCount = FabricModManager.prepareInstance(this, profile.profile.instanceId);
                 java.io.File bridgeModsDirectory = new java.io.File(
                         home, FabricModManager.BRIDGE_DIRECTORY).getCanonicalFile();
@@ -174,24 +249,48 @@ public final class NativeGameActivity extends NativeActivity {
                     throw new java.io.IOException("A preparação dos mods não corresponde ao que o Java Bridge consegue ler: "
                             + modCount + " link(s) preparados, " + visibleJars + " JAR(s) acessíveis em mods-java.");
                 }
+                bridgeLog("INFO", "Mods prontos: " + modCount + " JAR(s) vinculados; "
+                        + visibleJars + " JAR(s) visíveis em " + bridgeModsDirectory.getAbsolutePath());
                 if (visibleJars == 0) {
-                    android.util.Log.w("MobileHorizon",
-                            "Java Bridge By:iaxivers: nenhum JAR ativo em mods-java; o Horizon upstream "
-                                    + "vai pular a inicialização do JVM/Fabric até existir ao menos um mod ativo.");
+                    bridgeLog("WARN", "Nenhum mod ativo. O Horizon vai ignorar a inicialização do JVM/Fabric.");
                 }
                 JdkRuntimeInstaller.RuntimePaths javaRuntime =
                         JdkRuntimeInstaller.getInstalledIfReady(this);
                 if (javaRuntime == null) {
-                    throw new java.io.IOException("O Java 25 ainda não foi preparado. Conclua a preparação dos recursos oficiais antes de iniciar Java Bridge By:iaxivers.");
+                    throw new java.io.IOException("O Java 25 ainda não foi preparado ou está incompleto. Conclua a preparação dos recursos oficiais antes de iniciar Java Bridge By:iaxivers.");
                 }
+                if (!javaRuntime.libjvm.isFile()) {
+                    throw new java.io.IOException("A biblioteca JNI lib/server/libjvm.so não foi encontrada no Java 25.");
+                }
+                bridgeLog("INFO", "Etapa 4/7: Java 25 pronto; JAVA_HOME="
+                        + javaRuntime.javaHome.getAbsolutePath() + ", libjvm="
+                        + javaRuntime.libjvm.getAbsolutePath());
                 java.io.File workspace = new java.io.File(gameRoot,
                         ".local/horizon-prepare-workspace").getCanonicalFile();
                 java.io.File expectedLock = new java.io.File(workspace, "research-lock.json");
                 java.io.File expectedJar = new java.io.File(workspace,
                         ".local/minecraft/26.3/jars/client.jar");
-                if (!expectedLock.isFile() || !expectedJar.isFile()) {
+                java.io.File clientLibraries = new java.io.File(workspace,
+                        ".local/minecraft/26.3/libraries/client");
+                if (!expectedLock.isFile() || !expectedJar.isFile() || expectedJar.length() <= 0) {
                     throw new java.io.IOException("Java Bridge By:iaxivers precisa do JAR cliente 26.3 original e do research-lock.json preparados pelo launcher. Reprepare os recursos oficiais.");
                 }
+                org.json.JSONObject lock = new org.json.JSONObject(
+                        new String(java.nio.file.Files.readAllBytes(expectedLock.toPath()),
+                                java.nio.charset.StandardCharsets.UTF_8));
+                org.json.JSONObject minecraftLock = lock.optJSONObject("minecraft");
+                String lockedVersion = minecraftLock == null ? "" : minecraftLock.optString("version", "");
+                if (!profile.profile.minecraftVersion.equals(lockedVersion)) {
+                    throw new java.io.IOException("A versão no research-lock.json (" + lockedVersion
+                            + ") não corresponde à instância (" + profile.profile.minecraftVersion + ").");
+                }
+                int libraryCount = countJarFiles(clientLibraries);
+                if (!clientLibraries.isDirectory() || libraryCount == 0) {
+                    throw new java.io.IOException("As bibliotecas client de Minecraft 26.3 não foram preparadas.");
+                }
+                bridgeLog("INFO", "Etapa 5/7: dados de Minecraft validados; client.jar="
+                        + expectedJar.length() + " bytes, bibliotecas=" + libraryCount
+                        + ", versão do lock=" + lockedVersion);
                 android.system.Os.setenv("HORIZON_ROOT", workspace.getAbsolutePath(), true);
                 android.system.Os.setenv("HORIZON_JAVA_HOME",
                         javaRuntime.javaHome.getAbsolutePath(), true);
@@ -206,10 +305,12 @@ public final class NativeGameActivity extends NativeActivity {
                 for (java.util.Map.Entry<String, String> entry : javaEnvironment.entrySet()) {
                     android.system.Os.setenv(entry.getKey(), entry.getValue(), true);
                 }
-                android.util.Log.i("MobileHorizon",
-                        "Java Bridge By:iaxivers preparado: " + modCount + " JAR(s), mods-java em "
-                                + bridgeModsDirectory.getAbsolutePath() + ", Java 25 em "
-                                + javaRuntime.javaHome.getAbsolutePath());
+                bridgeLog("INFO", "Etapa 6/7: ambiente exportado; HORIZON_HOME="
+                        + home.getAbsolutePath() + ", HORIZON_ROOT=" + workspace.getAbsolutePath()
+                        + ", HORIZON_JAVA_HOME=" + javaRuntime.javaHome.getAbsolutePath()
+                        + ", HORIZON_JAVA_SIDE=client, LD_LIBRARY_PATH configurado.");
+                bridgeLog("INFO", "Runtime=" + runtimeVersion + ", mods ativos=" + modCount
+                        + ", mods-java=" + bridgeModsDirectory.getAbsolutePath());
             } else if (profile.moduleDirectory != null) {
                 android.system.Os.setenv("HORIZON_COMPATIBILITY_MODULE_DIR",
                         profile.moduleDirectory.getAbsolutePath(), true);
@@ -274,7 +375,14 @@ public final class NativeGameActivity extends NativeActivity {
                     }
                 }
             }
+            if (javaBridgeLogFile != null) {
+                bridgeLog("INFO", "Etapa 7/7: pré-verificação concluída; NativeActivity será iniciada.");
+            }
         } catch (Exception error) {
+            if (javaBridgeLogFile != null) {
+                bridgeLog("ERROR", "Pré-verificação abortada: "
+                        + (error.getMessage() == null ? error.toString() : error.getMessage()));
+            }
             android.util.Log.e("MobileHorizon", "Não foi possível preparar o diretório do jogo", error);
             try {
                 android.system.Os.setenv("HORIZON_NATIVE_START_BLOCKED",
