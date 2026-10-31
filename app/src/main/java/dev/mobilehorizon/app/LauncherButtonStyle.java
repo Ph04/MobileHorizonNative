@@ -2,6 +2,7 @@ package dev.mobilehorizon.app;
 
 import android.app.Activity;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -63,6 +64,7 @@ final class LauncherButtonStyle {
                 if (Math.abs(button.getTextSize() - wantedTextPx) > 0.5f) {
                     button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
                 }
+                button.setGravity(Gravity.CENTER);
             }
         }
         if (view instanceof ViewGroup) {
