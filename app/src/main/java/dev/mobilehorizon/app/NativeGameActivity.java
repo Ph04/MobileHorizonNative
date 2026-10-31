@@ -47,6 +47,9 @@ public final class NativeGameActivity extends NativeActivity {
     static final String EXTRA_SESSION_FILE = "dev.mobilehorizon.app.EXTRA_SESSION_FILE";
     static final String EXTRA_NATIVE_SMOKE_TEST = "dev.mobilehorizon.app.EXTRA_NATIVE_SMOKE_TEST";
     static final String EXTRA_INSTANCE_ID = "dev.mobilehorizon.app.EXTRA_INSTANCE_ID";
+    // The upstream Java Bridge resolves options.txt and sibling mods-java from process cwd.
+    // Restore the launcher's original cwd when NativeActivity is destroyed.
+    private String previousWorkingDirectory;
     private NativeTouchControlsView touchControls;
     private PopupWindow touchControlsPopup;
     private PopupWindow keyboardInputPopup;
@@ -72,6 +75,17 @@ public final class NativeGameActivity extends NativeActivity {
             if (!home.isDirectory() && !home.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório da instância Horizon.");
             }
+            home = home.getCanonicalFile();
+            previousWorkingDirectory = new java.io.File(".").getCanonicalPath();
+            // Match iaxivers/horizon/tools/java_bridge/prism.sh: cd into HOME_DIR before
+            // starting Horizon. The Rust bridge uses current_dir()/options.txt and looks for
+            // mods-java beside it; HORIZON_HOME alone does not change that lookup path.
+            android.system.Os.chdir(home.getAbsolutePath());
+            if (!home.equals(new java.io.File(".").getCanonicalFile())) {
+                throw new java.io.IOException("O diretório ativo do processo não corresponde à instância selecionada.");
+            }
+            android.util.Log.i("MobileHorizon",
+                    "Diretório de trabalho do Horizon: " + home.getAbsolutePath());
             GameProfileManager.LaunchProfile profile =
                     GameProfileManager.prepareLaunch(this, instanceId);
             boolean fabricJavaBridge = profile.profile.isFabricJavaBridge();
@@ -148,6 +162,22 @@ public final class NativeGameActivity extends NativeActivity {
 
             if (fabricJavaBridge) {
                 int modCount = FabricModManager.prepareInstance(this, profile.profile.instanceId);
+                java.io.File bridgeModsDirectory = new java.io.File(
+                        home, FabricModManager.BRIDGE_DIRECTORY).getCanonicalFile();
+                java.io.File[] bridgeEntries = bridgeModsDirectory.listFiles();
+                if (bridgeEntries == null || !bridgeModsDirectory.isDirectory()) {
+                    throw new java.io.IOException("A pasta mods-java da instância não está acessível: "
+                            + bridgeModsDirectory.getAbsolutePath());
+                }
+                int visibleJars = 0;
+                for (java.io.File entry : bridgeEntries) {
+                    if (entry.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".jar")
+                            && entry.isFile()) visibleJars++;
+                }
+                if (visibleJars != modCount) {
+                    throw new java.io.IOException("A preparação dos mods não corresponde ao que o Java Bridge consegue ler: "
+                            + modCount + " link(s) preparados, " + visibleJars + " JAR(s) acessíveis em mods-java.");
+                }
                 JdkRuntimeInstaller.RuntimePaths javaRuntime =
                         JdkRuntimeInstaller.getInstalledIfReady(this);
                 if (javaRuntime == null) {
@@ -168,7 +198,7 @@ public final class NativeGameActivity extends NativeActivity {
                         javaRuntime.javaHome.getAbsolutePath(), true);
                 android.system.Os.setenv("HORIZON_JAVA_SIDE", "client", true);
                 android.system.Os.setenv("HORIZON_MODS_DIR",
-                        new java.io.File(home, "mods-java").getAbsolutePath(), true);
+                        bridgeModsDirectory.getAbsolutePath(), true);
 
                 java.util.Map<String, String> javaEnvironment =
                         javaRuntime.processEnvironment(new java.io.File(javaRuntime.root, "tmp"));
@@ -176,7 +206,8 @@ public final class NativeGameActivity extends NativeActivity {
                     android.system.Os.setenv(entry.getKey(), entry.getValue(), true);
                 }
                 android.util.Log.i("MobileHorizon",
-                        "Fabric Java Bridge preparado: " + modCount + " JAR(s), Java 25 em "
+                        "Java Bridge By:iaxivers preparado: " + modCount + " JAR(s), mods-java em "
+                                + bridgeModsDirectory.getAbsolutePath() + ", Java 25 em "
                                 + javaRuntime.javaHome.getAbsolutePath());
             } else if (profile.moduleDirectory != null) {
                 android.system.Os.setenv("HORIZON_COMPATIBILITY_MODULE_DIR",
@@ -523,6 +554,15 @@ public final class NativeGameActivity extends NativeActivity {
             touchControls = null;
         }
         super.onDestroy();
+        if (previousWorkingDirectory != null) {
+            try {
+                android.system.Os.chdir(previousWorkingDirectory);
+            } catch (android.system.ErrnoException error) {
+                android.util.Log.w("MobileHorizon",
+                        "Não foi possível restaurar o diretório de trabalho do launcher", error);
+            }
+            previousWorkingDirectory = null;
+        }
     }
 
     private void applyImmersiveMode() {
