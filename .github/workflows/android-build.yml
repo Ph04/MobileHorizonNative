@@ -410,7 +410,7 @@ jobs:
           grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/standard-apk-badging.txt"
           grep -F "name='dev.mobilehorizon.app" "$RUNNER_TEMP/standard-apk-badging.txt"
-          grep -F "versionCode='32'" "$RUNNER_TEMP/standard-apk-badging.txt"
+          grep -F "versionCode='33'" "$RUNNER_TEMP/standard-apk-badging.txt"
           sha256sum "$APK"
           CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
           echo "$APK signer certificate SHA-256: $CERT_SHA256"
@@ -422,7 +422,7 @@ jobs:
             echo "::warning::The standard APK uses an isolated test signing identity and cannot replace the stable installation."
             echo "The standard APK is an isolated build because persistent signing secrets are unavailable." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "Verified the standard MobileHorizonNative 0.3.29 ARM64 APK. The updater-test APK variant was intentionally not built." >> "$GITHUB_STEP_SUMMARY"
+          echo "Verified the standard MobileHorizonNative 0.3.30 ARM64 APK. The updater-test APK variant was intentionally not built." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload update-safe standard APK
         if: success() && steps.signing.outputs.enabled == 'true'
