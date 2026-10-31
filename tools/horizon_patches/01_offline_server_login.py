@@ -1,10 +1,7 @@
 # Ordered patch step. Keep only the offline/hybrid login behavior required by the Android launcher.
 # The remaining server visual/resource compatibility patches are intentionally not applied
 # to the default runtime while they are being developed separately.
-replace_once(net,
-    'pub const NOT_SIGNED_IN: &str = "This server is in online mode. Sign in with your Microsoft account in the Horizon launcher to join it.";',
-    'pub const NOT_SIGNED_IN: &str = "This server requires Microsoft/Minecraft authentication for online-mode login. Sign in with a verified account to join it.";',
-)
+# Preserve the upstream NOT_SIGNED_IN text: reconnect classification relies on its exact wording.
 
 net_source = net.read_text(encoding="utf-8")
 auth_start_marker = "                if hello.should_authenticate {"
