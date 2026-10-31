@@ -15,11 +15,20 @@ root = Path(sys.argv[1])
 repo_root = Path(__file__).resolve().parents[1]
 
 # Shared upstream paths used by the first two patch groups.
+# Recent Nightlies moved rendering modules into horizon-client-render.
+# Prefer legacy locations when present, then use the active render crate.
 game = root / "crates/horizon-client/src/game.rs"
 lib = root / "crates/horizon-client/src/lib.rs"
+render_src = root / "crates/horizon-client-render/src"
 hud = root / "crates/horizon-client/src/hud.rs"
+if not hud.is_file():
+    hud = render_src / "hud.rs"
 audio = root / "crates/horizon-client/src/audio.rs"
+if not audio.is_file():
+    audio = render_src / "audio.rs"
 skins = root / "crates/horizon-client/src/skins.rs"
+if not skins.is_file():
+    skins = render_src / "skins.rs"
 remote = root / "crates/horizon-client/src/game/remote.rs"
 chat = root / "crates/horizon-client/src/game/chat.rs"
 names = root / "crates/horizon-client/src/game/names.rs"
