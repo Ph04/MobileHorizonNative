@@ -290,6 +290,7 @@ jobs:
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Build Horizon NativeActivity client with touch-to-mouse translation
+        if: github.ref != 'refs/heads/feature/fabric-java-bridge-test'
         shell: bash
         env:
           HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
@@ -368,6 +369,41 @@ jobs:
           echo "Built the engine for CI validation and updater-test fixtures only; it is not included in either APK."
           sha256sum "$RUNTIME_STAGE/libhorizon_engine.so" | tee "$RUNNER_TEMP/horizon-engine-sha256.txt"
 
+      - name: Stage the already validated Fabric Java Bridge runtime
+        if: github.ref == 'refs/heads/feature/fabric-java-bridge-test'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source tools/horizon-revisions.env
+          source tools/fabric-java-bridge-revision.env
+          echo "HORIZON_PC_RELEASE_TAG=$HORIZON_RUNTIME_RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "HORIZON_TEST_OLD_RELEASE_TAG=$HORIZON_TEST_OLD_RELEASE_TAG" >> "$GITHUB_ENV"
+
+          RUNTIME_STAGE="$RUNNER_TEMP/horizon-runtime-stage"
+          mkdir -p "$RUNTIME_STAGE"
+          BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/$FABRIC_RUNTIME_RELEASE_TAG"
+          curl --fail --location --retry 4 --retry-all-errors \
+            "$BASE/$FABRIC_ENGINE_ASSET" -o "$RUNTIME_STAGE/libhorizon_engine.so"
+          curl --fail --location --retry 4 --retry-all-errors \
+            "$BASE/$FABRIC_MANIFEST_ASSET" -o "$RUNTIME_STAGE/manifest.json"
+
+          python3 - "$RUNTIME_STAGE" "$FABRIC_HORIZON_COMMIT" "$FABRIC_LOADER_VERSION" "$FABRIC_API_VERSION" <<'PYFABRIC'
+          import hashlib, json, pathlib, sys
+          stage = pathlib.Path(sys.argv[1])
+          expected_commit, expected_loader, expected_api = sys.argv[2:]
+          manifest = json.loads((stage / "manifest.json").read_text(encoding="utf-8"))
+          engine = stage / "libhorizon_engine.so"
+          digest = hashlib.sha256(engine.read_bytes()).hexdigest()
+          assert manifest.get("upstream_repository") == "iaxivers/horizon"
+          assert manifest.get("upstream_ref") == "java-bridge"
+          assert manifest.get("upstream_commit") == expected_commit
+          assert manifest.get("fabric_loader_version") == expected_loader
+          assert manifest.get("fabric_api_version") == expected_api
+          assert manifest.get("abi") == "arm64-v8a"
+          assert manifest.get("sha256", "").lower() == digest
+          print("Verified prebuilt Fabric Java Bridge runtime:", expected_commit, digest)
+          PYFABRIC
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -420,7 +456,12 @@ jobs:
           echo "$APK signer certificate SHA-256: $CERT_SHA256"
           test -s "$RUNNER_TEMP/horizon-runtime-stage/libhorizon_engine.so"
           test -s "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
-          grep -Fq "upstream_tag" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
+          if [[ "$GITHUB_REF" == "refs/heads/feature/fabric-java-bridge-test" ]]; then
+            grep -Fq "upstream_repository" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
+            grep -Fq "fabric_loader_version" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
+          else
+            grep -Fq "upstream_tag" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
+          fi
           grep -Fq "sha256" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
           if [[ "$STABLE_SIGNING" != "true" ]]; then
             echo "::warning::The standard APK uses an isolated test signing identity and cannot replace the stable installation."
