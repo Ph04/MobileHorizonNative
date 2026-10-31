@@ -998,6 +998,12 @@ final class UiLanguage {
         pair("O Fabric Loader 0.20.1 e a Fabric API 0.165.0+26.3 já acompanham o runtime experimental. Aqui você gerencia somente os mods adicionais. Alterações entram em vigor na próxima inicialização do jogo.", "Fabric Loader 0.20.1 and Fabric API 0.165.0+26.3 are already included with the experimental runtime. This screen manages additional mods only. Changes take effect the next time the game starts.");
         pair("Compatibilidade experimental", "Experimental compatibility");
         pair("Nem todo mod Fabric funciona neste bridge. Mods que exigem renderizadores próprios, APIs não mapeadas ou mixins fora da cobertura podem falhar. Importe apenas arquivos de fontes confiáveis.", "Not every Fabric mod works with this bridge. Mods requiring custom renderers, unmapped APIs or unsupported mixins may fail. Import files only from sources you trust.");
+        pair("Ver diagnóstico de inicialização", "View startup diagnostics");
+        pair("Diagnóstico do Java Bridge", "Java Bridge diagnostics");
+        pair("Ainda não existe um log. Inicie o jogo usando esta instância Java Bridge para registrar a próxima inicialização.", "No log is available yet. Start the game using this Java Bridge instance to record its next startup.");
+        pair("Falha ao ler o diagnóstico", "Could not read diagnostics");
+        pair("Copiar log", "Copy log");
+        pair("Log copiado.", "Log copied.");
         pair("Java Bridge By:iaxivers", "Java Bridge By:iaxivers");
         pair("Instalar/atualizar Java Bridge By:iaxivers", "Install/update Java Bridge By:iaxivers");
         pair("Consultando o release de Java Bridge By:iaxivers…", "Checking the Java Bridge By:iaxivers release…");
