@@ -55,7 +55,6 @@ public final class NativeGameActivity extends NativeActivity {
     private PopupWindow touchControlsPopup;
     private PopupWindow keyboardInputPopup;
     private EditText keyboardInput;
-    private android.widget.TextView keyboardPanelMirror;
     private boolean suppressKeyboardInputWatcher;
     private String lastKeyboardInput = "";
     @Override
@@ -292,11 +291,6 @@ public final class NativeGameActivity extends NativeActivity {
 
     /** Show Android's IME while a separate, non-focusable game panel displays the live text. */
     void showMinecraftKeyboard() {
-        showMinecraftKeyboard(null);
-    }
-
-    void showMinecraftKeyboard(android.widget.TextView panelMirror) {
-        if (panelMirror != null) keyboardPanelMirror = panelMirror;
         ensureKeyboardInputProxy();
         if (hasLoadedWorld() && isChatInputTarget()) {
             String draft = "";
@@ -306,9 +300,6 @@ public final class NativeGameActivity extends NativeActivity {
             } catch (UnsatisfiedLinkError ignored) { }
             setKeyboardProxyText(draft);
             try { nativeBeginChatDraft(); } catch (UnsatisfiedLinkError ignored) { }
-        } else if (keyboardPanelMirror != null) {
-            setKeyboardProxyText(keyboardPanelMirror.getText() == null
-                    ? "" : keyboardPanelMirror.getText().toString());
         }
         View decor = getWindow().getDecorView();
         if (keyboardInputPopup == null || keyboardInput == null) return;
@@ -331,11 +322,6 @@ public final class NativeGameActivity extends NativeActivity {
                 ime.showSoftInput(keyboardInput, InputMethodManager.SHOW_IMPLICIT);
             }
         }, 100);
-    }
-
-    private boolean isChatInputTarget() {
-        try { return nativeIsChatTarget(); }
-        catch (UnsatisfiedLinkError error) { return false; }
     }
 
     private void ensureKeyboardInputProxy() {
@@ -375,9 +361,6 @@ public final class NativeGameActivity extends NativeActivity {
                 }
                 ImeTextDelta delta = diffKeyboardText(lastKeyboardInput, value);
                 lastKeyboardInput = value;
-                if (keyboardPanelMirror != null && !value.contentEquals(keyboardPanelMirror.getText())) {
-                    keyboardPanelMirror.setText(value);
-                }
                 try {
                     nativeInjectImeText(value, delta.inserted, delta.backspaces, false);
                 } catch (UnsatisfiedLinkError error) {
@@ -411,30 +394,11 @@ public final class NativeGameActivity extends NativeActivity {
         keyboardInput.setText(safe);
         keyboardInput.setSelection(keyboardInput.length());
         lastKeyboardInput = safe;
-        if (keyboardPanelMirror != null && !safe.contentEquals(keyboardPanelMirror.getText())) {
-            keyboardPanelMirror.setText(safe);
-        }
         suppressKeyboardInputWatcher = false;
     }
 
-    void submitKeyboardText() {
-        submitKeyboardInput();
-    }
-
-    void dismissMinecraftKeyboard() {
-        if (keyboardInput != null) {
-            InputMethodManager ime = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (ime != null) {
-                try { ime.hideSoftInputFromWindow(keyboardInput.getWindowToken(), 0); }
-                catch (RuntimeException ignored) { }
-            }
-        }
-        if (keyboardInputPopup != null && keyboardInputPopup.isShowing()) {
-            try { keyboardInputPopup.dismiss(); } catch (RuntimeException ignored) { }
-        }
-        keyboardPanelMirror = null;
-    }
-
+    
+    
     private static final class ImeTextDelta {
         final String inserted;
         final int backspaces;
@@ -514,7 +478,6 @@ public final class NativeGameActivity extends NativeActivity {
             keyboardInputPopup = null;
             keyboardInput = null;
         }
-        keyboardPanelMirror = null;
         if (touchControlsPopup != null) {
             try { touchControlsPopup.dismiss(); } catch (IllegalArgumentException ignored) {}
             touchControlsPopup = null;
