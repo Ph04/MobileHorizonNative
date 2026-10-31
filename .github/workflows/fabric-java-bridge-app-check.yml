@@ -1,0 +1,80 @@
+name: Validate Fabric bridge Android Java integration (no APK)
+
+on:
+  push:
+    branches: ["feature/fabric-java-bridge-test"]
+    paths:
+      - "app/src/main/java/dev/mobilehorizon/app/FabricBridgeRuntimeManager.java"
+      - "app/src/main/java/dev/mobilehorizon/app/FabricModManager.java"
+      - "app/src/main/java/dev/mobilehorizon/app/FabricModsActivity.java"
+      - "app/src/main/java/dev/mobilehorizon/app/GameProfileManager.java"
+      - "app/src/main/java/dev/mobilehorizon/app/NativeGameActivity.java"
+      - "app/src/main/java/dev/mobilehorizon/app/InstancesActivity.java"
+      - "app/src/main/java/dev/mobilehorizon/app/CompatibilityModulesActivity.java"
+      - "app/src/main/AndroidManifest.xml"
+      - "app/src/test/**"
+      - "app/build.gradle"
+      - "settings.gradle"
+      - ".github/workflows/fabric-java-bridge-app-check.yml"
+  pull_request:
+    paths:
+      - "app/src/main/java/dev/mobilehorizon/app/FabricBridgeRuntimeManager.java"
+      - "app/src/main/java/dev/mobilehorizon/app/FabricModManager.java"
+      - "app/src/main/java/dev/mobilehorizon/app/FabricModsActivity.java"
+      - "app/src/main/java/dev/mobilehorizon/app/GameProfileManager.java"
+      - "app/src/main/java/dev/mobilehorizon/app/NativeGameActivity.java"
+      - "app/src/main/java/dev/mobilehorizon/app/InstancesActivity.java"
+      - "app/src/main/java/dev/mobilehorizon/app/CompatibilityModulesActivity.java"
+      - "app/src/main/AndroidManifest.xml"
+      - "app/src/test/**"
+      - "app/build.gradle"
+      - "settings.gradle"
+      - ".github/workflows/fabric-java-bridge-app-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fabric-bridge-app-java-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-java:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out MobileHorizonNative
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Compile Android Java sources and run unit tests (no APK tasks)
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon :app:compileStandardDebugJavaWithJavac :app:testStandardDebugUnitTest
+
+      - name: Assert that no APK or bundle was assembled
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null | grep -q .; then
+            echo "::error::The Java validation unexpectedly produced an APK or app bundle."
+            exit 1
+          fi
+          echo "Android Java sources and unit tests passed. No APK or AAB was assembled." >> "$GITHUB_STEP_SUMMARY"
