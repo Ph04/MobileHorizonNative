@@ -87,7 +87,7 @@ public final class FabricModsActivity extends Activity {
         scroll.addView(page);
         setContentView(scroll);
 
-        page.addView(text("MOBILEHORIZON  /  FABRIC", 11, 0xff9e88ff, true),
+        page.addView(text("MOBILEHORIZON  /  JAVA BRIDGE", 11, 0xff9e88ff, true),
                 params(-1, -2));
         page.addView(text("Gerenciador de mods", 25, 0xfff0ecff, true),
                 topParams(-1, -2, 5));
