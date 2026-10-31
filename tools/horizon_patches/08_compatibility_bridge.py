@@ -151,6 +151,7 @@ struct BridgeConfig {
     entrypoint_jar: PathBuf,
     entrypoint_class: String,
     java: PathBuf,
+    java_argv0: PathBuf,
     java_home: PathBuf,
     java_tmp: PathBuf,
     java_library_path: String,
@@ -171,7 +172,9 @@ impl BridgeConfig {
         let entrypoint_jar = canonical_env_path("HORIZON_COMPATIBILITY_ENTRYPOINT_JAR")?;
         let entrypoint_class = required_env("HORIZON_COMPATIBILITY_ENTRYPOINT_CLASS")?;
         let api_version = required_env("HORIZON_COMPATIBILITY_API_VERSION")?;
-        let java = canonical_env_path("HORIZON_JAVA_EXECUTABLE")?;
+        let java_argv0 = PathBuf::from(required_env("HORIZON_JAVA_EXECUTABLE")?);
+        let java = java_argv0.canonicalize()
+            .map_err(|error| format!("could not resolve HORIZON_JAVA_EXECUTABLE: {error}"))?;
         let java_home = canonical_env_path("HORIZON_JAVA_HOME")?;
         let java_tmp = canonical_env_path("HORIZON_JAVA_TMP")?;
         let java_library_path = required_env("HORIZON_JAVA_LIBRARY_PATH")?;
@@ -257,7 +260,8 @@ impl BridgeConfig {
             .canonicalize()
             .map_err(|error| format!("Java 25 home is missing: {error}"))?;
         if java_home != expected_home || !java.starts_with(&runtime_root)
-            || !java.is_file() || !runtime_root.join(".ready").is_file()
+            || !java_argv0.starts_with(&runtime_root) || !java.is_file()
+            || !java_argv0.is_file() || !runtime_root.join(".ready").is_file()
             || !java_tmp.starts_with(&runtime_root) || !java_tmp.is_dir()
         {
             return Err("Java 25 executable or runtime paths failed private-store validation".to_owned());
@@ -275,6 +279,7 @@ impl BridgeConfig {
             entrypoint_jar,
             entrypoint_class,
             java,
+            java_argv0,
             java_home,
             java_tmp,
             java_library_path,
@@ -305,21 +310,23 @@ fn create_private_listener(config: &BridgeConfig) -> Result<(UnixListener, PathB
 
 #[cfg(target_os = "android")]
 fn spawn_java_bridge(config: &BridgeConfig, socket: &Path) -> Result<Child, String> {
-    let java = config.java.to_str().ok_or("Java path is not UTF-8")?;
+    let java_elf = config.java.to_str().ok_or("Java ELF path is not UTF-8")?;
+    let java_argv0 = config.java_argv0.to_str().ok_or("Java argv[0] path is not UTF-8")?;
     let socket = socket.to_str().ok_or("bridge socket path is not UTF-8")?;
+    let java_tmp_option = format!("-Djava.io.tmpdir={}", config.java_tmp.display());
+
     let mut command = Command::new("/system/bin/sh");
     command.args([
         "-c",
         "exec /system/bin/linker64 \"$@\"",
         "linker64",
-        java,
-        java,
+        java_elf,
+        java_argv0,
         "-XX:-UsePerfData",
         "-XX:ActiveProcessorCount=4",
         "-XX:ParallelGCThreads=2",
         "-XX:ConcGCThreads=1",
-        "-Djava.io.tmpdir",
-        config.java_tmp.to_str().ok_or("Java temp path is not UTF-8")?,
+        java_tmp_option.as_str(),
         "-cp",
         config.api_jar.to_str().ok_or("compatibility API path is not UTF-8")?,
         "dev.mobilehorizon.compat.api.BridgeMain",
@@ -334,18 +341,17 @@ fn spawn_java_bridge(config: &BridgeConfig, socket: &Path) -> Result<Child, Stri
         config.entrypoint_jar.to_str().ok_or("entrypoint path is not UTF-8")?,
         &config.entrypoint_class,
     ]);
-    let libs = format!(
-        "{}:{}:{}:{}",
-        config.app_files.join(".local/horizon-java25/usr/lib").display(),
-        config.java_home.join("lib").display(),
-        config.java_home.join("lib/server").display(),
-        config.java_home.join("lib/jli").display()
-    );
+
+    let path = format!("{}:{}", config.java_home.join("bin").display(),
+        env::var("PATH").unwrap_or_default());
     command
         .env("JAVA_HOME", &config.java_home)
-        .env("LD_LIBRARY_PATH", libs)
+        .env("PATH", path)
+        .env("LD_LIBRARY_PATH", &config.java_library_path)
         .env("HOME", config.app_files.join(".local/horizon-java25/home"))
         .env("TMPDIR", &config.java_tmp)
+        .env("PREFIX", config.app_files.join(".local/horizon-java25/usr"))
+        .env("TERMUX_PREFIX", config.app_files.join(".local/horizon-java25/usr"))
         .env("JAVA_TOOL_OPTIONS", format!(
             "-XX:-UsePerfData -XX:ActiveProcessorCount=4 -XX:ParallelGCThreads=2 -XX:ConcGCThreads=1 -Djava.io.tmpdir={}",
             config.java_tmp.display()
@@ -491,6 +497,22 @@ fn bridge_io_loop(
                     if frame == "STOP" {
                         let _ = writer.write_all(b"STOP\n");
                         let _ = writer.flush();
+                        let deadline = Instant::now() + Duration::from_secs(2);
+                        while Instant::now() < deadline {
+                            let mut reply = String::new();
+                            match reader.read_line(&mut reply) {
+                                Ok(0) => break,
+                                Ok(_) if reply.trim_end_matches(&['\r', '\n'][..]) == "STOPPED" => break,
+                                Ok(_) => {}
+                                Err(error) if matches!(
+                                    error.kind(),
+                                    std::io::ErrorKind::WouldBlock
+                                        | std::io::ErrorKind::TimedOut
+                                        | std::io::ErrorKind::Interrupted
+                                ) => {}
+                                Err(_) => break,
+                            }
+                        }
                         stopping = true;
                         break;
                     }
@@ -517,7 +539,7 @@ fn bridge_io_loop(
         match reader.read_line(&mut line) {
             Ok(0) => break,
             Ok(_) if line.len() <= MAX_FRAME_BYTES => {
-    Ok(line.trim_end_matches(&['\r', '\n'][..]).to_owned())
+                let frame = line.trim_end_matches(&['\r', '\n'][..]);
                 if let Some(encoded) = frame.strip_prefix("LOG|") {
                     match decode_hex(encoded) {
                         Ok(message) => log::info!("Compatibility module: {message}"),
