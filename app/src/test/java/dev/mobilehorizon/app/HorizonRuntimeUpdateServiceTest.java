@@ -46,6 +46,31 @@ public final class HorizonRuntimeUpdateServiceTest {
     }
 
     @Test
+    public void requiresExactUpstreamCommitForMovingNightlyChannel() {
+        String nightlyRuntime = "horizon-nightly-c1234abcd-o89abcdef";
+        String matchingCommit = "1234abcd" + "0".repeat(32);
+        String differentCommit = "deadbeef" + "0".repeat(32);
+
+        assertTrue(HorizonRuntimeUpdateService.runtimeVersionMatchesRelease(
+                nightlyRuntime, "nightly", matchingCommit));
+        assertFalse(HorizonRuntimeUpdateService.runtimeVersionMatchesRelease(
+                nightlyRuntime, "nightly", differentCommit));
+        assertFalse(HorizonRuntimeUpdateService.runtimeVersionMatchesRelease(
+                nightlyRuntime, "nightly-2026-10-30", matchingCommit));
+        assertEquals("1234abcd",
+                HorizonRuntimeUpdateService.runtimeCommitPrefixFromVersion(nightlyRuntime));
+    }
+
+    @Test
+    public void keepsNightlyDateAndCommitAsDisplayMetadata() {
+        String commit = "1da354b67a509812c4141b67de2affd6de65c342";
+        assertEquals("Nightly 2026-10-30 · 1da354b",
+                HorizonRuntimeUpdateService.formatOfficialNightlyLabel(
+                        "Nightly 2026-10-30 · 1da354b",
+                        "2026-10-30T16:31:56Z", commit));
+    }
+
+    @Test
     public void recognizesDateBasedHorizonReleaseTags() {
         assertTrue(HorizonRuntimeUpdateService.isValidUpstreamTag("v2026.10.22.07"));
         assertEquals("v2026.10.22.07",
