@@ -290,7 +290,7 @@ jobs:
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Build Horizon NativeActivity client with touch-to-mouse translation
-            shell: bash
+        shell: bash
         env:
           HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
         run: |
