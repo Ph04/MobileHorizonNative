@@ -22,6 +22,7 @@ import android.widget.PopupWindow;
 
 /** Fullscreen NativeActivity wrapper with optional Android touch controls. Native clicks are injected through the game's JNI input bridge; this must not depend on an Android AccessibilityService. */
 public final class NativeGameActivity extends NativeActivity {
+    private static native int nativeChangeWorkingDirectory(String path);
     private static native void nativeInjectCursorMove(float x, float y);
     private static native void nativeInjectMouseMotion(float dx, float dy);
     private static native void nativeInjectMouseButton(int button, boolean pressed, float x, float y);
@@ -80,7 +81,11 @@ public final class NativeGameActivity extends NativeActivity {
             // Match iaxivers/horizon/tools/java_bridge/prism.sh: cd into HOME_DIR before
             // starting Horizon. The Rust bridge uses current_dir()/options.txt and looks for
             // mods-java beside it; HORIZON_HOME alone does not change that lookup path.
-            android.system.Os.chdir(home.getAbsolutePath());
+            int chdirError = nativeChangeWorkingDirectory(home.getAbsolutePath());
+            if (chdirError != 0) {
+                throw new java.io.IOException("Não foi possível entrar na pasta da instância (errno "
+                        + chdirError + "): " + home.getAbsolutePath());
+            }
             if (!home.equals(new java.io.File(".").getCanonicalFile())) {
                 throw new java.io.IOException("O diretório ativo do processo não corresponde à instância selecionada.");
             }
@@ -561,10 +566,15 @@ public final class NativeGameActivity extends NativeActivity {
         super.onDestroy();
         if (previousWorkingDirectory != null) {
             try {
-                android.system.Os.chdir(previousWorkingDirectory);
-            } catch (android.system.ErrnoException error) {
+                int restoreError = nativeChangeWorkingDirectory(previousWorkingDirectory);
+                if (restoreError != 0) {
+                    android.util.Log.w("MobileHorizon",
+                            "Não foi possível restaurar o diretório de trabalho do launcher (errno "
+                                    + restoreError + ")");
+                }
+            } catch (UnsatisfiedLinkError error) {
                 android.util.Log.w("MobileHorizon",
-                        "Não foi possível restaurar o diretório de trabalho do launcher", error);
+                        "JNI de diretório de trabalho indisponível ao encerrar a instância", error);
             }
             previousWorkingDirectory = null;
         }
