@@ -2726,6 +2726,8 @@ public final class MainActivity extends Activity {
                 nativeResultFile("horizon-client-result.txt"), 8 * 1024);
         appendLogTail(report, "Vulkan smoke test",
                 nativeResultFile("horizon-native-smoke-result.txt"), 8 * 1024);
+        appendLogTail(report, "Native runtime loader status",
+                new File(new File(getFilesDir(), "horizon-runtime"), "loader-status.txt"), 8 * 1024);
 
         File crashDir = new File(gameHome, "crash-reports");
         File[] crashes = crashDir.listFiles(File::isFile);
@@ -2832,6 +2834,8 @@ public final class MainActivity extends Activity {
 
                 File clientResult = nativeResultFile("horizon-client-result.txt");
                 File smokeResult = nativeResultFile("horizon-native-smoke-result.txt");
+                File runtimeLoaderStatus = new File(
+                        new File(getFilesDir(), "horizon-runtime"), "loader-status.txt");
 
                 String metadata = "MobileHorizon multiplayer diagnostic\n"
                         + "created=" + new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(new Date()) + "\n"
@@ -2847,6 +2851,7 @@ public final class MainActivity extends Activity {
                         + "crash_report_present=" + (crashReports.length > 0) + "\n"
                         + "client_result_present=" + clientResult.isFile() + "\n"
                         + "vulkan_smoke_result_present=" + smokeResult.isFile() + "\n"
+                        + "runtime_loader_status_present=" + runtimeLoaderStatus.isFile() + "\n"
                         + "privacy=Session JSON/token files are intentionally excluded. Log text may contain chat, nicknames and server addresses.\n";
 
                 try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive, false))) {
@@ -2861,6 +2866,7 @@ public final class MainActivity extends Activity {
                     }
                     addDiagnosticFile(zip, clientResult, "diagnostic/horizon-client-result.txt");
                     addDiagnosticFile(zip, smokeResult, "diagnostic/horizon-native-smoke-result.txt");
+                    addDiagnosticFile(zip, runtimeLoaderStatus, "diagnostic/runtime-loader-status.txt");
                     if (!latestLog.isFile()) {
                         addDiagnosticText(zip, "diagnostic/LOG_MISSING.txt",
                                 "logs/latest.log was not found at export time. Launch the client, reproduce the multiplayer problem, exit to the launcher, then export again.\n");
