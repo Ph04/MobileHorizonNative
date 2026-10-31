@@ -323,6 +323,12 @@ final class JdkRuntimeInstaller {
         }
     }
 
+    static RuntimePaths getInstalledIfReady(Context context) {
+        File root = new File(context.getApplicationContext().getFilesDir(),
+                ".local/horizon-java25");
+        return isReady(root) ? new RuntimePaths(root) : null;
+    }
+
     private static boolean isReady(File root) {
         File marker = new File(root, ".ready");
         RuntimePaths paths = new RuntimePaths(root);
