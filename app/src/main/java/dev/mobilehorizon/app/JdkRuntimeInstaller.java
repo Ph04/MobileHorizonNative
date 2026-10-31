@@ -54,12 +54,14 @@ final class JdkRuntimeInstaller {
         final File javaHome;
         final File java;
         final File javac;
+        final File libjvm;
 
         RuntimePaths(File root) {
             this.root = root;
             this.javaHome = new File(root, "usr/lib/jvm/java-25-openjdk");
             this.java = new File(javaHome, "bin/java");
             this.javac = new File(javaHome, "bin/javac");
+            this.libjvm = new File(javaHome, "lib/server/libjvm.so");
         }
 
         Map<String, String> processEnvironment(File temporaryDirectory) {
@@ -198,8 +200,9 @@ final class JdkRuntimeInstaller {
             }
 
             RuntimePaths stagingRuntime = new RuntimePaths(stage);
-            if (!stagingRuntime.java.isFile() || !stagingRuntime.javac.isFile()) {
-                throw new IOException("O pacote Java 25 não contém java/javac nos caminhos esperados.");
+            if (!stagingRuntime.java.isFile() || !stagingRuntime.javac.isFile()
+                    || !stagingRuntime.libjvm.isFile()) {
+                throw new IOException("O pacote Java 25 está incompleto: java, javac ou lib/server/libjvm.so não foi encontrado.");
             }
             File old = new File(parent, "horizon-java25.previous");
             deleteRecursively(old);
@@ -332,7 +335,8 @@ final class JdkRuntimeInstaller {
     private static boolean isReady(File root) {
         File marker = new File(root, ".ready");
         RuntimePaths paths = new RuntimePaths(root);
-        return marker.isFile() && paths.java.isFile() && paths.javac.isFile();
+        return marker.isFile() && paths.java.isFile() && paths.javac.isFile()
+                && paths.libjvm.isFile();
     }
 
     private static boolean isVerified(File file, PackageFile item) {
