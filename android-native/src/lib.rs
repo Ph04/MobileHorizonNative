@@ -232,14 +232,7 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
         || -> horizon_client::Result<()> {
             horizon_client::logging::init(&home, "Render thread");
             horizon_client::crash::install(home.clone(), "client");
-            if let Err(message) = horizon_client::compatibility_bridge::start_from_environment() {
-                let error = std::io::Error::new(std::io::ErrorKind::Other, message);
-                eprintln!("Horizon compatibility bridge: {error}");
-                horizon_client::crash::report_error(&home, "client", &error);
-                return Err(Box::new(error));
-            }
             let game_result = horizon_client::game::run();
-            horizon_client::compatibility_bridge::shutdown();
             if let Err(error) = game_result {
                 eprintln!("Horizon: {error}");
                 horizon_client::crash::report_error(&home, "client", &*error);
