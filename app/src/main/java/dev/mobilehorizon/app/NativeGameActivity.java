@@ -59,7 +59,7 @@ public final class NativeGameActivity extends NativeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // Resolve the instance before choosing the engine. Vanilla keeps the regular
-        // independently updated runtime; Fabric Java Bridge uses its own verified channel.
+        // independently updated runtime; Java Bridge By:iaxivers uses its own verified channel.
         try {
             android.content.Intent launchIntent = getIntent();
             android.system.Os.unsetenv("HORIZON_NATIVE_START_BLOCKED");
