@@ -1,9 +1,9 @@
 # Ordered patch step. See README.md in this directory for scope and order.
 audio_source = audio.read_text(encoding="utf-8")
-audio_start_marker = '#[cfg(feature = "audio")]\\nfn open_device('
+audio_start_marker = '#[cfg(feature = "audio")]' + chr(10) + 'fn open_device('
 audio_end_markers = (
-    "\\n/// The name of the system's default output device.",
-    '\\n#[cfg(feature = "audio")]\\nfn build_stream<',
+    chr(10) + "/// The name of the system's default output device.",
+    chr(10) + '#[cfg(feature = "audio")]' + chr(10) + 'fn build_stream<',
 )
 audio_start = audio_source.find(audio_start_marker)
 audio_end_marker = next(
