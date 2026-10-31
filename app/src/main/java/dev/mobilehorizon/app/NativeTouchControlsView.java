@@ -2984,6 +2984,13 @@ final class NativeTouchControlsView extends View {
         return Math.max(min, Math.min(max, value));
     }
 
+    /** Idempotent cleanup for both normal detachment and a failed overlay installation. */
+    void dispose() {
+        modeHandler.removeCallbacks(modePoll);
+        releaseAllInputs();
+        dismissFloatingPanels();
+    }
+
     @Override protected void onDetachedFromWindow() {
         modeHandler.removeCallbacks(modePoll);
         releaseAllInputs();
