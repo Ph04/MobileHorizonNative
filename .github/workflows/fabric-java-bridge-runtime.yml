@@ -8,6 +8,7 @@ on:
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/01_offline_server_login.py"
       - "tools/horizon_patches/02_android_native.py"
+      - "tools/horizon_patches/03_java_bridge_android.py"
       - "tools/fabric-java-bridge-revision.env"
       - ".github/workflows/fabric-java-bridge-runtime.yml"
   workflow_dispatch:
@@ -218,6 +219,7 @@ jobs:
                   b"tools/patch_horizon_android_touch.py",
                   b"tools/horizon_patches/01_offline_server_login.py",
                   b"tools/horizon_patches/02_android_native.py",
+                  b"tools/horizon_patches/03_java_bridge_android.py",
                   b"tools/fabric-java-bridge-revision.env",
                   b".github/workflows/fabric-java-bridge-runtime.yml",
               }
