@@ -514,7 +514,6 @@ fn bridge_io_loop(
     actions: Arc<Mutex<VecDeque<BridgeAction>>>,
     socket_path: PathBuf,
 ) {
-    let _ = reader.get_ref().set_read_timeout(Some(Duration::from_millis(80)));
     let _ = writer.get_ref().set_write_timeout(Some(Duration::from_secs(2)));
     let mut stopping = false;
     loop {
@@ -666,6 +665,23 @@ pub fn shutdown() {
         if let Some(worker) = state.worker.take() {
             let _ = worker.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compatibility_wire_codec_round_trips_unicode_and_delimiters() {
+        let value = "Olá | Forge 雪";
+        assert_eq!(decode_hex(&encode_hex(value)).unwrap(), value);
+    }
+
+    #[test]
+    fn compatibility_wire_codec_rejects_invalid_hex() {
+        assert!(decode_hex("abc").is_err());
+        assert!(decode_hex("gg").is_err());
     }
 }
 
