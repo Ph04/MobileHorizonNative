@@ -33,6 +33,7 @@ public final class HorizonRuntimeManager {
     private static final String ENGINE_NAME = "libhorizon_engine.so";
     private static final String ACTIVE_NAME = "active.json";
     private static final String PREVIOUS_NAME = "previous.json";
+    private static final String REJECTED_NAME = "rejected.json";
     private static final String STATUS_NAME = "loader-status.txt";
     private static final long MAX_ENGINE_BYTES = 300L * 1024L * 1024L;
     private static final Pattern VERSION_PATTERN =
@@ -66,6 +67,31 @@ public final class HorizonRuntimeManager {
         File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
         Active active = readValidActive(new File(root, "versions"));
         return active == null ? "" : active.version;
+    }
+
+    /**
+     * Returns the runtime version whose native startup failed most recently.
+     * This prevents the updater from repeatedly downloading the same rejected binary.
+     */
+    public static synchronized String rejectedVersion(Context context) {
+        try {
+            Context app = context.getApplicationContext();
+            File root = new File(app.getFilesDir(), "horizon-runtime").getCanonicalFile();
+            File rejectedFile = new File(root, REJECTED_NAME);
+            if (!rejectedFile.isFile() || rejectedFile.length() <= 0
+                    || rejectedFile.length() > 16 * 1024) return "";
+            try (FileInputStream input = new FileInputStream(rejectedFile)) {
+                byte[] bytes = new byte[(int) rejectedFile.length()];
+                int count = input.read(bytes);
+                if (count <= 0) return "";
+                JSONObject json = new JSONObject(new String(bytes, 0, count, StandardCharsets.UTF_8));
+                String version = requireVersion(json.optString("version", ""));
+                requireSha256(json.optString("sha256", ""));
+                return version;
+            }
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     /** Fast UI hint only; full SHA-256/ELF validation is performed before use. */
@@ -109,6 +135,11 @@ public final class HorizonRuntimeManager {
              FileLock ignoredLock = lockChannel.lock()) {
             File status = new File(root, STATUS_NAME);
             String previousStatus = readSmallText(status);
+            // RUNNING is written only after the selected engine reaches android_main.
+            // A successful newer launch retires any previously rejected runtime marker.
+            if (previousStatus.startsWith("RUNNING:")) {
+                deleteSelection(root, REJECTED_NAME);
+            }
             boolean previousLaunchFailed = previousStatus.startsWith("FALLBACK:")
                     || previousStatus.startsWith("ERROR:")
                     || previousStatus.startsWith("STARTING:");
@@ -117,6 +148,9 @@ public final class HorizonRuntimeManager {
             Active previous = readValidSelection(versions, PREVIOUS_NAME);
             if (previousLaunchFailed) {
                 if (previous != null && (active == null || !previous.version.equals(active.version))) {
+                    if (active != null) {
+                        writeSelection(root, REJECTED_NAME, active.version, active.sha256);
+                    }
                     writeActive(root, previous.version, previous.sha256);
                     active = previous;
                     previous = null;
@@ -133,6 +167,7 @@ public final class HorizonRuntimeManager {
                         previous = null;
                     }
                     if (active != null) {
+                        writeSelection(root, REJECTED_NAME, active.version, active.sha256);
                         Log.e(TAG, "A runtime " + active.version + " não concluiu a inicialização "
                                 + "e não há uma versão anterior válida; mantendo o binário verificado "
                                 + "para evitar um ciclo de download: " + previousStatus);
@@ -229,6 +264,14 @@ public final class HorizonRuntimeManager {
 
         if (previousActive != null && !previousActive.version.equals(safeVersion)) {
             writeSelection(root, PREVIOUS_NAME, previousActive.version, previousActive.sha256);
+        }
+
+        // The previous loader marker belongs to the old selected runtime, not this new
+        // verified candidate. Clear it before switching active.json or prepare() could
+        // immediately roll back the runtime before it has ever been started.
+        File oldLoaderStatus = new File(root, STATUS_NAME);
+        if (oldLoaderStatus.exists() && !oldLoaderStatus.delete()) {
+            throw new IOException("Não foi possível limpar o estado da runtime anterior antes da ativação.");
         }
         writeActive(root, safeVersion, sha);
         }
