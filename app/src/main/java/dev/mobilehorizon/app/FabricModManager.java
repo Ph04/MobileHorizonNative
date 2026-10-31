@@ -2,14 +2,23 @@ package dev.mobilehorizon.app;
 
 import android.content.Context;
 import android.system.Os;
+import android.util.Log;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 /** Per-instance Fabric mod storage and links for the external bridge. */
 final class FabricModManager {
@@ -17,6 +26,8 @@ final class FabricModManager {
     static final String ENABLED_DIRECTORY = "mods";
     static final String DISABLED_DIRECTORY = "mods-disabled";
     static final String BRIDGE_DIRECTORY = "mods-java";
+    private static final String LOG_TAG = "MobileHorizon";
+    private static final int MAX_DESCRIPTOR_BYTES = 1024 * 1024;
 
     private FabricModManager() { }
 
@@ -84,7 +95,15 @@ final class FabricModManager {
             if (canonical.length() <= 0 || canonical.length() > MAX_MOD_JAR_BYTES) {
                 throw new IOException("Tamanho inválido para o mod Fabric " + entry.getName());
             }
+            String modId = readModId(canonical);
+            if ("fabric-api".equals(modId)) {
+                Log.w(LOG_TAG, "[JavaBridge][MOD] Ignorando a cópia local de Fabric API em "
+                        + canonical.getName() + "; será usada a versão fixada pelo Java Bridge.");
+                continue;
+            }
             jars.add(canonical);
+            Log.i(LOG_TAG, "[JavaBridge][MOD] Mod ativo preparado: " + modId
+                    + " (" + canonical.getName() + ")");
         }
 
         File[] existing = modsJava.listFiles();
@@ -110,7 +129,44 @@ final class FabricModManager {
                         + " à pasta mods-java sem copiar o arquivo.", error);
             }
         }
+        Log.i(LOG_TAG, "[JavaBridge][MOD] Preparação concluída: " + jars.size()
+                + " mod(s) vinculados em " + modsJava.getAbsolutePath());
         return jars.size();
+    }
+
+    /** Reads the real Fabric mod id from the archive, never from its file name. */
+    private static String readModId(File jar) throws IOException {
+        try (ZipFile archive = new ZipFile(jar)) {
+            ZipEntry descriptor = archive.getEntry("fabric.mod.json");
+            if (descriptor == null || descriptor.getSize() == 0
+                    || descriptor.getSize() > MAX_DESCRIPTOR_BYTES) {
+                throw new IOException("O mod " + jar.getName()
+                        + " não contém um fabric.mod.json válido.");
+            }
+            try (InputStream input = archive.getInputStream(descriptor);
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[4096];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    if (output.size() + count > MAX_DESCRIPTOR_BYTES) {
+                        throw new IOException("fabric.mod.json excede o limite permitido em "
+                                + jar.getName() + ".");
+                    }
+                    output.write(buffer, 0, count);
+                }
+                JSONObject json = new JSONObject(
+                        new String(output.toByteArray(), StandardCharsets.UTF_8));
+                String id = json.optString("id", "");
+                if (!id.matches("[a-z0-9_-]{1,64}")) {
+                    throw new IOException("O mod " + jar.getName()
+                            + " declara um ID Fabric inválido.");
+                }
+                return id;
+            } catch (JSONException error) {
+                throw new IOException("Não foi possível ler o fabric.mod.json de "
+                        + jar.getName() + ".", error);
+            }
+        }
     }
 
     private static File childDirectory(File root, String name) throws IOException {
