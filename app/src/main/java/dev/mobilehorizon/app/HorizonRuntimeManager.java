@@ -144,12 +144,17 @@ public final class HorizonRuntimeManager {
                     deleteSelection(root, PREVIOUS_NAME);
                     Log.e(TAG, "A runtime atual falhou; revertendo para a última runtime baixada "
                             + "e verificada " + active.version + ": " + previousStatus);
+                } else if (active != null) {
+                    // A STARTING/ERROR status proves that NativeActivity did not reach the
+                    // RUNNING marker, but it does not prove that the verified engine archive is
+                    // corrupt. Keep the only verified installation selected; deleting active.json
+                    // here makes every subsequent launch force-download the same large runtime.
+                    Log.e(TAG, "A inicialização anterior não concluiu (" + previousStatus
+                            + "), mas a runtime " + active.version
+                            + " continua íntegra e será preservada para diagnóstico/repetição.");
                 } else {
-                    if (active != null) deleteSelection(root, ACTIVE_NAME);
                     if (previous != null) deleteSelection(root, PREVIOUS_NAME);
-                    active = null;
-                    previous = null;
-                    Log.e(TAG, "A runtime falhou e não há uma versão anterior disponível: "
+                    Log.e(TAG, "A runtime falhou e não há uma seleção ativa válida nem fallback: "
                             + previousStatus);
                 }
             } else if (active == null && previous != null) {
