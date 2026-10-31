@@ -186,8 +186,14 @@ public final class CompatibilityPluginManager {
             if (!staging.renameTo(target)) {
                 throw new IOException("Não foi possível finalizar a instalação do módulo.");
             }
-            installed = true;
-            return readModule(target);
+            try {
+                Module installedModule = readModule(target);
+                installed = true;
+                return installedModule;
+            } catch (IOException verificationError) {
+                deleteTree(target);
+                throw verificationError;
+            }
         } catch (JSONException error) {
             throw new IOException("O descritor do módulo não contém JSON válido.", error);
         } finally {
