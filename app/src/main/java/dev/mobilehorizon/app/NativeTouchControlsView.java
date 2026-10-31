@@ -1761,8 +1761,8 @@ final class NativeTouchControlsView extends View {
         int panelH = requestedHeight > 0
                 ? Math.min(requestedHeight, maxContentHeight)
                 : Math.max(dpInt(120), Math.min(maxContentHeight, content.getMeasuredHeight()));
-        if (requestedWidth <= 0) popup.setWidth(panelW);
-        if (requestedHeight <= 0) popup.setHeight(panelH);
+        if (requestedWidth <= 0 || requestedWidth > maxContentWidth) popup.setWidth(panelW);
+        if (requestedHeight <= 0 || requestedHeight > maxContentHeight) popup.setHeight(panelH);
 
         int maxX = Math.max(0, visible.width() - panelW);
         int maxY = Math.max(0, visible.height() - panelH);
@@ -2132,12 +2132,6 @@ final class NativeTouchControlsView extends View {
             invalidate();
             popup.dismiss();
         });
-    }
-
-    private int panelSurfaceColor(int color) {
-        float opacity = LauncherAppearance.panelOpacity(activity);
-        return Color.argb(Math.round(Color.alpha(color) * opacity),
-                Color.red(color), Color.green(color), Color.blue(color));
     }
 
     private int panelSurfaceColor(int color) {
