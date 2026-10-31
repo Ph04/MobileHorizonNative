@@ -1207,6 +1207,30 @@ else:
 replace_once(workspace_cargo, '"crates/horizon-client",',
              '"crates/horizon-client", "crates/mobilehorizon-android",')
 
+# The chat completion dispatcher changed shape in newer Horizon versions.
+# Match the Android IME call to the actual upstream helper signature.
+chat_source = chat.read_text(encoding="utf-8")
+chat_signature_start = chat_source.find("fn chat_tree(")
+if chat_signature_start < 0:
+    chat_signature_start = chat_source.find("fn chat_tree<'a>(")
+chat_signature_end = chat_source.find(") ->", chat_signature_start)
+if chat_signature_start < 0 or chat_signature_end < 0:
+    raise SystemExit(f"{chat}: could not resolve chat_tree signature")
+chat_signature = chat_source[chat_signature_start:chat_signature_end]
+game_source = game.read_text(encoding="utf-8")
+old_chat_dispatcher = "dispatcher: chat_tree(&self.remote, &self.mods),"
+new_chat_dispatcher = "dispatcher: chat_tree(&self.remote),"
+if "mods:" in chat_signature:
+    if game_source.count(old_chat_dispatcher) != 1:
+        if game_source.count(new_chat_dispatcher) != 1:
+            raise SystemExit(f"{game}: expected the Android IME chat dispatcher call")
+elif game_source.count(old_chat_dispatcher) == 1:
+    replace_once(game, old_chat_dispatcher, new_chat_dispatcher)
+elif game_source.count(new_chat_dispatcher) == 1:
+    pass
+else:
+    raise SystemExit(f"{game}: unsupported chat_tree call shape for current upstream signature")
+
 dst = root / "crates/mobilehorizon-android"
 (dst / "src").mkdir(parents=True, exist_ok=True)
 shutil.copyfile(repo_root / "android-native/Cargo.toml", dst / "Cargo.toml")
