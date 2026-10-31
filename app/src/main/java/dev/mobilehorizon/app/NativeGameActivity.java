@@ -77,23 +77,14 @@ public final class NativeGameActivity extends NativeActivity {
                 throw new java.io.IOException("Não foi possível criar o diretório da instância Horizon.");
             }
             home = home.getCanonicalFile();
-            previousWorkingDirectory = new java.io.File(".").getCanonicalPath();
-            // Match iaxivers/horizon/tools/java_bridge/prism.sh: cd into HOME_DIR before
-            // starting Horizon. The Rust bridge uses current_dir()/options.txt and looks for
-            // mods-java beside it; HORIZON_HOME alone does not change that lookup path.
-            int chdirError = nativeChangeWorkingDirectory(home.getAbsolutePath());
-            if (chdirError != 0) {
-                throw new java.io.IOException("Não foi possível entrar na pasta da instância (errno "
-                        + chdirError + "): " + home.getAbsolutePath());
-            }
-            if (!home.equals(new java.io.File(".").getCanonicalFile())) {
-                throw new java.io.IOException("O diretório ativo do processo não corresponde à instância selecionada.");
-            }
-            android.util.Log.i("MobileHorizon",
-                    "Diretório de trabalho do Horizon: " + home.getAbsolutePath());
             GameProfileManager.LaunchProfile profile =
                     GameProfileManager.prepareLaunch(this, instanceId);
             boolean fabricJavaBridge = profile.profile.isFabricJavaBridge();
+            // Only the Java Bridge requires process cwd to point at the instance directory.
+            // Vanilla keeps the exact startup working directory used by the regular launcher.
+            if (fabricJavaBridge) {
+                previousWorkingDirectory = new java.io.File(".").getCanonicalPath();
+            }
 
             java.io.File runtimeRoot;
             java.io.File runtimeLibrary;
