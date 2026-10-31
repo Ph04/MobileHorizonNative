@@ -174,11 +174,13 @@ public final class FabricModsActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
-        TextView body = text(contents, 11, 0xffd8d2eb, false);
+        TextView body = text("", 11, 0xffd8d2eb, false);
+        body.setText(contents);
         body.setTypeface(android.graphics.Typeface.MONOSPACE);
         body.setTextIsSelectable(true);
         body.setPadding(dp(12), dp(10), dp(12), dp(10));
         scroll.addView(body);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(420)));
         new AlertDialog.Builder(this)
                 .setTitle(UiLanguage.translate(this, "Diagnóstico do Java Bridge"))
                 .setView(scroll)
