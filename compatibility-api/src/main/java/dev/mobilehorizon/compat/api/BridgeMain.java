@@ -96,19 +96,19 @@ public final class BridgeMain {
                         + API_VERSION + ": " + accepted);
             }
 
-            Thread.currentThread().setContextClassLoader(loader);
-            Class<?> candidate = Class.forName(entrypointClass, true, loader);
-            if (!CompatibilityPlugin.class.isAssignableFrom(candidate)) {
-                throw new IllegalArgumentException("module entrypoint must implement "
-                        + CompatibilityPlugin.class.getName());
-            }
-            CompatibilityPlugin plugin = (CompatibilityPlugin) candidate
-                    .getDeclaredConstructor().newInstance();
-            CompatibilityContext context = new BridgeContext(
-                    wire, moduleId, moduleVersion, instanceId, minecraftVersion,
-                    loaderId, loaderVersion);
-
             try {
+                Thread.currentThread().setContextClassLoader(loader);
+                Class<?> candidate = Class.forName(entrypointClass, true, loader);
+                if (!CompatibilityPlugin.class.isAssignableFrom(candidate)) {
+                    throw new IllegalArgumentException("module entrypoint must implement "
+                            + CompatibilityPlugin.class.getName());
+                }
+                CompatibilityPlugin plugin = (CompatibilityPlugin) candidate
+                        .getDeclaredConstructor().newInstance();
+                CompatibilityContext context = new BridgeContext(
+                        wire, moduleId, moduleVersion, instanceId, minecraftVersion,
+                        loaderId, loaderVersion);
+
                 plugin.onLoad(context);
                 wire.send("LOADED|" + API_VERSION);
                 context.activate();
@@ -184,10 +184,22 @@ public final class BridgeMain {
         }
 
         String read() throws IOException {
-            String line = input.readLine();
-            if (line == null) throw new IOException("Rust bridge disconnected");
-            if (line.length() > MAX_LINE_CHARS) throw new IOException("bridge frame exceeds size limit");
-            return line;
+            StringBuilder line = new StringBuilder();
+            while (true) {
+                int next = input.read();
+                if (next < 0) {
+                    if (line.length() == 0) throw new IOException("Rust bridge disconnected");
+                    break;
+                }
+                if (next == '\n') break;
+                if (next == '\r') continue;
+                if (line.length() >= MAX_LINE_CHARS) {
+                    throw new IOException("bridge frame exceeds size limit");
+                }
+                line.append((char) next);
+            }
+            return line.toString();
+        }
         }
     }
 
