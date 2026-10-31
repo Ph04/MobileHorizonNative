@@ -111,6 +111,7 @@ public final class BridgeMain {
             try {
                 plugin.onLoad(context);
                 wire.send("LOADED|" + API_VERSION);
+                context.activate();
                 while (true) {
                     String line = wire.read();
                     if ("STOP".equals(line)) {
@@ -192,6 +193,9 @@ public final class BridgeMain {
 
     private static final class BridgeContext implements CompatibilityContext {
         private final Wire wire;
+        private final Object outputLock = new Object();
+        private final List<String> pendingFrames = new ArrayList<>();
+        private boolean outputActive;
         private final String moduleId;
         private final String moduleVersion;
         private final String instanceId;
@@ -217,11 +221,34 @@ public final class BridgeMain {
         @Override public String loaderId() { return loaderId; }
         @Override public String loaderVersion() { return loaderVersion; }
 
+        private void sendOrQueue(String frame) throws IOException {
+            synchronized (outputLock) {
+                if (!outputActive) {
+                    if (pendingFrames.size() >= 64) {
+                        throw new IOException("module emitted too many startup frames");
+                    }
+                    pendingFrames.add(frame);
+                    return;
+                }
+            }
+            wire.send(frame);
+        }
+
+        void activate() throws IOException {
+            List<String> toFlush;
+            synchronized (outputLock) {
+                outputActive = true;
+                toFlush = new ArrayList<>(pendingFrames);
+                pendingFrames.clear();
+            }
+            for (String frame : toFlush) wire.send(frame);
+        }
+
         @Override public void log(String message) {
             String safe = message == null ? "" : message;
             if (safe.length() > 4096) safe = safe.substring(0, 4096);
             try {
-                wire.send("LOG|" + ProtocolCodec.encode(safe));
+                sendOrQueue("LOG|" + ProtocolCodec.encode(safe));
             } catch (IOException error) {
                 throw new IllegalStateException("could not send bridge log", error);
             }
@@ -234,7 +261,7 @@ public final class BridgeMain {
                 if (json.length() > 64 * 1024) {
                     throw new IllegalArgumentException("action payload exceeds 64 KiB");
                 }
-                wire.send("ACTION|" + ProtocolCodec.encode(type) + "|"
+                sendOrQueue("ACTION|" + ProtocolCodec.encode(type) + "|"
                         + ProtocolCodec.encode(json));
             } catch (IOException error) {
                 throw new IllegalStateException("could not send bridge action", error);
