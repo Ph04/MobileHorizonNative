@@ -398,6 +398,7 @@ public final class MainActivity extends Activity {
                         "A atividade do jogo voltou sem entregar um relatório de inicialização. Isso sugere que o processo nativo terminou antes de registrar o resultado; ainda não é possível atribuir a causa ao Vulkan ou aos recursos do Minecraft.");
             }
         }
+        showNativeStartupErrorIfAvailable();
     }
 
     @Override
@@ -2257,6 +2258,7 @@ public final class MainActivity extends Activity {
             GameInstanceManager.markLastPlayed(this, instance.id);
             MobilePerformanceProfile.applyInitialOptions(this, instance.id);
             new File(getFilesDir(), "horizon-client-result.txt").delete();
+            new File(getFilesDir(), "horizon-launch-error.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke.flag").delete();
             pendingNativeClientResult = true;
@@ -2614,6 +2616,7 @@ public final class MainActivity extends Activity {
                         GameInstanceManager.markLastPlayed(this, instance.id);
                         MobilePerformanceProfile.applyInitialOptions(this, instance.id);
                         new File(getFilesDir(), "horizon-client-result.txt").delete();
+                        new File(getFilesDir(), "horizon-launch-error.txt").delete();
                         new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
                         new File(getFilesDir(), "horizon-native-smoke.flag").delete();
                         pendingNativeClientResult = true;
@@ -2979,6 +2982,31 @@ public final class MainActivity extends Activity {
             resultFile.delete();
         } catch (Exception error) {
             setStatus("Não foi possível ler o resultado do cliente", safeMessage(error));
+        }
+    }
+
+    private void showNativeStartupErrorIfAvailable() {
+        File report = new File(getFilesDir(), "horizon-launch-error.txt");
+        if (!report.isFile()) return;
+        try (FileInputStream input = new FileInputStream(report);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (output.size() + read > 96 * 1024) {
+                    throw new IllegalStateException("O relatório de inicialização excedeu 96 KiB.");
+                }
+                output.write(buffer, 0, read);
+            }
+            String detail = new String(output.toByteArray(), StandardCharsets.UTF_8).trim();
+            progressBar.setVisibility(View.VISIBLE);
+            progressBar.setIndeterminate(false);
+            progressBar.setProgress(0);
+            progressDetails.setText(detail);
+            setStatus("Falha na preparação do jogo", detail);
+            report.delete();
+        } catch (Exception error) {
+            setStatus("Não foi possível ler o relatório de inicialização", safeMessage(error));
         }
     }
 
