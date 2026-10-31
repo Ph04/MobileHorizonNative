@@ -104,6 +104,8 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
             // Reset optional compatibility variables first so a reused :game process cannot
             // accidentally inherit a previous instance's selected loader.
+            android.system.Os.unsetenv("HORIZON_INSTANCE_ID");
+            android.system.Os.unsetenv("HORIZON_GAME_VERSION");
             android.system.Os.setenv("HORIZON_LOADER_ID", "vanilla", true);
             android.system.Os.setenv("HORIZON_LOADER_VERSION", "", true);
             android.system.Os.unsetenv("HORIZON_INSTANCE_PROFILE");
