@@ -96,6 +96,8 @@ jobs:
 
       - name: Preflight pinned Horizon overlay before expensive builds
         shell: bash
+        env:
+          HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
         run: |
           set -euo pipefail
           source tools/horizon-revisions.env
@@ -289,6 +291,8 @@ jobs:
 
       - name: Build Horizon NativeActivity client with touch-to-mouse translation
         shell: bash
+        env:
+          HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
         run: |
           set -euo pipefail
           # Keep desktop controller/HID backends disabled on Android to avoid
