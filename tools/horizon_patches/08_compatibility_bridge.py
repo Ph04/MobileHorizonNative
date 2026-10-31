@@ -194,7 +194,7 @@ impl BridgeConfig {
 
         let local_root = app_files.join(".local").canonicalize()
             .map_err(|error| format!("private .local directory is unavailable: {error}"))?;
-        if !app_files.equals(&local_root.parent().unwrap_or(Path::new("/"))) {
+        if local_root.parent() != Some(app_files.as_path()) {
             return Err("private .local directory escaped the application files directory".to_owned());
         }
         let modules_root = app_files.join("compatibility-modules").canonicalize()
@@ -699,7 +699,7 @@ hook_steps = [
         let _ = elapsed;
     }''',
         '''    pub(super) fn native_frame(&mut self, elapsed: Duration) {
-        let payload = serde_json::json!({ "elapsed_millis": elapsed.as_millis() }).to_string();
+        let payload = serde_json::json!({ "elapsed_millis": elapsed.as_millis().min(u64::MAX as u128) as u64 }).to_string();
         crate::compatibility_bridge::emit_event("frame", &payload);
     }''',
         "frame hook",
@@ -741,8 +741,7 @@ hook_steps = [
     ) {
         let payload = serde_json::json!({
             "phase": format!("{phase:?}"),
-            "error": error_text,
-            "context": format!("{context:?}")
+            "error": error_text
         }).to_string();
         crate::compatibility_bridge::emit_event("world_lifecycle", &payload);
     }''',
@@ -762,8 +761,7 @@ hook_steps = [
         phase: ServerTickPhase,
     ) {
         let payload = serde_json::json!({
-            "phase": format!("{phase:?}"),
-            "context": format!("{context:?}")
+            "phase": format!("{phase:?}")
         }).to_string();
         crate::compatibility_bridge::emit_event("server_tick", &payload);
     }''',
