@@ -379,8 +379,8 @@ public final class MainActivity extends Activity {
             try { Os.unsetenv("HORIZON_PLAYER_NAME"); } catch (Exception ignored) {}
             offlineNameEnvSet = false;
         }
-        boolean smokeResultExists = new File(getFilesDir(), "horizon-native-smoke-result.txt").isFile();
-        boolean clientResultExists = new File(getFilesDir(), "horizon-client-result.txt").isFile();
+        boolean smokeResultExists = nativeResultFile("horizon-native-smoke-result.txt").isFile();
+        boolean clientResultExists = nativeResultFile("horizon-client-result.txt").isFile();
         showNativeSmokeResultIfAvailable();
         showNativeClientResultIfAvailable();
         if (pendingNativeSmokeResult) {
@@ -388,14 +388,18 @@ public final class MainActivity extends Activity {
             if (!smokeResultExists) {
                 new File(getFilesDir(), "horizon-native-smoke.flag").delete();
                 setStatus("Teste Vulkan terminou sem relatório",
-                        "A atividade nativa voltou sem gravar o resultado do teste. Isso pode indicar uma falha antes do início do código nativo ou encerramento do processo; ainda não identifica a causa. Confira os registros Android se puder.");
+                        "A atividade nativa voltou sem gravar o resultado do teste. Último estado do carregador: "
+                                + readNativeRuntimeStatus()
+                                + ". Isso ajuda a distinguir uma falha antes de android_main de uma saída durante o teste.");
             }
         }
         if (pendingNativeClientResult) {
             pendingNativeClientResult = false;
             if (!clientResultExists) {
                 setStatus("Cliente nativo encerrou sem relatório",
-                        "A atividade do jogo voltou sem entregar um relatório de inicialização. Isso sugere que o processo nativo terminou antes de registrar o resultado; ainda não é possível atribuir a causa ao Vulkan ou aos recursos do Minecraft.");
+                        "A atividade do jogo voltou sem entregar um relatório. Último estado do carregador: "
+                                + readNativeRuntimeStatus()
+                                + ". Use Exportar diagnóstico para incluir os registros e o relatório da instância.");
             }
         }
         showNativeStartupErrorIfAvailable();
@@ -2257,9 +2261,9 @@ public final class MainActivity extends Activity {
             GameInstanceManager.Instance instance = GameInstanceManager.getSelectedInstance(this);
             GameInstanceManager.markLastPlayed(this, instance.id);
             MobilePerformanceProfile.applyInitialOptions(this, instance.id);
-            new File(getFilesDir(), "horizon-client-result.txt").delete();
+            nativeResultFile("horizon-client-result.txt").delete();
+            nativeResultFile("horizon-native-smoke-result.txt").delete();
             new File(getFilesDir(), "horizon-launch-error.txt").delete();
-            new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke.flag").delete();
             pendingNativeClientResult = true;
             pendingNativeSmokeResult = false;
@@ -2719,9 +2723,9 @@ public final class MainActivity extends Activity {
             report.append("O log do cliente ainda não existe; inicie o Horizon para criar o arquivo.\n");
         }
         appendLogTail(report, "Native client startup",
-                new File(getFilesDir(), "horizon-client-result.txt"), 8 * 1024);
+                nativeResultFile("horizon-client-result.txt"), 8 * 1024);
         appendLogTail(report, "Vulkan smoke test",
-                new File(getFilesDir(), "horizon-native-smoke-result.txt"), 8 * 1024);
+                nativeResultFile("horizon-native-smoke-result.txt"), 8 * 1024);
 
         File crashDir = new File(gameHome, "crash-reports");
         File[] crashes = crashDir.listFiles(File::isFile);
@@ -2826,8 +2830,8 @@ public final class MainActivity extends Activity {
                 Arrays.sort(crashReports, (left, right) ->
                         Long.compare(right.lastModified(), left.lastModified()));
 
-                File clientResult = new File(getFilesDir(), "horizon-client-result.txt");
-                File smokeResult = new File(getFilesDir(), "horizon-native-smoke-result.txt");
+                File clientResult = nativeResultFile("horizon-client-result.txt");
+                File smokeResult = nativeResultFile("horizon-native-smoke-result.txt");
 
                 String metadata = "MobileHorizon multiplayer diagnostic\n"
                         + "created=" + new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(new Date()) + "\n"
@@ -2958,8 +2962,36 @@ public final class MainActivity extends Activity {
         updateActionEnablement();
     }
 
+    /** Native Horizon writes smoke/client reports inside the selected instance HORIZON_HOME. */
+    private File nativeResultFile(String name) {
+        try {
+            return new File(GameInstanceManager.getSelectedInstanceHome(this), name);
+        } catch (Exception error) {
+            android.util.Log.w("MobileHorizon", "Não foi possível resolver a pasta da instância para " + name, error);
+            return new File(getFilesDir(), name);
+        }
+    }
+
+    private String readNativeRuntimeStatus() {
+        File status = new File(new File(getFilesDir(), "horizon-runtime"), "loader-status.txt");
+        if (!status.isFile() || status.length() <= 0) return "nenhum marcador do carregador foi gravado";
+        try (FileInputStream input = new FileInputStream(status);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (output.size() + read > 4096) break;
+                output.write(buffer, 0, read);
+            }
+            String value = new String(output.toByteArray(), StandardCharsets.UTF_8).trim();
+            return value.isEmpty() ? "marcador vazio" : value;
+        } catch (IOException error) {
+            return "não foi possível ler o marcador: " + safeMessage(error);
+        }
+    }
+
     private void showNativeClientResultIfAvailable() {
-        File resultFile = new File(getFilesDir(), "horizon-client-result.txt");
+        File resultFile = nativeResultFile("horizon-client-result.txt");
         if (!resultFile.isFile()) return;
         try (FileInputStream input = new FileInputStream(resultFile);
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -3011,7 +3043,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showNativeSmokeResultIfAvailable() {
-        File resultFile = new File(getFilesDir(), "horizon-native-smoke-result.txt");
+        File resultFile = nativeResultFile("horizon-native-smoke-result.txt");
         if (!resultFile.isFile()) return;
         try (FileInputStream input = new FileInputStream(resultFile);
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -3054,12 +3086,12 @@ public final class MainActivity extends Activity {
     private void launchNativeSmokeTest() {
         File marker = new File(getFilesDir(), "horizon-native-smoke.flag");
         marker.delete(); // Legacy flag: smoke mode is now passed explicitly in the Intent.
-        new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
-        new File(getFilesDir(), "horizon-client-result.txt").delete();
         pendingNativeSmokeResult = true;
         pendingNativeClientResult = false;
         try {
             String instanceId = GameInstanceManager.getSelectedInstance(this).id;
+            nativeResultFile("horizon-native-smoke-result.txt").delete();
+            nativeResultFile("horizon-client-result.txt").delete();
             startActivity(new Intent(this, NativeGameActivity.class)
                     .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, false)
                     .putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instanceId)
