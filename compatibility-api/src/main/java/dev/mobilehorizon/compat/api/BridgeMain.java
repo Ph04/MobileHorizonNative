@@ -105,7 +105,7 @@ public final class BridgeMain {
                 }
                 CompatibilityPlugin plugin = (CompatibilityPlugin) candidate
                         .getDeclaredConstructor().newInstance();
-                CompatibilityContext context = new BridgeContext(
+                BridgeContext context = new BridgeContext(
                         wire, moduleId, moduleVersion, instanceId, minecraftVersion,
                         loaderId, loaderVersion);
 
