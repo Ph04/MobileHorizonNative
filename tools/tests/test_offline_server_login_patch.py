@@ -66,7 +66,10 @@ class OfflineServerLoginPatchTest(unittest.TestCase):
     def test_current_nightly_authentication_layout_is_patched(self):
         patched, _, _ = self.apply_patch(CURRENT_SOURCE)
         self.assert_hybrid_behavior(patched)
-        self.assertIn("return Err(Reason {", patched)
+        self.assertIn("let reason = Reason {", patched)
+        self.assertIn("continues_after_failed_join(lan, true)", patched)
+        self.assertIn('log::warn!("Authentication failed: {}", reason.text);', patched)
+        self.assertIn("return Err(reason);", patched)
         self.assertIn("key,", patched)
 
     def test_legacy_authentication_layout_is_still_supported(self):

@@ -50,13 +50,19 @@ def patch_offline_login(net):
                                 Ok(key) => (tr(lang, key), Some(key.to_owned())),
                                 Err(message) => (message.to_owned(), None),
                             };
-                            return Err(Reason {
+                            let reason = Reason {
                                 text: plain(
                                     &translatable("disconnect.loginFailedInfo", &[&reason]),
                                     lang,
                                 ),
                                 key,
-                            });
+                            };
+                            // Keep Horizon's existing LAN exception for signed-in accounts:
+                            // an authentication refusal can continue on LAN, but not on remote servers.
+                            if !continues_after_failed_join(lan, true) {
+                                return Err(reason);
+                            }
+                            log::warn!("Authentication failed: {}", reason.text);
                         }
                     } else {
                         log::warn!("Horizon: online-mode challenge received without a Microsoft session; sending the normal encrypted response and allowing the server to decide whether offline fallback is configured");
