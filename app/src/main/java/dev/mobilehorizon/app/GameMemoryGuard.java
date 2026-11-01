@@ -143,13 +143,13 @@ final class GameMemoryGuard {
         final int maxStackChars = 96 * 1024;
         if (stack.length() > maxStackChars) {
             stack = stack.substring(0, maxStackChars)
-                    + "\\n[stack trace truncated at 96 KiB]";
+                    + "\n[stack trace truncated at 96 KiB]";
         }
         String message = error.getMessage();
         appendLog("JAVA_EXCEPTION name=" + event
                 + ", type=" + error.getClass().getName()
                 + ", message=" + (message == null ? "<null>" : message)
-                + "\\n" + stack);
+                + "\n" + stack);
     }
 
     void onTrimMemory(int trimLevel) {
