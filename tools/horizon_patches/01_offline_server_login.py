@@ -15,7 +15,10 @@ def patch_offline_login(net):
     auth_block = net_source[auth_start:auth_end]
     # A previous successful application of this patch is a no-op.
     if ("if let Some(account) = auth" in auth_block
-            and "online-mode challenge received without a Microsoft session" in auth_block):
+            and (
+                "Horizon Android: no Microsoft session" in auth_block
+                or "online-mode challenge received without a Microsoft session" in auth_block
+            )):
         return False
 
     if "auth.ok_or_else(|| NOT_SIGNED_IN.to_owned())?" in auth_block:
