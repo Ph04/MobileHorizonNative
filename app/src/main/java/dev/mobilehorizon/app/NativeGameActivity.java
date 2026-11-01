@@ -211,6 +211,8 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.unsetenv("HORIZON_JAVA_EXECUTABLE");
             android.system.Os.unsetenv("HORIZON_JAVA_HOME");
             android.system.Os.unsetenv("HORIZON_JAVA_LIBRARY_PATH");
+            android.system.Os.unsetenv("HORIZON_LWJGL_LIBRARY_PATH");
+            android.system.Os.unsetenv("JAVA_TOOL_OPTIONS");
             android.system.Os.unsetenv("HORIZON_JAVA_TMP");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_JAR");
             android.system.Os.unsetenv("HORIZON_ROOT");
@@ -307,6 +309,16 @@ public final class NativeGameActivity extends NativeActivity {
 
                 java.util.Map<String, String> javaEnvironment =
                         javaRuntime.processEnvironment(new java.io.File(javaRuntime.root, "tmp"));
+                java.io.File lwjglLibraryDirectory =
+                        FabricBridgeRuntimeManager.prepareLwjglLibraryDirectory(this);
+                String lwjglLibraryPath = lwjglLibraryDirectory.getCanonicalPath();
+                String previousToolOptions = javaEnvironment.get("JAVA_TOOL_OPTIONS");
+                javaEnvironment.put("JAVA_TOOL_OPTIONS",
+                        FabricBridgeRuntimeManager.appendLwjglLibraryPathOption(
+                                previousToolOptions, lwjglLibraryDirectory));
+                javaEnvironment.put("HORIZON_LWJGL_LIBRARY_PATH", lwjglLibraryPath);
+                bridgeLog("INFO", "LWJGL JNI validado: " + lwjglLibraryPath
+                        + "/liblwjgl.so; org.lwjgl.librarypath será passado à JVM Java 25.");
                 for (java.util.Map.Entry<String, String> entry : javaEnvironment.entrySet()) {
                     android.system.Os.setenv(entry.getKey(), entry.getValue(), true);
                 }
