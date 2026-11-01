@@ -215,6 +215,7 @@ final class JdkRuntimeInstaller {
             }
             RuntimePaths installed = new RuntimePaths(active);
             try {
+                ensureAndroidInProcessLinkerPaths(installed);
                 verifyCommands(installed, cancelled, listener);
             } catch (Exception error) {
                 deleteRecursively(active);
@@ -330,6 +331,86 @@ final class JdkRuntimeInstaller {
         File root = new File(context.getApplicationContext().getFilesDir(),
                 ".local/horizon-java25");
         return isReady(root) ? new RuntimePaths(root) : null;
+    }
+
+    /**
+     * Makes Termux OpenJDK shared-library search paths work when libjvm is loaded
+     * into the already-running Android app process. LD_LIBRARY_PATH supplied to
+     * a child java process is not enough for a later in-process dlopen.
+     */
+    static synchronized int ensureAndroidInProcessLinkerPaths(RuntimePaths runtime)
+            throws IOException {
+        File root = runtime.root.getCanonicalFile();
+        File prefix = new File(root, "usr");
+        File libraryDirectory = new File(prefix, "lib");
+        File spawnLibrary = new File(libraryDirectory, "libandroid-spawn.so");
+        File shmemLibrary = new File(libraryDirectory, "libandroid-shmem.so");
+        File cxxLibrary = new File(libraryDirectory, "libc++_shared.so");
+        if (!spawnLibrary.isFile() || !shmemLibrary.isFile() || !cxxLibrary.isFile()) {
+            throw new IOException("O runtime Java 25 está sem dependências nativas obrigatórias "
+                    + "(libandroid-spawn.so=" + spawnLibrary.isFile()
+                    + ", libandroid-shmem.so=" + shmemLibrary.isFile()
+                    + ", libc++_shared.so=" + cxxLibrary.isFile()
+                    + "). Reinstale o runtime Java 25 pelo preparador de recursos.");
+        }
+
+        File marker = new File(root, ".android-linker-runpath-v1");
+        File javaLibraryDirectory = new File(runtime.javaHome, "lib");
+        if (marker.isFile()
+                && ElfDynamicPathPatcher.runpathIncludesDirectory(runtime.libjvm, libraryDirectory)
+                && ElfDynamicPathPatcher.runpathIncludesDirectory(runtime.libjvm, javaLibraryDirectory)) {
+            return 0;
+        }
+
+        java.util.Set<String> visited = new java.util.HashSet<>();
+        int patched = relocateTermuxLibraries(libraryDirectory, root, visited);
+        patched += relocateTermuxLibraries(javaLibraryDirectory, root, visited);
+
+        if (!ElfDynamicPathPatcher.runpathIncludesDirectory(runtime.libjvm, libraryDirectory)
+                || !ElfDynamicPathPatcher.runpathIncludesDirectory(runtime.libjvm, javaLibraryDirectory)) {
+            String runpath = ElfDynamicPathPatcher.readRunpath(runtime.libjvm);
+            throw new IOException("Não foi possível relocalizar o DT_RUNPATH do libjvm.so "
+                    + "para as bibliotecas privadas do app. DT_RUNPATH atual: " + runpath);
+        }
+
+        writeText(marker, "android-linker-runpath=v1\\n");
+        return patched;
+    }
+
+    private static int relocateTermuxLibraries(File directory, File runtimeRoot,
+                                                java.util.Set<String> visited) throws IOException {
+        if (!directory.isDirectory()) {
+            throw new IOException("Diretório de bibliotecas Java 25 ausente: "
+                    + directory.getAbsolutePath());
+        }
+        int patched = 0;
+        try (java.util.stream.Stream<java.nio.file.Path> paths =
+                     Files.walk(directory.toPath())) {
+            java.util.Iterator<java.nio.file.Path> iterator = paths.iterator();
+            while (iterator.hasNext()) {
+                java.nio.file.Path path = iterator.next();
+                String name = path.getFileName() == null ? "" : path.getFileName().toString();
+                int soSuffix = name.indexOf(".so");
+                if (soSuffix <= 0
+                        || (soSuffix + 3 < name.length() && name.charAt(soSuffix + 3) != '.')
+                        || !Files.isRegularFile(path)) {
+                    continue;
+                }
+                File canonical = path.toFile().getCanonicalFile();
+                java.nio.file.Path canonicalPath = canonical.toPath();
+                if (!canonicalPath.startsWith(runtimeRoot.toPath())) {
+                    throw new IOException("Biblioteca nativa aponta para fora do runtime privado: "
+                            + canonicalPath);
+                }
+                if (visited.add(canonicalPath.toString())
+                        && ElfDynamicPathPatcher.relocateTermuxRunpath(canonical, runtimeRoot)) {
+                    patched++;
+                }
+            }
+        } catch (java.io.UncheckedIOException error) {
+            throw new IOException("Falha ao percorrer as bibliotecas do Java 25.", error);
+        }
+        return patched;
     }
 
     private static boolean isReady(File root) {
