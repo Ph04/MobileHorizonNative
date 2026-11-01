@@ -281,6 +281,29 @@ java_mods_source_path.write_text(java_mods_source, encoding="utf-8")
 
 # Persist JVM/Fabric's Java-side messages too (Knot, Mixin, game bootstrap, entrypoints).
 jvm_source = jvm_source_path.read_text(encoding="utf-8")
+
+# Pojav's Android runtime launcher opens libjvm with RTLD_NOW | RTLD_GLOBAL.
+# Use the same visibility/eager-resolution mode only for the selected Mojo JRE;
+# keep Horizon's existing default for Termux and desktop runtimes.
+loader_anchor = """    let library = unsafe { libloading::Library::new(&path) }
+        .map_err(|e| format!("could not load {}: {e}", path.display()))?;"""
+loader_replacement = """    #[cfg(target_os = "android")]
+    let library = if std::env::var("HORIZON_JAVA_PROFILE").ok().as_deref()
+        == Some("mojo-pojav-openjdk-25")
+    {
+        let flags = libloading::os::unix::RTLD_NOW | libloading::os::unix::RTLD_GLOBAL;
+        unsafe { libloading::os::unix::Library::open(Some(path.as_os_str()), flags) }
+            .map(libloading::Library::from)
+    } else {
+        unsafe { libloading::Library::new(&path) }
+    };
+    #[cfg(not(target_os = "android"))]
+    let library = unsafe { libloading::Library::new(&path) };
+    let library = library
+        .map_err(|e| format!("could not load {}: {e}", path.display()))?;"""
+if jvm_source.count(loader_anchor) != 1:
+    raise SystemExit(f"{jvm_source_path}: libjvm loader anchor changed")
+jvm_source = jvm_source.replace(loader_anchor, loader_replacement, 1)
 emit_old = """fn emit(line: &str) {
     match *SINK.lock().unwrap_or_else(|e| e.into_inner()) {
         Some(sink) => sink(line),
