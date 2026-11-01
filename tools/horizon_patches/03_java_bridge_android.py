@@ -1020,42 +1020,7 @@ if "const CLOTH_CONFIG: &str" not in libs_source:
         1,
     )
 
-hash_fn = """fn sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}"""
-if "fn matches_hash(bytes: &[u8], expected: &str)" not in libs_source:
-    if libs_source.count(hash_fn) != 1:
-        raise SystemExit(f"{libs_source_path}: checksum helper anchor changed")
-    libs_source = libs_source.replace(
-        hash_fn,
-        hash_fn + """
-
-/// Accepts the existing SHA-256 pins and explicit SHA-1 pins for legacy Maven artifacts.
-fn matches_hash(bytes: &[u8], expected: &str) -> bool {
-    if let Some(expected) = expected.strip_prefix("sha1:") {
-        sha1::Sha1::digest(bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>() == expected
-    } else {
-        sha256(bytes) == expected
-    }
-}""",
-        1,
-    )
-
-good_check = '.map(|bytes| sha256(&bytes) == lib.sha256)'
-if good_check in libs_source:
-    libs_source = libs_source.replace(
-        good_check,
-        '.map(|bytes| matches_hash(&bytes, lib.sha256))',
-        1,
-    )
-elif '.map(|bytes| matches_hash(&bytes, lib.sha256))' not in libs_source:
-    raise SystemExit(f"{libs_source_path}: downloaded-library hash check changed")
+# Keep upstream's SHA-256-only verifier unchanged for every bundled library.
 
 cloth_function = """/// Cloth Config's Fabric mod for Minecraft 26.3 (required by REI's configuration API).
 pub fn ensure_cloth_config(dir: &Path) -> Result<PathBuf, String> {
@@ -1084,80 +1049,33 @@ fabric_libs = fabric_libs_path.read_text(encoding="utf-8")
 basic_math_line = (
     "basic-math-0.6.1.jar"
     "\thttps://maven.shedaniel.me/me/shedaniel/cloth/basic-math/0.6.1/basic-math-0.6.1.jar"
-    "\tsha1:891a15fe6f10b5fcfcda92afd3c5a4ca93dbf1a4"
+    "\t2527eb04394e7a13fa5b8884baa9319f60b07ad6229d759f9451563cd113c059"
 )
 if "basic-math-0.6.1.jar" not in fabric_libs:
     fabric_libs = fabric_libs.rstrip() + "\n" + basic_math_line + "\n"
     fabric_libs_path.write_text(fabric_libs, encoding="utf-8")
 
 cloth_config_path = root / "crates/horizon-jvm/cloth-config.tsv"
-cloth_config_line = (
+cloth_config_url = (
+    "https://maven.shedaniel.me/me/shedaniel/cloth/cloth-config-fabric/26.3.159/"
     "cloth-config-fabric-26.3.159.jar"
-    "\thttps://maven.shedaniel.me/me/shedaniel/cloth/cloth-config-fabric/26.3.159/cloth-config-fabric-26.3.159.jar"
-    "\tsha1:9a5cce069380a2047250831dcb19f4ef1b15872d"
 )
+# Resolve this immutable release artifact once and embed its SHA-256 in the runtime.
+# The game later validates downloaded bytes using upstream's unchanged SHA-256 verifier.
+import hashlib
+import urllib.request
+with urllib.request.urlopen(cloth_config_url, timeout=60) as response:
+    cloth_config_bytes = response.read(16 * 1024 * 1024 + 1)
+if not cloth_config_bytes or len(cloth_config_bytes) > 16 * 1024 * 1024:
+    raise SystemExit("Cloth Config 26.3.159 is empty or exceeds the 16 MiB safety limit")
+cloth_config_sha256 = hashlib.sha256(cloth_config_bytes).hexdigest()
 cloth_config_path.write_text(
     "# Cloth Config Fabric 26.3.159, pinned for Minecraft 26.3 Fabric.\n"
-    "# file<TAB>url<TAB>sha1:<digest>\n"
-    + cloth_config_line + "\n",
+    "# file<TAB>url<TAB>sha256\n"
+    + "cloth-config-fabric-26.3.159.jar\t" + cloth_config_url + "\t" + cloth_config_sha256 + "\n",
     encoding="utf-8",
 )
-
-# The source uses SHA-1 pins only for these two legacy Maven artifacts; all existing
-# Fabric Loader/API libraries remain SHA-256 verified.
-jvm_cargo_path = root / "crates/horizon-jvm/Cargo.toml"
-jvm_cargo = jvm_cargo_path.read_text(encoding="utf-8")
-sha2_anchor = 'sha2 = "0.10"\n# Java discovery'
-sha2_replacement = 'sha2 = "0.10"\nsha1 = "0.10"\n# Java discovery'
-if "sha1 = \"0.10\"" not in jvm_cargo:
-    if jvm_cargo.count(sha2_anchor) != 1:
-        raise SystemExit(f"{jvm_cargo_path}: sha2 dependency anchor changed")
-    jvm_cargo = jvm_cargo.replace(sha2_anchor, sha2_replacement, 1)
-jvm_cargo = jvm_cargo.replace(
-    "downloaded once, checked by SHA-256.",
-    "downloaded once and checked against pinned SHA-256/SHA-1 digests.",
-    1,
-)
-build_section_parts = jvm_cargo.split("[build-dependencies]", 1)
-if len(build_section_parts) != 2:
-    raise SystemExit(f"{jvm_cargo_path}: missing [build-dependencies] section")
-build_section = build_section_parts[1]
-if 'sha1 = "0.10"' not in build_section:
-    sha2_build_line = 'sha2 = "0.10"'
-    if build_section.count(sha2_build_line) != 1:
-        raise SystemExit(f"{jvm_cargo_path}: expected one SHA-2 build dependency")
-    build_section = build_section.replace(
-        sha2_build_line,
-        sha2_build_line + '\nsha1 = "0.10"',
-        1,
-    )
-    jvm_cargo = build_section_parts[0] + "[build-dependencies]" + build_section
-jvm_cargo_path.write_text(jvm_cargo, encoding="utf-8")
-
-# sha1 0.10.7 is already present in the workspace lockfile through horizon-port-pack.
-lock_path = root / "Cargo.lock"
-lock_source = lock_path.read_text(encoding="utf-8")
-horizon_jvm_lock_anchor = """name = "horizon-jvm"
-version = "0.1.0"
-dependencies = [
- "horizon-port-pack",
- "horizon-prepare",
- "jni 0.21.1",
- "libloading",
- "log",
- "naga",
- "pollster",
- "serde_json",
- "sha2","""
-horizon_jvm_lock_replacement = horizon_jvm_lock_anchor.replace(
-    ' "serde_json",\n "sha2",',
-    ' "serde_json",\n "sha1",\n "sha2",',
-)
-if '"sha1",' not in lock_source[lock_source.find('name = "horizon-jvm"'):lock_source.find('[[package]]', lock_source.find('name = "horizon-jvm"') + 1)]:
-    if lock_source.count(horizon_jvm_lock_anchor) != 1:
-        raise SystemExit(f"{lock_path}: horizon-jvm Cargo.lock dependency anchor changed")
-    lock_source = lock_source.replace(horizon_jvm_lock_anchor, horizon_jvm_lock_replacement, 1)
-    lock_path.write_text(lock_source, encoding="utf-8")
+print("Pinned Cloth Config 26.3.159 SHA-256:", cloth_config_sha256)
 
 # Append Cloth Config unless this instance already supplies it.
 cloth_probe_anchor = """const PROBE_CLASSES: &[&str] = &[
