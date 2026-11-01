@@ -11,6 +11,8 @@ on:
       - "tools/horizon_patches/03_java_bridge_android.py"
       - "tools/fabric-java-bridge-revision.env"
       - ".github/workflows/fabric-java-bridge-runtime.yml"
+  schedule:
+    - cron: "15 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -28,23 +30,86 @@ jobs:
       - name: Check out MobileHorizonNative integration
         uses: actions/checkout@v4
 
+      - name: Check whether the upstream bridge or Android overlay changed
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source tools/fabric-java-bridge-revision.env
+          UPSTREAM_COMMIT="$(git ls-remote "https://github.com/\${FABRIC_HORIZON_REPOSITORY}.git" "refs/heads/\${FABRIC_HORIZON_REF}" | awk 'NR == 1 { print $1 }')"
+          if [[ ! "$UPSTREAM_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Could not resolve the current upstream Java Bridge commit."
+            exit 1
+          fi
+          OVERLAY_SHA="$(python3 - <<'PY'
+          import hashlib, pathlib, subprocess
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
+          paths = sorted(p for p in tracked if p and (
+              p.startswith(b"android-native/")
+              or p in {
+                  b"tools/patch_horizon_android_touch.py",
+                  b"tools/horizon_patches/01_offline_server_login.py",
+                  b"tools/horizon_patches/02_android_native.py",
+                  b"tools/horizon_patches/03_java_bridge_android.py",
+                  b"tools/fabric-java-bridge-revision.env",
+                  b".github/workflows/fabric-java-bridge-runtime.yml",
+              }
+          ))
+          h = hashlib.sha256()
+          for raw in paths:
+              path = pathlib.Path(raw.decode())
+              if not path.is_file():
+                  raise SystemExit("Missing runtime input: " + str(path))
+              h.update(raw + b"\0" + path.read_bytes() + b"\0")
+          print(h.hexdigest()[:8])
+          PY
+          )"
+          CURRENT_COMMIT=""
+          CURRENT_OVERLAY=""
+          CURRENT_DIR="$RUNNER_TEMP/current-fabric-runtime"
+          mkdir -p "$CURRENT_DIR"
+          if gh release download "$FABRIC_RUNTIME_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$FABRIC_MANIFEST_ASSET" --dir "$CURRENT_DIR" >/dev/null 2>&1; then
+            read -r CURRENT_COMMIT CURRENT_OVERLAY < <(python3 - "$CURRENT_DIR/$FABRIC_MANIFEST_ASSET" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          print(data.get("upstream_commit", ""), data.get("overlay", ""))
+          PY
+            )
+          fi
+          echo "LATEST_UPSTREAM_COMMIT=$UPSTREAM_COMMIT" >> "$GITHUB_ENV"
+          echo "LATEST_OVERLAY_SHA=$OVERLAY_SHA" >> "$GITHUB_ENV"
+          echo "commit=$UPSTREAM_COMMIT" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" && "$CURRENT_COMMIT" == "$UPSTREAM_COMMIT" && "$CURRENT_OVERLAY" == "$OVERLAY_SHA" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "The latest bridge commit and Android overlay are already published; skipping the scheduled rebuild."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Preparing Java Bridge $UPSTREAM_COMMIT with Android overlay $OVERLAY_SHA."
+          fi
+
       - name: Set up JDK 25 for the Fabric bridge build
+        if: steps.upstream.outputs.skip != 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "25"
 
       - name: Set up Rust for Android ARM64
+        if: steps.upstream.outputs.skip != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
 
       - name: Install Android SDK and NDK
+        if: steps.upstream.outputs.skip != 'true'
         uses: android-actions/setup-android@v3
         with:
           packages: "platforms;android-35 ndk;27.2.12479018"
 
-      - name: Fetch and verify the pinned external Fabric bridge
+      - name: Fetch and verify the latest external Fabric bridge
+        if: steps.upstream.outputs.skip != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +117,7 @@ jobs:
           SOURCE="$RUNNER_TEMP/horizon-fabric-source"
           git init "$SOURCE"
           git -C "$SOURCE" remote add origin "https://github.com/${FABRIC_HORIZON_REPOSITORY}.git"
+          FABRIC_HORIZON_COMMIT="$LATEST_UPSTREAM_COMMIT"
           git -C "$SOURCE" fetch --depth 1 origin "$FABRIC_HORIZON_COMMIT"
           git -C "$SOURCE" checkout --detach FETCH_HEAD
           test "$(git -C "$SOURCE" rev-parse HEAD)" = "$FABRIC_HORIZON_COMMIT"
@@ -73,6 +139,7 @@ jobs:
           echo "Prepared pinned Fabric bridge $FABRIC_HORIZON_COMMIT with the Android overlay."
 
       - name: Prepare temporary Minecraft 26.3 compile-time classpath
+        if: steps.upstream.outputs.skip != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -158,6 +225,7 @@ jobs:
           PY
 
       - name: Test Fabric Loader, entrypoints and Mixins on the pinned game
+        if: steps.upstream.outputs.skip != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -169,6 +237,7 @@ jobs:
             -p horizon-jvm --test fabric -- --nocapture
 
       - name: Build the Fabric Java Bridge engine for Android ARM64
+        if: steps.upstream.outputs.skip != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -198,12 +267,14 @@ jobs:
           echo "Built the Java-mods-enabled Horizon engine for Android ARM64."
 
       - name: Package and publish the versioned Fabric runtime
+        if: steps.upstream.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           source tools/fabric-java-bridge-revision.env
+          FABRIC_HORIZON_COMMIT="$LATEST_UPSTREAM_COMMIT"
           SOURCE="$RUNNER_TEMP/horizon-fabric-source"
           LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_engine.so"
           RELEASE_DIR="$RUNNER_TEMP/fabric-runtime-release"
