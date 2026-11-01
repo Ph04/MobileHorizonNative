@@ -353,8 +353,7 @@ public final class NativeGameActivity extends NativeActivity {
                 // This experimental profile records JNI call sites, Java entity snapshot
                 // sizes and modded worldgen payloads to the diagnostic log. Vanilla launches
                 // and other compatibility profiles never inherit this instrumentation.
-                android.system.Os.setenv("HORIZON_JAVA_PROFILE", "1", true);
-                bridgeLog("INFO", "Profiling Java/Fabric <-> Rust habilitado: JNI por chamada, snapshots de entidades e payloads de worldgen.");
+                bridgeLog("INFO", "Profiling detalhado de JNI desativado na sessão normal; o monitor de memória adaptativo permanece ativo.");
                 bridgeLog("INFO", "Pré-checagem 6/7: ambiente exportado; HORIZON_HOME="
                         + home.getAbsolutePath() + ", HORIZON_ROOT=" + workspace.getAbsolutePath()
                         + ", HORIZON_JAVA_HOME=" + javaRuntime.javaHome.getAbsolutePath()

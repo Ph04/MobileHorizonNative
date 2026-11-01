@@ -1005,3 +1005,311 @@ worldgen_source_path.write_text(worldgen_source, encoding="utf-8")
 print("Applied opt-in JNI call-site profiling, tick string-payload counters, Java entity snapshot byte/timing metrics and worldgen NBT byte metrics.")
 print("Java profile records are persisted to HORIZON_JAVA_BRIDGE_LOG_FILE and therefore included in diagnostic ZIP exports.")
 print("Applied fail-closed Java Bridge initialization, persistent startup logs, platform-JAR validation and adaptive Java Bridge memory protection.")
+
+# Restore missing Fabric runtime dependencies for REI and other Cloth Config consumers.
+# basic-math is a classpath library; cloth-config-fabric is a Fabric mod.
+libs_source_path = root / "crates/horizon-jvm/src/libs.rs"
+libs_source = libs_source_path.read_text(encoding="utf-8")
+if "const CLOTH_CONFIG: &str" not in libs_source:
+    api_const = 'const FABRIC_API: &str = include_str!("../fabric-api.tsv");'
+    if libs_source.count(api_const) != 1:
+        raise SystemExit(f"{libs_source_path}: Fabric API manifest anchor changed")
+    libs_source = libs_source.replace(
+        api_const,
+        api_const + '\nconst CLOTH_CONFIG: &str = include_str!("../cloth-config.tsv");',
+        1,
+    )
+
+hash_fn = """fn sha256(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}"""
+if "fn matches_hash(bytes: &[u8], expected: &str)" not in libs_source:
+    if libs_source.count(hash_fn) != 1:
+        raise SystemExit(f"{libs_source_path}: checksum helper anchor changed")
+    libs_source = libs_source.replace(
+        hash_fn,
+        hash_fn + """
+
+/// Accepts the existing SHA-256 pins and explicit SHA-1 pins for legacy Maven artifacts.
+fn matches_hash(bytes: &[u8], expected: &str) -> bool {
+    if let Some(expected) = expected.strip_prefix("sha1:") {
+        sha1::Sha1::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>() == expected
+    } else {
+        sha256(bytes) == expected
+    }
+}""",
+        1,
+    )
+
+good_check = '.map(|bytes| sha256(&bytes) == lib.sha256)'
+if good_check in libs_source:
+    libs_source = libs_source.replace(
+        good_check,
+        '.map(|bytes| matches_hash(&bytes, lib.sha256))',
+        1,
+    )
+elif '.map(|bytes| matches_hash(&bytes, lib.sha256))' not in libs_source:
+    raise SystemExit(f"{libs_source_path}: downloaded-library hash check changed")
+
+cloth_function = """/// Cloth Config's Fabric mod for Minecraft 26.3 (required by REI's configuration API).
+pub fn ensure_cloth_config(dir: &Path) -> Result<PathBuf, String> {
+    ensure_list(dir, parse(CLOTH_CONFIG))?
+        .pop()
+        .ok_or_else(|| "cloth-config.tsv pins no Cloth Config jar".to_string())
+}
+
+"""
+ensure_api_end = """pub fn ensure_fabric_api(dir: &Path) -> Result<PathBuf, String> {
+    ensure_list(dir, parse(FABRIC_API))?
+        .pop()
+        .ok_or_else(|| "fabric-api.tsv pins no jar".to_string())
+}
+
+"""
+if "pub fn ensure_cloth_config" not in libs_source:
+    if libs_source.count(ensure_api_end) != 1:
+        raise SystemExit(f"{libs_source_path}: Fabric API ensure anchor changed")
+    libs_source = libs_source.replace(ensure_api_end, ensure_api_end + cloth_function, 1)
+libs_source_path.write_text(libs_source, encoding="utf-8")
+
+# The pinned basic-math library is loaded with the Fabric JVM class path.
+fabric_libs_path = root / "crates/horizon-jvm/fabric-libs.tsv"
+fabric_libs = fabric_libs_path.read_text(encoding="utf-8")
+basic_math_line = (
+    "basic-math-0.6.1.jar"
+    "\thttps://maven.shedaniel.me/me/shedaniel/cloth/basic-math/0.6.1/basic-math-0.6.1.jar"
+    "\tsha1:891a15fe6f10b5fcfcda92afd3c5a4ca93dbf1a4"
+)
+if "basic-math-0.6.1.jar" not in fabric_libs:
+    fabric_libs = fabric_libs.rstrip() + "\n" + basic_math_line + "\n"
+    fabric_libs_path.write_text(fabric_libs, encoding="utf-8")
+
+cloth_config_path = root / "crates/horizon-jvm/cloth-config.tsv"
+cloth_config_line = (
+    "cloth-config-fabric-26.3.159.jar"
+    "\thttps://maven.shedaniel.me/me/shedaniel/cloth/cloth-config-fabric/26.3.159/cloth-config-fabric-26.3.159.jar"
+    "\tsha1:9a5cce069380a2047250831dcb19f4ef1b15872d"
+)
+cloth_config_path.write_text(
+    "# Cloth Config Fabric 26.3.159, pinned for Minecraft 26.3 Fabric.\n"
+    "# file<TAB>url<TAB>sha1:<digest>\n"
+    + cloth_config_line + "\n",
+    encoding="utf-8",
+)
+
+# The source uses SHA-1 pins only for these two legacy Maven artifacts; all existing
+# Fabric Loader/API libraries remain SHA-256 verified.
+jvm_cargo_path = root / "crates/horizon-jvm/Cargo.toml"
+jvm_cargo = jvm_cargo_path.read_text(encoding="utf-8")
+sha2_anchor = 'sha2 = "0.10"\n# Java discovery'
+sha2_replacement = 'sha2 = "0.10"\nsha1 = "0.10"\n# Java discovery'
+if "sha1 = \"0.10\"" not in jvm_cargo:
+    if jvm_cargo.count(sha2_anchor) != 1:
+        raise SystemExit(f"{jvm_cargo_path}: sha2 dependency anchor changed")
+    jvm_cargo = jvm_cargo.replace(sha2_anchor, sha2_replacement, 1)
+jvm_cargo = jvm_cargo.replace(
+    "downloaded once, checked by SHA-256.",
+    "downloaded once and checked against pinned SHA-256/SHA-1 digests.",
+    1,
+)
+jvm_cargo_path.write_text(jvm_cargo, encoding="utf-8")
+
+# sha1 0.10.7 is already present in the workspace lockfile through horizon-port-pack.
+lock_path = root / "Cargo.lock"
+lock_source = lock_path.read_text(encoding="utf-8")
+horizon_jvm_lock_anchor = """name = "horizon-jvm"
+version = "0.1.0"
+dependencies = [
+ "horizon-port-pack",
+ "horizon-prepare",
+ "jni 0.21.1",
+ "libloading",
+ "log",
+ "naga",
+ "pollster",
+ "serde_json",
+ "sha2","""
+horizon_jvm_lock_replacement = horizon_jvm_lock_anchor.replace(
+    ' "serde_json",\n "sha2",',
+    ' "serde_json",\n "sha1",\n "sha2",',
+)
+if '"sha1",' not in lock_source[lock_source.find('name = "horizon-jvm"'):lock_source.find('[[package]]', lock_source.find('name = "horizon-jvm"') + 1)]:
+    if lock_source.count(horizon_jvm_lock_anchor) != 1:
+        raise SystemExit(f"{lock_path}: horizon-jvm Cargo.lock dependency anchor changed")
+    lock_source = lock_source.replace(horizon_jvm_lock_anchor, horizon_jvm_lock_replacement, 1)
+    lock_path.write_text(lock_source, encoding="utf-8")
+
+# Append Cloth Config unless this instance already supplies it.
+cloth_probe_anchor = """const PROBE_CLASSES: &[&str] = &[
+    "net/minecraft/world/level/block/Blocks",
+    "net/fabricmc/fabric/api/event/lifecycle/v1/ServerTickEvents",
+];"""
+cloth_probe_replacement = """const PROBE_CLASSES: &[&str] = &[
+    "net/minecraft/world/level/block/Blocks",
+    "net/fabricmc/fabric/api/event/lifecycle/v1/ServerTickEvents",
+    "me/shedaniel/math/Point",
+];"""
+if "me/shedaniel/math/Point" not in java_mods_source:
+    if java_mods_source.count(cloth_probe_anchor) != 1:
+        raise SystemExit(f"{java_mods_source_path}: dependency probe anchor changed")
+    java_mods_source = java_mods_source.replace(cloth_probe_anchor, cloth_probe_replacement, 1)
+
+fabric_add_mods_anchor = """    let add_mods = if own_fabric_api {
+        Vec::new()
+    } else {
+        vec![horizon_jvm::libs::ensure_fabric_api(
+            &work.join("fabric-api"),
+        )?]
+    };
+    Ok(horizon_jvm::Fabric {"""
+fabric_add_mods_replacement = """    let mut add_mods = if own_fabric_api {
+        Vec::new()
+    } else {
+        vec![horizon_jvm::libs::ensure_fabric_api(
+            &work.join("fabric-api"),
+        )?]
+    };
+    let own_cloth_config = jars.iter().any(|j| {
+        j.file_name().is_some_and(|n| {
+            n.to_string_lossy()
+                .to_ascii_lowercase()
+                .starts_with("cloth-config")
+        })
+    });
+    if !own_cloth_config {
+        add_mods.push(horizon_jvm::libs::ensure_cloth_config(
+            &work.join("cloth-config"),
+        )?);
+    }
+    Ok(horizon_jvm::Fabric {"""
+if "ensure_cloth_config" not in java_mods_source:
+    if java_mods_source.count(fabric_add_mods_anchor) != 1:
+        raise SystemExit(f"{java_mods_source_path}: Fabric add-mods anchor changed")
+    java_mods_source = java_mods_source.replace(
+        fabric_add_mods_anchor, fabric_add_mods_replacement, 1
+    )
+java_mods_source_path.write_text(java_mods_source, encoding="utf-8")
+
+# Adaptive snapshot cadence: preserve every Java/Fabric tick and every action, but reduce
+# expensive renderer extraction + JSON serialization during high Android memory pressure.
+server_mods_path = root / "crates/horizon-client/src/game/server_mods.rs"
+server_mods_source = server_mods_path.read_text(encoding="utf-8")
+snapshot_anchor = "let entities = java_mods_on().then(horizon_jvm::events::entities);"
+snapshot_replacement = """let entities = if java_mods_on() {
+                    static SNAPSHOT_SEQUENCE: std::sync::atomic::AtomicU64 =
+                        std::sync::atomic::AtomicU64::new(0);
+                    let interval = match horizon_threads::memory_pressure_level() {
+                        0 | 1 => 1u64,
+                        2 => 2u64,
+                        _ => 3u64,
+                    };
+                    let sequence = SNAPSHOT_SEQUENCE.fetch_add(
+                        1, std::sync::atomic::Ordering::Relaxed
+                    );
+                    (sequence % interval == 0).then(horizon_jvm::events::entities)
+                } else {
+                    None
+                };"""
+if "static SNAPSHOT_SEQUENCE:" not in server_mods_source:
+    if server_mods_source.count(snapshot_anchor) != 1:
+        raise SystemExit(f"{server_mods_path}: Java entity snapshot anchor changed")
+    server_mods_source = server_mods_source.replace(
+        snapshot_anchor, snapshot_replacement, 1
+    )
+
+# Build the player's own rendered entities as a String directly instead of allocating
+# Vec<&str> and then a second String through join().
+own_vec_anchor = "                    let mut own = Vec::new();"
+own_vec_replacement = "                    let mut own = String::new();"
+if own_vec_anchor in server_mods_source:
+    server_mods_source = server_mods_source.replace(own_vec_anchor, own_vec_replacement, 1)
+    own_push_anchor = """                            own.push(e.e.get());
+                            continue;"""
+    own_push_replacement = """                            if !own.is_empty() {
+                                own.push(',');
+                            }
+                            own.push_str(e.e.get());
+                            continue;"""
+    if server_mods_source.count(own_push_anchor) != 1:
+        raise SystemExit(f"{server_mods_path}: own entity payload anchor changed")
+    server_mods_source = server_mods_source.replace(own_push_anchor, own_push_replacement, 1)
+    server_mods_source = server_mods_source.replace(
+        'out.push_str(&own.join(","));',
+        'out.push_str(&own);',
+        1,
+    )
+server_mods_path.write_text(server_mods_source, encoding="utf-8")
+
+# The JMX sample runs every 15 seconds rather than every 5; avoid sleeping the game thread.
+events_source = events_source_path.read_text(encoding="utf-8")
+jmx_interval_anchor = """let previous = LAST_JVM_DIAGNOSTIC_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(previous) < 5_000"""
+jmx_interval_replacement = """let previous = LAST_JVM_DIAGNOSTIC_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(previous) < 15_000"""
+if jmx_interval_anchor in events_source:
+    events_source = events_source.replace(jmx_interval_anchor, jmx_interval_replacement, 1)
+elif jmx_interval_replacement not in events_source:
+    raise SystemExit(f"{events_source_path}: JMX sampling interval anchor changed")
+
+sleep_anchor = """    let delay_ms = match pressure {
+        0 | 1 => 0,
+        2 => 4,
+        _ => 16,
+    };
+    if delay_ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+    }"""
+sleep_replacement = """    // Do not block Horizon's game/server thread under pressure. Expensive visual
+    // entity snapshots are throttled separately in server_mods.rs.
+    let delay_ms = 0u64;"""
+if sleep_anchor in events_source:
+    events_source = events_source.replace(sleep_anchor, sleep_replacement, 1)
+elif "Do not block Horizon's game/server thread under pressure" not in events_source:
+    raise SystemExit(f"{events_source_path}: Java tick backpressure anchor changed")
+
+# Time JNI calls only when explicit profiling is enabled; the normal path has no Instant,
+# atomic counter, or per-call source-location work.
+profiled_call_anchor = """    let profile_site = jni_profile_enabled().then(Location::caller);
+    let call_started = Instant::now();
+    let result = env.with_local_frame(32, |env| {
+        let class = <&JClass>::from(class.as_obj());
+        f(env, class)
+    });
+    let elapsed = call_started.elapsed();
+    JNI_CALLS.fetch_add(1, Ordering::Relaxed);
+    add_duration(&JNI_TIME_US, &JNI_MAX_US, elapsed);
+    if result.is_err() {
+        JNI_ERRORS.fetch_add(1, Ordering::Relaxed);
+    }
+    if let Some(location) = profile_site {
+        record_jni_call_site(location, elapsed, result.is_err());
+    }"""
+profiled_call_replacement = """    let profile_site = jni_profile_enabled().then(Location::caller);
+    let call_started = profile_site.map(|_| Instant::now());
+    let result = env.with_local_frame(32, |env| {
+        let class = <&JClass>::from(class.as_obj());
+        f(env, class)
+    });
+    if let (Some(location), Some(started)) = (profile_site, call_started) {
+        let elapsed = started.elapsed();
+        JNI_CALLS.fetch_add(1, Ordering::Relaxed);
+        add_duration(&JNI_TIME_US, &JNI_MAX_US, elapsed);
+        if result.is_err() {
+            JNI_ERRORS.fetch_add(1, Ordering::Relaxed);
+        }
+        record_jni_call_site(location, elapsed, result.is_err());
+    }"""
+if profiled_call_anchor in events_source:
+    events_source = events_source.replace(profiled_call_anchor, profiled_call_replacement, 1)
+elif profiled_call_replacement not in events_source:
+    raise SystemExit(f"{events_source_path}: opt-in JNI profiling anchor changed")
+events_source_path.write_text(events_source, encoding="utf-8")
+
+print("Added pinned Cloth Config 26.3.159 + Basic Math 0.6.1 for REI; throttled only visual entity snapshots at memory pressure 2/3; removed allocations from own-entity JSON join; disabled per-call JNI timing unless profiling is explicitly enabled; removed blocking server-tick sleeps.")
+
