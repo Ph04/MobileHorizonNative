@@ -243,6 +243,7 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.unsetenv("HORIZON_JAVA_HOME");
             android.system.Os.unsetenv("HORIZON_JAVA_LIBRARY_PATH");
             android.system.Os.unsetenv("HORIZON_LWJGL_LIBRARY_PATH");
+            android.system.Os.unsetenv("HORIZON_JAVA_PROFILE");
             android.system.Os.unsetenv("JAVA_TOOL_OPTIONS");
             android.system.Os.unsetenv("HORIZON_JAVA_TMP");
             android.system.Os.unsetenv("HORIZON_COMPATIBILITY_API_JAR");
@@ -349,6 +350,11 @@ public final class NativeGameActivity extends NativeActivity {
                 for (java.util.Map.Entry<String, String> entry : javaEnvironment.entrySet()) {
                     android.system.Os.setenv(entry.getKey(), entry.getValue(), true);
                 }
+                // This experimental profile records JNI call sites, Java entity snapshot
+                // sizes and modded worldgen payloads to the diagnostic log. Vanilla launches
+                // and other compatibility profiles never inherit this instrumentation.
+                android.system.Os.setenv("HORIZON_JAVA_PROFILE", "1", true);
+                bridgeLog("INFO", "Profiling Java/Fabric <-> Rust habilitado: JNI por chamada, snapshots de entidades e payloads de worldgen.");
                 bridgeLog("INFO", "Pré-checagem 6/7: ambiente exportado; HORIZON_HOME="
                         + home.getAbsolutePath() + ", HORIZON_ROOT=" + workspace.getAbsolutePath()
                         + ", HORIZON_JAVA_HOME=" + javaRuntime.javaHome.getAbsolutePath()
