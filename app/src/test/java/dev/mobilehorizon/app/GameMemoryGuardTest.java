@@ -12,7 +12,7 @@ public final class GameMemoryGuardTest {
     public void fourGigabyteDeviceGetsConservativeJavaBridgeLimits() {
         long ram = 4L * GIB;
         assertEquals(128, GameMemoryGuard.recommendedJavaHeapInitialMiB(ram));
-        assertEquals(896, GameMemoryGuard.recommendedJavaHeapMaxMiB(ram));
+        assertEquals(640, GameMemoryGuard.recommendedJavaHeapMaxMiB(ram));
         assertEquals(2, GameMemoryGuard.recommendedJavaProcessorCount(ram));
         assertEquals(1, GameMemoryGuard.recommendedJavaGcThreadCount(ram));
     }
@@ -20,7 +20,7 @@ public final class GameMemoryGuardTest {
     @Test
     public void largerDevicesGetGraduallyHigherJavaHeapAndCpuLimits() {
         assertEquals(192, GameMemoryGuard.recommendedJavaHeapInitialMiB(6L * GIB));
-        assertEquals(1280, GameMemoryGuard.recommendedJavaHeapMaxMiB(6L * GIB));
+        assertEquals(1024, GameMemoryGuard.recommendedJavaHeapMaxMiB(6L * GIB));
         assertEquals(3, GameMemoryGuard.recommendedJavaProcessorCount(6L * GIB));
         assertEquals(1, GameMemoryGuard.recommendedJavaGcThreadCount(6L * GIB));
         assertEquals(256, GameMemoryGuard.recommendedJavaHeapInitialMiB(8L * GIB));
