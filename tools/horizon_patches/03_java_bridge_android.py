@@ -460,4 +460,200 @@ if mixin_name not in mixins.get("mixins", []):
 worldgen_mixins_json.write_text(__import__("json").dumps(mixins, indent=2) + "\n", encoding="utf-8")
 print("Applied per-state synchronization for Minecraft structure-position initialization.")
 
-print("Applied fail-closed Java Bridge initialization, persistent startup logs, and platform-JAR validation.")
+
+# Adaptive Android memory protection.
+# NativeGameActivity publishes a tiny 0..=3 pressure level; Horizon applies it
+# before scheduling chunk workers, and again while streaming terrain.
+threads_source_path = root / "crates/horizon-threads/src/lib.rs"
+game_source_path = root / "crates/horizon-client/src/game.rs"
+streaming_source_path = root / "crates/horizon-client/src/streaming.rs"
+for required_memory_source in (threads_source_path, game_source_path, streaming_source_path):
+    if not required_memory_source.is_file():
+        raise SystemExit(f"Missing Horizon memory-guard source: {required_memory_source}")
+
+threads_source = threads_source_path.read_text(encoding="utf-8")
+threads_import = "use std::sync::atomic::{AtomicBool, Ordering};"
+if threads_source.count(threads_import) != 1:
+    raise SystemExit(f"{threads_source_path}: atomic import anchor changed")
+threads_source = threads_source.replace(
+    threads_import,
+    "use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};",
+    1,
+)
+watcher_code = r"""
+
+/// The Android launcher publishes 0..=3; higher levels mean less memory headroom.
+static MOBILE_MEMORY_PRESSURE: AtomicU8 = AtomicU8::new(0);
+static MOBILE_MEMORY_WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
+
+pub fn memory_pressure_level() -> u8 {
+    MOBILE_MEMORY_PRESSURE.load(Ordering::Relaxed).min(3)
+}
+
+/// Polls the launcher's tiny state file without tying the game to Android APIs.
+pub fn watch_memory_pressure_file(path: std::path::PathBuf) {
+    if MOBILE_MEMORY_WATCHER_STARTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let result = std::thread::Builder::new()
+        .name("Horizon memory pressure".into())
+        .spawn(move || loop {
+            let level = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|value| value.trim().parse::<u8>().ok())
+                .unwrap_or(0)
+                .min(3);
+            MOBILE_MEMORY_PRESSURE.store(level, Ordering::Relaxed);
+            std::thread::sleep(std::time::Duration::from_millis(750));
+        });
+    if result.is_err() {
+        MOBILE_MEMORY_WATCHER_STARTED.store(false, Ordering::SeqCst);
+    }
+}
+"""
+if "static MOBILE_MEMORY_PRESSURE: AtomicU8" in threads_source:
+    raise SystemExit(f"{threads_source_path}: duplicate memory watcher")
+threads_source = threads_source.rstrip() + "\n" + watcher_code
+threads_source_path.write_text(threads_source, encoding="utf-8")
+
+game_source = game_source_path.read_text(encoding="utf-8")
+run_anchor = "pub fn run() -> Result<()> {\n    let Some(mut options) = Options::read()? else {"
+run_replacement = """pub fn run() -> Result<()> {
+    if let Some(path) = std::env::var_os("HORIZON_MEMORY_PRESSURE_FILE") {
+        horizon_threads::watch_memory_pressure_file(std::path::PathBuf::from(path));
+    }
+    let Some(mut options) = Options::read()? else {"""
+if game_source.count(run_anchor) != 1:
+    raise SystemExit(f"{game_source_path}: run() memory watcher anchor changed")
+game_source = game_source.replace(run_anchor, run_replacement, 1)
+
+worker_anchor = "    let threads = settings.horizon.worker_threads();"
+worker_replacement = """    let configured_threads = settings.horizon.worker_threads().max(1);
+    let mobile_thread_cap = std::env::var("HORIZON_WORKER_THREADS_CAP")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| (1..=64).contains(value))
+        .unwrap_or(usize::MAX);
+    let threads = configured_threads.min(mobile_thread_cap).max(1);
+    if threads < configured_threads {
+        log::info!(
+            "Horizon: Android memory guard limited chunk workers from {} to {}",
+            configured_threads,
+            threads
+        );
+    }"""
+if game_source.count(worker_anchor) != 1:
+    raise SystemExit(f"{game_source_path}: worker thread cap anchor changed")
+game_source = game_source.replace(worker_anchor, worker_replacement, 1)
+game_source_path.write_text(game_source, encoding="utf-8")
+
+stream_source = streaming_source_path.read_text(encoding="utf-8")
+stream_field_anchor = """    pub center: (i32, i32),
+    pub radius: i32,
+    /// `/forceload`ed chunks: kept loaded whatever the distance."""
+stream_field_new = """    pub center: (i32, i32),
+    pub radius: i32,
+    /// Hardware ceiling from the Android launcher; memory pressure can lower it further.
+    mobile_radius_cap: i32,
+    /// `/forceload`ed chunks: kept loaded whatever the distance."""
+if stream_source.count(stream_field_anchor) != 1:
+    raise SystemExit(f"{streaming_source_path}: streaming radius field anchor changed")
+stream_source = stream_source.replace(stream_field_anchor, stream_field_new, 1)
+
+shared_anchor = """struct Shared {
+    queue: Mutex<BinaryHeap<Queued>>,
+    ready: Condvar,
+    stop: AtomicBool,"""
+shared_new = """struct Shared {
+    queue: Mutex<BinaryHeap<Queued>>,
+    ready: Condvar,
+    /// At high pressure, only one chunk allocation/mesh job runs at once.
+    memory_serial: Mutex<()>,
+    stop: AtomicBool,"""
+if stream_source.count(shared_anchor) != 1:
+    raise SystemExit(f"{streaming_source_path}: shared memory semaphore anchor changed")
+stream_source = stream_source.replace(shared_anchor, shared_new, 1)
+
+constructor_anchor = """    ) -> Self {
+        let shared = Arc::new(Shared {
+            queue: Mutex::new(BinaryHeap::new()),
+            ready: Condvar::new(),
+            stop: AtomicBool::new(false),"""
+constructor_new = """    ) -> Self {
+        let mobile_radius_cap = std::env::var("HORIZON_RENDER_DISTANCE_CAP")
+            .ok()
+            .and_then(|value| value.parse::<i32>().ok())
+            .filter(|value| (2..=32).contains(value))
+            .unwrap_or(32);
+        let shared = Arc::new(Shared {
+            queue: Mutex::new(BinaryHeap::new()),
+            ready: Condvar::new(),
+            memory_serial: Mutex::new(()),
+            stop: AtomicBool::new(false),"""
+if stream_source.count(constructor_anchor) != 1:
+    raise SystemExit(f"{streaming_source_path}: streaming constructor anchor changed")
+stream_source = stream_source.replace(constructor_anchor, constructor_new, 1)
+
+radius_init_anchor = """            center: (0, 0),
+            radius: 8,
+            forced: HashSet::new(),"""
+radius_init_new = """            center: (0, 0),
+            radius: 8,
+            mobile_radius_cap,
+            forced: HashSet::new(),"""
+if stream_source.count(radius_init_anchor) != 1:
+    raise SystemExit(f"{streaming_source_path}: streaming radius initializer anchor changed")
+stream_source = stream_source.replace(radius_init_anchor, radius_init_new, 1)
+
+impl_start = stream_source.find("impl Streaming {")
+drop_start = stream_source.find("impl Drop for Streaming {", impl_start + 1)
+if impl_start < 0 or drop_start < 0:
+    raise SystemExit(f"{streaming_source_path}: unable to isolate Streaming implementation")
+stream_impl = stream_source[impl_start:drop_start]
+radius_reads = stream_impl.count("self.radius")
+if radius_reads < 8:
+    raise SystemExit(f"{streaming_source_path}: unexpected number of radius reads ({radius_reads})")
+stream_impl = stream_impl.replace("self.radius", "self.effective_radius()")
+effective_radius = """impl Streaming {
+    fn effective_radius(&self) -> i32 {
+        let pressure_cap = match horizon_threads::memory_pressure_level() {
+            0 => 32,
+            1 => 8,
+            2 => 6,
+            _ => 4,
+        };
+        self.radius.min(self.mobile_radius_cap).min(pressure_cap).max(2)
+    }
+"""
+if stream_impl.count("impl Streaming {") != 1:
+    raise SystemExit(f"{streaming_source_path}: Streaming implementation header changed")
+stream_impl = stream_impl.replace("impl Streaming {\n", effective_radius, 1)
+stream_source = stream_source[:impl_start] + stream_impl + stream_source[drop_start:]
+
+job_anchor = "                            let done = match job {"
+job_replacement = """                            let pressure = horizon_threads::memory_pressure_level();
+                            let _memory_serial = if pressure >= 2 {
+                                Some(
+                                    shared
+                                        .memory_serial
+                                        .lock()
+                                        .unwrap_or_else(|error| error.into_inner()),
+                                )
+                            } else {
+                                None
+                            };
+                            match pressure {
+                                1 => thread::sleep(std::time::Duration::from_millis(15)),
+                                2 => thread::sleep(std::time::Duration::from_millis(40)),
+                                3.. => thread::sleep(std::time::Duration::from_millis(90)),
+                                _ => {}
+                            }
+                            let done = match job {"""
+if stream_source.count(job_anchor) != 1:
+    raise SystemExit(f"{streaming_source_path}: worker backpressure insertion anchor changed")
+stream_source = stream_source.replace(job_anchor, job_replacement, 1)
+streaming_source_path.write_text(stream_source, encoding="utf-8")
+
+print("Applied adaptive Android memory pressure monitoring, bounded workers, serialized heavy jobs and chunk-radius backpressure.")
+
+print("Applied fail-closed Java Bridge initialization, persistent startup logs, platform-JAR validation and adaptive memory protection.")

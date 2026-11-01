@@ -58,6 +58,7 @@ public final class NativeGameActivity extends NativeActivity {
     private boolean suppressKeyboardInputWatcher;
     private String lastKeyboardInput = "";
     private java.io.File javaBridgeLogFile;
+    private GameMemoryGuard memoryGuard;
 
     private void beginJavaBridgeLog(java.io.File filesDir) {
         try {
@@ -130,6 +131,12 @@ public final class NativeGameActivity extends NativeActivity {
             java.io.File gameRoot = getApplicationContext().getFilesDir();
             if (!gameRoot.isDirectory() && !gameRoot.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório privado do jogo.");
+            }
+            // Start before super.onCreate: NativeActivity starts android_main there,
+            // and the native engine inherits these process environment variables.
+            if (memoryGuard == null) {
+                memoryGuard = new GameMemoryGuard(this, gameRoot);
+                memoryGuard.start();
             }
 
             String instanceId = launchIntent == null ? GameInstanceManager.DEFAULT_ID
@@ -663,6 +670,20 @@ public final class NativeGameActivity extends NativeActivity {
     }
 
     @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        GameMemoryGuard guard = memoryGuard;
+        if (guard != null) guard.onTrimMemory(level);
+    }
+
+    @Override
+    public void onLowMemory() {
+        super.onLowMemory();
+        GameMemoryGuard guard = memoryGuard;
+        if (guard != null) guard.onLowMemory();
+    }
+
+    @Override
     protected void onDestroy() {
         if (touchControls != null) touchControls.releaseAllInputs();
         if (keyboardInputPopup != null) {
@@ -675,6 +696,9 @@ public final class NativeGameActivity extends NativeActivity {
             touchControlsPopup = null;
             touchControls = null;
         }
+        GameMemoryGuard guard = memoryGuard;
+        memoryGuard = null;
+        if (guard != null) guard.stop();
         super.onDestroy();
         if (previousWorkingDirectory != null) {
             try {
