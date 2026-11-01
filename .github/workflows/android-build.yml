@@ -391,10 +391,10 @@ jobs:
           curl --fail --location --retry 4 --retry-all-errors \
             "$BASE/$FABRIC_MANIFEST_ASSET" -o "$RUNTIME_STAGE/manifest.json"
 
-          python3 - "$RUNTIME_STAGE" "$FABRIC_LOADER_VERSION" "$FABRIC_API_VERSION" <<'PYFABRIC'
+          python3 - "$RUNTIME_STAGE" "$FABRIC_LOADER_VERSION" "$FABRIC_API_VERSION" "$FABRIC_HORIZON_COMMIT" <<'PYFABRIC'
           import hashlib, json, pathlib, re, sys
           stage = pathlib.Path(sys.argv[1])
-          expected_loader, expected_api = sys.argv[2:]
+          expected_loader, expected_api, expected_commit = sys.argv[2:]
           manifest = json.loads((stage / "manifest.json").read_text(encoding="utf-8"))
           engine = stage / "libhorizon_engine.so"
           digest = hashlib.sha256(engine.read_bytes()).hexdigest()
@@ -403,6 +403,7 @@ jobs:
           assert manifest.get("upstream_ref") == "java-bridge"
           assert re.fullmatch(r"[0-9a-f]{40}", commit)
           assert manifest.get("bridge_commit") == commit
+          assert commit == expected_commit, f"APK runtime is stale: expected {expected_commit}, got {commit}"
           assert manifest.get("version", "").startswith("fabric-java-bridge-" + commit[:8] + "-o")
           assert manifest.get("fabric_loader_version") == expected_loader
           assert manifest.get("fabric_api_version") == expected_api
