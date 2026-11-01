@@ -63,7 +63,7 @@ final class OfficialMinecraftInstaller {
     }
     private static final int CONNECT_TIMEOUT_MS = 20_000;
     private static final int READ_TIMEOUT_MS = 60_000;
-    private static final int MAX_JSON_BYTES = 64 * 1024 * 1024;
+    private static final int MAX_JSON_BYTES = 32 * 1024 * 1024;
     private static final int ASSET_THREADS = 3;
     private static final int BUFFER_SIZE = 128 * 1024;
 
