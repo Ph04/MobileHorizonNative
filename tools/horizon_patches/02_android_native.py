@@ -1186,7 +1186,7 @@ event_loop_factory = """fn new_event_loop<T: 'static + Send>() -> Result<EventLo
 """
 split_event_loop = """    let mut split = split::Split::new(game);
     let result = EventLoop::new()?.run_app(&mut split);"""
-legacy_event_loop = "fn run_event_loop(mut game: Game<'_>) -> Result<()> {\\n    EventLoop::new()?.run_app(&mut game)?;"
+legacy_event_loop = "fn run_event_loop(mut game: Game<'_>) -> Result<()> {\n    EventLoop::new()?.run_app(&mut game)?;"
 current_event_loop = """fn run_event_loop(mut game: Game<'_>) -> Result<()> {
     let result = EventLoop::new()?.run_app(&mut game);
     leave_fullscreen_after(&result, &mut game.settings);
