@@ -179,3 +179,4 @@ dependencies {
     testImplementation 'org.json:json:20250517'
 }
 // One-shot APK test build approval recorded on the Java Bridge diagnostics branch.
+// Follow-up APK build approved for the Java Bridge crash-diagnostic fixes (2026-11-01).
