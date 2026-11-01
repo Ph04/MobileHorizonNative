@@ -1400,9 +1400,13 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
     }
 
     private void handleDownloadProgress(Intent intent) {
-        downloadBusy = true;
+        // Restore the busy state once when reconnecting to an already-running service.
+        // Do not re-run the launcher's full action/marker checks for every progress tick.
+        if (!downloadBusy) {
+            downloadBusy = true;
+            updateActionEnablement();
+        }
         progressBar.setVisibility(View.VISIBLE);
-        updateActionEnablement();
         String stage = intent.getStringExtra("stage");
         String item = intent.getStringExtra("item");
         int completed = intent.getIntExtra("completed", 0);
