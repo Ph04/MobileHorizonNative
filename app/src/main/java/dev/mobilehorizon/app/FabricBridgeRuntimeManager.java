@@ -200,11 +200,40 @@ final class FabricBridgeRuntimeManager {
      */
     static File prepareLwjglLibraryDirectory(Context context) throws IOException {
         Context app = context.getApplicationContext();
+        final String entryName = "lib/arm64-v8a/liblwjgl.so";
+        File apk = new File(app.getApplicationInfo().sourceDir);
+        if (!apk.isFile()) {
+            throw new IOException("O APK instalado não está acessível para validar liblwjgl.so.");
+        }
+
+        // A private fallback survives APK upgrades. ELF/ABI validation alone is not
+        // enough: an older ARM64 liblwjgl.so can still be loadable but miss JNI
+        // symbols expected by the Java classes shipped in the newly installed APK.
+        final long expectedSize;
+        final String expectedSha256;
+        try (ZipFile archive = new ZipFile(apk)) {
+            ZipEntry entry = archive.getEntry(entryName);
+            if (entry == null || entry.isDirectory()
+                    || entry.getSize() <= 20 || entry.getSize() > 32L * 1024L * 1024L) {
+                throw new IOException("O APK não contém lib/arm64-v8a/liblwjgl.so válida.");
+            }
+            expectedSize = entry.getSize();
+            expectedSha256 = sha256(archive, entry);
+        }
+
         String nativePath = app.getApplicationInfo().nativeLibraryDir;
         if (nativePath != null && !nativePath.isEmpty()) {
             File installedDirectory = new File(nativePath).getCanonicalFile();
             File installedLibrary = new File(installedDirectory, "liblwjgl.so");
-            if (isUsableLwjglLibrary(installedLibrary)) return installedDirectory;
+            if (isCurrentLwjglLibrary(installedLibrary, expectedSize, expectedSha256)) {
+                android.util.Log.i("MobileHorizon",
+                        "[JavaBridge] LWJGL validado em nativeLibraryDir; sha256=" + expectedSha256);
+                return installedDirectory;
+            }
+            if (installedLibrary.isFile()) {
+                android.util.Log.w("MobileHorizon",
+                        "[JavaBridge] liblwjgl.so em nativeLibraryDir não corresponde ao APK atual; usando cópia privada verificada.");
+            }
         }
 
         File runtimeRoot = root(app);
@@ -215,13 +244,22 @@ final class FabricBridgeRuntimeManager {
         ensureDirectory(privateDirectory);
 
         File destination = new File(privateDirectory, "liblwjgl.so");
-        if (isUsableLwjglLibrary(destination)) return privateDirectory;
         if (Files.isSymbolicLink(destination.toPath())) {
             throw new IOException("A biblioteca LWJGL privada não pode ser link simbólico.");
         }
+        if (destination.isDirectory()) {
+            throw new IOException("O caminho privado liblwjgl.so aponta para um diretório.");
+        }
+        if (isCurrentLwjglLibrary(destination, expectedSize, expectedSha256)) {
+            android.util.Log.i("MobileHorizon",
+                    "[JavaBridge] Reutilizando cache LWJGL correspondente ao APK atual; sha256=" + expectedSha256);
+            return privateDirectory;
+        }
+        if (destination.isFile()) {
+            android.util.Log.w("MobileHorizon",
+                    "[JavaBridge] Cache LWJGL antigo/incompatível detectado; substituindo pela biblioteca da APK atual.");
+        }
 
-        File apk = new File(app.getApplicationInfo().sourceDir);
-        if (!apk.isFile()) throw new IOException("O APK instalado não está acessível para extrair liblwjgl.so.");
         File temporary = new File(privateDirectory, ".liblwjgl.so.tmp");
         if (Files.isSymbolicLink(temporary.toPath())) {
             throw new IOException("O arquivo temporário LWJGL não pode ser link simbólico.");
@@ -230,12 +268,11 @@ final class FabricBridgeRuntimeManager {
             throw new IOException("Não foi possível limpar a extração anterior de liblwjgl.so.");
         }
 
-        final String entryName = "lib/arm64-v8a/liblwjgl.so";
         try (ZipFile archive = new ZipFile(apk)) {
             ZipEntry entry = archive.getEntry(entryName);
             if (entry == null || entry.isDirectory()
-                    || entry.getSize() <= 20 || entry.getSize() > 32L * 1024L * 1024L) {
-                throw new IOException("A APK não contém lib/arm64-v8a/liblwjgl.so válida.");
+                    || entry.getSize() != expectedSize) {
+                throw new IOException("A entrada LWJGL do APK mudou durante a extração.");
             }
             try (InputStream input = archive.getInputStream(entry);
                  FileOutputStream output = new FileOutputStream(temporary, false)) {
@@ -244,23 +281,23 @@ final class FabricBridgeRuntimeManager {
                 int count;
                 while ((count = input.read(buffer)) != -1) {
                     copied += count;
-                    if (copied > 32L * 1024L * 1024L || copied > entry.getSize()) {
+                    if (copied > 32L * 1024L * 1024L || copied > expectedSize) {
                         throw new IOException("A extração de liblwjgl.so excedeu o tamanho permitido.");
                     }
                     output.write(buffer, 0, count);
                 }
                 output.flush();
                 output.getFD().sync();
-                if (copied != entry.getSize()) {
+                if (copied != expectedSize) {
                     throw new IOException("A extração de liblwjgl.so ficou incompleta.");
                 }
             }
         }
 
         if (!temporary.setReadable(true, true) || !temporary.setExecutable(true, true)
-                || !isUsableLwjglLibrary(temporary)) {
+                || !isCurrentLwjglLibrary(temporary, expectedSize, expectedSha256)) {
             temporary.delete();
-            throw new IOException("A biblioteca LWJGL extraída não passou na validação ELF ARM64/permissões.");
+            throw new IOException("A biblioteca LWJGL extraída não passou na validação SHA-256/ELF ARM64.");
         }
         try {
             Files.move(temporary.toPath(), destination.toPath(),
@@ -270,10 +307,22 @@ final class FabricBridgeRuntimeManager {
         } finally {
             if (temporary.exists()) temporary.delete();
         }
-        if (!isUsableLwjglLibrary(destination)) {
-            throw new IOException("A biblioteca LWJGL não passou na validação depois da instalação privada.");
+        if (!isCurrentLwjglLibrary(destination, expectedSize, expectedSha256)) {
+            throw new IOException("A biblioteca LWJGL não corresponde ao APK depois da instalação privada.");
         }
+        android.util.Log.i("MobileHorizon",
+                "[JavaBridge] Instalado cache LWJGL atualizado a partir do APK; size="
+                        + expectedSize + ", sha256=" + expectedSha256);
         return privateDirectory;
+    }
+
+    private static boolean isCurrentLwjglLibrary(File file, long expectedSize, String expectedSha256) {
+        if (!isUsableLwjglLibrary(file) || file.length() != expectedSize) return false;
+        try {
+            return expectedSha256.equals(sha256(file));
+        } catch (IOException error) {
+            return false;
+        }
     }
 
     private static boolean isUsableLwjglLibrary(File file) {
@@ -460,6 +509,21 @@ final class FabricBridgeRuntimeManager {
             throw new IOException("SHA-256 não está disponível neste Android.", impossible);
         }
         try (InputStream input = new FileInputStream(file)) {
+            byte[] buffer = new byte[BUFFER_SIZE];
+            int count;
+            while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count);
+        }
+        return hex(digest.digest());
+    }
+
+    private static String sha256(ZipFile archive, ZipEntry entry) throws IOException {
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IOException("SHA-256 não está disponível neste Android.", impossible);
+        }
+        try (InputStream input = archive.getInputStream(entry)) {
             byte[] buffer = new byte[BUFFER_SIZE];
             int count;
             while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count);
