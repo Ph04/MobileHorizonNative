@@ -65,7 +65,8 @@ JNIEXPORT jobject JNICALL
 Java_org_lwjgl_system_MemoryUtil_memGlobalRefToObject(JNIEnv *env, jclass type, jlong global_ref) {
     (void)env;
     (void)type;
-    return (jobject)(uintptr_t)global_ref;
+    // Convert the persistent global reference to a local reference owned by this JNI call.
+    return (*env)->NewLocalRef(env, (jobject)(uintptr_t)global_ref);
 }
 
 JNIEXPORT jint JNICALL
@@ -229,6 +230,72 @@ Java_org_lwjgl_system_MemoryAccessJNI_nputAddress(JNIEnv *env, jclass type, jlon
     (void)type;
     uintptr_t pointer = (uintptr_t)value;
     memcpy(mh_pointer(address), &pointer, sizeof(pointer));
+}
+
+/* MemoryAccessJNI accessors: retained for LWJGL core callers that bypass Unsafe. */
+JNIEXPORT jbyte JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_ngetByte(JNIEnv *env, jclass type, jlong address) {
+    (void)env; (void)type;
+    jbyte value; memcpy(&value, mh_pointer(address), sizeof(value)); return value;
+}
+JNIEXPORT jshort JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_ngetShort(JNIEnv *env, jclass type, jlong address) {
+    (void)env; (void)type;
+    jshort value; memcpy(&value, mh_pointer(address), sizeof(value)); return value;
+}
+JNIEXPORT jint JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_ngetInt(JNIEnv *env, jclass type, jlong address) {
+    (void)env; (void)type;
+    jint value; memcpy(&value, mh_pointer(address), sizeof(value)); return value;
+}
+JNIEXPORT jlong JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_ngetLong(JNIEnv *env, jclass type, jlong address) {
+    (void)env; (void)type;
+    jlong value; memcpy(&value, mh_pointer(address), sizeof(value)); return value;
+}
+JNIEXPORT jfloat JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_ngetFloat(JNIEnv *env, jclass type, jlong address) {
+    (void)env; (void)type;
+    jfloat value; memcpy(&value, mh_pointer(address), sizeof(value)); return value;
+}
+JNIEXPORT jdouble JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_ngetDouble(JNIEnv *env, jclass type, jlong address) {
+    (void)env; (void)type;
+    jdouble value; memcpy(&value, mh_pointer(address), sizeof(value)); return value;
+}
+JNIEXPORT jlong JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_ngetAddress(JNIEnv *env, jclass type, jlong address) {
+    (void)env; (void)type;
+    uintptr_t value; memcpy(&value, mh_pointer(address), sizeof(value)); return (jlong)value;
+}
+JNIEXPORT void JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_nputByte(JNIEnv *env, jclass type, jlong address, jbyte value) {
+    (void)env; (void)type; memcpy(mh_pointer(address), &value, sizeof(value));
+}
+JNIEXPORT void JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_nputShort(JNIEnv *env, jclass type, jlong address, jshort value) {
+    (void)env; (void)type; memcpy(mh_pointer(address), &value, sizeof(value));
+}
+JNIEXPORT void JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_nputInt(JNIEnv *env, jclass type, jlong address, jint value) {
+    (void)env; (void)type; memcpy(mh_pointer(address), &value, sizeof(value));
+}
+JNIEXPORT void JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_nputLong(JNIEnv *env, jclass type, jlong address, jlong value) {
+    (void)env; (void)type; memcpy(mh_pointer(address), &value, sizeof(value));
+}
+JNIEXPORT void JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_nputFloat(JNIEnv *env, jclass type, jlong address, jfloat value) {
+    (void)env; (void)type; memcpy(mh_pointer(address), &value, sizeof(value));
+}
+JNIEXPORT void JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_nputDouble(JNIEnv *env, jclass type, jlong address, jdouble value) {
+    (void)env; (void)type; memcpy(mh_pointer(address), &value, sizeof(value));
+}
+JNIEXPORT void JNICALL
+Java_org_lwjgl_system_MemoryAccessJNI_nputAddress(JNIEnv *env, jclass type, jlong address, jlong value) {
+    (void)env; (void)type;
+    uintptr_t pointer = (uintptr_t)value; memcpy(mh_pointer(address), &pointer, sizeof(pointer));
 }
 
 /* libc allocator wrappers used by LWJGL's default MemoryAllocator. */
