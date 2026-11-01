@@ -19,6 +19,9 @@ import java.util.concurrent.TimeUnit;
  * It never calls System.gc() or kills game tasks. It exports memory pressure
  * for Java Bridge backpressure and sizes the embedded JVM conservatively.
  * Vanilla render distance and chunk loading are not modified.
+ *
+ * The monitor runs independently from the game/UI callbacks so pressure sampling
+ * never blocks the render or input path.
  */
 final class GameMemoryGuard {
     private static final String TAG = "MobileHorizon-Memory";
