@@ -600,8 +600,10 @@ if 'horizon-threads = { path = "../horizon-threads" }' not in jvm_cargo:
 events_source = events_source_path.read_text(encoding="utf-8")
 events_import = "use std::sync::{Mutex, OnceLock};"
 events_import_new = """use std::{
+    collections::HashMap,
     fs::OpenOptions,
     io::Write,
+    panic::Location,
     sync::{
         atomic::{AtomicU64, Ordering},
         Mutex, OnceLock,
@@ -623,6 +625,67 @@ static FABRIC_TICKS: AtomicU64 = AtomicU64::new(0);
 static FABRIC_TICK_TIME_US: AtomicU64 = AtomicU64::new(0);
 static FABRIC_TICK_MAX_US: AtomicU64 = AtomicU64::new(0);
 static FABRIC_TICK_ERRORS: AtomicU64 = AtomicU64::new(0);
+static TICK_INVENTORY_BYTES: AtomicU64 = AtomicU64::new(0);
+static TICK_EVENT_TEXT_BYTES: AtomicU64 = AtomicU64::new(0);
+static JNI_PROFILE_ENABLED: OnceLock<bool> = OnceLock::new();
+static LAST_JNI_SITE_REPORT_MS: AtomicU64 = AtomicU64::new(0);
+static JNI_CALL_SITES: Mutex<Option<HashMap<(&'static str, u32), (u64, u64, u64, u64)>>> =
+    Mutex::new(None);
+
+fn jni_profile_enabled() -> bool {
+    *JNI_PROFILE_ENABLED.get_or_init(|| std::env::var_os("HORIZON_JAVA_PROFILE").is_some())
+}
+
+fn record_jni_call_site(
+    location: &'static Location<'static>,
+    elapsed: std::time::Duration,
+    failed: bool,
+) {
+    if !jni_profile_enabled() {
+        return;
+    }
+    let micros = elapsed.as_micros().min(u64::MAX as u128) as u64;
+    let mut guard = JNI_CALL_SITES.lock().unwrap_or_else(|e| e.into_inner());
+    let rows = guard.get_or_insert_with(HashMap::new);
+    let metric = rows.entry((location.file(), location.line())).or_default();
+    metric.0 = metric.0.saturating_add(1);
+    metric.1 = metric.1.saturating_add(micros);
+    metric.2 = metric.2.max(micros);
+    metric.3 = metric.3.saturating_add(u64::from(failed));
+}
+
+fn log_jni_call_sites_if_due() {
+    if !jni_profile_enabled() {
+        return;
+    }
+    let now_ms = SystemTime::now().duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64).unwrap_or(0);
+    let previous = LAST_JNI_SITE_REPORT_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(previous) < 5_000
+        || LAST_JNI_SITE_REPORT_MS.compare_exchange(
+            previous, now_ms, Ordering::Relaxed, Ordering::Relaxed
+        ).is_err()
+    {
+        return;
+    }
+
+    let rows = JNI_CALL_SITES.lock().unwrap_or_else(|e| e.into_inner())
+        .take().unwrap_or_default();
+    let mut rows: Vec<_> = rows.into_iter().collect();
+    rows.sort_by_key(|row| std::cmp::Reverse(row.1.1));
+    for ((file, line), (calls, total_us, max_us, errors)) in rows.into_iter().take(12) {
+        persist_jvm_diagnostic(&format!(
+            "JNI_CALLSITE file={} line={} calls5s={} totalMs={:.2} avgMs={:.2} maxMs={:.2} errors={}",
+            file,
+            line,
+            calls,
+            total_us as f64 / 1000.0,
+            if calls == 0 { 0.0 } else { total_us as f64 / calls as f64 / 1000.0 },
+            max_us as f64 / 1000.0,
+            errors
+        ));
+    }
+}
 
 fn persist_jvm_diagnostic(message: &str) {
     log::info!("{message}");
@@ -731,18 +794,21 @@ fn log_jvm_memory_if_due(
     let tick_us = FABRIC_TICK_TIME_US.swap(0, Ordering::Relaxed);
     let tick_max = FABRIC_TICK_MAX_US.swap(0, Ordering::Relaxed);
     let tick_errors = FABRIC_TICK_ERRORS.swap(0, Ordering::Relaxed);
+    let inventory_bytes = TICK_INVENTORY_BYTES.swap(0, Ordering::Relaxed);
+    let event_text_bytes = TICK_EVENT_TEXT_BYTES.swap(0, Ordering::Relaxed);
 
     match sample {
         Ok((total, free, max, gc_count, gc_time_ms, collector_count, current_threads,
             peak_threads, daemon_threads, loaded_classes, total_loaded, unloaded, started_threads)) => {
             let heap_used = total.saturating_sub(free).max(0);
             persist_jvm_diagnostic(&format!(
-                "tick={tick},pressure={pressure},backpressureMs={backpressure_ms},tickUs={},tickFailed={tick_failed},players={players},fabricEvents={events},heapUsedMiB={},heapCommittedMiB={},heapMaxMiB={},gcCollections={},gcTimeMs={},gcBeans={},javaThreads={},peakThreads={},daemonThreads={},startedThreads={},loadedClasses={},totalLoadedClasses={},unloadedClasses={},jniCalls5s={},jniAvgUs={},jniMaxUs={},jniErrors={},fabricTicks5s={},fabricAvgUs={},fabricMaxUs={},fabricErrors={}",
+                "tick={tick},pressure={pressure},backpressureMs={backpressure_ms},tickUs={},tickFailed={tick_failed},players={players},fabricEvents={events},heapUsedMiB={},heapCommittedMiB={},heapMaxMiB={},gcCollections={},gcTimeMs={},gcBeans={},javaThreads={},peakThreads={},daemonThreads={},startedThreads={},loadedClasses={},totalLoadedClasses={},unloadedClasses={},jniCalls5s={},jniAvgUs={},jniMaxUs={},jniErrors={},fabricTicks5s={},fabricAvgUs={},fabricMaxUs={},fabricErrors={},tickInventoryBytes5s={},tickEventTextBytes5s={}",
                 tick_duration.as_micros(), heap_used/(1024*1024), total/(1024*1024), max/(1024*1024),
                 gc_count, gc_time_ms, collector_count, current_threads, peak_threads, daemon_threads,
                 started_threads, loaded_classes, total_loaded, unloaded,
                 calls, if calls == 0 {0} else {jni_us/calls}, jni_max, jni_errors,
-                ticks, if ticks == 0 {0} else {tick_us/ticks}, tick_max, tick_errors
+                ticks, if ticks == 0 {0} else {tick_us/ticks}, tick_max, tick_errors,
+                inventory_bytes, event_text_bytes
             ));
         }
         Err(error) => {
@@ -770,6 +836,21 @@ server_tick_anchor = """    let Some(class) = server_class() else {
 server_tick_new = """    let Some(class) = server_class() else {
         return Ok(());
     };
+    if jni_profile_enabled() {
+        let inventory_bytes: usize = players.iter()
+            .filter_map(|player| player.inventory.as_ref())
+            .flatten()
+            .map(String::len)
+            .sum();
+        let event_text_bytes: usize = events.iter().map(|event| match event {
+            Event::Joined { uuid } | Event::Left { uuid } | Event::Respawned { uuid } => uuid.len(),
+            Event::Chat { uuid, text } => uuid.len() + text.len(),
+            Event::Block { uuid, state, .. } => uuid.len() + state.len(),
+            Event::Died { uuid, cause } => uuid.len() + cause.len(),
+        }).sum();
+        TICK_INVENTORY_BYTES.fetch_add(inventory_bytes as u64, Ordering::Relaxed);
+        TICK_EVENT_TEXT_BYTES.fetch_add(event_text_bytes as u64, Ordering::Relaxed);
+    }
     // Backpressure only the Java/Fabric server-event path. It does not sleep the
     // render/input thread and never drops or reorders gameplay events.
     let pressure = horizon_threads::memory_pressure_level();
@@ -802,6 +883,7 @@ local_frame_new = """    let tick_started = Instant::now();
     let _ = env.with_local_frame(64, |env| -> jni::errors::Result<()> {
         log_jvm_memory_if_due(env, tick, players.len(), events.len(), tick_duration,
             pressure, delay_ms as u64, result.is_err());
+        log_jni_call_sites_if_due();
         Ok(())
     });"""
 if events_source.count(local_frame_anchor) != 1:
@@ -809,20 +891,20 @@ if events_source.count(local_frame_anchor) != 1:
 events_source = events_source.replace(local_frame_anchor, local_frame_new, 1)
 
 # Aggregate synchronous callbacks that cross JNI outside the batched tick dispatch.
-with_server_anchor = """    let result = env.with_local_frame(32, |env| {
-        let class = <&JClass>::from(class.as_obj());
-        f(env, class)
-    });"""
-with_server_replacement = """    let call_started = Instant::now();
+with_server_anchor = """    let profile_site = jni_profile_enabled().then(Location::caller);
+    let call_started = Instant::now();
     let result = env.with_local_frame(32, |env| {
         let class = <&JClass>::from(class.as_obj());
         f(env, class)
-    });
-    let elapsed = call_started.elapsed();
+    });"""
+with_server_replacement = """    let elapsed = call_started.elapsed();
     JNI_CALLS.fetch_add(1, Ordering::Relaxed);
     add_duration(&JNI_TIME_US, &JNI_MAX_US, elapsed);
     if result.is_err() {
         JNI_ERRORS.fetch_add(1, Ordering::Relaxed);
+    }
+    if let Some(location) = profile_site {
+        record_jni_call_site(location, elapsed, result.is_err());
     }"""
 if events_source.count(with_server_anchor) != 1:
     raise SystemExit(f"{events_source_path}: with_server timing anchor changed")
@@ -830,4 +912,84 @@ events_source = events_source.replace(with_server_anchor, with_server_replacemen
 events_source_path.write_text(events_source, encoding="utf-8")
 
 print("Applied Android process/ART/native memory telemetry, HotSpot GC/fatal logs, JVM heap/GC/thread/class counters and JNI/Fabric tick timing; vanilla chunk distance/workers unchanged.")
+# Persist opt-in client-side Java profiling in the same ZIP-exported Java Bridge log.
+profile_source_path = root / "crates/horizon-client/src/game/java_profile.rs"
+profile_source = profile_source_path.read_text(encoding="utf-8")
+profile_import = "use std::time::{Duration, Instant};"
+profile_import_new = """use std::{
+    fs::OpenOptions,
+    io::Write,
+    time::{Duration, Instant},
+};"""
+if profile_source.count(profile_import) != 1:
+    raise SystemExit(f"{profile_source_path}: profiler import anchor changed")
+profile_source = profile_source.replace(profile_import, profile_import_new, 1)
+if profile_source.count('log::info!("{line}");') != 2:
+    raise SystemExit(f"{profile_source_path}: expected two profiler report statements")
+profile_source = profile_source.replace('log::info!("{line}");', 'persist_profile(&line);')
+profile_log_anchor = "/// Once a server tick: every 200, the sites' time as ms a tick, the slowest first."
+profile_log_code = """fn persist_profile(line: &str) {
+    log::info!("{line}");
+    let Some(path) = std::env::var_os("HORIZON_JAVA_BRIDGE_LOG_FILE") else {
+        return;
+    };
+    if let Ok(mut output) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(output, "[JAVA-PROFILE] {line}");
+    }
+}
+
+"""
+if profile_source.count(profile_log_anchor) != 1:
+    raise SystemExit(f"{profile_source_path}: profiler report anchor changed")
+profile_source = profile_source.replace(profile_log_anchor, profile_log_code + profile_log_anchor, 1)
+profile_source_path.write_text(profile_source, encoding="utf-8")
+
+# Measure the Java entity snapshot JSON before Rust deserializes it into render state.
+entities_source_path = root / "crates/horizon-client/src/game/java_entities.rs"
+entities_source = entities_source_path.read_text(encoding="utf-8")
+entity_anchor = """        let _timed = super::java_profile::Timed::named("(Rust) entities: the player's game reads");
+        self.java_entities.receive(data);"""
+entity_replacement = """        let _timed = super::java_profile::Timed::named("(Rust) entities: the player's game reads");
+        super::java_profile::bytes("Java entity snapshot JSON", data.len());
+        self.java_entities.receive(data);
+        super::java_profile::tick();"""
+if entities_source.count(entity_anchor) != 1:
+    raise SystemExit(f"{entities_source_path}: entity snapshot measurement anchor changed")
+entities_source = entities_source.replace(entity_anchor, entity_replacement, 1)
+entities_source_path.write_text(entities_source, encoding="utf-8")
+
+# Measure modded worldgen payload sizes independently from vanilla chunk/renderer buffers.
+worldgen_source_path = root / "crates/horizon-client/src/game/java_worldgen.rs"
+worldgen_source = worldgen_source_path.read_text(encoding="utf-8")
+proto_anchor = """            let _timed = super::java_profile::Timed::named("worldgen proto");
+            match fill {
+                Some(fill) => horizon_jvm::events::worldgen_proto_filled("""
+proto_replacement = """            let _timed = super::java_profile::Timed::named("worldgen proto");
+            if let Some(fill) = &fill {
+                let payload_bytes = fill.palette.iter().map(String::len).sum::<usize>()
+                    + fill.blocks.len() * std::mem::size_of::<i32>()
+                    + fill.postprocess.len() * std::mem::size_of::<i32>();
+                super::java_profile::bytes("Java worldgen proto input", payload_bytes);
+            }
+            match fill {
+                Some(fill) => horizon_jvm::events::worldgen_proto_filled("""
+if worldgen_source.count(proto_anchor) != 1:
+    raise SystemExit(f"{worldgen_source_path}: worldgen proto payload anchor changed")
+worldgen_source = worldgen_source.replace(proto_anchor, proto_replacement, 1)
+finish_anchor = """        };
+        proto.taken = true;
+        match bytes {"""
+finish_replacement = """        };
+        if let Ok(Some(snapshot)) = &bytes {
+            super::java_profile::bytes("Java worldgen NBT returned to Rust", snapshot.len());
+        }
+        proto.taken = true;
+        match bytes {"""
+if worldgen_source.count(finish_anchor) != 1:
+    raise SystemExit(f"{worldgen_source_path}: worldgen finish payload anchor changed")
+worldgen_source = worldgen_source.replace(finish_anchor, finish_replacement, 1)
+worldgen_source_path.write_text(worldgen_source, encoding="utf-8")
+
+print("Applied opt-in JNI call-site profiling, tick string-payload counters, Java entity snapshot byte/timing metrics and worldgen NBT byte metrics.")
+print("Java profile records are persisted to HORIZON_JAVA_BRIDGE_LOG_FILE and therefore included in diagnostic ZIP exports.")
 print("Applied fail-closed Java Bridge initialization, persistent startup logs, platform-JAR validation and adaptive Java Bridge memory protection.")
