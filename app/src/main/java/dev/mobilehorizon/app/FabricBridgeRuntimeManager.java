@@ -24,8 +24,8 @@ import java.security.MessageDigest;
  */
 final class FabricBridgeRuntimeManager {
     static final String LOADER_VERSION = "0.20.1";
-    static final String UPSTREAM_COMMIT = "4bd3fee1b05ab89c047b8212d314b4de0912c077";
-    static final String RELEASE_TAG = "fabric-java-bridge-4bd3fee1";
+    static final String UPSTREAM_COMMIT = "db117c9060552f1fe62bedf3d746a7b3c189dd3f";
+    static final String RELEASE_TAG = "fabric-java-bridge-latest";
     static final String ENGINE_ASSET = "fabric-horizon-runtime-arm64-v8a.so";
     // The stable NativeActivity bootstrap requires this local basename, regardless of
     // the downloaded release asset's name.
@@ -106,9 +106,13 @@ final class FabricBridgeRuntimeManager {
         String library = manifest.optString("library", "");
         String digest = manifest.optString("sha256", "").toLowerCase(java.util.Locale.ROOT);
         String overlay = manifest.optString("overlay", "");
+        // The manifest is the version authority for the moving "latest" channel.
+        // Keep validating its repository, ref, Minecraft/Fabric tuple, ABI and digest,
+        // but do not pin the app to one Horizon SHA: upstream updates must not require
+        // an APK release just to accept a newly published runtime.
         if (manifest.optInt("format", -1) != 1
-                || !UPSTREAM_COMMIT.equals(upstreamCommit)
-                || !UPSTREAM_COMMIT.equals(bridgeCommit)
+                || !upstreamCommit.matches("[0-9a-f]{40}")
+                || !upstreamCommit.equals(bridgeCommit)
                 || !"iaxivers/horizon".equals(manifest.optString("upstream_repository", ""))
                 || !"java-bridge".equals(manifest.optString("upstream_ref", ""))
                 || !"26.3".equals(manifest.optString("minecraft_version", ""))
@@ -118,7 +122,7 @@ final class FabricBridgeRuntimeManager {
                 || !ENGINE_ASSET.equals(library)
                 || !overlay.matches("[0-9a-f]{8}")
                 || !digest.matches("[0-9a-f]{64}")
-                || !version.startsWith("fabric-java-bridge-" + UPSTREAM_COMMIT.substring(0, 8) + "-o")) {
+                || !version.startsWith("fabric-java-bridge-" + upstreamCommit.substring(0, 8) + "-o")) {
             throw new IOException("O manifesto não corresponde a Java Bridge By:iaxivers.");
         }
 
