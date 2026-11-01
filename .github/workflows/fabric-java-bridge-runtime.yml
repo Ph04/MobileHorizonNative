@@ -11,8 +11,6 @@ on:
       - "tools/horizon_patches/03_java_bridge_android.py"
       - "tools/fabric-java-bridge-revision.env"
       - ".github/workflows/fabric-java-bridge-runtime.yml"
-  schedule:
-    - cron: "15 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -38,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           source tools/fabric-java-bridge-revision.env
-          UPSTREAM_COMMIT="$(git ls-remote "https://github.com/\${FABRIC_HORIZON_REPOSITORY}.git" "refs/heads/\${FABRIC_HORIZON_REF}" | awk 'NR == 1 { print $1 }')"
+          UPSTREAM_COMMIT="$(git ls-remote "https://github.com/${FABRIC_HORIZON_REPOSITORY}.git" "refs/heads/${FABRIC_HORIZON_REF}" | awk 'NR == 1 { print $1 }')"
           if [[ ! "$UPSTREAM_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::Could not resolve the current upstream Java Bridge commit."
             exit 1
