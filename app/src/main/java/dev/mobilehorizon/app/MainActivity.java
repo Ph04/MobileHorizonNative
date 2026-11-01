@@ -2197,7 +2197,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                 new File(appLogsDirectory, "memory-guard.log"), 48 * 1024);
 
         File[] gcLogs = appLogsDirectory.listFiles((dir, name) ->
-                name.matches("java-gc\\\\.log(\\\\.\\\\d+)?"));
+                (name.equals("java-gc.log") || name.startsWith("java-gc.log.")));
         if (gcLogs == null) gcLogs = new File[0];
         Arrays.sort(gcLogs, (left, right) ->
                 Long.compare(right.lastModified(), left.lastModified()));
@@ -2338,7 +2338,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                 File javaBridgeLog = new File(appLogsDirectory, "java-bridge-startup.log");
                 File memoryGuardLog = new File(appLogsDirectory, "memory-guard.log");
                 File[] gcLogs = appLogsDirectory.listFiles((dir, name) ->
-                        name.matches("java-gc\\\\.log(\\\\.\\\\d+)?"));
+                        (name.equals("java-gc.log") || name.startsWith("java-gc.log.")));
                 if (gcLogs == null) gcLogs = new File[0];
                 Arrays.sort(gcLogs, (left, right) ->
                         Long.compare(right.lastModified(), left.lastModified()));
