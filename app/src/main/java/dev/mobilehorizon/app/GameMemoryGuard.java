@@ -253,9 +253,13 @@ final class GameMemoryGuard {
                 + ", thresholdMiB=" + toMiB(system.threshold)
                 + ", totalRamMiB=" + toMiB(system.totalMem)
                 + ", processPssMiB=" + toMiB(pssKb * 1024L)
-                + ", pssDalvikMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getDalvikPss() / 1024.0d)
-                + ", pssNativeMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getNativePss() / 1024.0d)
-                + ", pssOtherMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getOtherPss() / 1024.0d)
+                + ", pssJavaHeapMiB=" + memoryStatMiB(process.getMemoryStats(), "summary.java-heap")
+                + ", pssNativeHeapMiB=" + memoryStatMiB(process.getMemoryStats(), "summary.native-heap")
+                + ", pssGraphicsMiB=" + memoryStatMiB(process.getMemoryStats(), "summary.graphics")
+                + ", pssCodeMiB=" + memoryStatMiB(process.getMemoryStats(), "summary.code")
+                + ", pssStackMiB=" + memoryStatMiB(process.getMemoryStats(), "summary.stack")
+                + ", pssPrivateOtherMiB=" + memoryStatMiB(process.getMemoryStats(), "summary.private-other")
+                + ", pssSystemMiB=" + memoryStatMiB(process.getMemoryStats(), "summary.system")
                 + ", privateDirtyMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getTotalPrivateDirty() / 1024.0d)
                 + ", sharedDirtyMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getTotalSharedDirty() / 1024.0d)
                 + ", swapPssMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getTotalSwappablePss() / 1024.0d)
@@ -280,6 +284,18 @@ final class GameMemoryGuard {
                     new String[]{"Rss:", "Pss:", "Pss_Anon:", "Pss_File:", "Pss_Shmem:", "Private_Clean:", "Private_Dirty:", "Shared_Clean:", "Shared_Dirty:", "Swap:"}) + "}"
                 + ", memoryPsi={" + readSmallFile("/proc/pressure/memory", 1024) + "}"
                 + ", cgroupMemory={" + readCgroupMemory() + "}");
+    }
+
+    private static long memoryStatMiB(Map<String, String> stats, String key) {
+        if (stats == null) return -1L;
+        try {
+            String value = stats.get(key);
+            if (value == null || value.isEmpty()) return -1L;
+            // Android's Debug.MemoryInfo summary counters are reported in KiB.
+            return Long.parseLong(value) / 1024L;
+        } catch (NumberFormatException error) {
+            return -1L;
+        }
     }
 
     private static String readProcLines(String path, String[] prefixes) {
