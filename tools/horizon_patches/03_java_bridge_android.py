@@ -16,7 +16,7 @@ java_mods_import_new = """use std::{
     fs::OpenOptions,
     io::Write,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };"""
 if java_mods_source.count(java_mods_import) != 1:
     raise SystemExit(f"{java_mods_source_path}: expected one standard path import")
@@ -373,6 +373,20 @@ vm_options_replacement = """    // Android's guard sets conservative values from
         "Java Bridge JVM limits: heap={}..{} MiB, processors={}, GC threads={}",
         heap_initial, heap_max, processors, gc_threads
     );
+    if let Some(raw_directory) = std::env::var_os("HORIZON_JAVA_DIAGNOSTICS_DIR") {
+        let directory = PathBuf::from(raw_directory);
+        std::fs::create_dir_all(&directory).map_err(|error| {
+            format!("cannot create JVM diagnostics directory {}: {error}", directory.display())
+        })?;
+        options.push(format!(
+            "-Xlog:gc*,safepoint:file={}:time,uptime,level,tags:filecount=4,filesize=2M",
+            directory.join("java-gc.log").display()
+        ));
+        options.push(format!(
+            "-XX:ErrorFile={}",
+            directory.join("hs_err_pid%p.log").display()
+        ));
+    }
     if let Some(raw_directory) = std::env::var_os("HORIZON_LWJGL_LIBRARY_PATH") {
         let directory = PathBuf::from(raw_directory);
         let library = directory.join("liblwjgl.so");
@@ -592,7 +606,7 @@ events_import_new = """use std::{
         atomic::{AtomicU64, Ordering},
         Mutex, OnceLock,
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };"""
 if events_source.count(events_import) != 1:
     raise SystemExit(f"{events_source_path}: import anchor changed")
@@ -600,75 +614,142 @@ events_source = events_source.replace(events_import, events_import_new, 1)
 
 diagnostics_code = r"""
 
-static LAST_JVM_MEMORY_LOG_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_JVM_DIAGNOSTIC_MS: AtomicU64 = AtomicU64::new(0);
+static JNI_CALLS: AtomicU64 = AtomicU64::new(0);
+static JNI_TIME_US: AtomicU64 = AtomicU64::new(0);
+static JNI_MAX_US: AtomicU64 = AtomicU64::new(0);
+static JNI_ERRORS: AtomicU64 = AtomicU64::new(0);
+static FABRIC_TICKS: AtomicU64 = AtomicU64::new(0);
+static FABRIC_TICK_TIME_US: AtomicU64 = AtomicU64::new(0);
+static FABRIC_TICK_MAX_US: AtomicU64 = AtomicU64::new(0);
+static FABRIC_TICK_ERRORS: AtomicU64 = AtomicU64::new(0);
 
-fn persist_jvm_memory_diagnostic(message: &str) {
+fn persist_jvm_diagnostic(message: &str) {
     log::info!("{message}");
     let Some(path) = std::env::var_os("HORIZON_JAVA_BRIDGE_LOG_FILE") else {
         return;
     };
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or_default();
-    if let Ok(mut output) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(output, "[{timestamp}][JVM-Memory] {message}");
+    let path = std::path::PathBuf::from(path);
+    if std::fs::metadata(&path).map(|meta| meta.len() > 5 * 1024 * 1024).unwrap_or(false) {
+        let rotated = path.with_extension("log.1");
+        let _ = std::fs::remove_file(&rotated);
+        let _ = std::fs::rename(&path, &rotated);
+    }
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(
+            file,
+            "[{}][JVM-DIAG] {message}",
+            SystemTime::now().duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_millis()).unwrap_or(0)
+        );
     }
 }
 
-/// Samples the embedded HotSpot heap from its own JNI environment, not Android's ART heap.
+fn add_duration(total: &AtomicU64, maximum: &AtomicU64, duration: std::time::Duration) {
+    let micros = duration.as_micros().min(u64::MAX as u128) as u64;
+    total.fetch_add(micros, Ordering::Relaxed);
+    let mut old = maximum.load(Ordering::Relaxed);
+    while micros > old {
+        match maximum.compare_exchange_weak(old, micros, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => break,
+            Err(actual) => old = actual,
+        }
+    }
+}
+
+/// Samples the embedded HotSpot JVM, not Android ART. GC/class counters are
+/// cumulative since this embedded JVM started; JNI/Fabric timings are per 5s window.
 fn log_jvm_memory_if_due(
     env: &mut JNIEnv,
     tick: i64,
-    event_count: usize,
+    players: usize,
+    events: usize,
+    tick_duration: std::time::Duration,
     pressure: u8,
+    backpressure_ms: u64,
+    tick_failed: bool,
 ) {
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or_default();
-    let previous = LAST_JVM_MEMORY_LOG_MS.load(Ordering::Relaxed);
-    if now_ms.saturating_sub(previous) < 30_000
-        || LAST_JVM_MEMORY_LOG_MS
-            .compare_exchange(previous, now_ms, Ordering::Relaxed, Ordering::Relaxed)
-            .is_err()
+    let now_ms = SystemTime::now().duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64).unwrap_or(0);
+    let previous = LAST_JVM_DIAGNOSTIC_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(previous) < 5_000
+        || LAST_JVM_DIAGNOSTIC_MS.compare_exchange(previous, now_ms, Ordering::Relaxed, Ordering::Relaxed).is_err()
     {
         return;
     }
 
-    let stats = (|| -> jni::errors::Result<(i64, i64, i64, i32)> {
-        let runtime = env
-            .call_static_method(
-                "java/lang/Runtime",
-                "getRuntime",
-                "()Ljava/lang/Runtime;",
-                &[],
-            )?
-            .l()?;
+    let sample = (|| -> jni::errors::Result<(
+        i64, i64, i64, i64, i64, i32, i32, i32, i32, i32, i64, i64, i64
+    )> {
+        let runtime = env.call_static_method(
+            "java/lang/Runtime", "getRuntime", "()Ljava/lang/Runtime;", &[]
+        )?.l()?;
         let total = env.call_method(&runtime, "totalMemory", "()J", &[])?.j()?;
         let free = env.call_method(&runtime, "freeMemory", "()J", &[])?.j()?;
         let max = env.call_method(&runtime, "maxMemory", "()J", &[])?.j()?;
-        let threads = env
-            .call_static_method("java/lang/Thread", "activeCount", "()I", &[])?
-            .i()?;
-        Ok((total, free, max, threads))
+
+        let management = "java/lang/management/ManagementFactory";
+        let collectors = env.call_static_method(
+            management, "getGarbageCollectorMXBeans", "()Ljava/util/List;", &[]
+        )?.l()?;
+        let collector_count = env.call_method(&collectors, "size", "()I", &[])?.i()?;
+        let mut gc_count = 0i64;
+        let mut gc_time_ms = 0i64;
+        for index in 0..collector_count {
+            let bean = env.call_method(
+                &collectors, "get", "(I)Ljava/lang/Object;", &[JValue::Int(index)]
+            )?.l()?;
+            let count = env.call_method(&bean, "getCollectionCount", "()J", &[])?.j()?;
+            let time = env.call_method(&bean, "getCollectionTime", "()J", &[])?.j()?;
+            if count >= 0 { gc_count = gc_count.saturating_add(count); }
+            if time >= 0 { gc_time_ms = gc_time_ms.saturating_add(time); }
+        }
+
+        let threads = env.call_static_method(
+            management, "getThreadMXBean", "()Ljava/lang/management/ThreadMXBean;", &[]
+        )?.l()?;
+        let current_threads = env.call_method(&threads, "getThreadCount", "()I", &[])?.i()?;
+        let peak_threads = env.call_method(&threads, "getPeakThreadCount", "()I", &[])?.i()?;
+        let daemon_threads = env.call_method(&threads, "getDaemonThreadCount", "()I", &[])?.i()?;
+        let started_threads = env.call_method(&threads, "getTotalStartedThreadCount", "()J", &[])?.j()?;
+
+        let classes = env.call_static_method(
+            management, "getClassLoadingMXBean", "()Ljava/lang/management/ClassLoadingMXBean;", &[]
+        )?.l()?;
+        let loaded_classes = env.call_method(&classes, "getLoadedClassCount", "()I", &[])?.i()?;
+        let total_loaded = env.call_method(&classes, "getTotalLoadedClassCount", "()J", &[])?.j()?;
+        let unloaded = env.call_method(&classes, "getUnloadedClassCount", "()J", &[])?.j()?;
+        Ok((total, free, max, gc_count, gc_time_ms, collector_count, current_threads,
+            peak_threads, daemon_threads, loaded_classes, total_loaded, unloaded, started_threads))
     })();
 
-    match stats {
-        Ok((total, free, max, threads)) => {
-            let used = total.saturating_sub(free).max(0);
-            persist_jvm_memory_diagnostic(&format!(
-                "tick={tick}, pressure={pressure}, heapUsedMiB={}, heapCommittedMiB={}, heapMaxMiB={}, activeJavaThreads={}, fabricEvents={event_count}",
-                used / (1024 * 1024),
-                total / (1024 * 1024),
-                max / (1024 * 1024),
-                threads
+    let calls = JNI_CALLS.swap(0, Ordering::Relaxed);
+    let jni_us = JNI_TIME_US.swap(0, Ordering::Relaxed);
+    let jni_max = JNI_MAX_US.swap(0, Ordering::Relaxed);
+    let jni_errors = JNI_ERRORS.swap(0, Ordering::Relaxed);
+    let ticks = FABRIC_TICKS.swap(0, Ordering::Relaxed);
+    let tick_us = FABRIC_TICK_TIME_US.swap(0, Ordering::Relaxed);
+    let tick_max = FABRIC_TICK_MAX_US.swap(0, Ordering::Relaxed);
+    let tick_errors = FABRIC_TICK_ERRORS.swap(0, Ordering::Relaxed);
+
+    match sample {
+        Ok((total, free, max, gc_count, gc_time_ms, collector_count, current_threads,
+            peak_threads, daemon_threads, loaded_classes, total_loaded, unloaded, started_threads)) => {
+            let heap_used = total.saturating_sub(free).max(0);
+            persist_jvm_diagnostic(&format!(
+                "tick={tick},pressure={pressure},backpressureMs={backpressure_ms},tickUs={},tickFailed={tick_failed},players={players},fabricEvents={events},heapUsedMiB={},heapCommittedMiB={},heapMaxMiB={},gcCollections={},gcTimeMs={},gcBeans={},javaThreads={},peakThreads={},daemonThreads={},startedThreads={},loadedClasses={},totalLoadedClasses={},unloadedClasses={},jniCalls5s={},jniAvgUs={},jniMaxUs={},jniErrors={},fabricTicks5s={},fabricAvgUs={},fabricMaxUs={},fabricErrors={}",
+                tick_duration.as_micros(), heap_used/(1024*1024), total/(1024*1024), max/(1024*1024),
+                gc_count, gc_time_ms, collector_count, current_threads, peak_threads, daemon_threads,
+                started_threads, loaded_classes, total_loaded, unloaded,
+                calls, if calls == 0 {0} else {jni_us/calls}, jni_max, jni_errors,
+                ticks, if ticks == 0 {0} else {tick_us/ticks}, tick_max, tick_errors
             ));
         }
         Err(error) => {
             let _ = env.exception_clear();
-            persist_jvm_memory_diagnostic(&format!(
-                "JVM heap sampling failed: {error}"
+            persist_jvm_diagnostic(&format!(
+                "JMX_SAMPLE_ERROR={error},tick={tick},players={players},events={events},tickUs={},pressure={pressure}",
+                tick_duration.as_micros()
             ));
         }
     }
@@ -708,14 +789,45 @@ events_source = events_source.replace(server_tick_anchor, server_tick_new, 1)
 local_frame_anchor = """    let result = env.with_local_frame(64, |env| -> jni::errors::Result<()> {
         call_tick(env, class, tick, dedicated, world, players, events)
     });"""
-local_frame_new = """    let result = env.with_local_frame(64, |env| -> jni::errors::Result<()> {
-        log_jvm_memory_if_due(env, tick, events.len(), pressure);
+local_frame_new = """    let tick_started = Instant::now();
+    let result = env.with_local_frame(64, |env| -> jni::errors::Result<()> {
         call_tick(env, class, tick, dedicated, world, players, events)
+    });
+    let tick_duration = tick_started.elapsed();
+    FABRIC_TICKS.fetch_add(1, Ordering::Relaxed);
+    add_duration(&FABRIC_TICK_TIME_US, &FABRIC_TICK_MAX_US, tick_duration);
+    if result.is_err() {
+        FABRIC_TICK_ERRORS.fetch_add(1, Ordering::Relaxed);
+    }
+    let _ = env.with_local_frame(64, |env| -> jni::errors::Result<()> {
+        log_jvm_memory_if_due(env, tick, players.len(), events.len(), tick_duration,
+            pressure, delay_ms as u64, result.is_err());
+        Ok(())
     });"""
 if events_source.count(local_frame_anchor) != 1:
     raise SystemExit(f"{events_source_path}: server_tick local-frame anchor changed")
 events_source = events_source.replace(local_frame_anchor, local_frame_new, 1)
+
+# Aggregate synchronous callbacks that cross JNI outside the batched tick dispatch.
+with_server_anchor = """    let result = env.with_local_frame(32, |env| {
+        let class = <&JClass>::from(class.as_obj());
+        f(env, class)
+    });"""
+with_server_replacement = """    let call_started = Instant::now();
+    let result = env.with_local_frame(32, |env| {
+        let class = <&JClass>::from(class.as_obj());
+        f(env, class)
+    });
+    let elapsed = call_started.elapsed();
+    JNI_CALLS.fetch_add(1, Ordering::Relaxed);
+    add_duration(&JNI_TIME_US, &JNI_MAX_US, elapsed);
+    if result.is_err() {
+        JNI_ERRORS.fetch_add(1, Ordering::Relaxed);
+    }"""
+if events_source.count(with_server_anchor) != 1:
+    raise SystemExit(f"{events_source_path}: with_server timing anchor changed")
+events_source = events_source.replace(with_server_anchor, with_server_replacement, 1)
 events_source_path.write_text(events_source, encoding="utf-8")
 
-print("Applied Android JVM heap/CPU limits, Java Bridge tick backpressure and embedded-JVM memory diagnostics; vanilla chunk distance/workers unchanged.")
+print("Applied Android process/ART/native memory telemetry, HotSpot GC/fatal logs, JVM heap/GC/thread/class counters and JNI/Fabric tick timing; vanilla chunk distance/workers unchanged.")
 print("Applied fail-closed Java Bridge initialization, persistent startup logs, platform-JAR validation and adaptive Java Bridge memory protection.")
