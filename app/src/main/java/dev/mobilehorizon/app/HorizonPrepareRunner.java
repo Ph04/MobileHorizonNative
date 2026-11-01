@@ -694,6 +694,10 @@ final class HorizonPrepareRunner {
      */
     static void repairWritableCache(File root, AtomicBoolean cancelled) throws Exception {
         if (root == null) throw new IOException("Cache temporário do Horizon inválido.");
+        if (java.nio.file.Files.isSymbolicLink(root.toPath())) {
+            throw new IOException("O cache temporário do Horizon não pode ser um link simbólico: "
+                    + root.getAbsolutePath());
+        }
         if (!root.exists() && !root.mkdirs()) {
             throw new IOException("Não foi possível criar o cache " + root.getAbsolutePath());
         }
