@@ -892,7 +892,7 @@ events_source = events_source.replace(local_frame_anchor, local_frame_new, 1)
 
 # Aggregate synchronous callbacks that cross JNI outside the batched tick dispatch.
 with_server_function_anchor = "fn with_server<T>("
-with_server_function_replacement = "#[track_caller]\\nfn with_server<T>("
+with_server_function_replacement = "#[track_caller]\nfn with_server<T>("
 if events_source.count(with_server_function_anchor) != 1:
     raise SystemExit(f"{events_source_path}: with_server function anchor changed")
 events_source = events_source.replace(
