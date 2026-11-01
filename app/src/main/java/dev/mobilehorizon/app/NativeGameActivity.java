@@ -289,21 +289,43 @@ public final class NativeGameActivity extends NativeActivity {
                 if (visibleJars == 0) {
                     bridgeLog("WARN", "Nenhum mod ativo. O Horizon vai ignorar a inicialização do JVM/Fabric.");
                 }
-                JdkRuntimeInstaller.RuntimePaths javaRuntime =
-                        JdkRuntimeInstaller.getInstalledIfReady(this);
-                if (javaRuntime == null) {
-                    throw new java.io.IOException("O Java 25 ainda não foi preparado ou está incompleto. Conclua a preparação dos recursos oficiais antes de iniciar Java Bridge By:iaxivers.");
+                boolean usePojavRuntime = getSharedPreferences(
+                        PojavRuntimeInstaller.PREFS_NAME, MODE_PRIVATE)
+                        .getBoolean(PojavRuntimeInstaller.PREF_USE_POJAV, false);
+                java.io.File javaHome;
+                java.io.File javaLibjvm;
+                java.util.Map<String, String> javaEnvironment;
+                String javaProvider;
+                int relocatedJavaLibraries = 0;
+                if (usePojavRuntime) {
+                    PojavRuntimeInstaller.RuntimePaths javaRuntime =
+                            PojavRuntimeInstaller.getInstalledIfReady(this);
+                    if (javaRuntime == null) {
+                        throw new java.io.IOException("O JRE Pojav/Mojo foi selecionado, mas não está instalado ou não passou na validação. Abra Configurações e instale/valide o runtime; o OpenJDK Termux não foi alterado.");
+                    }
+                    javaHome = javaRuntime.javaHome;
+                    javaLibjvm = javaRuntime.libjvm;
+                    javaEnvironment = javaRuntime.processEnvironment(new java.io.File(javaRuntime.root, "tmp"));
+                    javaProvider = "Pojav/Mojo OpenJDK " + javaRuntime.version;
+                } else {
+                    JdkRuntimeInstaller.RuntimePaths javaRuntime =
+                            JdkRuntimeInstaller.getInstalledIfReady(this);
+                    if (javaRuntime == null) {
+                        throw new java.io.IOException("O OpenJDK Termux 25 ainda não foi preparado ou está incompleto. Conclua a preparação dos recursos oficiais antes de iniciar Java Bridge By:iaxivers.");
+                    }
+                    javaHome = javaRuntime.javaHome;
+                    javaLibjvm = javaRuntime.libjvm;
+                    javaEnvironment = javaRuntime.processEnvironment(new java.io.File(javaRuntime.root, "tmp"));
+                    javaProvider = "Termux OpenJDK 25";
+                    relocatedJavaLibraries =
+                            JdkRuntimeInstaller.ensureAndroidInProcessLinkerPaths(javaRuntime);
                 }
-                if (!javaRuntime.libjvm.isFile()) {
-                    throw new java.io.IOException("A biblioteca JNI lib/server/libjvm.so não foi encontrada no Java 25.");
+                if (!javaLibjvm.isFile()) {
+                    throw new java.io.IOException("A biblioteca JNI lib/server/libjvm.so não foi encontrada em " + javaProvider + ".");
                 }
-                int relocatedJavaLibraries =
-                        JdkRuntimeInstaller.ensureAndroidInProcessLinkerPaths(javaRuntime);
-                bridgeLog("INFO", "Pré-checagem 4/7: caminhos ELF do Java 25 compatíveis com dlopen no Android; "
-                        + relocatedJavaLibraries + " biblioteca(s) relocalizada(s).");
-                bridgeLog("INFO", "Pré-checagem 4/7: Java 25 pronto; JAVA_HOME="
-                        + javaRuntime.javaHome.getAbsolutePath() + ", libjvm="
-                        + javaRuntime.libjvm.getAbsolutePath());
+                bridgeLog("INFO", "Pré-checagem 4/7: " + javaProvider + " pronto; JAVA_HOME="
+                        + javaHome.getAbsolutePath() + ", libjvm=" + javaLibjvm.getAbsolutePath()
+                        + ", bibliotecas relocadas=" + relocatedJavaLibraries);
                 java.io.File workspace = new java.io.File(gameRoot,
                         ".local/horizon-prepare-workspace").getCanonicalFile();
                 java.io.File expectedLock = new java.io.File(workspace, "research-lock.json");
@@ -332,15 +354,15 @@ public final class NativeGameActivity extends NativeActivity {
                         + ", versão do lock=" + lockedVersion);
                 android.system.Os.setenv("HORIZON_ROOT", workspace.getAbsolutePath(), true);
                 android.system.Os.setenv("HORIZON_JAVA_HOME",
-                        javaRuntime.javaHome.getAbsolutePath(), true);
+                        javaHome.getAbsolutePath(), true);
                 android.system.Os.setenv("JAVA_HOME",
-                        javaRuntime.javaHome.getAbsolutePath(), true);
+                        javaHome.getAbsolutePath(), true);
                 android.system.Os.setenv("HORIZON_JAVA_SIDE", "client", true);
                 android.system.Os.setenv("HORIZON_MODS_DIR",
                         bridgeModsDirectory.getAbsolutePath(), true);
 
-                java.util.Map<String, String> javaEnvironment =
-                        javaRuntime.processEnvironment(new java.io.File(javaRuntime.root, "tmp"));
+                javaEnvironment.put("HORIZON_JAVA_PROFILE",
+                        usePojavRuntime ? "mojo-pojav-openjdk-25" : "termux-openjdk-25");
                 java.io.File lwjglLibraryDirectory =
                         FabricBridgeRuntimeManager.prepareLwjglLibraryDirectory(this);
                 String lwjglLibraryPath = lwjglLibraryDirectory.getCanonicalPath();
@@ -356,7 +378,8 @@ public final class NativeGameActivity extends NativeActivity {
                 bridgeLog("INFO", "Profiling detalhado de JNI desativado na sessão normal; o monitor de memória adaptativo permanece ativo.");
                 bridgeLog("INFO", "Pré-checagem 6/7: ambiente exportado; HORIZON_HOME="
                         + home.getAbsolutePath() + ", HORIZON_ROOT=" + workspace.getAbsolutePath()
-                        + ", HORIZON_JAVA_HOME=" + javaRuntime.javaHome.getAbsolutePath()
+                        + ", HORIZON_JAVA_HOME=" + javaHome.getAbsolutePath()
+                        + ", Java provider=" + javaProvider
                         + ", HORIZON_JAVA_SIDE=client, LD_LIBRARY_PATH configurado.");
                 bridgeLog("INFO", "Runtime=" + runtimeVersion + ", mods ativos=" + modCount
                         + ", mods-java=" + bridgeModsDirectory.getAbsolutePath());

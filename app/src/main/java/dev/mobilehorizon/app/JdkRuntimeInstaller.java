@@ -82,8 +82,7 @@ final class JdkRuntimeInstaller {
             env.put("TERMUX_PREFIX", new File(root, "usr").getAbsolutePath());
             // Termux patches OpenJDK's perf-data path to its own absolute prefix.
             // Disable that optional feature; java.io.tmpdir still points to writable app storage.
-            env.put("JAVA_TOOL_OPTIONS", "-XX:-UsePerfData -XX:ActiveProcessorCount=4 "
-                    + "-XX:ParallelGCThreads=2 -XX:ConcGCThreads=1 -Djava.io.tmpdir="
+            env.put("JAVA_TOOL_OPTIONS", "-XX:-UsePerfData -Djava.io.tmpdir="
                     + temporaryDirectory.getAbsolutePath());
             env.put("LANG", "C.UTF-8");
             return env;
@@ -614,6 +613,21 @@ final class JdkRuntimeInstaller {
 
     private static void extractTar(InputStream tar, File destinationRoot, AtomicBoolean cancelled,
                                    long[] totals) throws Exception {
+        extractTarEntries(tar, destinationRoot, cancelled, totals, true);
+    }
+
+    /** Extracts a signed Mojo/Pojav component archive with paths relative to the JRE root. */
+    static void extractMojoArchive(File archive, File destinationRoot,
+                                   AtomicBoolean cancelled, long[] totals) throws Exception {
+        try (InputStream file = new BufferedInputStream(new FileInputStream(archive));
+             InputStream xz = new XZInputStream(file)) {
+            extractTarEntries(xz, destinationRoot, cancelled, totals, false);
+        }
+    }
+
+    private static void extractTarEntries(InputStream tar, File destinationRoot,
+                                          AtomicBoolean cancelled, long[] totals,
+                                          boolean termuxPackage) throws Exception {
         byte[] header = new byte[512];
         String longName = null;
         String longLink = null;
@@ -654,12 +668,15 @@ final class JdkRuntimeInstaller {
             if (longLink != null) { link = longLink; longLink = null; }
             if (paxLink != null) { link = paxLink; paxLink = null; }
 
-            File target = mapPackagePath(destinationRoot, name);
+            File target = termuxPackage
+                    ? mapPackagePath(destinationRoot, name)
+                    : mapArchivePath(destinationRoot, name);
             if (target == null) {
                 skipExactly(tar, size);
                 skipPadding(tar, size);
                 continue;
             }
+            ensureInsideRoot(destinationRoot, target);
             if (type == '5') {
                 ensureDirectory(target);
                 skipExactly(tar, size);
@@ -667,17 +684,23 @@ final class JdkRuntimeInstaller {
                 skipExactly(tar, size);
                 ensureDirectory(target.getParentFile());
                 deleteEntry(target);
-                String rewritten = rewriteSymlink(destinationRoot, target, link);
+                String rewritten = termuxPackage
+                        ? rewriteSymlink(destinationRoot, target, link)
+                        : rewriteRelativeSymlink(destinationRoot, target, link);
                 Os.symlink(rewritten, target.getAbsolutePath());
             } else if (type == '1') {
                 skipExactly(tar, size);
-                File source = mapPackagePath(destinationRoot, link);
+                File source = termuxPackage
+                        ? mapPackagePath(destinationRoot, link)
+                        : mapArchivePath(destinationRoot, link);
                 if (source == null || !source.isFile()) throw new IOException("Link de arquivo inválido no runtime Java 25.");
+                ensureInsideRoot(destinationRoot, source);
                 ensureDirectory(target.getParentFile());
                 deleteEntry(target);
                 copyFile(source, target);
             } else if (type == 0 || type == '0' || type == '7') {
                 ensureDirectory(target.getParentFile());
+                ensureInsideRoot(destinationRoot, target);
                 deleteEntry(target);
                 long written = 0;
                 try (BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(target), BUFFER_SIZE)) {
@@ -715,6 +738,41 @@ final class JdkRuntimeInstaller {
             throw new IOException("Caminho inseguro no pacote Java 25.");
         }
         return target.toFile();
+    }
+
+    private static File mapArchivePath(File root, String rawName) throws IOException {
+        if (rawName == null || rawName.isEmpty()) return null;
+        String name = rawName.replace('\\', '/');
+        while (name.startsWith("./")) name = name.substring(2);
+        if (name.isEmpty() || ".".equals(name)) return root.getCanonicalFile();
+        if (name.startsWith("/")) throw new IOException("Caminho absoluto recusado no runtime Pojav.");
+        Path relative = java.nio.file.Paths.get(name).normalize();
+        if (relative.isAbsolute() || (relative.getNameCount() > 0
+                && "..".equals(relative.getName(0).toString()))) {
+            throw new IOException("Caminho fora do runtime Pojav: " + name);
+        }
+        File target = root.toPath().resolve(relative).normalize().toFile();
+        ensureInsideRoot(root, target);
+        return target;
+    }
+
+    private static void ensureInsideRoot(File root, File target) throws IOException {
+        Path rootPath = root.getCanonicalFile().toPath();
+        Path targetPath = target.getCanonicalFile().toPath();
+        if (!targetPath.startsWith(rootPath)) {
+            throw new IOException("Entrada TAR tentou sair do diretório privado do runtime: "
+                    + target.getAbsolutePath());
+        }
+    }
+
+    private static String rewriteRelativeSymlink(File root, File linkPath, String original)
+            throws IOException {
+        if (original == null || original.isEmpty() || original.startsWith("/")) {
+            throw new IOException("Link simbólico absoluto/vazio recusado no runtime Pojav.");
+        }
+        File resolved = linkPath.getParentFile().toPath().resolve(original).normalize().toFile();
+        ensureInsideRoot(root, resolved);
+        return original;
     }
 
     private static String rewriteSymlink(File root, File linkPath, String original) throws IOException {

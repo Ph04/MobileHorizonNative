@@ -8,6 +8,9 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import android.widget.TextView;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
@@ -15,6 +18,12 @@ import android.graphics.drawable.GradientDrawable;
 /** Application preferences and the changelog for the current launcher build. */
 public final class SettingsActivity extends Activity {
     private TextView autoStatus;
+    private TextView pojavRuntimeStatus;
+    private CheckBox usePojavRuntime;
+    private Button installPojavRuntimeButton;
+    private final ExecutorService runtimeInstaller = Executors.newSingleThreadExecutor();
+    private final AtomicBoolean cancelRuntimeInstall = new AtomicBoolean(false);
+    private volatile boolean runtimeInstallRunning;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -61,6 +70,42 @@ getWindow().setStatusBarColor(0xff090911);
         updateAutoStatus(autoUpdates.isChecked());
         page.addView(preferences, top(-1, -2, 12));
 
+        LinearLayout javaRuntime = card();
+        javaRuntime.addView(text("Java Bridge experimental", 16, 0xfff0ecff, true), lp(-1, -2));
+        javaRuntime.addView(text(
+                "Teste opcional do OpenJDK 25 Android distribuído pelo ecossistema Pojav/Mojo. "
+                        + "Ele fica em uma pasta separada e não substitui nem remove o OpenJDK Termux atual.",
+                12, 0xffb9b3d1, false), top(-1, -2, 6));
+        pojavRuntimeStatus = text("", 11, 0xffaaa2c6, false);
+        javaRuntime.addView(pojavRuntimeStatus, top(-1, -2, 8));
+        PojavRuntimeInstaller.RuntimePaths installedPojav =
+                PojavRuntimeInstaller.getInstalledIfReady(this);
+        usePojavRuntime = new CheckBox(this);
+        usePojavRuntime.setText(UiLanguage.translate(this, "Usar JRE Pojav/Mojo na próxima sessão Fabric"));
+        usePojavRuntime.setTextColor(0xffeee9ff);
+        usePojavRuntime.setTextSize(13);
+        usePojavRuntime.setButtonTintList(android.content.res.ColorStateList.valueOf(0xff9e88ff));
+        boolean selectedPojav = getSharedPreferences(PojavRuntimeInstaller.PREFS_NAME, MODE_PRIVATE)
+                .getBoolean(PojavRuntimeInstaller.PREF_USE_POJAV, false);
+        usePojavRuntime.setEnabled(installedPojav != null);
+        usePojavRuntime.setChecked(installedPojav != null && selectedPojav);
+        usePojavRuntime.setOnCheckedChangeListener((view, enabled) -> {
+            getSharedPreferences(PojavRuntimeInstaller.PREFS_NAME, MODE_PRIVATE).edit()
+                    .putBoolean(PojavRuntimeInstaller.PREF_USE_POJAV, enabled).apply();
+            updatePojavRuntimeStatus();
+        });
+        javaRuntime.addView(usePojavRuntime, top(-1, 52, 5));
+        installPojavRuntimeButton = button("Instalar e validar JRE 25 Pojav/Mojo",
+                false, v -> installPojavRuntime());
+        javaRuntime.addView(installPojavRuntimeButton, top(-1, 48, 5));
+        Button useTermuxRuntime = button("Voltar ao OpenJDK Termux atual",
+                false, v -> {
+                    if (usePojavRuntime != null) usePojavRuntime.setChecked(false);
+                });
+        javaRuntime.addView(useTermuxRuntime, top(-1, 48, 5));
+        updatePojavRuntimeStatus();
+        page.addView(javaRuntime, top(-1, -2, 12));
+
         LinearLayout notes = card();
         notes.addView(text("Novidades desta compilação", 16, 0xfff0ecff, true), lp(-1, -2));
         addNote(notes, "Runtime Horizon Nightly",
@@ -85,6 +130,72 @@ getWindow().setStatusBarColor(0xff090911);
         page.addView(limitations, top(-1, -2, 12));
 
         page.addView(text("Versão instalada: " + appVersion(), 10, 0xff817a9e, false), top(-1, -2, 8));
+    }
+
+    private void installPojavRuntime() {
+        if (runtimeInstallRunning) return;
+        runtimeInstallRunning = true;
+        cancelRuntimeInstall.set(false);
+        if (installPojavRuntimeButton != null) installPojavRuntimeButton.setEnabled(false);
+        if (usePojavRuntime != null) usePojavRuntime.setEnabled(false);
+        updatePojavStatusText("Consultando o manifesto assinado do runtime ARM64…");
+        runtimeInstaller.execute(() -> {
+            try {
+                PojavRuntimeInstaller.RuntimePaths runtime =
+                        PojavRuntimeInstaller.ensureInstalled(getApplicationContext(), cancelRuntimeInstall,
+                                (stage, detail, completed, total) -> runOnUiThread(() ->
+                                        updatePojavStatusText(stage + ": " + detail)));
+                getSharedPreferences(PojavRuntimeInstaller.PREFS_NAME, MODE_PRIVATE).edit()
+                        .putBoolean(PojavRuntimeInstaller.PREF_USE_POJAV, true).apply();
+                runOnUiThread(() -> {
+                    runtimeInstallRunning = false;
+                    if (usePojavRuntime != null) {
+                        usePojavRuntime.setEnabled(true);
+                        usePojavRuntime.setChecked(true);
+                    }
+                    if (installPojavRuntimeButton != null) installPojavRuntimeButton.setEnabled(true);
+                    updatePojavStatusText("JRE Pojav/Mojo validado: Java " + runtime.version
+                            + " · ARM64. Será usado na próxima sessão Fabric.");
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    runtimeInstallRunning = false;
+                    if (installPojavRuntimeButton != null) installPojavRuntimeButton.setEnabled(true);
+                    PojavRuntimeInstaller.RuntimePaths installed =
+                            PojavRuntimeInstaller.getInstalledIfReady(this);
+                    if (usePojavRuntime != null) usePojavRuntime.setEnabled(installed != null);
+                    updatePojavStatusText("Não foi possível instalar o runtime: "
+                            + (error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage()));
+                });
+            }
+        });
+    }
+
+    private void updatePojavRuntimeStatus() {
+        PojavRuntimeInstaller.RuntimePaths runtime = PojavRuntimeInstaller.getInstalledIfReady(this);
+        boolean selected = getSharedPreferences(PojavRuntimeInstaller.PREFS_NAME, MODE_PRIVATE)
+                .getBoolean(PojavRuntimeInstaller.PREF_USE_POJAV, false);
+        if (usePojavRuntime != null) {
+            usePojavRuntime.setEnabled(runtime != null && !runtimeInstallRunning);
+            if (runtime == null && usePojavRuntime.isChecked()) usePojavRuntime.setChecked(false);
+        }
+        if (runtime == null) {
+            updatePojavStatusText("Não instalado. O OpenJDK Termux continua ativo.");
+        } else {
+            updatePojavStatusText("Instalado: Java " + runtime.version + " · ARM64 · "
+                    + (selected ? "selecionado" : "não selecionado"));
+        }
+    }
+
+    private void updatePojavStatusText(String value) {
+        if (pojavRuntimeStatus != null) pojavRuntimeStatus.setText(UiLanguage.translate(this, value));
+    }
+
+    @Override
+    protected void onDestroy() {
+        cancelRuntimeInstall.set(true);
+        runtimeInstaller.shutdownNow();
+        super.onDestroy();
     }
 
     private void updateAutoStatus(boolean enabled) {
