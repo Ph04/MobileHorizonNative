@@ -244,7 +244,7 @@ fabric_body_marker = """    let add_mods = if own_fabric_api {
     Ok(horizon_jvm::Fabric {
         game_jar: horizon_jvm::facade::game_jar(root)?,
         libraries: horizon_jvm::facade::game_libraries(root)?,"""
-fabric_body_new = """    let add_mods = if own_fabric_api {
+fabric_body_new = """    let mut add_mods = if own_fabric_api {
         bridge_log("WARN", "Um Fabric API fornecido pelo usuário foi detectado em mods-java; usando essa cópia.");
         Vec::new()
     } else {
