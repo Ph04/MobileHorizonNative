@@ -327,13 +327,52 @@ vm_options_anchor = """    let options = [
         "-Dhorizon.bridge=1".into(),
         format!("-Djava.class.path={}", joined.to_string_lossy()),
     ];"""
-vm_options_replacement = """    let mut options = vec![
+vm_options_replacement = """    // Android's guard sets conservative values from physical RAM. Keep safe
+    // defaults when the bridge is launched outside the normal Android activity.
+    let heap_initial = std::env::var("HORIZON_JAVA_HEAP_INITIAL_MIB")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| (64..=2048).contains(value))
+        .unwrap_or(128);
+    let heap_max = std::env::var("HORIZON_JAVA_HEAP_MAX_MIB")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| (512..=4096).contains(value))
+        .filter(|value| *value > heap_initial)
+        .unwrap_or(896);
+    let processors = std::env::var("HORIZON_JAVA_PROCESSORS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| (1..=8).contains(value))
+        .unwrap_or(2);
+    let gc_threads = std::env::var("HORIZON_JAVA_GC_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| (1..=4).contains(value))
+        .unwrap_or(1)
+        .min(processors);
+    let mut options = vec![
         // Leave SIGINT, SIGTERM and SIGHUP to the game: Ctrl+C and shutdown stay Horizon's.
         "-Xrs".to_string(),
+        format!("-Xms{heap_initial}m"),
+        format!("-Xmx{heap_max}m"),
+        "-XX:+UseG1GC".into(),
+        format!("-XX:ActiveProcessorCount={processors}"),
+        format!("-XX:ParallelGCThreads={gc_threads}"),
+        "-XX:ConcGCThreads=1".into(),
+        "-XX:MaxGCPauseMillis=180".into(),
+        format!(
+            "-Djava.util.concurrent.ForkJoinPool.common.parallelism={}",
+            processors.saturating_sub(1).max(1)
+        ),
         "-Dfile.encoding=UTF-8".into(),
         "-Dhorizon.bridge=1".into(),
         format!("-Djava.class.path={}", joined.to_string_lossy()),
     ];
+    log::info!(
+        "Java Bridge JVM limits: heap={}..{} MiB, processors={}, GC threads={}",
+        heap_initial, heap_max, processors, gc_threads
+    );
     if let Some(raw_directory) = std::env::var_os("HORIZON_LWJGL_LIBRARY_PATH") {
         let directory = PathBuf::from(raw_directory);
         let library = directory.join("liblwjgl.so");
@@ -461,16 +500,18 @@ worldgen_mixins_json.write_text(__import__("json").dumps(mixins, indent=2) + "\n
 print("Applied per-state synchronization for Minecraft structure-position initialization.")
 
 
-# Adaptive Android memory protection.
-# NativeGameActivity publishes a tiny 0..=3 pressure level; Horizon applies it
-# before scheduling chunk workers, and again while streaming terrain.
+# Adaptive Android memory protection, focused on the Java Bridge rather than vanilla chunks.
+# NativeGameActivity publishes a 0..=3 pressure level. The JVM receives bounded heap/CPU
+# options at creation; Fabric's server-tick bridge applies gentle backpressure at high pressure.
 threads_source_path = root / "crates/horizon-threads/src/lib.rs"
 game_source_path = root / "crates/horizon-client/src/game.rs"
-streaming_source_path = root / "crates/horizon-client/src/streaming.rs"
-for required_memory_source in (threads_source_path, game_source_path, streaming_source_path):
+events_source_path = root / "crates/horizon-jvm/src/events.rs"
+jvm_cargo_path = root / "crates/horizon-jvm/Cargo.toml"
+for required_memory_source in (threads_source_path, game_source_path, events_source_path, jvm_cargo_path):
     if not required_memory_source.is_file():
-        raise SystemExit(f"Missing Horizon memory-guard source: {required_memory_source}")
+        raise SystemExit(f"Missing Java Bridge memory-guard source: {required_memory_source}")
 
+# Make the JVM memory-pressure signal available to the bridge without Android dependencies.
 threads_source = threads_source_path.read_text(encoding="utf-8")
 threads_import = "use std::sync::atomic::{AtomicBool, Ordering};"
 if threads_source.count(threads_import) != 1:
@@ -516,6 +557,7 @@ if "static MOBILE_MEMORY_PRESSURE: AtomicU8" in threads_source:
 threads_source = threads_source.rstrip() + "\n" + watcher_code
 threads_source_path.write_text(threads_source, encoding="utf-8")
 
+# Start the file watcher early, before any Java-mod startup or Fabric callbacks.
 game_source = game_source_path.read_text(encoding="utf-8")
 run_anchor = "pub fn run() -> Result<()> {\n    let Some(mut options) = Options::read()? else {"
 run_replacement = """pub fn run() -> Result<()> {
@@ -526,134 +568,154 @@ run_replacement = """pub fn run() -> Result<()> {
 if game_source.count(run_anchor) != 1:
     raise SystemExit(f"{game_source_path}: run() memory watcher anchor changed")
 game_source = game_source.replace(run_anchor, run_replacement, 1)
-
-worker_anchor = "    let threads = settings.horizon.worker_threads();"
-worker_replacement = """    let configured_threads = settings.horizon.worker_threads().max(1);
-    let mobile_thread_cap = std::env::var("HORIZON_WORKER_THREADS_CAP")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|value| (1..=64).contains(value))
-        .unwrap_or(usize::MAX);
-    let threads = configured_threads.min(mobile_thread_cap).max(1);
-    if threads < configured_threads {
-        log::info!(
-            "Horizon: Android memory guard limited chunk workers from {} to {}",
-            configured_threads,
-            threads
-        );
-    }"""
-if game_source.count(worker_anchor) != 1:
-    raise SystemExit(f"{game_source_path}: worker thread cap anchor changed")
-game_source = game_source.replace(worker_anchor, worker_replacement, 1)
 game_source_path.write_text(game_source, encoding="utf-8")
 
-stream_source = streaming_source_path.read_text(encoding="utf-8")
-stream_field_anchor = """    pub center: (i32, i32),
-    pub radius: i32,
-    /// `/forceload`ed chunks: kept loaded whatever the distance."""
-stream_field_new = """    pub center: (i32, i32),
-    pub radius: i32,
-    /// Hardware ceiling from the Android launcher; memory pressure can lower it further.
-    mobile_radius_cap: i32,
-    /// `/forceload`ed chunks: kept loaded whatever the distance."""
-if stream_source.count(stream_field_anchor) != 1:
-    raise SystemExit(f"{streaming_source_path}: streaming radius field anchor changed")
-stream_source = stream_source.replace(stream_field_anchor, stream_field_new, 1)
+# Let horizon-jvm read the same lightweight pressure level as the native engine.
+jvm_cargo = jvm_cargo_path.read_text(encoding="utf-8")
+dependency_anchor = 'horizon-port-pack = { path = "../horizon-port-pack" }'
+dependency_new = dependency_anchor + '\nhorizon-threads = { path = "../horizon-threads" }'
+if jvm_cargo.count(dependency_anchor) != 1:
+    raise SystemExit(f"{jvm_cargo_path}: dependency anchor changed")
+if 'horizon-threads = { path = "../horizon-threads" }' not in jvm_cargo:
+    jvm_cargo = jvm_cargo.replace(dependency_anchor, dependency_new, 1)
+    jvm_cargo_path.write_text(jvm_cargo, encoding="utf-8")
 
-shared_anchor = """struct Shared {
-    queue: Mutex<BinaryHeap<Queued>>,
-    ready: Condvar,
-    stop: AtomicBool,"""
-shared_new = """struct Shared {
-    queue: Mutex<BinaryHeap<Queued>>,
-    ready: Condvar,
-    /// At high pressure, only one chunk allocation/mesh job runs at once.
-    memory_serial: Mutex<()>,
-    stop: AtomicBool,"""
-if stream_source.count(shared_anchor) != 1:
-    raise SystemExit(f"{streaming_source_path}: shared memory semaphore anchor changed")
-stream_source = stream_source.replace(shared_anchor, shared_new, 1)
+# Keep the actual tick payload batched (existing parallel JNI arrays), but slow only
+# Fabric event dispatch when memory pressure is high. Vanilla rendering/input/chunk radius
+# are deliberately untouched.
+events_source = events_source_path.read_text(encoding="utf-8")
+events_import = "use std::sync::{Mutex, OnceLock};"
+events_import_new = """use std::{
+    fs::OpenOptions,
+    io::Write,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex, OnceLock,
+    },
+    time::{SystemTime, UNIX_EPOCH},
+};"""
+if events_source.count(events_import) != 1:
+    raise SystemExit(f"{events_source_path}: import anchor changed")
+events_source = events_source.replace(events_import, events_import_new, 1)
 
-constructor_anchor = """    ) -> Self {
-        let shared = Arc::new(Shared {
-            queue: Mutex::new(BinaryHeap::new()),
-            ready: Condvar::new(),
-            stop: AtomicBool::new(false),"""
-constructor_new = """    ) -> Self {
-        let mobile_radius_cap = std::env::var("HORIZON_RENDER_DISTANCE_CAP")
-            .ok()
-            .and_then(|value| value.parse::<i32>().ok())
-            .filter(|value| (2..=32).contains(value))
-            .unwrap_or(32);
-        let shared = Arc::new(Shared {
-            queue: Mutex::new(BinaryHeap::new()),
-            ready: Condvar::new(),
-            memory_serial: Mutex::new(()),
-            stop: AtomicBool::new(false),"""
-if stream_source.count(constructor_anchor) != 1:
-    raise SystemExit(f"{streaming_source_path}: streaming constructor anchor changed")
-stream_source = stream_source.replace(constructor_anchor, constructor_new, 1)
+diagnostics_code = r"""
 
-radius_init_anchor = """            center: (0, 0),
-            radius: 8,
-            forced: HashSet::new(),"""
-radius_init_new = """            center: (0, 0),
-            radius: 8,
-            mobile_radius_cap,
-            forced: HashSet::new(),"""
-if stream_source.count(radius_init_anchor) != 1:
-    raise SystemExit(f"{streaming_source_path}: streaming radius initializer anchor changed")
-stream_source = stream_source.replace(radius_init_anchor, radius_init_new, 1)
+static LAST_JVM_MEMORY_LOG_MS: AtomicU64 = AtomicU64::new(0);
 
-impl_start = stream_source.find("impl Streaming {")
-drop_start = stream_source.find("impl Drop for Streaming {", impl_start + 1)
-if impl_start < 0 or drop_start < 0:
-    raise SystemExit(f"{streaming_source_path}: unable to isolate Streaming implementation")
-stream_impl = stream_source[impl_start:drop_start]
-radius_reads = stream_impl.count("self.radius")
-if radius_reads < 8:
-    raise SystemExit(f"{streaming_source_path}: unexpected number of radius reads ({radius_reads})")
-stream_impl = stream_impl.replace("self.radius", "self.effective_radius()")
-effective_radius = """impl Streaming {
-    fn effective_radius(&self) -> i32 {
-        let pressure_cap = match horizon_threads::memory_pressure_level() {
-            0 => 32,
-            1 => 8,
-            2 => 6,
-            _ => 4,
-        };
-        self.radius.min(self.mobile_radius_cap).min(pressure_cap).max(2)
+fn persist_jvm_memory_diagnostic(message: &str) {
+    log::info!("{message}");
+    let Some(path) = std::env::var_os("HORIZON_JAVA_BRIDGE_LOG_FILE") else {
+        return;
+    };
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    if let Ok(mut output) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(output, "[{timestamp}][JVM-Memory] {message}");
     }
+}
+
+/// Samples the embedded HotSpot heap from its own JNI environment, not Android's ART heap.
+fn log_jvm_memory_if_due(
+    env: &mut JNIEnv,
+    tick: i64,
+    event_count: usize,
+    pressure: u8,
+) {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default();
+    let previous = LAST_JVM_MEMORY_LOG_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(previous) < 30_000
+        || LAST_JVM_MEMORY_LOG_MS
+            .compare_exchange(previous, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+    {
+        return;
+    }
+
+    let stats = (|| -> jni::errors::Result<(i64, i64, i64, i32)> {
+        let runtime = env
+            .call_static_method(
+                "java/lang/Runtime",
+                "getRuntime",
+                "()Ljava/lang/Runtime;",
+                &[],
+            )?
+            .l()?;
+        let total = env.call_method(&runtime, "totalMemory", "()J", &[])?.j()?;
+        let free = env.call_method(&runtime, "freeMemory", "()J", &[])?.j()?;
+        let max = env.call_method(&runtime, "maxMemory", "()J", &[])?.j()?;
+        let threads = env
+            .call_static_method("java/lang/Thread", "activeCount", "()I", &[])?
+            .i()?;
+        Ok((total, free, max, threads))
+    })();
+
+    match stats {
+        Ok((total, free, max, threads)) => {
+            let used = total.saturating_sub(free).max(0);
+            persist_jvm_memory_diagnostic(&format!(
+                "tick={tick}, pressure={pressure}, heapUsedMiB={}, heapCommittedMiB={}, heapMaxMiB={}, activeJavaThreads={}, fabricEvents={event_count}",
+                used / (1024 * 1024),
+                total / (1024 * 1024),
+                max / (1024 * 1024),
+                threads
+            ));
+        }
+        Err(error) => {
+            let _ = env.exception_clear();
+            persist_jvm_memory_diagnostic(&format!(
+                "JVM heap sampling failed: {error}"
+            ));
+        }
+    }
+}
 """
-if stream_impl.count("impl Streaming {") != 1:
-    raise SystemExit(f"{streaming_source_path}: Streaming implementation header changed")
-stream_impl = stream_impl.replace("impl Streaming {\n", effective_radius, 1)
-stream_source = stream_source[:impl_start] + stream_impl + stream_source[drop_start:]
+if "static LAST_JVM_MEMORY_LOG_MS" in events_source:
+    raise SystemExit(f"{events_source_path}: duplicate JVM memory diagnostics")
+events_source = events_source.replace(
+    "/// A player on the server, as the game sees it this tick.",
+    diagnostics_code + "\n/// A player on the server, as the game sees it this tick.",
+    1
+)
 
-job_anchor = "                            let done = match job {"
-job_replacement = """                            let pressure = horizon_threads::memory_pressure_level();
-                            let _memory_serial = if pressure >= 2 {
-                                Some(
-                                    shared
-                                        .memory_serial
-                                        .lock()
-                                        .unwrap_or_else(|error| error.into_inner()),
-                                )
-                            } else {
-                                None
-                            };
-                            match pressure {
-                                1 => thread::sleep(std::time::Duration::from_millis(15)),
-                                2 => thread::sleep(std::time::Duration::from_millis(40)),
-                                3.. => thread::sleep(std::time::Duration::from_millis(90)),
-                                _ => {}
-                            }
-                            let done = match job {"""
-if stream_source.count(job_anchor) != 1:
-    raise SystemExit(f"{streaming_source_path}: worker backpressure insertion anchor changed")
-stream_source = stream_source.replace(job_anchor, job_replacement, 1)
-streaming_source_path.write_text(stream_source, encoding="utf-8")
+server_tick_anchor = """    let Some(class) = server_class() else {
+        return Ok(());
+    };
+    let bridge = crate::get().ok_or("the JVM is not running")?;"""
+server_tick_new = """    let Some(class) = server_class() else {
+        return Ok(());
+    };
+    // Backpressure only the Java/Fabric server-event path. It does not sleep the
+    // render/input thread and never drops or reorders gameplay events.
+    let pressure = horizon_threads::memory_pressure_level();
+    let delay_ms = match pressure {
+        0 | 1 => 0,
+        2 => 4,
+        _ => 16,
+    };
+    if delay_ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+    }
+    let bridge = crate::get().ok_or("the JVM is not running")?;"""
+if events_source.count(server_tick_anchor) != 1:
+    raise SystemExit(f"{events_source_path}: server_tick backpressure anchor changed")
+events_source = events_source.replace(server_tick_anchor, server_tick_new, 1)
 
-print("Applied adaptive Android memory pressure monitoring, bounded workers, serialized heavy jobs and chunk-radius backpressure.")
+local_frame_anchor = """    let result = env.with_local_frame(64, |env| -> jni::errors::Result<()> {
+        call_tick(env, class, tick, dedicated, world, players, events)
+    });"""
+local_frame_new = """    let result = env.with_local_frame(64, |env| -> jni::errors::Result<()> {
+        log_jvm_memory_if_due(env, tick, events.len(), pressure);
+        call_tick(env, class, tick, dedicated, world, players, events)
+    });"""
+if events_source.count(local_frame_anchor) != 1:
+    raise SystemExit(f"{events_source_path}: server_tick local-frame anchor changed")
+events_source = events_source.replace(local_frame_anchor, local_frame_new, 1)
+events_source_path.write_text(events_source, encoding="utf-8")
 
-print("Applied fail-closed Java Bridge initialization, persistent startup logs, platform-JAR validation and adaptive memory protection.")
+print("Applied Android JVM heap/CPU limits, Java Bridge tick backpressure and embedded-JVM memory diagnostics; vanilla chunk distance/workers unchanged.")
+print("Applied fail-closed Java Bridge initialization, persistent startup logs, platform-JAR validation and adaptive Java Bridge memory protection.")

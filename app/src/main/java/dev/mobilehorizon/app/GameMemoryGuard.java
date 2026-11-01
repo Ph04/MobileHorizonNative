@@ -14,10 +14,11 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Adaptive memory-pressure guard for the separate NativeActivity game process.
+ * Adaptive memory-pressure guard for the NativeActivity process.
  *
- * It never calls System.gc() or kills game tasks. It exports a small atomic
- * pressure signal that Horizon consumes to reduce chunk concurrency and radius.
+ * It never calls System.gc() or kills game tasks. It exports memory pressure
+ * for Java Bridge backpressure and sizes the embedded JVM conservatively.
+ * Vanilla render distance and chunk loading are not modified.
  */
 final class GameMemoryGuard {
     private static final String TAG = "MobileHorizon-Memory";
@@ -55,16 +56,23 @@ final class GameMemoryGuard {
         }
 
         long totalRam = readTotalRam();
-        int workerCap = recommendedWorkerCap(totalRam);
-        int renderCap = recommendedRenderDistanceCap(totalRam);
+        int heapInitialMiB = recommendedJavaHeapInitialMiB(totalRam);
+        int heapMaxMiB = recommendedJavaHeapMaxMiB(totalRam);
+        int javaProcessors = recommendedJavaProcessorCount(totalRam);
+        int gcThreads = recommendedJavaGcThreadCount(totalRam);
         setEnvironment("HORIZON_MEMORY_PRESSURE_FILE", pressureFile.getAbsolutePath());
-        setEnvironment("HORIZON_WORKER_THREADS_CAP", Integer.toString(workerCap));
-        setEnvironment("HORIZON_RENDER_DISTANCE_CAP", Integer.toString(renderCap));
+        setEnvironment("HORIZON_JAVA_HEAP_INITIAL_MIB", Integer.toString(heapInitialMiB));
+        setEnvironment("HORIZON_JAVA_HEAP_MAX_MIB", Integer.toString(heapMaxMiB));
+        setEnvironment("HORIZON_JAVA_PROCESSORS", Integer.toString(javaProcessors));
+        setEnvironment("HORIZON_JAVA_GC_THREADS", Integer.toString(gcThreads));
 
         currentLevel = 0;
         writePressureFile(0);
         appendLog("started; totalRamMiB=" + toMiB(totalRam)
-                + ", workerCap=" + workerCap + ", initialRenderDistanceCap=" + renderCap);
+                + ", javaHeapInitialMiB=" + heapInitialMiB
+                + ", javaHeapMaxMiB=" + heapMaxMiB
+                + ", javaProcessors=" + javaProcessors
+                + ", javaGcThreads=" + gcThreads);
 
         sampleSafely();
         executor = Executors.newSingleThreadScheduledExecutor(task -> {
@@ -199,18 +207,28 @@ final class GameMemoryGuard {
         return level;
     }
 
-    static int recommendedWorkerCap(long totalRamBytes) {
-        if (totalRamBytes <= 5L * GIB) return 2;
-        if (totalRamBytes <= 7L * GIB) return 3;
-        if (totalRamBytes <= 10L * GIB) return 4;
-        return 6;
+    static int recommendedJavaHeapInitialMiB(long totalRamBytes) {
+        if (totalRamBytes <= 5L * GIB) return 128;
+        if (totalRamBytes <= 7L * GIB) return 192;
+        if (totalRamBytes <= 10L * GIB) return 256;
+        return 384;
     }
 
-    static int recommendedRenderDistanceCap(long totalRamBytes) {
-        if (totalRamBytes <= 5L * GIB) return 6;
-        if (totalRamBytes <= 7L * GIB) return 8;
-        if (totalRamBytes <= 10L * GIB) return 10;
-        return 12;
+    static int recommendedJavaHeapMaxMiB(long totalRamBytes) {
+        if (totalRamBytes <= 5L * GIB) return 896;
+        if (totalRamBytes <= 7L * GIB) return 1280;
+        if (totalRamBytes <= 10L * GIB) return 1536;
+        return 2048;
+    }
+
+    static int recommendedJavaProcessorCount(long totalRamBytes) {
+        if (totalRamBytes <= 5L * GIB) return 2;
+        if (totalRamBytes <= 7L * GIB) return 3;
+        return 4;
+    }
+
+    static int recommendedJavaGcThreadCount(long totalRamBytes) {
+        return totalRamBytes <= 7L * GIB ? 1 : 2;
     }
 
     private long readTotalRam() {
