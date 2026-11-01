@@ -317,6 +317,44 @@ pub fn platform_embedded() -> bool {
 if jvm_source.count(platform_anchor) != 1:
     raise SystemExit(f"{jvm_source_path}: embedded platform JAR anchor changed")
 jvm_source = jvm_source.replace(platform_anchor, platform_export, 1)
+
+# JNI_CreateJavaVM receives LWJGL's library path as a real VM option. This avoids
+# relying on JAVA_TOOL_OPTIONS when the JVM is embedded inside the native engine.
+vm_options_anchor = """    let options = [
+        // Leave SIGINT, SIGTERM and SIGHUP to the game: Ctrl+C and shutdown stay Horizon's.
+        "-Xrs".to_string(),
+        "-Dfile.encoding=UTF-8".into(),
+        "-Dhorizon.bridge=1".into(),
+        format!("-Djava.class.path={}", joined.to_string_lossy()),
+    ];"""
+vm_options_replacement = """    let mut options = vec![
+        // Leave SIGINT, SIGTERM and SIGHUP to the game: Ctrl+C and shutdown stay Horizon's.
+        "-Xrs".to_string(),
+        "-Dfile.encoding=UTF-8".into(),
+        "-Dhorizon.bridge=1".into(),
+        format!("-Djava.class.path={}", joined.to_string_lossy()),
+    ];
+    if let Some(raw_directory) = std::env::var_os("HORIZON_LWJGL_LIBRARY_PATH") {
+        let directory = PathBuf::from(raw_directory);
+        let library = directory.join("liblwjgl.so");
+        if !directory.is_absolute() || !library.is_file() {
+            return Err(format!(
+                "LWJGL native library directory is invalid or has no liblwjgl.so: {}",
+                directory.display()
+            ));
+        }
+        options.push(format!(
+            "-Dorg.lwjgl.librarypath={}",
+            directory.to_string_lossy()
+        ));
+        log::info!(
+            "Java Bridge: passing -Dorg.lwjgl.librarypath={} directly to JNI_CreateJavaVM",
+            directory.display()
+        );
+    }"""
+if jvm_source.count(vm_options_anchor) != 1:
+    raise SystemExit(f"{jvm_source_path}: JNI VM options anchor changed")
+jvm_source = jvm_source.replace(vm_options_anchor, vm_options_replacement, 1)
 jvm_source_path.write_text(jvm_source, encoding="utf-8")
 
 # Make the actual FabricBoot lifecycle visible in the same persistent log file.
@@ -378,7 +416,48 @@ if fabric_test_source.count(test_anchor) != 1:
 fabric_test_source = fabric_test_source.replace(test_anchor, test_replacement, 1)
 fabric_test_path.write_text(fabric_test_source, encoding="utf-8")
 
-print("Applied fail-closed Java Bridge initialization, persistent startup logs, and platform-JAR validation.")
+# Protect Minecraft 26.3's one-time structure-position maps from simultaneous worldgen workers.
+platform_dir = root / "crates/horizon-jvm/java/platform"
+worldgen_mixin_path = platform_dir / "dev/horizonlab/platform/mixin/ChunkGeneratorStructureStateMixin.java"
+worldgen_mixins_json = platform_dir / "horizon-platform.mixins.json"
+worldgen_mixin_source = """package dev.horizonlab.platform.mixin;
 
+import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.gen.Invoker;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+/** Serializes the FastUtil placement/ring maps and their completion flag per world state. */
+@Mixin(ChunkGeneratorStructureState.class)
+public abstract class ChunkGeneratorStructureStateMixin {
+    @Shadow
+    private boolean hasGeneratedPositions;
+
+    @Invoker("generatePositions")
+    protected abstract void horizon$generatePositions();
+
+    @Inject(method = "ensureStructuresGenerated", at = @At("HEAD"), cancellable = true)
+    private void horizon$synchronizeStructurePositions(CallbackInfo ci) {
+        synchronized (this) {
+            if (!hasGeneratedPositions) {
+                horizon$generatePositions();
+                hasGeneratedPositions = true;
+            }
+        }
+        ci.cancel();
+    }
+}
+"""
+worldgen_mixin_path.parent.mkdir(parents=True, exist_ok=True)
+worldgen_mixin_path.write_text(worldgen_mixin_source, encoding="utf-8")
+mixins = __import__("json").loads(worldgen_mixins_json.read_text(encoding="utf-8"))
+mixin_name = "ChunkGeneratorStructureStateMixin"
+if mixin_name not in mixins.get("mixins", []):
+    mixins.setdefault("mixins", []).append(mixin_name)
+worldgen_mixins_json.write_text(__import__("json").dumps(mixins, indent=2) + "\n", encoding="utf-8")
+print("Applied per-state synchronization for Minecraft structure-position initialization.")
 
 print("Applied fail-closed Java Bridge initialization, persistent startup logs, and platform-JAR validation.")

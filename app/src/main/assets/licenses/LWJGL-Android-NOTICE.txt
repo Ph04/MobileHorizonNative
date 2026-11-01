@@ -1,0 +1,27 @@
+MobileHorizonNative - Android LWJGL native dependency
+======================================================
+
+The bundled liblwjgl.so is built at CI time for Android arm64-v8a, API 26.
+It contains LWJGL 3.4.1 core native code and statically linked libffi 3.5.0.
+No OpenGL/OpenGL ES rendering backend is used by this port; Horizon continues
+to render through its WGPU/Vulkan renderer.
+
+Build recipe:
+  https://github.com/MDTCopper/android-lwjgl3
+  pinned revision: 7bc318fff71b4fc81d174ad86d796c8eb724dc58
+
+LWJGL:
+  https://github.com/LWJGL/lwjgl3
+  version: 3.4.1
+  revision: b800ccffab14396fc529ddb6c931b7c5c5226763
+  license: BSD 3-Clause
+  https://www.lwjgl.org/license
+
+libffi:
+  https://github.com/libffi/libffi
+  version: 3.5.0
+  revision: d2c78d2ebbd9e65401095c6a2f281fe5132f028b
+  license: MIT
+  License text is in the upstream libffi source distribution.
+
+The Android NDK is a build toolchain and is not redistributed with the app.

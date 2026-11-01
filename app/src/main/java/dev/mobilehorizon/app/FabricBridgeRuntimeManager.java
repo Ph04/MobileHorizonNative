@@ -284,16 +284,6 @@ final class FabricBridgeRuntimeManager {
                 && isArm64Elf(file);
     }
 
-    /** Adds the JNI VM option consumed by LWJGL before its Library class initializes. */
-    static String appendLwjglLibraryPathOption(String currentOptions, File libraryDirectory) {
-        String path = libraryDirectory.getAbsolutePath()
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"");
-        String option = "\"-Dorg.lwjgl.librarypath=" + path + "\"";
-        String existing = currentOptions == null ? "" : currentOptions.trim();
-        return existing.isEmpty() ? option : existing + " " + option;
-    }
-
     private static PreparedRuntime activeRuntime(Context context) throws IOException {
         File root = root(context);
         File active = new File(root, "active.json");

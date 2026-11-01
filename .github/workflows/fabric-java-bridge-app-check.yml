@@ -24,7 +24,8 @@ on:
       - "compatibility-api/**"
       - "app/build.gradle"
       - "android-bootstrap/CMakeLists.txt"
-      - "tools/lwjgl_android/**"
+      - "android-bootstrap/prebuilt/**"
+      - "tools/build_lwjgl_android.sh"
       - "settings.gradle"
       - ".github/workflows/fabric-java-bridge-app-check.yml"
   pull_request:
@@ -40,6 +41,8 @@ on:
       - "app/src/main/AndroidManifest.xml"
       - "app/src/test/**"
       - "app/build.gradle"
+      - "android-bootstrap/**"
+      - "tools/build_lwjgl_android.sh"
       - "settings.gradle"
       - ".github/workflows/fabric-java-bridge-app-check.yml"
   workflow_dispatch:
@@ -75,45 +78,25 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build ARM64 LWJGL memory shim without assembling APK
+      - name: Build complete ARM64 LWJGL 3.4.1 core (no APK)
         shell: bash
         run: |
           set -euo pipefail
+          tools/build_lwjgl_android.sh "$RUNNER_TEMP/lwjgl-android"
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
-          BUILD_DIR="$RUNNER_TEMP/lwjgl-android-shim"
+          BUILD_DIR="$RUNNER_TEMP/lwjgl-android-cmake"
           cmake -S android-bootstrap -B "$BUILD_DIR" \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-26 \
             -DANDROID_STL=c++_static \
             -DCMAKE_BUILD_TYPE=Release
-          cmake --build "$BUILD_DIR" --target lwjgl --parallel 2
-          LIB="$BUILD_DIR/liblwjgl.so"
-          test -s "$LIB"
-          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h "$LIB" > "$RUNNER_TEMP/lwjgl-elf.txt"
-          grep -Fq "AArch64" "$RUNNER_TEMP/lwjgl-elf.txt"
-          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm" -D --defined-only "$LIB" > "$RUNNER_TEMP/lwjgl-symbols.txt"
-          for symbol in \
-            Java_org_lwjgl_system_MemoryUtil_ngetPageSize \
-            Java_org_lwjgl_system_MemoryUtil_ngetCacheLineSize \
-            Java_org_lwjgl_system_MemoryUtil_memGlobalRefToObject \
-            Java_org_lwjgl_system_MemoryAccessJNI_getPointerSize \
-            Java_org_lwjgl_system_MemoryAccessJNI_malloc \
-            Java_org_lwjgl_system_MemoryAccessJNI_calloc \
-            Java_org_lwjgl_system_MemoryAccessJNI_realloc \
-            Java_org_lwjgl_system_MemoryAccessJNI_free \
-            Java_org_lwjgl_system_libc_LibCStdlib_nmalloc \
-            Java_org_lwjgl_system_libc_LibCStdlib_ncalloc \
-            Java_org_lwjgl_system_libc_LibCStdlib_nrealloc \
-            Java_org_lwjgl_system_libc_LibCStdlib_nfree \
-            Java_org_lwjgl_system_libc_LibCString_nmemset__JIJ \
-            Java_org_lwjgl_system_libc_LibCString_nmemcpy__JJJ; do
-              grep -Fq "$symbol" "$RUNNER_TEMP/lwjgl-symbols.txt" || {
-                echo "::error::Missing LWJGL JNI symbol: $symbol"
-                exit 1
-              }
-          done
-          echo "ARM64 LWJGL core memory JNI shim compiled and exported all required bootstrap symbols. No APK was assembled." >> "$GITHUB_STEP_SUMMARY"
+          cmake --build "$BUILD_DIR" --target horizon_android --parallel 2
+          BOOTSTRAP="$BUILD_DIR/libhorizon_android.so"
+          test -s "$BOOTSTRAP"
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -d "$BOOTSTRAP" > "$RUNNER_TEMP/horizon-bootstrap-dependencies.txt"
+          grep -Fq "liblwjgl.so" "$RUNNER_TEMP/horizon-bootstrap-dependencies.txt"
+          echo "Complete LWJGL 3.4.1 core + static libffi and bootstrap linked. No APK built." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Compile Android Java sources and run unit tests (no APK tasks)
         shell: bash

@@ -312,13 +312,9 @@ public final class NativeGameActivity extends NativeActivity {
                 java.io.File lwjglLibraryDirectory =
                         FabricBridgeRuntimeManager.prepareLwjglLibraryDirectory(this);
                 String lwjglLibraryPath = lwjglLibraryDirectory.getCanonicalPath();
-                String previousToolOptions = javaEnvironment.get("JAVA_TOOL_OPTIONS");
-                javaEnvironment.put("JAVA_TOOL_OPTIONS",
-                        FabricBridgeRuntimeManager.appendLwjglLibraryPathOption(
-                                previousToolOptions, lwjglLibraryDirectory));
                 javaEnvironment.put("HORIZON_LWJGL_LIBRARY_PATH", lwjglLibraryPath);
-                bridgeLog("INFO", "LWJGL JNI validado: " + lwjglLibraryPath
-                        + "/liblwjgl.so; org.lwjgl.librarypath será passado à JVM Java 25.");
+                bridgeLog("INFO", "LWJGL nativo completo validado: " + lwjglLibraryPath
+                        + "/liblwjgl.so; o caminho será passado diretamente a JNI_CreateJavaVM.");
                 for (java.util.Map.Entry<String, String> entry : javaEnvironment.entrySet()) {
                     android.system.Os.setenv(entry.getKey(), entry.getValue(), true);
                 }

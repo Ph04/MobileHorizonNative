@@ -12,6 +12,7 @@ on:
       - "core/**"
       - "android-native/**"
       - "android-bootstrap/**"
+      - "tools/build_lwjgl_android.sh"
       - "tools/patch_horizon_android_touch.py"
       - "tools/patch_horizon_prepare_android_linker.py"
       - "tools/patch_horizon_prepare_asset_index.py"
@@ -410,6 +411,12 @@ jobs:
           print("Verified latest prebuilt Fabric Java Bridge runtime:", commit, digest)
           PYFABRIC
 
+      - name: Build complete Android ARM64 LWJGL core
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools/build_lwjgl_android.sh "$RUNNER_TEMP/lwjgl-android"
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -448,7 +455,7 @@ jobs:
           unzip -l "$APK" > "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'lib/arm64-v8a/libhorizon_android.so' "$RUNNER_TEMP/apk-file-list.txt"
           grep -Fq 'lib/arm64-v8a/liblwjgl.so' "$RUNNER_TEMP/apk-file-list.txt" || {
-            echo "::error::The standard APK is missing the Android LWJGL JNI memory shim."
+            echo "::error::The standard APK is missing the complete Android LWJGL 3.4.1 core library."
             exit 1
           }
           if grep -Fq 'assets/horizon-runtime/libhorizon_engine.so' "$RUNNER_TEMP/apk-file-list.txt" \
@@ -477,7 +484,7 @@ jobs:
             echo "::warning::The standard APK uses an isolated test signing identity and cannot replace the stable installation."
             echo "The standard APK is an isolated build because persistent signing secrets are unavailable." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "Verified the standard MobileHorizonNative 0.3.30 ARM64 APK, including liblwjgl.so and the Java Bridge org.lwjgl.librarypath startup configuration. The updater-test APK variant was intentionally not built." >> "$GITHUB_STEP_SUMMARY"
+          echo "Verified the standard MobileHorizonNative 0.3.30 ARM64 APK, including the full LWJGL 3.4.1 core JNI library and its direct JNI_CreateJavaVM library-path option. The updater-test APK variant was intentionally not built." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload update-safe standard APK
         if: success() && steps.signing.outputs.enabled == 'true'
