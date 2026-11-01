@@ -84,7 +84,7 @@ if not build_path.is_file():
     raise SystemExit(f"Android LWJGL build script not found: {build_path}")
 build_text = build_path.read_text(encoding="utf-8")
 old_miniz_sources = """    # miniz is compiled into liblwjgl.so (the upstream Ant build leaves it out).
-    echo "$CORE_SRC_ROOT/main/c/dependencies/miniz/miniz.c"""
+    echo "$CORE_SRC_ROOT/main/c/dependencies/miniz/miniz.c""""
 new_miniz_sources = """    # LWJGL 3.4.3 splits miniz into core, deflate, inflate and ZIP units.
     find "$CORE_SRC_ROOT/main/c/dependencies/miniz" -maxdepth 1 -name '*.c' -print"""
 build_text = replace_once(build_text, old_miniz_sources, new_miniz_sources, "miniz source list")
