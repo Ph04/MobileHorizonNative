@@ -373,6 +373,18 @@ vm_options_replacement = """    // Android's guard sets conservative values from
         "Java Bridge JVM limits: heap={}..{} MiB, processors={}, GC threads={}",
         heap_initial, heap_max, processors, gc_threads
     );
+    // Termux's OpenJDK embeds its build-time /data/data/com.termux home.
+    // Override it for mods that use System.getProperty("user.home") for caches.
+    if let Some(raw_home) = std::env::var_os("HOME") {
+        let user_home = PathBuf::from(raw_home);
+        if user_home.is_absolute() {
+            std::fs::create_dir_all(&user_home).map_err(|error| {
+                format!("cannot create writable Java user.home {}: {error}", user_home.display())
+            })?;
+            options.push(format!("-Duser.home={}", user_home.to_string_lossy()));
+            log::info!("Java Bridge: overriding user.home to {}", user_home.display());
+        }
+    }
     if let Some(raw_directory) = std::env::var_os("HORIZON_JAVA_DIAGNOSTICS_DIR") {
         let directory = PathBuf::from(raw_directory);
         std::fs::create_dir_all(&directory).map_err(|error| {
@@ -1163,6 +1175,58 @@ if own_vec_anchor in server_mods_source:
         1,
     )
 server_mods_path.write_text(server_mods_source, encoding="utf-8")
+
+# Minecraft 26.3 applies the stored graphics preset while Options loads options.txt.
+# That calls RenderSystem.getDevice(), so install Horizon's wgpu-backed device first.
+platform_client_path = root / "crates/horizon-jvm/java/platform/dev/horizonlab/platform/HorizonClient.java"
+if not platform_client_path.is_file():
+    raise SystemExit(f"Missing Horizon headless client source: {platform_client_path}")
+platform_client_source = platform_client_path.read_text(encoding="utf-8")
+options_start_anchor = """        Minecraft mc = minecraft;
+        // options.txt is brought up to date by the game's data fixer, as the server's saves are.
+        set(Minecraft.class, mc, "fixerUpper", net.minecraft.util.datafix.DataFixers.getDataFixer());
+        set(Minecraft.class, mc, "options", new net.minecraft.client.Options(mc, mc.gameDirectory));"""
+options_start_replacement = """        Minecraft mc = minecraft;
+        // Options.load applies the saved graphics preset, which reads RenderSystem.getDevice().
+        // Create Horizon's headless GPU device before reading options.txt.
+        boolean gpuReadyBeforeOptions = HorizonGpu.install();
+        Natives.log("Horizon's client: GPU device "
+                + (gpuReadyBeforeOptions ? "ready before Options load" : "unavailable before Options load"));
+        // options.txt is brought up to date by the game's data fixer, as the server's saves are.
+        set(Minecraft.class, mc, "fixerUpper", net.minecraft.util.datafix.DataFixers.getDataFixer());
+        set(Minecraft.class, mc, "options", new net.minecraft.client.Options(mc, mc.gameDirectory));"""
+if platform_client_source.count(options_start_anchor) != 1:
+    raise SystemExit(f"{platform_client_path}: Options/GPU initialization anchor changed")
+platform_client_source = platform_client_source.replace(options_start_anchor, options_start_replacement, 1)
+old_gpu_tail = """        // A GPU device (RenderSystem.getDevice()) on Horizon's wgpu, for mods that draw with
+        // the GPU (Xaero's minimap): HorizonGpu.
+        HorizonGpu.install();
+        Natives.log("Horizon's headless client is up");"""
+new_gpu_tail = """        Natives.log("Horizon's headless client is up");"""
+if platform_client_source.count(old_gpu_tail) != 1:
+    raise SystemExit(f"{platform_client_path}: GPU installation tail anchor changed")
+platform_client_source = platform_client_source.replace(old_gpu_tail, new_gpu_tail, 1)
+
+# Per-player ClientPacketListener instances are allocated without their constructor.
+# Preserve the Minecraft reference and mirror connection from the shared listener.
+player_connection_anchor = """                for (String name : new String[] {"registryAccess", "enabledFeatures", "searchTrees"}) {
+                    set(listener, copy, name, field(listener, shared, name));
+                }
+                set(net.minecraft.client.multiplayer.ClientPacketListener.class, copy, "clockManager",
+                        new net.minecraft.client.ClientClockManager());"""
+player_connection_replacement = """                for (String name : new String[] {"registryAccess", "enabledFeatures", "searchTrees"}) {
+                    set(listener, copy, name, field(listener, shared, name));
+                }
+                set(net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl.class, copy, "minecraft",
+                        field(net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl.class, shared, "minecraft"));
+                set(net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl.class, copy, "connection",
+                        field(net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl.class, shared, "connection"));
+                set(net.minecraft.client.multiplayer.ClientPacketListener.class, copy, "clockManager",
+                        new net.minecraft.client.ClientClockManager());"""
+if platform_client_source.count(player_connection_anchor) != 1:
+    raise SystemExit(f"{platform_client_path}: per-player listener copy anchor changed")
+platform_client_source = platform_client_source.replace(player_connection_anchor, player_connection_replacement, 1)
+platform_client_path.write_text(platform_client_source, encoding="utf-8")
 
 # The JMX sample runs every 15 seconds rather than every 5; avoid sleeping the game thread.
 events_source = events_source_path.read_text(encoding="utf-8")

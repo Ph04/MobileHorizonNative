@@ -82,7 +82,7 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build complete ARM64 LWJGL 3.4.1 core (no APK)
+      - name: Build complete ARM64 LWJGL 3.4.3 core (no APK)
         shell: bash
         run: |
           set -euo pipefail
@@ -102,7 +102,7 @@ jobs:
           test -s "$JNI_LIBRARY"
           "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h "$JNI_LIBRARY" > "$RUNNER_TEMP/lwjgl-elf-header.txt"
           grep -Fq "AArch64" "$RUNNER_TEMP/lwjgl-elf-header.txt"
-          echo "Complete LWJGL 3.4.1 core + static libffi staged as an Android JNI library. No APK built." >> "$GITHUB_STEP_SUMMARY"
+          echo "Complete LWJGL 3.4.3 core + static libffi staged as an Android JNI library. No APK built." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Compile Android Java sources and run unit tests (no APK tasks)
         shell: bash

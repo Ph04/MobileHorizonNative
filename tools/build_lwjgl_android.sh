@@ -5,8 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_ROOT="${1:-${RUNNER_TEMP:-/tmp}/mobilehorizon-lwjgl-android}"
 RECIPE_REPOSITORY="https://github.com/MDTCopper/android-lwjgl3.git"
 RECIPE_COMMIT="7bc318fff71b4fc81d174ad86d796c8eb724dc58"
-EXPECTED_LWJGL_COMMIT="b800ccffab14396fc529ddb6c931b7c5c5226763"
-EXPECTED_LIBFFI_VERSION="3.5.0"
+EXPECTED_LWJGL_COMMIT="30fac9b95f99cda97312232be25ba55297bf9951"
+EXPECTED_LIBFFI_VERSION="3.8.0"
 NDK_REVISION="27.2.12479018"
 ANDROID_API_LEVEL="26"
 ABI="arm64-v8a"
@@ -25,6 +25,7 @@ fi
 git -C "$RECIPE" fetch --depth 1 origin "$RECIPE_COMMIT"
 git -C "$RECIPE" checkout --detach FETCH_HEAD
 test "$(git -C "$RECIPE" rev-parse HEAD)" = "$RECIPE_COMMIT"
+python3 "$ROOT/tools/patch_android_lwjgl_recipe.py" "$RECIPE"
 grep -Fq "LWJGL_COMMIT=\"$EXPECTED_LWJGL_COMMIT\"" "$RECIPE/scripts/common.sh"
 grep -Fq "LIBFFI_VERSION=\"$EXPECTED_LIBFFI_VERSION\"" "$RECIPE/scripts/common.sh"
 
@@ -44,7 +45,7 @@ TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 "$TOOLCHAIN/llvm-readelf" -h "$SOURCE_LIBRARY" > "$BUILD/lwjgl-elf-header.txt"
 grep -Fq "AArch64" "$BUILD/lwjgl-elf-header.txt"
 "$TOOLCHAIN/llvm-nm" -D --defined-only "$SOURCE_LIBRARY" > "$BUILD/lwjgl-defined-symbols.txt"
-for symbol in Java_org_lwjgl_system_MemoryAccessJNI_getPointerSize Java_org_lwjgl_system_libffi_LibFFI_FFI_1TYPE_1DOUBLE; do
+for symbol in Java_org_lwjgl_system_MemoryUtil_ngetPageSize Java_org_lwjgl_system_MemoryAccessJNI_getPointerSize Java_org_lwjgl_system_libffi_LibFFI_FFI_1TYPE_1DOUBLE; do
     grep -Fq "$symbol" "$BUILD/lwjgl-defined-symbols.txt" || { echo "Missing full LWJGL JNI symbol: $symbol" >&2; exit 1; }
 done
 if "$TOOLCHAIN/llvm-nm" -D --undefined-only "$SOURCE_LIBRARY" | grep -E 'ffi_(call|type_double|prep_cif)'; then
