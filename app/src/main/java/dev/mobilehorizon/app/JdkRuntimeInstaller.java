@@ -544,27 +544,30 @@ final class JdkRuntimeInstaller {
                     + ". O linker contorna a restrição de execve em filesDir sem reduzir targetSdk. "
                     + "Causa do sistema: " + error.getMessage(), error);
         }
-        long start = System.currentTimeMillis();
-        while (true) {
-            checkCancelled(cancelled);
-            try {
-                if (process.waitFor(250, java.util.concurrent.TimeUnit.MILLISECONDS)) break;
-            } catch (InterruptedException error) {
-                process.destroyForcibly();
-                Thread.currentThread().interrupt();
-                throw error;
+        try {
+            long start = System.currentTimeMillis();
+            while (true) {
+                checkCancelled(cancelled);
+                try {
+                    if (process.waitFor(250, java.util.concurrent.TimeUnit.MILLISECONDS)) break;
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw error;
+                }
+                if (System.currentTimeMillis() - start > 30_000) {
+                    throw new IOException("A verificação de " + label + " excedeu 30 segundos.");
+                }
             }
-            if (System.currentTimeMillis() - start > 30_000) {
-                process.destroyForcibly();
-                throw new IOException("A verificação de " + label + " excedeu 30 segundos.");
+            String versionOutput = readSmallText(log).trim();
+            if (process.exitValue() != 0) {
+                throw new IOException("O runtime Android Java 25 falhou ao iniciar " + label
+                        + " via /system/bin/linker64 (código " + process.exitValue() + "): " + versionOutput);
             }
+            report(listener, "Validando Java 25", versionOutput, 1, 1);
+        } finally {
+            // Also terminates the child when checkCancelled() observes the cancel flag.
+            if (process.isAlive()) process.destroyForcibly();
         }
-        String versionOutput = readSmallText(log).trim();
-        if (process.exitValue() != 0) {
-            throw new IOException("O runtime Android Java 25 falhou ao iniciar " + label
-                    + " via /system/bin/linker64 (código " + process.exitValue() + "): " + versionOutput);
-        }
-        report(listener, "Validando Java 25", versionOutput, 1, 1);
     }
 
     private static void extractDataArchive(File deb, File destinationRoot, AtomicBoolean cancelled,

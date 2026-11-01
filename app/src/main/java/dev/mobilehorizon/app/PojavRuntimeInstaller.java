@@ -200,8 +200,10 @@ final class PojavRuntimeInstaller {
         }
     }
 
-    private static void validateRuntime(RuntimePaths runtime) throws IOException {
-        if (!runtime.java.isFile() || runtime.java.length() < 16 * 1024
+    static void validateRuntime(RuntimePaths runtime) throws IOException {
+        // The official launcher binary may be very small (or a link to a small
+        // launcher stub). Actual executability is verified with linker64 java -version.
+        if (!runtime.java.isFile() || runtime.java.length() <= 0
                 || !runtime.libjvm.isFile() || runtime.libjvm.length() < 1024 * 1024) {
             throw new IOException("O JRE Pojav/Mojo não contém bin/java e lib/server/libjvm.so válidos.");
         }
@@ -392,16 +394,21 @@ final class PojavRuntimeInstaller {
         builder.redirectOutput(log);
         builder.environment().putAll(runtime.processEnvironment(new File(runtime.root, "tmp")));
         Process process = builder.start();
-        long started = System.currentTimeMillis();
-        while (true) {
-            checkCancelled(cancelled);
-            if (process.waitFor(250, java.util.concurrent.TimeUnit.MILLISECONDS)) break;
-            if (System.currentTimeMillis() - started > 30_000) {
-                process.destroyForcibly();
-                throw new IOException("A validação java -version do runtime Pojav/Mojo excedeu 30 segundos.");
+        try {
+            long started = System.currentTimeMillis();
+            while (true) {
+                checkCancelled(cancelled);
+                if (process.waitFor(250, java.util.concurrent.TimeUnit.MILLISECONDS)) break;
+                if (System.currentTimeMillis() - started > 30_000) {
+                    throw new IOException("A validação java -version do runtime Pojav/Mojo excedeu 30 segundos.");
+                }
             }
+            return process.exitValue() == 0 && readSmallText(log).contains("25");
+        } finally {
+            // Cancellation may be signalled through the AtomicBoolean rather than
+            // Thread.interrupt(); always reap the child process on every exit path.
+            if (process.isAlive()) process.destroyForcibly();
         }
-        return process.exitValue() == 0 && readSmallText(log).contains("25");
     }
 
     private static String readReleaseVersion(File release) throws IOException {
