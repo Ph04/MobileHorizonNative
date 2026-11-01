@@ -316,7 +316,7 @@ final class FabricBridgeRuntimeManager {
         return privateDirectory;
     }
 
-    private static boolean isCurrentLwjglLibrary(File file, long expectedSize, String expectedSha256) {
+    static boolean isCurrentLwjglLibrary(File file, long expectedSize, String expectedSha256) {
         if (!isUsableLwjglLibrary(file) || file.length() != expectedSize) return false;
         try {
             return expectedSha256.equals(sha256(file));
