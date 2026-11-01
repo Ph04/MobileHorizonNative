@@ -651,7 +651,7 @@ fn record_jni_call_site(
     metric.0 = metric.0.saturating_add(1);
     metric.1 = metric.1.saturating_add(micros);
     metric.2 = metric.2.max(micros);
-    metric.3 = metric.3.saturating_add(u64::from(failed));
+    metric.3 = metric.3.saturating_add(if failed { 1 } else { 0 });
 }
 
 fn log_jni_call_sites_if_due() {
