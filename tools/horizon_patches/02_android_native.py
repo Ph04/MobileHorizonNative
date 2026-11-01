@@ -1129,17 +1129,17 @@ else:
 
 # Publish whether Horizon is in the active world or currently displaying a menu.
 # Java polls this lightweight atomic to hide its virtual cursor during gameplay.
-replace_once(game,
-    """        if let Err(e) = result {
+game_error_exit_legacy = """        if let Err(e) = result {
             self.error = Some(e);
             event_loop.exit();
         }
-    }""",
-    """        if let Err(e) = result {
+    }"""
+game_error_exit_current = """        if let Err(e) = result {
             self.error = Some(e);
-            event_loop.exit();
+            self.exit_on_error(event_loop);
         }
-        horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
+    }"""
+android_activity_state = """        horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
         horizon_client::set_android_gameplay(
             self.player.is_some()
                 && self.title.is_none()
@@ -1153,8 +1153,21 @@ replace_once(game,
                 && matches!(self.screen, Screen::Playing | Screen::Chat)
                 && self.sign_edit.is_none()
                 && self.book.is_none(),
-        );
-    }""")
+        );"""
+game_source = game.read_text(encoding="utf-8")
+if game_source.count(game_error_exit_legacy) == 1:
+    replace_once(game, game_error_exit_legacy,
+                 game_error_exit_legacy[:-1] + android_activity_state + "\n    }")
+elif game_source.count(game_error_exit_current) == 1:
+    # Newer Horizon centralizes window-error handling in exit_on_error(); keep it intact.
+    replace_once(game, game_error_exit_current,
+                 game_error_exit_current[:-1] + android_activity_state + "\n    }")
+else:
+    raise SystemExit(
+        f"{game}: expected one supported event-result error block "
+        f"(legacy={game_source.count(game_error_exit_legacy)}, "
+        f"current={game_source.count(game_error_exit_current)})"
+    )
 
 event_loop_factory = """fn new_event_loop<T: 'static + Send>() -> Result<EventLoop<T>> {
     #[cfg(target_os = "android")]
