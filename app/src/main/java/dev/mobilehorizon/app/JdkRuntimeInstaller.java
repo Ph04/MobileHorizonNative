@@ -399,8 +399,9 @@ final class JdkRuntimeInstaller {
                 File canonical = path.toFile().getCanonicalFile();
                 java.nio.file.Path canonicalPath = canonical.toPath();
                 if (!canonicalPath.startsWith(runtimeRoot.toPath())) {
-                    throw new IOException("Biblioteca nativa aponta para fora do runtime privado: "
-                            + canonicalPath);
+                    // Some package trees contain symlinks to Android system libraries.
+                    // They must remain owned by the platform linker and are not relocatable.
+                    continue;
                 }
                 if (visited.add(canonicalPath.toString())
                         && ElfDynamicPathPatcher.relocateTermuxRunpath(canonical, runtimeRoot)) {
