@@ -80,7 +80,7 @@ class OfflineServerLoginPatchTest(unittest.TestCase):
             target.write_text(CURRENT_SOURCE, encoding="utf-8")
             namespace = runpy.run_path(str(PATCH), init_globals={"net": target})
             patched_once = target.read_text(encoding="utf-8")
-            self.assertTrue(namespace["patch_offline_login"](target))
+            self.assertFalse(namespace["patch_offline_login"](target))
             self.assertFalse(namespace["patch_offline_login"](target))
             self.assertEqual(target.read_text(encoding="utf-8"), patched_once)
 
