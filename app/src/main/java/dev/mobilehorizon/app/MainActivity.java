@@ -2188,6 +2188,44 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
         appendLogTail(report, "Vulkan smoke test",
                 new File(getFilesDir(), "horizon-native-smoke-result.txt"), 8 * 1024);
 
+        // Java Bridge runs inside the NativeActivity process. Its startup, HotSpot and
+        // memory-guard logs live under filesDir/logs rather than the selected instance.
+        File appLogsDirectory = new File(getFilesDir(), "logs");
+        appendLogTail(report, "Java Bridge startup",
+                new File(appLogsDirectory, "java-bridge-startup.log"), 48 * 1024);
+        appendLogTail(report, "Android memory guard",
+                new File(appLogsDirectory, "memory-guard.log"), 48 * 1024);
+
+        File[] gcLogs = appLogsDirectory.listFiles((dir, name) ->
+                name.matches("java-gc\\\\.log(\\\\.\\\\d+)?"));
+        if (gcLogs == null) gcLogs = new File[0];
+        Arrays.sort(gcLogs, (left, right) ->
+                Long.compare(right.lastModified(), left.lastModified()));
+        for (int i = 0; i < Math.min(3, gcLogs.length); i++) {
+            appendLogTail(report, "HotSpot GC/safepoint: " + gcLogs[i].getName(),
+                    gcLogs[i], 24 * 1024);
+        }
+
+        File[] hotspotErrors = appLogsDirectory.listFiles((dir, name) ->
+                name.startsWith("hs_err_pid") && name.endsWith(".log"));
+        if (hotspotErrors == null) hotspotErrors = new File[0];
+        Arrays.sort(hotspotErrors, (left, right) ->
+                Long.compare(right.lastModified(), left.lastModified()));
+        if (hotspotErrors.length > 0) {
+            appendLogTail(report, "HotSpot fatal error: " + hotspotErrors[0].getName(),
+                    hotspotErrors[0], 48 * 1024);
+        }
+
+        File[] exitTraces = appLogsDirectory.listFiles((dir, name) ->
+                name.startsWith("exit-trace-") && name.endsWith(".txt"));
+        if (exitTraces == null) exitTraces = new File[0];
+        Arrays.sort(exitTraces, (left, right) ->
+                Long.compare(right.lastModified(), left.lastModified()));
+        if (exitTraces.length > 0) {
+            appendLogTail(report, "Latest Android process exit trace: " + exitTraces[0].getName(),
+                    exitTraces[0], 24 * 1024);
+        }
+
         File crashDir = new File(gameHome, "crash-reports");
         File[] crashes = crashDir.listFiles(File::isFile);
         if (crashes != null && crashes.length > 0) {
@@ -2255,7 +2293,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
         }
         new AlertDialog.Builder(this)
                 .setTitle(UiLanguage.translate(this, "Exportar diagnóstico multiplayer?"))
-                .setMessage(UiLanguage.translate(this, "Será criado um ZIP com latest.log, até três logs arquivados recentes, o relatório de falha mais recente e metadados do aparelho/build. O relatório não inclui arquivos de sessão ou tokens de autenticação. O log pode conter o endereço do servidor, nicknames e mensagens de chat; compartilhe somente depois de revisar."))
+                .setMessage(UiLanguage.translate(this, "Será criado um ZIP com os logs do Minecraft, Java Bridge/JVM, monitor de memória, relatórios de falha e metadados do aparelho/build. Arquivos de sessão e tokens de autenticação são excluídos. Logs podem conter caminhos locais, nicknames, endereços de servidores e mensagens de chat; revise antes de compartilhar."))
                 .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
                 .setPositiveButton(UiLanguage.translate(this, "Preparar ZIP"), (dialog, which) -> buildDiagnosticArchive())
                 .show();
@@ -2294,6 +2332,27 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                 File clientResult = new File(getFilesDir(), "horizon-client-result.txt");
                 File smokeResult = new File(getFilesDir(), "horizon-native-smoke-result.txt");
 
+                // Java Bridge diagnostics are stored at the app level because the JVM is
+                // embedded in :game; do not look for these files inside the Minecraft instance.
+                File appLogsDirectory = new File(getFilesDir(), "logs");
+                File javaBridgeLog = new File(appLogsDirectory, "java-bridge-startup.log");
+                File memoryGuardLog = new File(appLogsDirectory, "memory-guard.log");
+                File[] gcLogs = appLogsDirectory.listFiles((dir, name) ->
+                        name.matches("java-gc\\\\.log(\\\\.\\\\d+)?"));
+                if (gcLogs == null) gcLogs = new File[0];
+                Arrays.sort(gcLogs, (left, right) ->
+                        Long.compare(right.lastModified(), left.lastModified()));
+                File[] hotspotErrors = appLogsDirectory.listFiles((dir, name) ->
+                        name.startsWith("hs_err_pid") && name.endsWith(".log"));
+                if (hotspotErrors == null) hotspotErrors = new File[0];
+                Arrays.sort(hotspotErrors, (left, right) ->
+                        Long.compare(right.lastModified(), left.lastModified()));
+                File[] exitTraces = appLogsDirectory.listFiles((dir, name) ->
+                        name.startsWith("exit-trace-") && name.endsWith(".txt"));
+                if (exitTraces == null) exitTraces = new File[0];
+                Arrays.sort(exitTraces, (left, right) ->
+                        Long.compare(right.lastModified(), left.lastModified()));
+
                 String metadata = "MobileHorizon multiplayer diagnostic\n"
                         + "created=" + new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(new Date()) + "\n"
                         + "app_version=" + BuildConfig.VERSION_NAME + "\n"
@@ -2308,7 +2367,12 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                         + "crash_report_present=" + (crashReports.length > 0) + "\n"
                         + "client_result_present=" + clientResult.isFile() + "\n"
                         + "vulkan_smoke_result_present=" + smokeResult.isFile() + "\n"
-                        + "privacy=Session JSON/token files are intentionally excluded. Log text may contain chat, nicknames and server addresses.\n";
+                        + "java_bridge_log_present=" + javaBridgeLog.isFile() + "\n"
+                        + "memory_guard_log_present=" + memoryGuardLog.isFile() + "\n"
+                        + "hotspot_gc_logs_found=" + gcLogs.length + "\n"
+                        + "hotspot_fatal_error_present=" + (hotspotErrors.length > 0) + "\n"
+                        + "android_exit_traces_found=" + exitTraces.length + "\n"
+                        + "privacy=Session JSON/token files are intentionally excluded. Logs may contain chat, nicknames, server addresses and local paths.\n";
 
                 try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive, false))) {
                     addDiagnosticText(zip, "diagnostic/metadata.txt", metadata);
@@ -2322,6 +2386,26 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                     }
                     addDiagnosticFile(zip, clientResult, "diagnostic/horizon-client-result.txt");
                     addDiagnosticFile(zip, smokeResult, "diagnostic/horizon-native-smoke-result.txt");
+
+                    // Bound each diagnostic entry so a long session or fatal JVM report
+                    // cannot create an unexpectedly large archive.
+                    addDiagnosticFileTail(zip, javaBridgeLog,
+                            "java-bridge/java-bridge-startup.log", 512 * 1024);
+                    addDiagnosticFileTail(zip, memoryGuardLog,
+                            "java-bridge/memory-guard.log", 512 * 1024);
+                    for (int i = 0; i < Math.min(4, gcLogs.length); i++) {
+                        addDiagnosticFileTail(zip, gcLogs[i],
+                                "java-bridge/" + gcLogs[i].getName(), 2 * 1024 * 1024);
+                    }
+                    if (hotspotErrors.length > 0) {
+                        addDiagnosticFileTail(zip, hotspotErrors[0],
+                                "java-bridge/" + hotspotErrors[0].getName(), 512 * 1024);
+                    }
+                    for (int i = 0; i < Math.min(2, exitTraces.length); i++) {
+                        addDiagnosticFileTail(zip, exitTraces[i],
+                                "java-bridge/" + exitTraces[i].getName(), 512 * 1024);
+                    }
+
                     if (!latestLog.isFile()) {
                         addDiagnosticText(zip, "diagnostic/LOG_MISSING.txt",
                                 "logs/latest.log was not found at export time. Launch the client, reproduce the multiplayer problem, exit to the launcher, then export again.\n");
@@ -2371,6 +2455,33 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
             while ((read = input.read(buffer)) != -1) zip.write(buffer, 0, read);
         }
         zip.closeEntry();
+    }
+
+    /** Copies only the final portion of a diagnostic log, with an explicit truncation marker. */
+    private void addDiagnosticFileTail(ZipOutputStream zip, File source, String archivePath,
+                                       int maxBytes) throws IOException {
+        if (source == null || !source.isFile() || maxBytes <= 0) return;
+        zip.putNextEntry(new ZipEntry(archivePath));
+        try (RandomAccessFile input = new RandomAccessFile(source, "r")) {
+            long length = input.length();
+            long start = Math.max(0L, length - maxBytes);
+            if (start > 0) {
+                String marker = "[arquivo truncado: incluídos os últimos " + maxBytes
+                        + " bytes de " + length + "]\n";
+                zip.write(marker.getBytes(StandardCharsets.UTF_8));
+            }
+            input.seek(start);
+            byte[] buffer = new byte[32 * 1024];
+            long remaining = length - start;
+            while (remaining > 0) {
+                int read = input.read(buffer, 0, (int) Math.min((long) buffer.length, remaining));
+                if (read < 0) break;
+                zip.write(buffer, 0, read);
+                remaining -= read;
+            }
+        } finally {
+            zip.closeEntry();
+        }
     }
 
     private void saveDiagnosticArchive(Uri destination) {
