@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Runs Horizon's pinned ARM64 preparer with an app-private OpenJDK 25 runtime. */
 final class HorizonPrepareRunner {
-    private static final String UPSTREAM_COMMIT = "24bcef42beaf1382e48964b7efa7aef3f5f86792";
+    private static final String UPSTREAM_COMMIT = "6817cb4af09c63f09e299bf5a78e64de79792a8a";
     private static final String ASSET_ROOT = "horizon-prepare";
     private static final int MAX_LOG_BYTES = 8 * 1024 * 1024;
 
@@ -123,6 +123,17 @@ final class HorizonPrepareRunner {
                         "." + stagingResources.getName() + ".mobilehorizon-validation.json"));
             }
         }
+
+        // horizon-prepare keeps intermediate exporter directories between runs. If an
+        // earlier attempt or imported cache left one read-only, Rust's create_dir_all()
+        // accepts the existing directory but File::create("export.log") then fails EACCES.
+        // Restore owner-only access on the private .local workspace before running it.
+        File workspaceCache = new File(workspace, ".local");
+        ensureDirectory(workspaceCache);
+        report(listener, "Verificando permissões do cache",
+                "Reparando pastas temporárias existentes sem apagar os recursos já preparados", 2, 6);
+        repairWritableCache(workspaceCache, cancelled);
+
         File logFile = new File(workspace, ".local/horizon-prepare.log");
         ensureDirectory(logFile.getParentFile());
         if (logFile.exists() && !logFile.delete()) throw new IOException("Não foi possível zerar o log anterior.");
@@ -673,6 +684,52 @@ final class HorizonPrepareRunner {
         if (directory == null) throw new IOException("Pasta de destino inválida.");
         if (!directory.isDirectory() && !directory.mkdirs() && !directory.isDirectory()) {
             throw new IOException("Não foi possível criar " + directory.getAbsolutePath());
+        }
+    }
+
+    /**
+     * Repairs owner permissions in the app-private preparer cache without following links.
+     * Existing outputs are preserved; only access bits are added so the preparer can update
+     * files/logs and create new entries on the next incremental conversion.
+     */
+    static void repairWritableCache(File root, AtomicBoolean cancelled) throws Exception {
+        if (root == null) throw new IOException("Cache temporário do Horizon inválido.");
+        if (!root.exists() && !root.mkdirs()) {
+            throw new IOException("Não foi possível criar o cache " + root.getAbsolutePath());
+        }
+        repairWritableCacheEntry(root, cancelled);
+    }
+
+    private static void repairWritableCacheEntry(File entry, AtomicBoolean cancelled) throws Exception {
+        checkCancelled(cancelled);
+        if (java.nio.file.Files.isSymbolicLink(entry.toPath())) {
+            throw new IOException("Link simbólico inesperado no cache temporário do Horizon: "
+                    + entry.getAbsolutePath());
+        }
+        if (entry.isDirectory()) {
+            ensureOwnerAccess(entry, true);
+            File[] children = entry.listFiles();
+            if (children == null) {
+                throw new IOException("Não foi possível listar o cache temporário: "
+                        + entry.getAbsolutePath());
+            }
+            for (File child : children) repairWritableCacheEntry(child, cancelled);
+        } else if (entry.isFile()) {
+            ensureOwnerAccess(entry, false);
+        } else {
+            throw new IOException("Tipo de arquivo não suportado no cache Horizon: "
+                    + entry.getAbsolutePath());
+        }
+    }
+
+    private static void ensureOwnerAccess(File entry, boolean directory) throws IOException {
+        // Keep group/other permissions unchanged; add only the owning app's access bits.
+        boolean readable = entry.setReadable(true, true);
+        boolean writable = entry.setWritable(true, true);
+        boolean searchable = !directory || entry.setExecutable(true, true);
+        if (!readable || !writable || !searchable) {
+            throw new IOException("Não foi possível restaurar permissões de "
+                    + entry.getAbsolutePath() + ". O cache permanece intacto.");
         }
     }
 
