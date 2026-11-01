@@ -17,6 +17,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 /**
  * Separate, opt-in runtime channel for Java Bridge By:iaxivers from iaxivers/horizon.
@@ -187,6 +189,109 @@ final class FabricBridgeRuntimeManager {
     /** Prepares an already installed Fabric runtime; game startup never downloads files. */
     static PreparedRuntime prepare(Context context) throws IOException {
         return activeRuntime(context.getApplicationContext());
+    }
+
+    /**
+     * Finds the ARM64 LWJGL core JNI library for the embedded Java 25 VM.
+     *
+     * Android installs native libraries in nativeLibraryDir when extracted. With
+     * extractNativeLibs=false, some devices expose them from the APK instead, so
+     * fall back to an app-private copy from the signed base APK.
+     */
+    static File prepareLwjglLibraryDirectory(Context context) throws IOException {
+        Context app = context.getApplicationContext();
+        String nativePath = app.getApplicationInfo().nativeLibraryDir;
+        if (nativePath != null && !nativePath.isEmpty()) {
+            File installedDirectory = new File(nativePath).getCanonicalFile();
+            File installedLibrary = new File(installedDirectory, "liblwjgl.so");
+            if (isUsableLwjglLibrary(installedLibrary)) return installedDirectory;
+        }
+
+        File runtimeRoot = root(app);
+        File privateDirectory = new File(runtimeRoot, "native-libraries").getCanonicalFile();
+        if (!runtimeRoot.equals(privateDirectory.getParentFile())) {
+            throw new IOException("Diretório privado do LWJGL saiu do runtime Java Bridge.");
+        }
+        ensureDirectory(privateDirectory);
+
+        File destination = new File(privateDirectory, "liblwjgl.so");
+        if (isUsableLwjglLibrary(destination)) return privateDirectory;
+        if (Files.isSymbolicLink(destination.toPath())) {
+            throw new IOException("A biblioteca LWJGL privada não pode ser link simbólico.");
+        }
+
+        File apk = new File(app.getApplicationInfo().sourceDir);
+        if (!apk.isFile()) throw new IOException("O APK instalado não está acessível para extrair liblwjgl.so.");
+        File temporary = new File(privateDirectory, ".liblwjgl.so.tmp");
+        if (Files.isSymbolicLink(temporary.toPath())) {
+            throw new IOException("O arquivo temporário LWJGL não pode ser link simbólico.");
+        }
+        if (temporary.exists() && !temporary.delete()) {
+            throw new IOException("Não foi possível limpar a extração anterior de liblwjgl.so.");
+        }
+
+        final String entryName = "lib/arm64-v8a/liblwjgl.so";
+        try (ZipFile archive = new ZipFile(apk)) {
+            ZipEntry entry = archive.getEntry(entryName);
+            if (entry == null || entry.isDirectory()
+                    || entry.getSize() <= 20 || entry.getSize() > 32L * 1024L * 1024L) {
+                throw new IOException("A APK não contém lib/arm64-v8a/liblwjgl.so válida.");
+            }
+            try (InputStream input = archive.getInputStream(entry);
+                 FileOutputStream output = new FileOutputStream(temporary, false)) {
+                byte[] buffer = new byte[32 * 1024];
+                long copied = 0;
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    copied += count;
+                    if (copied > 32L * 1024L * 1024L || copied > entry.getSize()) {
+                        throw new IOException("A extração de liblwjgl.so excedeu o tamanho permitido.");
+                    }
+                    output.write(buffer, 0, count);
+                }
+                output.flush();
+                output.getFD().sync();
+                if (copied != entry.getSize()) {
+                    throw new IOException("A extração de liblwjgl.so ficou incompleta.");
+                }
+            }
+        }
+
+        if (!temporary.setReadable(true, true) || !temporary.setExecutable(true, true)
+                || !isUsableLwjglLibrary(temporary)) {
+            temporary.delete();
+            throw new IOException("A biblioteca LWJGL extraída não passou na validação ELF ARM64/permissões.");
+        }
+        try {
+            Files.move(temporary.toPath(), destination.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+            Files.move(temporary.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            if (temporary.exists()) temporary.delete();
+        }
+        if (!isUsableLwjglLibrary(destination)) {
+            throw new IOException("A biblioteca LWJGL não passou na validação depois da instalação privada.");
+        }
+        return privateDirectory;
+    }
+
+    private static boolean isUsableLwjglLibrary(File file) {
+        return !Files.isSymbolicLink(file.toPath())
+                && file.isFile()
+                && file.length() > 20
+                && file.length() <= 32L * 1024L * 1024L
+                && isArm64Elf(file);
+    }
+
+    /** Adds the JNI VM option consumed by LWJGL before its Library class initializes. */
+    static String appendLwjglLibraryPathOption(String currentOptions, File libraryDirectory) {
+        String path = libraryDirectory.getAbsolutePath()
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
+        String option = "\"-Dorg.lwjgl.librarypath=" + path + "\"";
+        String existing = currentOptions == null ? "" : currentOptions.trim();
+        return existing.isEmpty() ? option : existing + " " + option;
     }
 
     private static PreparedRuntime activeRuntime(Context context) throws IOException {
