@@ -132,6 +132,26 @@ final class GameMemoryGuard {
                 + SystemClock.elapsedRealtime() + ", details=" + details);
     }
 
+    void recordException(String event, Throwable error) {
+        if (error == null) {
+            recordEvent(event, "error=null");
+            return;
+        }
+        java.io.StringWriter trace = new java.io.StringWriter();
+        error.printStackTrace(new java.io.PrintWriter(trace));
+        String stack = trace.toString();
+        final int maxStackChars = 96 * 1024;
+        if (stack.length() > maxStackChars) {
+            stack = stack.substring(0, maxStackChars)
+                    + "\\n[stack trace truncated at 96 KiB]";
+        }
+        String message = error.getMessage();
+        appendLog("JAVA_EXCEPTION name=" + event
+                + ", type=" + error.getClass().getName()
+                + ", message=" + (message == null ? "<null>" : message)
+                + "\\n" + stack);
+    }
+
     void onTrimMemory(int trimLevel) {
         appendLog("ANDROID_TRIM_MEMORY level=" + trimLevel
                 + " (" + trimLevelName(trimLevel) + "), elapsedRealtimeMs="
