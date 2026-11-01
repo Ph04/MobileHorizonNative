@@ -1160,22 +1160,8 @@ if "me/shedaniel/math/Point" not in java_mods_source:
         raise SystemExit(f"{java_mods_source_path}: dependency probe anchor changed")
     java_mods_source = java_mods_source.replace(cloth_probe_anchor, cloth_probe_replacement, 1)
 
-fabric_add_mods_anchor = """    let add_mods = if own_fabric_api {
-        Vec::new()
-    } else {
-        vec![horizon_jvm::libs::ensure_fabric_api(
-            &work.join("fabric-api"),
-        )?]
-    };
-    Ok(horizon_jvm::Fabric {"""
-fabric_add_mods_replacement = """    let mut add_mods = if own_fabric_api {
-        Vec::new()
-    } else {
-        vec![horizon_jvm::libs::ensure_fabric_api(
-            &work.join("fabric-api"),
-        )?]
-    };
-    let own_cloth_config = jars.iter().any(|j| {
+fabric_add_mods_anchor = """    let game_jar = horizon_jvm::facade::game_jar(root)?;"""
+fabric_add_mods_replacement = """    let own_cloth_config = jars.iter().any(|j| {
         j.file_name().is_some_and(|n| {
             n.to_string_lossy()
                 .to_ascii_lowercase()
@@ -1183,11 +1169,11 @@ fabric_add_mods_replacement = """    let mut add_mods = if own_fabric_api {
         })
     });
     if !own_cloth_config {
-        add_mods.push(horizon_jvm::libs::ensure_cloth_config(
-            &work.join("cloth-config"),
-        )?);
+        let cloth_dir = work.join("cloth-config");
+        bridge_log("INFO", &format!("Preparando Cloth Config 26.3.159 em {}", cloth_dir.display()));
+        add_mods.push(horizon_jvm::libs::ensure_cloth_config(&cloth_dir)?);
     }
-    Ok(horizon_jvm::Fabric {"""
+    let game_jar = horizon_jvm::facade::game_jar(root)?;"""
 if "ensure_cloth_config" not in java_mods_source:
     if java_mods_source.count(fabric_add_mods_anchor) != 1:
         raise SystemExit(f"{java_mods_source_path}: Fabric add-mods anchor changed")
