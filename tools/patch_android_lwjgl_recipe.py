@@ -52,5 +52,43 @@ for old, new in pins.items():
 if new_version not in text or 'LIBFFI_VERSION="3.8.0"' not in text:
     raise SystemExit("version pin verification failed")
 
+# Pin every implementation source in LWJGL 3.4.3's split miniz library.
+old_source_paths = """modules/lwjgl/core/src/main/c/dependencies/miniz/miniz.c
+modules/lwjgl/core/src/generated/c/linux/org_lwjgl_system_linux_UNISTD.c"""
+new_source_paths = """modules/lwjgl/core/src/main/c/dependencies/miniz/miniz.c
+modules/lwjgl/core/src/main/c/dependencies/miniz/miniz_tdef.c
+modules/lwjgl/core/src/main/c/dependencies/miniz/miniz_tinfl.c
+modules/lwjgl/core/src/main/c/dependencies/miniz/miniz_zip.c
+modules/lwjgl/core/src/generated/c/linux/org_lwjgl_system_linux_UNISTD.c"""
+text = replace_once(text, old_source_paths, new_source_paths, "miniz source pin paths")
+old_miniz_pin_cases = """        modules/lwjgl/core/src/main/c/dependencies/miniz/miniz.c)
+            echo "F23204EFEE2BFAFFB72A974D2E28C64C3C1D9787144B5C5890F129C465E467BD" ;;
+        modules/lwjgl/core/src/generated/c/linux/org_lwjgl_system_linux_UNISTD.c)"""
+new_miniz_pin_cases = """        modules/lwjgl/core/src/main/c/dependencies/miniz/miniz.c)
+            echo "F23204EFEE2BFAFFB72A974D2E28C64C3C1D9787144B5C5890F129C465E467BD" ;;
+        modules/lwjgl/core/src/main/c/dependencies/miniz/miniz_tdef.c)
+            echo "85B93205232D51D092F24041934D951F11F9EDC02DF1F475E8CEB7B281A1E7F6" ;;
+        modules/lwjgl/core/src/main/c/dependencies/miniz/miniz_tinfl.c)
+            echo "2296EBD21EF9AF5EBBEFD5B454D4BB67D8FB4AF2D24945E7FB32114374F75A76" ;;
+        modules/lwjgl/core/src/main/c/dependencies/miniz/miniz_zip.c)
+            echo "3C1F90797C02DDC9D6BFCDF7079F5EA6F6212F257ED8745F2334DD021D697669" ;;
+        modules/lwjgl/core/src/generated/c/linux/org_lwjgl_system_linux_UNISTD.c)"""
+text = replace_once(text, old_miniz_pin_cases, new_miniz_pin_cases, "miniz source hashes")
+
 common_path.write_text(text, encoding="utf-8")
-print("Pinned Android recipe to LWJGL 3.4.3 + libffi 3.8.0.")
+
+# The Android recipe previously compiled only miniz.c, leaving the new tdef/tinfl
+# implementation in separate files out of the link. Compile all four miniz C units.
+build_path = root / "scripts" / "build.sh"
+if not build_path.is_file():
+    raise SystemExit(f"Android LWJGL build script not found: {build_path}")
+build_text = build_path.read_text(encoding="utf-8")
+old_miniz_sources = """    # miniz is compiled into liblwjgl.so (the upstream Ant build leaves it out).
+    echo "$CORE_SRC_ROOT/main/c/dependencies/miniz/miniz.c"""
+new_miniz_sources = """    # LWJGL 3.4.3 splits miniz into core, deflate, inflate and ZIP units.
+    find "$CORE_SRC_ROOT/main/c/dependencies/miniz" -maxdepth 1 -name '*.c' -print"""
+build_text = replace_once(build_text, old_miniz_sources, new_miniz_sources, "miniz source list")
+build_text = replace_once(build_text, '[[ "${#CORE_SRCS[@]}" -eq 24 ]]', '[[ "${#CORE_SRCS[@]}" -eq 27 ]]', "core source count guard")
+build_text = replace_once(build_text, "expected 24 core translation units", "expected 27 core translation units", "core source count message")
+build_path.write_text(build_text, encoding="utf-8")
+print("Pinned Android recipe to LWJGL 3.4.3 + libffi 3.8.0; compiled all miniz units.")
