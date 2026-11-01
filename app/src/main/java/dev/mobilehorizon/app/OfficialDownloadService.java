@@ -32,6 +32,8 @@ public final class OfficialDownloadService extends Service {
     private volatile boolean running;
     private volatile OfficialMinecraftInstaller.Progress lastProgress;
     private volatile long lastNotificationAt;
+    private volatile long lastProgressBroadcastAt;
+    private volatile String lastProgressBroadcastKey = "";
 
     @Override
     public void onCreate() {
@@ -148,9 +150,25 @@ public final class OfficialDownloadService extends Service {
     private void onDownloadProgress(OfficialMinecraftInstaller.Progress progress) {
         if (progress == null) return;
         lastProgress = progress;
-        broadcastProgress(progress);
         long now = SystemClock.elapsedRealtime();
-        if (now - lastNotificationAt >= 500 || progress.total > 0 && progress.completed >= progress.total) {
+
+        // A 128 KiB network read used to broadcast on every chunk. The receiver runs
+        // on the UI thread and updates the whole launcher, so fast library downloads
+        // could flood the main looper and make low-memory phones stall or crash.
+        String key = String.valueOf(progress.stage) + '\u0000' + String.valueOf(progress.item);
+        boolean phaseChanged = !key.equals(lastProgressBroadcastKey);
+        boolean itemFinished = progress.itemTotalBytes > 0
+                && progress.itemBytes >= progress.itemTotalBytes;
+        boolean stageFinished = progress.total > 0 && progress.completed >= progress.total;
+        if (phaseChanged || itemFinished || stageFinished
+                || now - lastProgressBroadcastAt >= 250) {
+            broadcastProgress(progress);
+            lastProgressBroadcastAt = now;
+            lastProgressBroadcastKey = key;
+        }
+
+        // Notification rendering is also throttled separately from the UI progress stream.
+        if (now - lastNotificationAt >= 750 || itemFinished || stageFinished) {
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.notify(NOTIFICATION_ID, buildNotification(progress, true));
             lastNotificationAt = now;
