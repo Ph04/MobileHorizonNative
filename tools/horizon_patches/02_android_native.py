@@ -1184,13 +1184,49 @@ event_loop_factory = """fn new_event_loop<T: 'static + Send>() -> Result<EventLo
 }
 
 """
-legacy_event_loop = "fn run_event_loop(mut game: Game<'_>) -> Result<()> {\n    EventLoop::new()?.run_app(&mut game)?;"
+split_event_loop = """    let mut split = split::Split::new(game);
+    let result = EventLoop::new()?.run_app(&mut split);"""
+legacy_event_loop = "fn run_event_loop(mut game: Game<'_>) -> Result<()> {\\n    EventLoop::new()?.run_app(&mut game)?;"
 current_event_loop = """fn run_event_loop(mut game: Game<'_>) -> Result<()> {
     let result = EventLoop::new()?.run_app(&mut game);
     leave_fullscreen_after(&result, &mut game.settings);
     result?;"""
 game_source = game.read_text(encoding="utf-8")
-if game_source.count(current_event_loop) == 1:
+if game_source.count(split_event_loop) == 1:
+    # Nightlies with splitscreen wrap P1's Game in another ApplicationHandler.
+    # Keep Android input events on P1; controller/window focus remains owned by Horizon.
+    split_source = root / "crates/horizon-client/src/game/split.rs"
+    if not split_source.is_file():
+        raise SystemExit(f"{split_source}: Nightly run_event_loop uses Split but split.rs is missing")
+    replace_once(
+        split_source,
+        "impl ApplicationHandler for Split<'_> {",
+        """impl ApplicationHandler<horizon_client::AndroidInjectedInput> for Split<'_> {
+    fn user_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        event: horizon_client::AndroidInjectedInput,
+    ) {
+        // Android's virtual controls and IME target the primary player (P1).
+        self.host.user_event(event_loop, event);
+    }"""
+    )
+    run_event_loop_signature = "fn run_event_loop(mut game: Game<'_>) -> Result<()> {"
+    if game_source.count(run_event_loop_signature) != 1:
+        raise SystemExit(
+            f"{game}: expected one run_event_loop function for Split, "
+            f"found {game_source.count(run_event_loop_signature)}"
+        )
+    replace_once(game, run_event_loop_signature, event_loop_factory + run_event_loop_signature)
+    replace_once(
+        game,
+        split_event_loop,
+        """    let mut split = split::Split::new(game);
+    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
+    horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
+    let result = event_loop.run_app(&mut split);"""
+    )
+elif game_source.count(current_event_loop) == 1:
     replace_once(game, current_event_loop,
                  event_loop_factory + """fn run_event_loop(mut game: Game<'_>) -> Result<()> {
     let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
@@ -1206,9 +1242,12 @@ elif game_source.count(legacy_event_loop) == 1:
     event_loop.run_app(&mut game)?;""")
 else:
     raise SystemExit(
-        f"{game}: expected exactly one supported run_event_loop anchor "
-        f"(current={game_source.count(current_event_loop)}, legacy={game_source.count(legacy_event_loop)})"
+        f"{game}: expected one supported run_event_loop anchor "
+        f"(split={game_source.count(split_event_loop)}, "
+        f"current={game_source.count(current_event_loop)}, "
+        f"legacy={game_source.count(legacy_event_loop)})"
     )
+
 replace_once(game,
     'impl ApplicationHandler for App {\n    fn resumed(&mut self, event_loop: &ActiveEventLoop) {',
     '''impl ApplicationHandler<horizon_client::AndroidInjectedInput> for App {
