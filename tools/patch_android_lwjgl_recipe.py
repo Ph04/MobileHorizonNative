@@ -83,10 +83,8 @@ build_path = root / "scripts" / "build.sh"
 if not build_path.is_file():
     raise SystemExit(f"Android LWJGL build script not found: {build_path}")
 build_text = build_path.read_text(encoding="utf-8")
-old_miniz_sources = """    # miniz is compiled into liblwjgl.so (the upstream Ant build leaves it out).
-    echo "$CORE_SRC_ROOT/main/c/dependencies/miniz/miniz.c""""
-new_miniz_sources = """    # LWJGL 3.4.3 splits miniz into core, deflate, inflate and ZIP units.
-    find "$CORE_SRC_ROOT/main/c/dependencies/miniz" -maxdepth 1 -name '*.c' -print"""
+old_miniz_sources = "    # miniz is compiled into liblwjgl.so (the upstream Ant build leaves it out).\n    echo \"$CORE_SRC_ROOT/main/c/dependencies/miniz/miniz.c\""
+new_miniz_sources = "    # LWJGL 3.4.3 splits miniz into core, deflate, inflate and ZIP units.\n    find \"$CORE_SRC_ROOT/main/c/dependencies/miniz\" -maxdepth 1 -name '*.c' -print"
 build_text = replace_once(build_text, old_miniz_sources, new_miniz_sources, "miniz source list")
 build_text = replace_once(build_text, '[[ "${#CORE_SRCS[@]}" -eq 24 ]]', '[[ "${#CORE_SRCS[@]}" -eq 27 ]]', "core source count guard")
 build_text = replace_once(build_text, "expected 24 core translation units", "expected 27 core translation units", "core source count message")
