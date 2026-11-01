@@ -21,7 +21,8 @@ import java.util.concurrent.TimeUnit;
  * Vanilla render distance and chunk loading are not modified.
  *
  * The monitor runs independently from the game/UI callbacks so pressure sampling
- * never blocks the render or input path.
+ * never blocks the render or input path. Heap/CPU options are exported before
+ * NativeActivity starts the embedded Java Bridge.
  */
 final class GameMemoryGuard {
     private static final String TAG = "MobileHorizon-Memory";
