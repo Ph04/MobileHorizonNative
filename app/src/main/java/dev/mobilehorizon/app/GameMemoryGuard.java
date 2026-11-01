@@ -383,6 +383,129 @@ final class GameMemoryGuard {
         }
     }
 
+    /**
+     * Refreshes Android's exit history when the user exports diagnostics from the
+     * launcher. The game process may have been killed before Activity callbacks could
+     * persist anything, and starting NativeGameActivity again should not be required
+     * just to learn why the previous :game process ended.
+     */
+    static void captureHistoricalExitsForDiagnostics(Context context, File filesDir) {
+        File directory = new File(filesDir, "logs");
+        if (!directory.isDirectory() && !directory.mkdirs()) {
+            Log.e(TAG, "Não foi possível criar a pasta para o histórico de encerramentos: " + directory);
+            return;
+        }
+
+        StringBuilder snapshot = new StringBuilder();
+        snapshot.append("MobileHorizon Android process exit history\\n")
+                .append("capturedAt=").append(new Date()).append("\\n")
+                .append("package=").append(context.getPackageName()).append("\\n")
+                .append("currentPid=").append(Process.myPid()).append("\\n");
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            snapshot.append("EXIT_HISTORY unavailable: Android API below 30\\n");
+            writeExitHistorySnapshot(directory, snapshot.toString());
+            return;
+        }
+
+        try {
+            ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (manager == null) {
+                snapshot.append("EXIT_HISTORY unavailable: ActivityManager is null\\n");
+                writeExitHistorySnapshot(directory, snapshot.toString());
+                return;
+            }
+            List<ApplicationExitInfo> exits =
+                    manager.getHistoricalProcessExitReasons(context.getPackageName(), 0, 12);
+            if (exits == null || exits.isEmpty()) {
+                snapshot.append("EXIT_HISTORY no process exits returned by Android\\n");
+            } else {
+                snapshot.append("EXIT_HISTORY count=").append(exits.size()).append("\\n");
+                for (ApplicationExitInfo exit : exits) {
+                    String description = exit.getDescription();
+                    if (description == null) description = "";
+                    description = description.replace('\\n', ' ').replace('\\r', ' ');
+                    snapshot.append("EXIT_HISTORY_ENTRY timestamp=").append(new Date(exit.getTimestamp()))
+                            .append(", pid=").append(exit.getPid())
+                            .append(", process=").append(exit.getProcessName())
+                            .append(", reason=").append(exit.getReason()).append(":").append(exitReasonName(exit.getReason()))
+                            .append(", status=").append(exit.getStatus())
+                            .append(", importance=").append(exit.getImportance())
+                            .append(", pssMiB=").append(toMiB(exit.getPss() * 1024L))
+                            .append(", rssMiB=").append(toMiB(exit.getRss() * 1024L))
+                            .append(", description=").append(description)
+                            .append("\\n");
+                    captureDiagnosticExitTrace(directory, exit, snapshot);
+                }
+            }
+        } catch (RuntimeException error) {
+            snapshot.append("EXIT_HISTORY_ERROR ").append(error.getClass().getName())
+                    .append(": ").append(error.getMessage()).append("\\n");
+        }
+        writeExitHistorySnapshot(directory, snapshot.toString());
+    }
+
+    private static void captureDiagnosticExitTrace(
+            File directory, ApplicationExitInfo exit, StringBuilder snapshot) {
+        InputStream trace = null;
+        try {
+            trace = exit.getTraceInputStream();
+            if (trace == null) {
+                snapshot.append("EXIT_TRACE_UNAVAILABLE pid=").append(exit.getPid())
+                        .append(", reason=no trace stream\\n");
+                return;
+            }
+            File target = new File(directory,
+                    "exit-trace-" + exit.getTimestamp() + "-pid" + exit.getPid() + ".txt");
+            try (InputStream input = trace; FileOutputStream output = new FileOutputStream(target, false)) {
+                byte[] buffer = new byte[8192];
+                int total = 0;
+                int read;
+                while (total < 512 * 1024
+                        && (read = input.read(buffer, 0, Math.min(buffer.length, 512 * 1024 - total))) > 0) {
+                    output.write(buffer, 0, read);
+                    total += read;
+                }
+                output.flush();
+                output.getFD().sync();
+                snapshot.append("EXIT_TRACE_SAVED pid=").append(exit.getPid())
+                        .append(", file=").append(target.getName())
+                        .append(", bytes=").append(total)
+                        .append(", cappedAt512KiB=true\\n");
+            }
+        } catch (Exception error) {
+            if (trace != null) {
+                try { trace.close(); } catch (Exception ignored) { }
+            }
+            snapshot.append("EXIT_TRACE_UNAVAILABLE pid=").append(exit.getPid())
+                    .append(", reason=").append(error.getClass().getSimpleName())
+                    .append(":").append(error.getMessage()).append("\\n");
+        }
+    }
+
+    private static void writeExitHistorySnapshot(File directory, String content) {
+        File target = new File(directory, "android-exit-history.log");
+        File temporary = new File(directory, ".android-exit-history.log.tmp");
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        try (FileOutputStream output = new FileOutputStream(temporary, false)) {
+            output.write(bytes);
+            output.flush();
+            output.getFD().sync();
+        } catch (Exception error) {
+            Log.e(TAG, "Não foi possível gravar android-exit-history.log.", error);
+            temporary.delete();
+            return;
+        }
+        try {
+            android.system.Os.rename(temporary.getAbsolutePath(), target.getAbsolutePath());
+        } catch (Exception renameError) {
+            if (!temporary.renameTo(target)) {
+                Log.e(TAG, "Não foi possível publicar android-exit-history.log.", renameError);
+                temporary.delete();
+            }
+        }
+    }
+
     private void logHistoricalProcessExits() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || activityManager == null) {
             appendLog("EXIT_HISTORY unavailable: Android API below 30");
@@ -544,8 +667,12 @@ final class GameMemoryGuard {
     }
 
     static int recommendedJavaHeapMaxMiB(long totalRamBytes) {
-        if (totalRamBytes <= 5L * GIB) return 896;
-        if (totalRamBytes <= 7L * GIB) return 1280;
+        // The Android renderer and embedded HotSpot share one process. On 4 GB
+        // phones, leave more headroom for Vulkan/native allocations and the OS.
+        // The diagnostic ZIP from an SM-A155M showed ~2.3 GiB PSS with only
+        // ~300 MiB of live HotSpot heap, so an 896 MiB ceiling was too loose.
+        if (totalRamBytes <= 5L * GIB) return 640;
+        if (totalRamBytes <= 7L * GIB) return 1024;
         if (totalRamBytes <= 10L * GIB) return 1536;
         return 2048;
     }
