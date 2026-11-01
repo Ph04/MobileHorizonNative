@@ -436,7 +436,12 @@ final class PojavRuntimeInstaller {
         if (!canonicalFile.toPath().startsWith(canonicalRoot.toPath())) {
             throw new IOException("O executável " + name + " aponta para fora do runtime Pojav/Mojo.");
         }
-        Os.chmod(canonicalFile.getAbsolutePath(), 0755);
+        try {
+            Os.chmod(canonicalFile.getAbsolutePath(), 0755);
+        } catch (android.system.ErrnoException error) {
+            throw new IOException("O Android não permitiu aplicar permissão ao executável "
+                    + name + " no runtime Pojav/Mojo.", error);
+        }
         if (!canonicalFile.canExecute()) throw new IOException("O Android não permitiu executar " + name + ".");
     }
 
