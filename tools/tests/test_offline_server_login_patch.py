@@ -59,7 +59,9 @@ class OfflineServerLoginPatchTest(unittest.TestCase):
         self.assertIn("if let Some(account) = auth", patched)
         self.assertIn("crate::auth::join_server(account, &hash)", patched)
         self.assertIn("if let Err(err) =", patched)
-        self.assertIn("online-mode challenge received without a Microsoft session", patched)
+        self.assertIn("Horizon Android: no Microsoft session", patched)
+        self.assertIn('#[cfg(target_os = "android")]', patched)
+        self.assertIn('#[cfg(not(target_os = "android"))]', patched)
         self.assertIn(ENCRYPTING.strip(), patched)
         self.assertNotIn("auth.ok_or_else(|| NOT_SIGNED_IN.to_owned())?", patched)
 
@@ -70,12 +72,20 @@ class OfflineServerLoginPatchTest(unittest.TestCase):
         self.assertIn("continues_after_failed_join(lan, true)", patched)
         self.assertIn('log::warn!("Authentication failed: {}", reason.text);', patched)
         self.assertIn("return Err(reason);", patched)
+        self.assertIn('return Err(Reason::keyed("horizon.multiplayer.not_signed_in", lang));', patched)
         self.assertIn("key,", patched)
 
     def test_legacy_authentication_layout_is_still_supported(self):
         patched, _, _ = self.apply_patch(LEGACY_SOURCE)
         self.assert_hybrid_behavior(patched)
         self.assertIn("return Err(plain(", patched)
+        self.assertIn("return Err(NOT_SIGNED_IN.to_owned());", patched)
+
+    def test_offline_fallback_is_limited_to_android_targets(self):
+        patched, _, _ = self.apply_patch(CURRENT_SOURCE)
+        self.assertIn('#[cfg(target_os = "android")]', patched)
+        self.assertIn('#[cfg(not(target_os = "android"))]', patched)
+        self.assertIn('return Err(Reason::keyed("horizon.multiplayer.not_signed_in", lang));', patched)
 
     def test_patch_is_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:

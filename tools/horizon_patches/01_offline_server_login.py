@@ -34,7 +34,14 @@ def patch_offline_login(net):
                             ));
                         }
                     } else {
-                        log::warn!("Horizon: online-mode challenge received without a Microsoft session; sending the normal encrypted response and allowing the server to decide whether offline fallback is configured");
+                        #[cfg(target_os = "android")]
+                        {
+                            log::warn!("Horizon Android: no Microsoft session; sending the encrypted response and letting the server decide whether offline fallback is configured");
+                        }
+                        #[cfg(not(target_os = "android"))]
+                        {
+                            return Err(NOT_SIGNED_IN.to_owned());
+                        }
                     }
                 }"""
     elif ("let authenticated = auth" in auth_block
@@ -65,7 +72,14 @@ def patch_offline_login(net):
                             log::warn!("Authentication failed: {}", reason.text);
                         }
                     } else {
-                        log::warn!("Horizon: online-mode challenge received without a Microsoft session; sending the normal encrypted response and allowing the server to decide whether offline fallback is configured");
+                        #[cfg(target_os = "android")]
+                        {
+                            log::warn!("Horizon Android: no Microsoft session; sending the encrypted response and letting the server decide whether offline fallback is configured");
+                        }
+                        #[cfg(not(target_os = "android"))]
+                        {
+                            return Err(Reason::keyed("horizon.multiplayer.not_signed_in", lang));
+                        }
                     }
                 }"""
     else:
