@@ -54,6 +54,7 @@ jobs:
   android:
     # The Java Bridge test branch is normally prepared without assembling APKs.
     # This one-shot approval marker authorizes only the standard APK build for this push.
+    # The approval is recorded in the commit message; no updater-test APK is assembled.
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/feature/fabric-java-bridge-test' && contains(github.event.head_commit.message, '[build-apk-approved]')) || (github.event_name == 'pull_request' && github.head_ref != 'feature/fabric-java-bridge-test')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
