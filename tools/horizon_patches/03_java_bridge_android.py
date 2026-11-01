@@ -891,13 +891,25 @@ if events_source.count(local_frame_anchor) != 1:
 events_source = events_source.replace(local_frame_anchor, local_frame_new, 1)
 
 # Aggregate synchronous callbacks that cross JNI outside the batched tick dispatch.
-with_server_anchor = """    let profile_site = jni_profile_enabled().then(Location::caller);
+with_server_function_anchor = "fn with_server<T>("
+with_server_function_replacement = "#[track_caller]\\nfn with_server<T>("
+if events_source.count(with_server_function_anchor) != 1:
+    raise SystemExit(f"{events_source_path}: with_server function anchor changed")
+events_source = events_source.replace(
+    with_server_function_anchor, with_server_function_replacement, 1
+)
+
+with_server_anchor = """    let result = env.with_local_frame(32, |env| {
+        let class = <&JClass>::from(class.as_obj());
+        f(env, class)
+    });"""
+with_server_replacement = """    let profile_site = jni_profile_enabled().then(Location::caller);
     let call_started = Instant::now();
     let result = env.with_local_frame(32, |env| {
         let class = <&JClass>::from(class.as_obj());
         f(env, class)
-    });"""
-with_server_replacement = """    let elapsed = call_started.elapsed();
+    });
+    let elapsed = call_started.elapsed();
     JNI_CALLS.fetch_add(1, Ordering::Relaxed);
     add_duration(&JNI_TIME_US, &JNI_MAX_US, elapsed);
     if result.is_err() {
