@@ -68,13 +68,19 @@ public final class NativeGameActivity extends NativeActivity {
             }
             javaBridgeLogFile = new java.io.File(logDirectory, "java-bridge-startup.log");
             try (java.io.FileOutputStream output =
-                         new java.io.FileOutputStream(javaBridgeLogFile, false)) {
-                String header = "MobileHorizonNative Java Bridge startup diagnostics\n"
-                        + "Started at " + new java.util.Date() + "\n";
+                         new java.io.FileOutputStream(javaBridgeLogFile, true)) {
+                String header = "\n=== MobileHorizonNative Java Bridge session ===\n"
+                        + "Started at " + new java.util.Date() + "\n"
+                        + "pid=" + android.os.Process.myPid()
+                        + ", sdk=" + android.os.Build.VERSION.SDK_INT
+                        + ", device=" + android.os.Build.MANUFACTURER + " "
+                        + android.os.Build.MODEL + "\n";
                 output.write(header.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
             android.system.Os.setenv("HORIZON_JAVA_BRIDGE_LOG_FILE",
                     javaBridgeLogFile.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_JAVA_DIAGNOSTICS_DIR",
+                    logDirectory.getAbsolutePath(), true);
             bridgeLog("INFO", "Log persistente iniciado em "
                     + javaBridgeLogFile.getAbsolutePath());
         } catch (Exception error) {
@@ -399,6 +405,9 @@ public final class NativeGameActivity extends NativeActivity {
                 bridgeLog("INFO", "Pré-checagem 7/7: pré-verificação concluída; NativeActivity será iniciada.");
             }
         } catch (Exception error) {
+            GameMemoryGuard guard = memoryGuard;
+            if (guard != null) guard.recordEvent("launch-preflight-error",
+                    error.getClass().getName() + ": " + error.getMessage());
             if (javaBridgeLogFile != null) {
                 bridgeLog("ERROR", "Pré-verificação abortada: "
                         + (error.getMessage() == null ? error.toString() : error.getMessage()));
@@ -665,22 +674,41 @@ public final class NativeGameActivity extends NativeActivity {
 
     @Override
     protected void onPause() {
+        GameMemoryGuard guard = memoryGuard;
+        if (guard != null) guard.recordEvent("onPause",
+                "isFinishing=" + isFinishing() + ", changingConfigurations=" + isChangingConfigurations());
         if (touchControls != null) touchControls.releaseAllInputs();
         super.onPause();
     }
 
     @Override
+    protected void onStop() {
+        GameMemoryGuard guard = memoryGuard;
+        if (guard != null) guard.recordEvent("onStop",
+                "isFinishing=" + isFinishing() + ", taskRoot=" + isTaskRoot());
+        super.onStop();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        GameMemoryGuard guard = memoryGuard;
+        if (guard != null) guard.recordEvent("onResume",
+                "isFinishing=" + isFinishing() + ", taskRoot=" + isTaskRoot());
+    }
+
+    @Override
     public void onTrimMemory(int level) {
-        super.onTrimMemory(level);
         GameMemoryGuard guard = memoryGuard;
         if (guard != null) guard.onTrimMemory(level);
+        super.onTrimMemory(level);
     }
 
     @Override
     public void onLowMemory() {
-        super.onLowMemory();
         GameMemoryGuard guard = memoryGuard;
         if (guard != null) guard.onLowMemory();
+        super.onLowMemory();
     }
 
     @Override
@@ -698,7 +726,11 @@ public final class NativeGameActivity extends NativeActivity {
         }
         GameMemoryGuard guard = memoryGuard;
         memoryGuard = null;
-        if (guard != null) guard.stop();
+        if (guard != null) {
+            guard.recordEvent("onDestroy",
+                    "isFinishing=" + isFinishing() + ", changingConfigurations=" + isChangingConfigurations());
+            guard.stop();
+        }
         super.onDestroy();
         if (previousWorkingDirectory != null) {
             try {

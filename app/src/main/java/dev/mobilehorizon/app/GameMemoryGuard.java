@@ -1,14 +1,27 @@
 package dev.mobilehorizon.app;
 
 import android.app.ActivityManager;
+import android.app.ApplicationExitInfo;
 import android.content.Context;
+import android.os.Build;
 import android.os.Debug;
+import android.os.PowerManager;
+import android.os.Process;
+import android.os.StatFs;
 import android.os.SystemClock;
 import android.util.Log;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -31,33 +44,43 @@ final class GameMemoryGuard {
     private static final long SAMPLE_SECONDS = 3L;
     private static final int RECOVERY_SAMPLES = 3;
 
+    private final Context appContext;
     private final ActivityManager activityManager;
     private final File pressureFile;
     private final File logFile;
+    private final File logsDirectory;
     private final Object logLock = new Object();
 
     private volatile int currentLevel;
+    private long lastCpuSampleElapsedMs;
+    private long lastCpuSampleTimeMs;
     private int recoverySamples;
     private long lastDiagnosticAt;
     private ScheduledExecutorService executor;
     private boolean started;
 
     GameMemoryGuard(Context context, File filesDir) {
-        Context appContext = context.getApplicationContext();
+        this.appContext = context.getApplicationContext();
         this.activityManager = (ActivityManager) appContext.getSystemService(Context.ACTIVITY_SERVICE);
+        this.logsDirectory = new File(filesDir, "logs");
         this.pressureFile = new File(filesDir, "horizon-memory-pressure.level");
-        this.logFile = new File(new File(filesDir, "logs"), "memory-guard.log");
+        this.logFile = new File(logsDirectory, "memory-guard.log");
     }
 
     synchronized void start() {
         if (started) return;
         started = true;
 
-        File logDirectory = logFile.getParentFile();
-        if (logDirectory != null && !logDirectory.isDirectory()) {
-            //noinspection ResultOfMethodCallIgnored
-            logDirectory.mkdirs();
+        if (!logsDirectory.isDirectory() && !logsDirectory.mkdirs()) {
+            Log.e(TAG, "Não foi possível criar a pasta de diagnóstico: " + logsDirectory);
         }
+        appendLog("SESSION_BEGIN wallClock=" + new Date()
+                + ", pid=" + Process.myPid() + ", uid=" + Process.myUid()
+                + ", processName=" + appContext.getPackageName() + ":game"
+                + ", android=" + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")"
+                + ", device=" + Build.MANUFACTURER + " " + Build.MODEL
+                + ", supportedAbis=" + java.util.Arrays.toString(Build.SUPPORTED_ABIS));
+        logHistoricalProcessExits();
 
         long totalRam = readTotalRam();
         int heapInitialMiB = recommendedJavaHeapInitialMiB(totalRam);
@@ -65,6 +88,7 @@ final class GameMemoryGuard {
         int javaProcessors = recommendedJavaProcessorCount(totalRam);
         int gcThreads = recommendedJavaGcThreadCount(totalRam);
         setEnvironment("HORIZON_MEMORY_PRESSURE_FILE", pressureFile.getAbsolutePath());
+        setEnvironment("HORIZON_JAVA_DIAGNOSTICS_DIR", logsDirectory.getAbsolutePath());
         setEnvironment("HORIZON_JAVA_HEAP_INITIAL_MIB", Integer.toString(heapInitialMiB));
         setEnvironment("HORIZON_JAVA_HEAP_MAX_MIB", Integer.toString(heapMaxMiB));
         setEnvironment("HORIZON_JAVA_PROCESSORS", Integer.toString(javaProcessors));
@@ -76,7 +100,13 @@ final class GameMemoryGuard {
                 + ", javaHeapInitialMiB=" + heapInitialMiB
                 + ", javaHeapMaxMiB=" + heapMaxMiB
                 + ", javaProcessors=" + javaProcessors
-                + ", javaGcThreads=" + gcThreads);
+                + ", javaGcThreads=" + gcThreads
+                + ", memoryClassMiB=" + (activityManager == null ? -1 : activityManager.getMemoryClass())
+                + ", largeMemoryClassMiB=" + (activityManager == null ? -1 : activityManager.getLargeMemoryClass())
+                + ", logsDirectory=" + logsDirectory.getAbsolutePath());
+        appendLog("DIAGNOSTICS_ENABLED fields=AndroidMemoryInfo,DebugMemoryInfo(PSS split),ART heap,native heap,"
+                + "/proc/self/status,/proc/meminfo,/proc/self/smaps_rollup,cgroup,memory PSI,thermal,"
+                + "CPU time,ApplicationExitInfo,HotSpot GC log,HotSpot fatal error file,JNI/Fabric tick timing");
 
         sampleSafely();
         executor = Executors.newSingleThreadScheduledExecutor(task -> {
@@ -93,10 +123,19 @@ final class GameMemoryGuard {
         ScheduledExecutorService current = executor;
         executor = null;
         if (current != null) current.shutdownNow();
-        appendLog("stopped");
+        appendLog("SESSION_STOPPED elapsedRealtimeMs=" + SystemClock.elapsedRealtime()
+                + ", pid=" + Process.myPid());
+    }
+
+    void recordEvent(String event, String details) {
+        appendLog("ACTIVITY_EVENT name=" + event + ", elapsedRealtimeMs="
+                + SystemClock.elapsedRealtime() + ", details=" + details);
     }
 
     void onTrimMemory(int trimLevel) {
+        appendLog("ANDROID_TRIM_MEMORY level=" + trimLevel
+                + " (" + trimLevelName(trimLevel) + "), elapsedRealtimeMs="
+                + SystemClock.elapsedRealtime());
         // UI_HIDDEN/background callbacks are lifecycle notifications, not
         // evidence that the foreground game is about to exhaust memory.
         if (trimLevel >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
@@ -112,7 +151,21 @@ final class GameMemoryGuard {
     }
 
     void onLowMemory() {
+        appendLog("ANDROID_LOW_MEMORY_CALLBACK elapsedRealtimeMs=" + SystemClock.elapsedRealtime());
         forceAtLeast(3, "Android onLowMemory()");
+    }
+
+    private static String trimLevelName(int level) {
+        switch (level) {
+            case android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE: return "RUNNING_MODERATE";
+            case android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW: return "RUNNING_LOW";
+            case android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL: return "RUNNING_CRITICAL";
+            case android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN: return "UI_HIDDEN";
+            case android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND: return "BACKGROUND";
+            case android.content.ComponentCallbacks2.TRIM_MEMORY_MODERATE: return "MODERATE";
+            case android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE: return "COMPLETE";
+            default: return "UNKNOWN";
+        }
     }
 
     private void sampleSafely() {
@@ -122,20 +175,254 @@ final class GameMemoryGuard {
             long total = info.totalMem > 0 ? info.totalMem : readTotalRam();
             long available = info.availMem;
             long pssKb = 0L;
+            Debug.MemoryInfo processMemory = new Debug.MemoryInfo();
             try {
-                // PSS includes Java and native mappings (Horizon, Vulkan and JVM),
-                // unlike Runtime.freeMemory(), which only describes the Java heap.
+                // PSS includes ART, HotSpot, native and mapped pages visible to the kernel.
                 pssKb = Math.max(0L, Debug.getPss());
-            } catch (RuntimeException ignored) {
-                // System-wide available memory remains a useful signal.
+                Debug.getMemoryInfo(processMemory);
+            } catch (RuntimeException error) {
+                appendLog("MEMORY_SAMPLE_WARNING Debug.MemoryInfo failed: " + error);
             }
             int memoryClass = activityManager == null
                     ? 256 : Math.max(128, activityManager.getMemoryClass());
             int observed = classifyPressure(
                     total, available, pssKb, memoryClass, info.lowMemory);
             updateObservedLevel(observed, total, available, pssKb);
+            appendDetailedSample(info, processMemory, pssKb, memoryClass);
         } catch (RuntimeException error) {
+            appendLog("MEMORY_SAMPLE_ERROR type=" + error.getClass().getName()
+                    + ", message=" + error.getMessage());
             Log.w(TAG, "Falha ao consultar memória; mantendo o último nível de proteção.", error);
+        }
+    }
+
+    private void appendDetailedSample(
+            ActivityManager.MemoryInfo system,
+            Debug.MemoryInfo process,
+            long pssKb,
+            int memoryClassMiB) {
+        long nowElapsed = SystemClock.elapsedRealtime();
+        long cpuMs = Process.getElapsedCpuTime();
+        String cpu = "first-sample";
+        if (lastCpuSampleElapsedMs > 0 && nowElapsed > lastCpuSampleElapsedMs) {
+            long elapsedDelta = nowElapsed - lastCpuSampleElapsedMs;
+            long cpuDelta = Math.max(0L, cpuMs - lastCpuSampleTimeMs);
+            cpu = String.format(java.util.Locale.ROOT, "%.1f%%", 100.0d * cpuDelta / elapsedDelta);
+        }
+        lastCpuSampleElapsedMs = nowElapsed;
+        lastCpuSampleTimeMs = cpuMs;
+
+        Runtime art = Runtime.getRuntime();
+        long artUsed = art.totalMemory() - art.freeMemory();
+        long nativeAllocated = Debug.getNativeHeapAllocatedSize();
+        long nativeSize = Debug.getNativeHeapSize();
+        long nativeFree = Debug.getNativeHeapFreeSize();
+
+        String memoryStats = "unavailable";
+        try {
+            Map<String, String> values = new TreeMap<>(process.getMemoryStats());
+            StringBuilder selected = new StringBuilder();
+            for (Map.Entry<String, String> entry : values.entrySet()) {
+                if (entry.getKey().startsWith("summary.")) {
+                    if (selected.length() > 0) selected.append(';');
+                    selected.append(entry.getKey()).append('=').append(entry.getValue());
+                }
+            }
+            if (selected.length() > 0) memoryStats = selected.toString();
+        } catch (RuntimeException error) {
+            memoryStats = "error:" + error.getClass().getSimpleName();
+        }
+
+        String thermal = "unavailable";
+        try {
+            PowerManager power = (PowerManager) appContext.getSystemService(Context.POWER_SERVICE);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && power != null) {
+                int status = power.getCurrentThermalStatus();
+                thermal = status + ":" + thermalStatusName(status);
+            }
+        } catch (RuntimeException error) {
+            thermal = "error:" + error.getClass().getSimpleName();
+        }
+
+        long storageAvailable = new StatFs(appContext.getFilesDir().getAbsolutePath()).getAvailableBytes();
+        appendLog("MEMORY_SAMPLE elapsedMs=" + nowElapsed
+                + ", wallMs=" + System.currentTimeMillis()
+                + ", pressure=" + currentLevel
+                + ", lowMemory=" + system.lowMemory
+                + ", availMiB=" + toMiB(system.availMem)
+                + ", thresholdMiB=" + toMiB(system.threshold)
+                + ", totalRamMiB=" + toMiB(system.totalMem)
+                + ", processPssMiB=" + toMiB(pssKb * 1024L)
+                + ", pssDalvikMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getDalvikPss() / 1024.0d)
+                + ", pssNativeMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getNativePss() / 1024.0d)
+                + ", pssOtherMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getOtherPss() / 1024.0d)
+                + ", privateDirtyMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getTotalPrivateDirty() / 1024.0d)
+                + ", sharedDirtyMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getTotalSharedDirty() / 1024.0d)
+                + ", swapPssMiB=" + String.format(java.util.Locale.ROOT, "%.1f", process.getTotalSwappablePss() / 1024.0d)
+                + ", memoryClassMiB=" + memoryClassMiB
+                + ", largeMemoryClassMiB=" + (activityManager == null ? -1 : activityManager.getLargeMemoryClass())
+                + ", ART_heapUsedMiB=" + toMiB(artUsed)
+                + ", ART_heapCommittedMiB=" + toMiB(art.totalMemory())
+                + ", ART_heapMaxMiB=" + toMiB(art.maxMemory())
+                + ", nativeHeapAllocatedMiB=" + toMiB(nativeAllocated)
+                + ", nativeHeapSizeMiB=" + toMiB(nativeSize)
+                + ", nativeHeapFreeMiB=" + toMiB(nativeFree)
+                + ", processCpuPercent=" + cpu
+                + ", processCpuTimeMs=" + cpuMs
+                + ", storageAvailableMiB=" + toMiB(storageAvailable)
+                + ", thermalStatus=" + thermal
+                + ", debugSummary={" + memoryStats + "}"
+                + ", procStatus={" + readProcLines("/proc/self/status",
+                    new String[]{"VmPeak:", "VmSize:", "VmHWM:", "VmRSS:", "RssAnon:", "RssFile:", "RssShmem:", "VmSwap:", "Threads:"}) + "}"
+                + ", procMeminfo={" + readProcLines("/proc/meminfo",
+                    new String[]{"MemTotal:", "MemFree:", "MemAvailable:", "Buffers:", "Cached:", "SwapTotal:", "SwapFree:", "SReclaimable:"}) + "}"
+                + ", smapsRollup={" + readProcLines("/proc/self/smaps_rollup",
+                    new String[]{"Rss:", "Pss:", "Pss_Anon:", "Pss_File:", "Pss_Shmem:", "Private_Clean:", "Private_Dirty:", "Shared_Clean:", "Shared_Dirty:", "Swap:"}) + "}"
+                + ", memoryPsi={" + readSmallFile("/proc/pressure/memory", 1024) + "}"
+                + ", cgroupMemory={" + readCgroupMemory() + "}");
+    }
+
+    private static String readProcLines(String path, String[] prefixes) {
+        StringBuilder result = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                new FileInputStream(path), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                for (String prefix : prefixes) {
+                    if (line.startsWith(prefix)) {
+                        if (result.length() > 0) result.append(';');
+                        result.append(line.trim());
+                        break;
+                    }
+                }
+            }
+        } catch (Exception error) {
+            return "unavailable:" + error.getClass().getSimpleName();
+        }
+        return result.length() == 0 ? "empty-or-denied" : result.toString();
+    }
+
+    private static String readSmallFile(String path, int maxChars) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                new FileInputStream(path), StandardCharsets.UTF_8))) {
+            StringBuilder value = new StringBuilder();
+            char[] buffer = new char[256];
+            int read;
+            while ((read = reader.read(buffer)) > 0 && value.length() < maxChars) {
+                value.append(buffer, 0, Math.min(read, maxChars - value.length()));
+            }
+            return value.length() == 0 ? "empty-or-denied" : value.toString().replace('\n', ';');
+        } catch (Exception error) {
+            return "unavailable:" + error.getClass().getSimpleName();
+        }
+    }
+
+    private static String readCgroupMemory() {
+        String[] paths = {
+                "/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.max",
+                "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+                "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+        };
+        StringBuilder result = new StringBuilder();
+        for (String path : paths) {
+            String value = readSmallFile(path, 128);
+            if (!value.startsWith("unavailable:")) {
+                if (result.length() > 0) result.append(';');
+                result.append(path).append('=').append(value.trim());
+            }
+        }
+        return result.length() == 0 ? "unavailable" : result.toString();
+    }
+
+    private static String thermalStatusName(int status) {
+        switch (status) {
+            case PowerManager.THERMAL_STATUS_NONE: return "NONE";
+            case PowerManager.THERMAL_STATUS_LIGHT: return "LIGHT";
+            case PowerManager.THERMAL_STATUS_MODERATE: return "MODERATE";
+            case PowerManager.THERMAL_STATUS_SEVERE: return "SEVERE";
+            case PowerManager.THERMAL_STATUS_CRITICAL: return "CRITICAL";
+            case PowerManager.THERMAL_STATUS_EMERGENCY: return "EMERGENCY";
+            case PowerManager.THERMAL_STATUS_SHUTDOWN: return "SHUTDOWN";
+            default: return "UNKNOWN";
+        }
+    }
+
+    private void logHistoricalProcessExits() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || activityManager == null) {
+            appendLog("EXIT_HISTORY unavailable: Android API below 30");
+            return;
+        }
+        try {
+            List<ApplicationExitInfo> exits =
+                    activityManager.getHistoricalProcessExitReasons(appContext.getPackageName(), 0, 12);
+            if (exits == null || exits.isEmpty()) {
+                appendLog("EXIT_HISTORY no prior process exits returned by Android");
+                return;
+            }
+            appendLog("EXIT_HISTORY count=" + exits.size());
+            for (ApplicationExitInfo exit : exits) {
+                String details = "timestamp=" + new Date(exit.getTimestamp())
+                        + ", pid=" + exit.getPid()
+                        + ", process=" + exit.getProcessName()
+                        + ", reason=" + exit.getReason() + ":" + exitReasonName(exit.getReason())
+                        + ", status=" + exit.getStatus()
+                        + ", importance=" + exit.getImportance()
+                        + ", pssMiB=" + toMiB(exit.getPss() * 1024L)
+                        + ", rssMiB=" + toMiB(exit.getRss() * 1024L)
+                        + ", description=" + exit.getDescription();
+                appendLog("EXIT_HISTORY_ENTRY " + details);
+                captureExitTrace(exit);
+            }
+        } catch (RuntimeException error) {
+            appendLog("EXIT_HISTORY_ERROR " + error.getClass().getName() + ": " + error.getMessage());
+        }
+    }
+
+    private void captureExitTrace(ApplicationExitInfo exit) {
+        InputStream trace = null;
+        try {
+            trace = exit.getTraceInputStream();
+            if (trace == null) return;
+            File target = new File(logsDirectory,
+                    "exit-trace-" + exit.getTimestamp() + "-pid" + exit.getPid() + ".txt");
+            try (InputStream input = trace; FileOutputStream output = new FileOutputStream(target, false)) {
+                byte[] buffer = new byte[8192];
+                int total = 0;
+                int read;
+                while (total < 512 * 1024
+                        && (read = input.read(buffer, 0, Math.min(buffer.length, 512 * 1024 - total))) > 0) {
+                    output.write(buffer, 0, read);
+                    total += read;
+                }
+                output.flush();
+                appendLog("EXIT_TRACE_SAVED file=" + target.getName() + ", bytes=" + total
+                        + ", cappedAt512KiB=true");
+            }
+        } catch (Exception error) {
+            if (trace != null) {
+                try { trace.close(); } catch (Exception ignored) { }
+            }
+            appendLog("EXIT_TRACE_UNAVAILABLE pid=" + exit.getPid()
+                    + ", reason=" + error.getClass().getSimpleName() + ":" + error.getMessage());
+        }
+    }
+
+    private static String exitReasonName(int reason) {
+        switch (reason) {
+            case ApplicationExitInfo.REASON_EXIT_SELF: return "EXIT_SELF";
+            case ApplicationExitInfo.REASON_SIGNALED: return "SIGNALED";
+            case ApplicationExitInfo.REASON_LOW_MEMORY: return "LOW_MEMORY";
+            case ApplicationExitInfo.REASON_CRASH: return "CRASH";
+            case ApplicationExitInfo.REASON_CRASH_NATIVE: return "CRASH_NATIVE";
+            case ApplicationExitInfo.REASON_ANR: return "ANR";
+            case ApplicationExitInfo.REASON_INITIALIZATION_FAILURE: return "INITIALIZATION_FAILURE";
+            case ApplicationExitInfo.REASON_PERMISSION_CHANGE: return "PERMISSION_CHANGE";
+            case ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE: return "EXCESSIVE_RESOURCE_USAGE";
+            case ApplicationExitInfo.REASON_USER_REQUESTED: return "USER_REQUESTED";
+            case ApplicationExitInfo.REASON_USER_STOPPED: return "USER_STOPPED";
+            case ApplicationExitInfo.REASON_DEPENDENCY_DIED: return "DEPENDENCY_DIED";
+            case ApplicationExitInfo.REASON_OTHER: return "OTHER";
+            default: return "UNKNOWN";
         }
     }
 
@@ -176,6 +463,8 @@ final class GameMemoryGuard {
 
     private synchronized void forceAtLeast(int requested, String reason) {
         recoverySamples = 0;
+        appendLog("PRESSURE_TRIGGER requested=" + requested + ", current=" + currentLevel
+                + ", reason=" + reason + ", elapsedRealtimeMs=" + SystemClock.elapsedRealtime());
         if (requested <= currentLevel) return;
         int old = currentLevel;
         currentLevel = Math.min(3, requested);
@@ -283,16 +572,23 @@ final class GameMemoryGuard {
     }
 
     private void appendLog(String message) {
-        String line = "[" + System.currentTimeMillis() + "] " + message;
+        String line = "[" + System.currentTimeMillis() + "][elapsedMs="
+                + SystemClock.elapsedRealtime() + "][pid=" + Process.myPid() + "] " + message;
         Log.i(TAG, line);
         synchronized (logLock) {
-            File parent = logFile.getParentFile();
-            if (parent != null && !parent.isDirectory()) {
-                //noinspection ResultOfMethodCallIgnored
-                parent.mkdirs();
-            }
-            try (FileOutputStream output = new FileOutputStream(logFile, true)) {
-                output.write((line + "\n").getBytes(StandardCharsets.UTF_8));
+            try {
+                if (logFile.isFile() && logFile.length() > 5L * 1024L * 1024L) {
+                    File previous = new File(logFile.getParentFile(), logFile.getName() + ".1");
+                    //noinspection ResultOfMethodCallIgnored
+                    previous.delete();
+                    if (!logFile.renameTo(previous)) {
+                        Log.w(TAG, "Não foi possível rotacionar memory-guard.log; mantendo arquivo atual.");
+                    }
+                }
+                try (FileOutputStream output = new FileOutputStream(logFile, true)) {
+                    output.write((line + "\n").getBytes(StandardCharsets.UTF_8));
+                    output.flush();
+                }
             } catch (Exception error) {
                 Log.w(TAG, "Não foi possível gravar memory-guard.log.", error);
             }

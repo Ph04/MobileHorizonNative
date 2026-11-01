@@ -1,6 +1,9 @@
 package dev.mobilehorizon.app;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -16,8 +19,14 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
+import java.util.Date;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,6 +41,8 @@ public final class ConsoleActivity extends Activity {
     private boolean loading;
     private boolean resumed;
     private String latest="";
+    private static final int REQUEST_SAVE_DIAGNOSTICS = 7314;
+    private File pendingDiagnosticsZip;
 
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);
@@ -49,6 +60,9 @@ getWindow().setStatusBarColor(0xff090911);getWindow().setNavigationBarColor(0xff
         page.addView(text("Console e logs",25,0xfff0ecff,true),top(-1,-2,4));
         page.addView(text("Acompanhe logs do cliente da instância ativa. Atualização automática a cada poucos segundos.",12,0xffb9b3d1,false),top(-1,-2,5));
         page.addView(button("Voltar",false,v->finish()),top(-1,48,10));
+        page.addView(button("Exportar diagnóstico completo (ZIP)",true,v->exportDiagnostics()),
+                top(-1,48,8));
+        page.addView(text("Inclui memória Android/ART/nativa, histórico de encerramento do Android, GC/heap da JVM, erros fatais e latest.log da instância. Revise antes de compartilhar: logs do jogo podem conter endereços de servidores e mensagens.",10,0xffb9b3d1,false),top(-1,-2,4));
         LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
         filter=new EditText(this);filter.setSingleLine(true);filter.setTextColor(0xfff0ecff);filter.setHintTextColor(0xff827b9f);filter.setHint("Filtrar logs…");
         filter.setBackgroundColor(0xff151321);row.addView(filter,new LinearLayout.LayoutParams(0,dp(48),1f));
@@ -84,6 +98,130 @@ getWindow().setStatusBarColor(0xff090911);getWindow().setNavigationBarColor(0xff
                 if(error!=null){status.setText("Falha ao ler o log: "+error.getMessage());return;}
                 latest=result;status.setText(source.isEmpty()?"":source);render();
                 if(resumed){handler.removeCallbacks(poll);handler.postDelayed(poll,2200);}
+            });
+        });
+    }
+
+    private void exportDiagnostics(){
+        if(loading || isFinishing() || isDestroyed()) return;
+        status.setText("Preparando pacote de diagnóstico…");
+        io.execute(()->{
+            File zipFile=new File(getCacheDir(),"mobilehorizon-diagnostics-"+System.currentTimeMillis()+".zip");
+            Exception failure=null;
+            try(ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(zipFile))){
+                File appLogs=new File(getFilesDir(),"logs");
+                addDiagnosticDirectory(zip,appLogs,"app-logs/");
+                addDiagnosticFile(zip,new File(getFilesDir(),"horizon-memory-pressure.level"),
+                        "app-state/horizon-memory-pressure.level",256*1024L);
+                File home=GameInstanceManager.getSelectedInstanceHome(this);
+                addDiagnosticFile(zip,new File(new File(home,"logs"),"latest.log"),
+                        "instance/latest.log",8L*1024L*1024L);
+                String device="createdAt="+new Date()+"\n"
+                        +"package="+getPackageName()+"\n"
+                        +"manufacturer="+Build.MANUFACTURER+"\n"
+                        +"model="+Build.MODEL+"\n"
+                        +"androidRelease="+Build.VERSION.RELEASE+"\n"
+                        +"sdk="+Build.VERSION.SDK_INT+"\n"
+                        +"supportedAbis="+java.util.Arrays.toString(Build.SUPPORTED_ABIS)+"\n";
+                zip.putNextEntry(new ZipEntry("device-summary.txt"));
+                zip.write(device.getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }catch(Exception error){failure=error;}
+            final Exception error=failure;
+            runOnUiThread(()->{
+                if(isFinishing()||isDestroyed())return;
+                if(error!=null){
+                    status.setText("Falha ao preparar diagnóstico: "+error.getMessage());
+                    return;
+                }
+                pendingDiagnosticsZip=zipFile;
+                Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/zip");
+                intent.putExtra(Intent.EXTRA_TITLE,"MobileHorizon-diagnostics.zip");
+                try{
+                    startActivityForResult(intent,REQUEST_SAVE_DIAGNOSTICS);
+                }catch(Exception launchError){
+                    status.setText("Não foi possível abrir o seletor de arquivos: "+launchError.getMessage());
+                }
+            });
+        });
+    }
+
+    private void addDiagnosticDirectory(ZipOutputStream zip,File directory,String prefix)throws Exception{
+        File[] files=directory==null?null:directory.listFiles();
+        if(files==null)return;
+        java.util.Arrays.sort(files,(a,b)->a.getName().compareToIgnoreCase(b.getName()));
+        for(File file:files){
+            if(file.isDirectory()){
+                if(file.getName().equals("diagnostic-export"))continue;
+                addDiagnosticDirectory(zip,file,prefix+file.getName()+"/");
+                continue;
+            }
+            String name=file.getName().toLowerCase(Locale.ROOT);
+            boolean diagnostic=name.endsWith(".log")||name.endsWith(".trace")
+                    ||name.endsWith(".txt")||name.contains(".log.")
+                    ||name.startsWith("java-gc.log.")||name.startsWith("hs_err_pid");
+            if(diagnostic)addDiagnosticFile(zip,file,prefix+file.getName(),5L*1024L*1024L);
+        }
+    }
+
+    private void addDiagnosticFile(ZipOutputStream zip,File file,String entryName,long maxBytes)throws Exception{
+        if(file==null||!file.isFile()||file.length()<=0)return;
+        zip.putNextEntry(new ZipEntry(entryName));
+        try(RandomAccessFile input=new RandomAccessFile(file,"r")){
+            long length=input.length();
+            long start=Math.max(0L,length-maxBytes);
+            if(start>0){
+                byte[] header=("[truncated: showing last "+maxBytes+" of "+length+" bytes]\n")
+                        .getBytes(StandardCharsets.UTF_8);
+                zip.write(header);
+            }
+            input.seek(start);
+            byte[] buffer=new byte[16384];
+            long remaining=length-start;
+            while(remaining>0){
+                int count=input.read(buffer,0,(int)Math.min(buffer.length,remaining));
+                if(count<0)break;
+                zip.write(buffer,0,count);
+                remaining-=count;
+            }
+        }
+        zip.closeEntry();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode,int resultCode,Intent data){
+        super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode!=REQUEST_SAVE_DIAGNOSTICS)return;
+        File source=pendingDiagnosticsZip;
+        pendingDiagnosticsZip=null;
+        Uri destination=data==null?null:data.getData();
+        if(resultCode!=RESULT_OK||destination==null){
+            status.setText("Exportação cancelada. Os logs continuam salvos no app.");
+            return;
+        }
+        if(source==null||!source.isFile()){
+            status.setText("O pacote temporário de diagnóstico não está disponível.");
+            return;
+        }
+        status.setText("Salvando pacote de diagnóstico…");
+        io.execute(()->{
+            Exception failure=null;
+            try(FileInputStream input=new FileInputStream(source);
+                OutputStream output=getContentResolver().openOutputStream(destination,"w")){
+                if(output==null)throw new java.io.IOException("Não foi possível abrir o destino escolhido.");
+                byte[] buffer=new byte[16384];
+                int count;
+                while((count=input.read(buffer))!=-1)output.write(buffer,0,count);
+                output.flush();
+            }catch(Exception error){failure=error;}
+            final Exception error=failure;
+            runOnUiThread(()->{
+                if(isFinishing()||isDestroyed())return;
+                status.setText(error==null
+                        ?"Diagnóstico exportado com sucesso. Envie o ZIP para análise."
+                        :"Falha ao salvar o diagnóstico: "+error.getMessage());
             });
         });
     }
