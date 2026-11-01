@@ -1118,17 +1118,20 @@ jvm_cargo = jvm_cargo.replace(
     "downloaded once and checked against pinned SHA-256/SHA-1 digests.",
     1,
 )
-build_sha2_anchor = """[build-dependencies]
-# build.rs compiles the bridge's Java against Fabric Loader (src/libs.rs, shared).
-ureq = { version = "2", default-features = false, features = ["tls"] }
-sha2 = "0.10"
-"""
-build_sha2_replacement = build_sha2_anchor + 'sha1 = "0.10"\n'
-build_section = jvm_cargo.split("[build-dependencies]", 1)[1]
+build_section_parts = jvm_cargo.split("[build-dependencies]", 1)
+if len(build_section_parts) != 2:
+    raise SystemExit(f"{jvm_cargo_path}: missing [build-dependencies] section")
+build_section = build_section_parts[1]
 if 'sha1 = "0.10"' not in build_section:
-    if jvm_cargo.count(build_sha2_anchor) != 1:
-        raise SystemExit(f"{jvm_cargo_path}: build-dependency SHA-1 anchor changed")
-    jvm_cargo = jvm_cargo.replace(build_sha2_anchor, build_sha2_replacement, 1)
+    sha2_build_line = 'sha2 = "0.10"'
+    if build_section.count(sha2_build_line) != 1:
+        raise SystemExit(f"{jvm_cargo_path}: expected one SHA-2 build dependency")
+    build_section = build_section.replace(
+        sha2_build_line,
+        sha2_build_line + '\nsha1 = "0.10"',
+        1,
+    )
+    jvm_cargo = build_section_parts[0] + "[build-dependencies]" + build_section
 jvm_cargo_path.write_text(jvm_cargo, encoding="utf-8")
 
 # sha1 0.10.7 is already present in the workspace lockfile through horizon-port-pack.
