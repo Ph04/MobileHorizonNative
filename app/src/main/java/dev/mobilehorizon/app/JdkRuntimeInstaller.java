@@ -366,14 +366,15 @@ final class JdkRuntimeInstaller {
         int patched = relocateTermuxLibraries(libraryDirectory, root, visited);
         patched += relocateTermuxLibraries(javaLibraryDirectory, root, visited);
 
-        if (!ElfDynamicPathPatcher.runpathIncludesDirectory(runtime.libjvm, libraryDirectory)
+        String runpath = ElfDynamicPathPatcher.readRunpath(runtime.libjvm);
+        if (runpath == null || runpath.contains("/data/data/com.termux/files/usr")
+                || !ElfDynamicPathPatcher.runpathIncludesDirectory(runtime.libjvm, libraryDirectory)
                 || !ElfDynamicPathPatcher.runpathIncludesDirectory(runtime.libjvm, javaLibraryDirectory)) {
-            String runpath = ElfDynamicPathPatcher.readRunpath(runtime.libjvm);
-            throw new IOException("Não foi possível relocalizar o DT_RUNPATH do libjvm.so "
+            throw new IOException("Não foi possível relocalizar integralmente o DT_RUNPATH do libjvm.so "
                     + "para as bibliotecas privadas do app. DT_RUNPATH atual: " + runpath);
         }
 
-        writeText(marker, "android-linker-runpath=v1\\n");
+        writeText(marker, "android-linker-runpath=v1\n");
         return patched;
     }
 
