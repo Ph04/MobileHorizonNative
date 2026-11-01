@@ -85,6 +85,8 @@ public final class NativeGameActivity extends NativeActivity {
                     + javaBridgeLogFile.getAbsolutePath());
         } catch (Exception error) {
             javaBridgeLogFile = null;
+            GameMemoryGuard guard = memoryGuard;
+            if (guard != null) guard.recordException("java-bridge-log-init", error);
             android.util.Log.e("MobileHorizon",
                     "[JavaBridge][ERROR] Não foi possível criar o arquivo de diagnóstico.", error);
         }
@@ -152,9 +154,25 @@ public final class NativeGameActivity extends NativeActivity {
                 throw new java.io.IOException("Não foi possível criar o diretório da instância Horizon.");
             }
             home = home.getCanonicalFile();
+            GameMemoryGuard launchGuard = memoryGuard;
+            if (launchGuard != null) {
+                launchGuard.recordEvent("launch-profile-prepare-begin",
+                        "instanceId=" + instanceId + ", home=" + home.getAbsolutePath());
+            }
+            long profilePrepareStartedMs = android.os.SystemClock.elapsedRealtime();
             GameProfileManager.LaunchProfile profile =
                     GameProfileManager.prepareLaunch(this, instanceId);
             boolean fabricJavaBridge = profile.profile.isFabricJavaBridge();
+            if (launchGuard != null) {
+                launchGuard.recordEvent("launch-profile-prepare-complete",
+                        "instanceId=" + profile.profile.instanceId
+                                + ", minecraftVersion=" + profile.profile.minecraftVersion
+                                + ", loader=" + profile.profile.loaderId + " "
+                                + profile.profile.loaderVersion
+                                + ", javaBridge=" + fabricJavaBridge
+                                + ", elapsedMs="
+                                + (android.os.SystemClock.elapsedRealtime() - profilePrepareStartedMs));
+            }
             if (fabricJavaBridge) {
                 beginJavaBridgeLog(gameRoot);
                 bridgeLog("INFO", "Pré-checagem 1/7: instância selecionada: "
@@ -406,8 +424,7 @@ public final class NativeGameActivity extends NativeActivity {
             }
         } catch (Exception error) {
             GameMemoryGuard guard = memoryGuard;
-            if (guard != null) guard.recordEvent("launch-preflight-error",
-                    error.getClass().getName() + ": " + error.getMessage());
+            if (guard != null) guard.recordException("launch-preflight-error", error);
             if (javaBridgeLogFile != null) {
                 bridgeLog("ERROR", "Pré-verificação abortada: "
                         + (error.getMessage() == null ? error.toString() : error.getMessage()));
@@ -423,7 +440,17 @@ public final class NativeGameActivity extends NativeActivity {
         }
         // Keep Android's Activity/UI thread at its normal scheduling priority. Raising it
         // before native renderer startup can starve system input/UI work on slower devices.
+        GameMemoryGuard nativeStartGuard = memoryGuard;
+        if (nativeStartGuard != null) {
+            nativeStartGuard.recordEvent("native-activity-super-onCreate-begin",
+                    "bridgeLogInitialized=" + (javaBridgeLogFile != null));
+        }
         super.onCreate(savedInstanceState);
+        nativeStartGuard = memoryGuard;
+        if (nativeStartGuard != null) {
+            nativeStartGuard.recordEvent("native-activity-super-onCreate-return",
+                    "bridgeLogInitialized=" + (javaBridgeLogFile != null));
+        }
         Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         window.setNavigationBarColor(Color.TRANSPARENT);
