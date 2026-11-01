@@ -1,7 +1,14 @@
 # Ordered patch step. See README.md in this directory for scope and order.
 audio_source = audio.read_text(encoding="utf-8")
 audio_start_marker = '#[cfg(feature = "audio")]\nfn open_device('
-audio_end_marker = "\n/// The name of the system's default output device."
+# Newer Horizon adds try_open_device between open_device and default_output_name.
+# Keep that helper intact: the device-selection loop calls it for the default and fallback outputs.
+audio_try_device_marker = "\n/// Try one output device for `open`: skip it when it was already tried"
+audio_legacy_end_marker = "\n/// The name of the system's default output device."
+if audio_try_device_marker in audio_source:
+    audio_end_marker = audio_try_device_marker
+else:
+    audio_end_marker = audio_legacy_end_marker
 audio_start = audio_source.find(audio_start_marker)
 audio_end = audio_source.find(audio_end_marker, audio_start + len(audio_start_marker))
 if audio_start < 0 or audio_end < 0 or audio_source.find(audio_start_marker, audio_start + 1) >= 0:
