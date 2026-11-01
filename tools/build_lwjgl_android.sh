@@ -56,7 +56,7 @@ if grep -E 'libffi\.so|libjvm\.so|libc\+\+_shared\.so|GLIBC_' "$BUILD/lwjgl-dyna
     echo "Unexpected non-platform dependency in Android LWJGL core." >&2
     exit 1
 fi
-DESTINATION="$ROOT/android-bootstrap/prebuilt/$ABI"
+DESTINATION="$ROOT/app/src/main/jniLibs/$ABI"
 mkdir -p "$DESTINATION"
 install -m 0755 "$SOURCE_LIBRARY" "$DESTINATION/liblwjgl.so"
 sha256sum "$DESTINATION/liblwjgl.so"

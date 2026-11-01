@@ -94,9 +94,11 @@ jobs:
           cmake --build "$BUILD_DIR" --target horizon_android --parallel 2
           BOOTSTRAP="$BUILD_DIR/libhorizon_android.so"
           test -s "$BOOTSTRAP"
-          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -d "$BOOTSTRAP" > "$RUNNER_TEMP/horizon-bootstrap-dependencies.txt"
-          grep -Fq "liblwjgl.so" "$RUNNER_TEMP/horizon-bootstrap-dependencies.txt"
-          echo "Complete LWJGL 3.4.1 core + static libffi and bootstrap linked. No APK built." >> "$GITHUB_STEP_SUMMARY"
+          JNI_LIBRARY="app/src/main/jniLibs/arm64-v8a/liblwjgl.so"
+          test -s "$JNI_LIBRARY"
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -h "$JNI_LIBRARY" > "$RUNNER_TEMP/lwjgl-elf-header.txt"
+          grep -Fq "AArch64" "$RUNNER_TEMP/lwjgl-elf-header.txt"
+          echo "Complete LWJGL 3.4.1 core + static libffi staged as an Android JNI library. No APK built." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Compile Android Java sources and run unit tests (no APK tasks)
         shell: bash
