@@ -397,13 +397,13 @@ final class GameMemoryGuard {
         }
 
         StringBuilder snapshot = new StringBuilder();
-        snapshot.append("MobileHorizon Android process exit history\\n")
-                .append("capturedAt=").append(new Date()).append("\\n")
-                .append("package=").append(context.getPackageName()).append("\\n")
-                .append("currentPid=").append(Process.myPid()).append("\\n");
+        snapshot.append("MobileHorizon Android process exit history\n")
+                .append("capturedAt=").append(new Date()).append("\n")
+                .append("package=").append(context.getPackageName()).append("\n")
+                .append("currentPid=").append(Process.myPid()).append("\n");
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            snapshot.append("EXIT_HISTORY unavailable: Android API below 30\\n");
+            snapshot.append("EXIT_HISTORY unavailable: Android API below 30\n");
             writeExitHistorySnapshot(directory, snapshot.toString());
             return;
         }
@@ -411,20 +411,20 @@ final class GameMemoryGuard {
         try {
             ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             if (manager == null) {
-                snapshot.append("EXIT_HISTORY unavailable: ActivityManager is null\\n");
+                snapshot.append("EXIT_HISTORY unavailable: ActivityManager is null\n");
                 writeExitHistorySnapshot(directory, snapshot.toString());
                 return;
             }
             List<ApplicationExitInfo> exits =
                     manager.getHistoricalProcessExitReasons(context.getPackageName(), 0, 12);
             if (exits == null || exits.isEmpty()) {
-                snapshot.append("EXIT_HISTORY no process exits returned by Android\\n");
+                snapshot.append("EXIT_HISTORY no process exits returned by Android\n");
             } else {
-                snapshot.append("EXIT_HISTORY count=").append(exits.size()).append("\\n");
+                snapshot.append("EXIT_HISTORY count=").append(exits.size()).append("\n");
                 for (ApplicationExitInfo exit : exits) {
                     String description = exit.getDescription();
                     if (description == null) description = "";
-                    description = description.replace('\\n', ' ').replace('\\r', ' ');
+                    description = description.replace('\n', ' ').replace('\r', ' ');
                     snapshot.append("EXIT_HISTORY_ENTRY timestamp=").append(new Date(exit.getTimestamp()))
                             .append(", pid=").append(exit.getPid())
                             .append(", process=").append(exit.getProcessName())
@@ -434,13 +434,13 @@ final class GameMemoryGuard {
                             .append(", pssMiB=").append(toMiB(exit.getPss() * 1024L))
                             .append(", rssMiB=").append(toMiB(exit.getRss() * 1024L))
                             .append(", description=").append(description)
-                            .append("\\n");
+                            .append("\n");
                     captureDiagnosticExitTrace(directory, exit, snapshot);
                 }
             }
         } catch (RuntimeException error) {
             snapshot.append("EXIT_HISTORY_ERROR ").append(error.getClass().getName())
-                    .append(": ").append(error.getMessage()).append("\\n");
+                    .append(": ").append(error.getMessage()).append("\n");
         }
         writeExitHistorySnapshot(directory, snapshot.toString());
     }
@@ -452,7 +452,7 @@ final class GameMemoryGuard {
             trace = exit.getTraceInputStream();
             if (trace == null) {
                 snapshot.append("EXIT_TRACE_UNAVAILABLE pid=").append(exit.getPid())
-                        .append(", reason=no trace stream\\n");
+                        .append(", reason=no trace stream\n");
                 return;
             }
             File target = new File(directory,
@@ -471,7 +471,7 @@ final class GameMemoryGuard {
                 snapshot.append("EXIT_TRACE_SAVED pid=").append(exit.getPid())
                         .append(", file=").append(target.getName())
                         .append(", bytes=").append(total)
-                        .append(", cappedAt512KiB=true\\n");
+                        .append(", cappedAt512KiB=true\n");
             }
         } catch (Exception error) {
             if (trace != null) {
@@ -479,7 +479,7 @@ final class GameMemoryGuard {
             }
             snapshot.append("EXIT_TRACE_UNAVAILABLE pid=").append(exit.getPid())
                     .append(", reason=").append(error.getClass().getSimpleName())
-                    .append(":").append(error.getMessage()).append("\\n");
+                    .append(":").append(error.getMessage()).append("\n");
         }
     }
 
