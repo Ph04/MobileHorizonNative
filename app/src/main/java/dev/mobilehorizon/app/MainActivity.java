@@ -2195,6 +2195,8 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                 new File(appLogsDirectory, "java-bridge-startup.log"), 48 * 1024);
         appendLogTail(report, "Android memory guard",
                 new File(appLogsDirectory, "memory-guard.log"), 48 * 1024);
+        appendLogTail(report, "Android process exit history",
+                new File(appLogsDirectory, "android-exit-history.log"), 32 * 1024);
 
         File[] gcLogs = appLogsDirectory.listFiles((dir, name) ->
                 (name.equals("java-gc.log") || name.startsWith("java-gc.log.")));
@@ -2334,7 +2336,12 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
 
                 // Java Bridge diagnostics are stored at the app level because the JVM is
                 // embedded in :game; do not look for these files inside the Minecraft instance.
+                // Query Android after the :game process has already ended. Historical
+                // exit reasons are process-wide system data and do not require reopening the game.
+                GameMemoryGuard.captureHistoricalExitsForDiagnostics(this, getFilesDir());
+
                 File appLogsDirectory = new File(getFilesDir(), "logs");
+                File androidExitHistoryLog = new File(appLogsDirectory, "android-exit-history.log");
                 File javaBridgeLog = new File(appLogsDirectory, "java-bridge-startup.log");
                 File memoryGuardLog = new File(appLogsDirectory, "memory-guard.log");
                 File[] gcLogs = appLogsDirectory.listFiles((dir, name) ->
@@ -2369,6 +2376,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                         + "vulkan_smoke_result_present=" + smokeResult.isFile() + "\n"
                         + "java_bridge_log_present=" + javaBridgeLog.isFile() + "\n"
                         + "memory_guard_log_present=" + memoryGuardLog.isFile() + "\n"
+                        + "android_exit_history_present=" + androidExitHistoryLog.isFile() + "\n"
                         + "hotspot_gc_logs_found=" + gcLogs.length + "\n"
                         + "hotspot_fatal_error_present=" + (hotspotErrors.length > 0) + "\n"
                         + "android_exit_traces_found=" + exitTraces.length + "\n"
@@ -2393,6 +2401,8 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                             "java-bridge/java-bridge-startup.log", 512 * 1024);
                     addDiagnosticFileTail(zip, memoryGuardLog,
                             "java-bridge/memory-guard.log", 512 * 1024);
+                    addDiagnosticFileTail(zip, androidExitHistoryLog,
+                            "java-bridge/android-exit-history.log", 128 * 1024);
                     for (int i = 0; i < Math.min(4, gcLogs.length); i++) {
                         addDiagnosticFileTail(zip, gcLogs[i],
                                 "java-bridge/" + gcLogs[i].getName(), 2 * 1024 * 1024);
