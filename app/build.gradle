@@ -180,3 +180,4 @@ dependencies {
 }
 // One-shot APK test build approval recorded on the Java Bridge diagnostics branch.
 // Follow-up APK build approved for the Java Bridge crash-diagnostic fixes (2026-11-01).
+// APK approval: standard ARM64 experimental build authorized by the user on 2026-11-01.
