@@ -139,11 +139,11 @@ final class ElfDynamicPathPatcher {
         elf.seek(0);
         elf.readFully(header);
         if (header[0] != 0x7f || header[1] != 'E' || header[2] != 'L' || header[3] != 'F') return null;
-        if ((header[4] & 0xff) != 2 || (header[5] & 0xff) != 1) {
-            throw new IOException("O runtime Java contém ELF que não é ELF64 little-endian.");
-        }
-        if (unsignedShort(header, 18) != EM_AARCH64) {
-            throw new IOException("O runtime Java contém ELF que não é ARM64.");
+        if ((header[4] & 0xff) != 2 || (header[5] & 0xff) != 1
+                || unsignedShort(header, 18) != EM_AARCH64) {
+            // Package trees may contain symlinked system libraries or non-runtime helper
+            // binaries. Only ARM64 ELF shared objects are candidates for relocation.
+            return null;
         }
 
         ByteBuffer fields = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
