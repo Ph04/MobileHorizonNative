@@ -304,6 +304,56 @@ loader_replacement = """    #[cfg(target_os = "android")]
 if jvm_source.count(loader_anchor) != 1:
     raise SystemExit(f"{jvm_source_path}: libjvm loader anchor changed")
 jvm_source = jvm_source.replace(loader_anchor, loader_replacement, 1)
+
+# Match Pojav's Android VM hinter for its Mojo runtime: make headless AWT and NIO
+# globally visible before JNI startup, as the reference Android launcher does.
+preload_anchor = """    // SAFETY: the pointers are valid for the call; `options` outlives it.
+    let code = unsafe { create(&mut vm, &mut env, &mut args as *mut _ as *mut c_void) };"""
+preload_replacement = """    #[cfg(target_os = "android")]
+    let mut android_jre_preloads: Vec<libloading::Library> = Vec::new();
+    #[cfg(target_os = "android")]
+    if std::env::var("HORIZON_JAVA_PROFILE").ok().as_deref()
+        == Some("mojo-pojav-openjdk-25")
+    {
+        let flags = libloading::os::unix::RTLD_NOW | libloading::os::unix::RTLD_GLOBAL;
+        for name in ["libawt_headless.so", "libnio.so"] {
+            let candidate = home.join("lib").join(name);
+            if !candidate.is_file() {
+                log::warn!("Pojav/Mojo runtime is missing optional Android preload {}", candidate.display());
+                continue;
+            }
+            match unsafe {
+                libloading::os::unix::Library::open(Some(candidate.as_os_str()), flags)
+            } {
+                Ok(library) => {
+                    log::info!("Pojav/Mojo runtime preloaded {}", candidate.display());
+                    android_jre_preloads.push(libloading::Library::from(library));
+                }
+                Err(error) => log::warn!(
+                    "Could not preload Pojav/Mojo support library {}: {}",
+                    candidate.display(), error
+                ),
+            }
+        }
+    }
+    // SAFETY: the pointers are valid for the call; `options` outlives it.
+    let code = unsafe { create(&mut vm, &mut env, &mut args as *mut _ as *mut c_void) };"""
+if jvm_source.count(preload_anchor) != 1:
+    raise SystemExit(f"{jvm_source_path}: JNI_CreateJavaVM preload anchor changed")
+jvm_source = jvm_source.replace(preload_anchor, preload_replacement, 1)
+
+preload_lifetime_anchor = """    // SAFETY: `vm` is the JVM just created.
+    unsafe { JavaVM::from_raw(vm) }.map_err(|e| format!("JavaVM: {e}"))"""
+preload_lifetime_replacement = """    // Keep the Mojo Android support libraries mapped for the embedded JVM lifetime.
+    #[cfg(target_os = "android")]
+    for library in android_jre_preloads {
+        std::mem::forget(library);
+    }
+    // SAFETY: `vm` is the JVM just created.
+    unsafe { JavaVM::from_raw(vm) }.map_err(|e| format!("JavaVM: {e}"))"""
+if jvm_source.count(preload_lifetime_anchor) != 1:
+    raise SystemExit(f"{jvm_source_path}: JVM preload lifetime anchor changed")
+jvm_source = jvm_source.replace(preload_lifetime_anchor, preload_lifetime_replacement, 1)
 emit_old = """fn emit(line: &str) {
     match *SINK.lock().unwrap_or_else(|e| e.into_inner()) {
         Some(sink) => sink(line),
