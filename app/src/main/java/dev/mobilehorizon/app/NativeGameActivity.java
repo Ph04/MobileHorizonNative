@@ -263,6 +263,10 @@ public final class NativeGameActivity extends NativeActivity {
                 if (!javaRuntime.libjvm.isFile()) {
                     throw new java.io.IOException("A biblioteca JNI lib/server/libjvm.so não foi encontrada no Java 25.");
                 }
+                int relocatedJavaLibraries =
+                        JdkRuntimeInstaller.ensureAndroidInProcessLinkerPaths(javaRuntime);
+                bridgeLog("INFO", "Pré-checagem 4/7: caminhos ELF do Java 25 compatíveis com dlopen no Android; "
+                        + relocatedJavaLibraries + " biblioteca(s) relocalizada(s).");
                 bridgeLog("INFO", "Pré-checagem 4/7: Java 25 pronto; JAVA_HOME="
                         + javaRuntime.javaHome.getAbsolutePath() + ", libjvm="
                         + javaRuntime.libjvm.getAbsolutePath());
