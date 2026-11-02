@@ -177,7 +177,7 @@ getWindow().setStatusBarColor(0xff090911);
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "Texturas, mods Horizon (.hmod), mods nativos Rust (.hnmod), data packs e shaders. Mods nativos são armazenados como código-fonte e ainda precisam de compilação dedicada para funcionar.",
+                "Texturas, mods Horizon (.hmod), mods nativos Rust (.hnmod), data packs e shaders. Mods nativos começam desativados: autorize a origem e ative apenas os que deseja incluir na compilação ARM64.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(10);
@@ -291,8 +291,8 @@ getWindow().setStatusBarColor(0xff090911);
                     throw new IllegalArgumentException("Já existe um mod nativo com ID '" + nativeManifest.id + "'. Remova a versão antiga antes de importar outra.");
                 }
                 File target = copyToTarget(staging, nativeModDir(), fileName(name, ".hnmod"));
-                return "mod nativo " + nativeManifest.id + " importado como fonte (" + target.getName()
-                        + "). Ainda não compilado: o runtime Android atual não carrega .hnmod diretamente.";
+                return "mod nativo " + nativeManifest.id + " instalado desativado (" + target.getName()
+                        + "). Autorize o código e ative-o na lista para incluí-lo na compilação ARM64.";
             }
             if (lower.endsWith(".hmod")) {
                 HorizonNativeModArchive.Manifest nativeManifest = HorizonNativeModArchive.readIfPresent(staging);
@@ -314,10 +314,10 @@ getWindow().setStatusBarColor(0xff090911);
                         ensureDirs(modDir());
                         File contentTarget = copyToTarget(staging, modDir(), fileName(name, ".hmod"));
                         return "mod " + nativeManifest.id + " importado nas partes de conteúdo e nativa ("
-                                + contentTarget.getName() + "). A parte Rust ainda aguarda compilação Android.";
+                                + contentTarget.getName() + "). A parte nativa foi instalada desativada; autorize e ative-a para incluí-la na compilação ARM64.";
                     }
-                    return "mod nativo " + nativeManifest.id + " importado como fonte ("
-                            + nativeTarget.getName() + "). Ainda não compilado: o runtime Android atual não carrega código .hnmod diretamente.";
+                    return "mod nativo " + nativeManifest.id + " instalado desativado como fonte ("
+                            + nativeTarget.getName() + "). Autorize o código e ative-o para a compilação ARM64.";
                 }
                 if (contentId == null) throw new IllegalArgumentException("Manifesto .hmod inválido ou incompatível com o Horizon. Verifique id, name, version, api e capabilities.");
                 ensureDirs(modDir());
@@ -866,8 +866,7 @@ getWindow().setStatusBarColor(0xff090911);
                 button.setOnCheckedChangeListener(null);
                 button.setChecked(item.active);
                 button.setText(UiLanguage.translate(this, item.active ? "Ativo" : "Ativar"));
-                configureNativeEnableControl(button instanceof CheckBox
-                        ? (CheckBox) button : control, item);
+                configureNativeEnableControl(control, item);
                 showStatus("Não foi possível alterar " + item.name + ": " + message(error));
             }
         });
