@@ -284,7 +284,7 @@ getWindow().setStatusBarColor(0xff090911);
             }
             if (lower.endsWith(".hmod")) {
                 String id = readModId(staging);
-                if (id == null) throw new IllegalArgumentException("O .hmod não contém horizon-mod.toml e mod.wasm válidos.");
+                if (id == null) throw new IllegalArgumentException("Manifesto .hmod inválido ou incompatível com o Horizon. Verifique id, name, version, api e capabilities; mod.wasm é opcional apenas para mods de conteúdo.");
                 ensureDirs(modDir());
                 if (modIdExists(id)) throw new IllegalArgumentException("Já existe um mod com ID '" + id + "'. Remova a versão antiga antes de importar outra.");
                 File target = copyToTarget(staging, modDir(), fileName(name, ".hmod"));
