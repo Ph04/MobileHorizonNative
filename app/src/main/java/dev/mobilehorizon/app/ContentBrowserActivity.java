@@ -403,7 +403,7 @@ getWindow().setStatusBarColor(0xff090911);
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 if (entry.isDirectory()) continue;
-                String name = entry.getName().replace('\\\\', '/');
+                String name = entry.getName().replace('\\', '/');
                 if (name.equals("pack.mcmeta")) packMeta = true;
                 if (name.startsWith("assets/")) assets = true;
             }
@@ -418,7 +418,7 @@ getWindow().setStatusBarColor(0xff090911);
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 if (entry.isDirectory()) continue;
-                String name = entry.getName().replace('\\\\', '/');
+                String name = entry.getName().replace('\\', '/');
                 if (name.equals("pack.mcmeta")) packMeta = true;
                 if (name.startsWith("data/")) data = true;
             }
