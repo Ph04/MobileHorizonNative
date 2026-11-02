@@ -49,7 +49,7 @@ interface mod-manager {
         problem: option<string>,
     }
     /// A snapshot of installed modules with readable manifests.
-    list: func() -> list<mod-entry>;
+    modules: func() -> list<mod-entry>;
     /// Turns an installed module on or off and asks Horizon to reload the
     /// current module set after this hook returns. Development modules are
     /// read-only. No arbitrary code, paths or native libraries are accepted.
@@ -189,7 +189,7 @@ replace_once(
     runtime,
     "impl storage::Host for State {",
     """impl mod_manager::Host for State {
-    fn list(&mut self) -> Vec<mod_manager::ModEntry> {
+    fn modules(&mut self) -> Vec<mod_manager::ModEntry> {
         self.snapshot
             .installed_mods
             .iter()
