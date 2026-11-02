@@ -16,8 +16,12 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -59,6 +63,15 @@ final class MinecraftServerList {
     private MinecraftServerList() { }
 
     static synchronized void merge(File file, List<Server> favorites) throws IOException {
+        merge(file, favorites, Collections.emptySet());
+    }
+
+    /**
+     * Reconciles only the entries previously synchronized by this launcher. Other
+     * servers, including hidden Direct Connection entries, are retained unchanged.
+     */
+    static synchronized void merge(File file, List<Server> favorites, Set<String> previouslySynced)
+            throws IOException {
         if (file == null) throw new IOException("O caminho de servers.dat não foi definido.");
         Tag root;
         if (file.isFile() && file.length() > 0) {
@@ -98,24 +111,58 @@ final class MinecraftServerList {
             throw new IOException("A lista servers possui formato inesperado.");
         }
 
-        for (Server favorite : favorites) {
-            if (favorite == null || favorite.address == null || favorite.address.trim().isEmpty()) {
-                continue;
+        Map<String, Server> desired = new LinkedHashMap<>();
+        if (favorites != null) {
+            for (Server favorite : favorites) {
+                if (favorite == null || favorite.address == null || favorite.address.trim().isEmpty()) {
+                    continue;
+                }
+                String address = favorite.address.trim();
+                String normalized = normalizeAddress(address);
+                if (normalized.isEmpty()) continue;
+                String name = favorite.name == null || favorite.name.trim().isEmpty()
+                        ? "Minecraft Server" : favorite.name.trim();
+                desired.put(normalized, new Server(name, address));
             }
-            String name = favorite.name == null || favorite.name.trim().isEmpty()
-                    ? "Minecraft Server" : favorite.name.trim();
-            String address = favorite.address.trim();
-            ArrayList<Tag> entry = findVisibleServer(list, address);
-            if (entry == null) {
-                entry = new ArrayList<>();
-                // Match the PC launcher: newly added visible entries go before hidden
-                // Direct Connection entries, which must remain hidden and untouched.
-                int insertAt = firstHiddenIndex(list);
-                list.values.add(insertAt, entry);
+        }
+        Set<String> oldManaged = previouslySynced == null
+                ? Collections.emptySet() : previouslySynced;
+
+        // First reconcile existing entries. The sidecar address set remains reliable even
+        // if Minecraft itself rewrites servers.dat and strips the launcher's private marker.
+        for (int i = 0; i < list.values.size();) {
+            @SuppressWarnings("unchecked")
+            ArrayList<Tag> entry = (ArrayList<Tag>) list.values.get(i);
+            Tag ipTag = find(entry, "ip");
+            String address = ipTag != null && ipTag.type == 8 ? (String) ipTag.value : "";
+            String normalized = normalizeAddress(address);
+            Tag marker = find(entry, "mobilehorizonFavorite");
+            boolean marked = marker != null && marker.type == 1 && ((Byte) marker.value) != 0;
+            boolean managed = marked || oldManaged.contains(normalized);
+            boolean hidden = isHidden(entry);
+            Server favorite = desired.remove(normalized);
+
+            if (favorite != null && (!hidden || managed)) {
+                putString(entry, "name", favorite.name);
+                putString(entry, "ip", favorite.address);
                 putByte(entry, "hidden", (byte) 0);
+                putByte(entry, "mobilehorizonFavorite", (byte) 1);
+                i++;
+            } else if (managed) {
+                list.values.remove(i);
+            } else {
+                i++;
             }
-            putString(entry, "name", name);
-            putString(entry, "ip", address);
+        }
+
+        // Add remaining favorites before hidden Direct Connection entries, as PC Horizon does.
+        for (Server favorite : desired.values()) {
+            ArrayList<Tag> entry = new ArrayList<>();
+            putString(entry, "name", favorite.name);
+            putString(entry, "ip", favorite.address);
+            putByte(entry, "hidden", (byte) 0);
+            putByte(entry, "mobilehorizonFavorite", (byte) 1);
+            list.values.add(firstHiddenIndex(list), entry);
         }
 
         File parent = file.getAbsoluteFile().getParentFile();
@@ -184,20 +231,9 @@ final class MinecraftServerList {
         return list.values.size();
     }
 
-    private static ArrayList<Tag> findVisibleServer(NbtList list, String address) throws IOException {
-        for (Object value : list.values) {
-            @SuppressWarnings("unchecked")
-            ArrayList<Tag> entry = (ArrayList<Tag>) value;
-            Tag hidden = find(entry, "hidden");
-            if (hidden != null && hidden.type == 1 && ((Byte) hidden.value) != 0) continue;
-            Tag ip = find(entry, "ip");
-            if (ip != null && ip.type == 8 && sameAddress((String) ip.value, address)) return entry;
-        }
-        return null;
-    }
-
-    private static boolean sameAddress(String first, String second) {
-        return normalizeAddress(first).equals(normalizeAddress(second));
+    private static boolean isHidden(ArrayList<Tag> entry) {
+        Tag hidden = find(entry, "hidden");
+        return hidden != null && hidden.type == 1 && ((Byte) hidden.value) != 0;
     }
 
     private static String normalizeAddress(String address) {
