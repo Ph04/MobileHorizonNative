@@ -48,8 +48,6 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -64,7 +62,6 @@ public final class ResourceManagerActivity extends Activity {
     private static final int MAX_FOLDER_ENTRIES = 20_000;
     private static final int MAX_FOLDER_DEPTH = 64;
     private static final int BUFFER_SIZE = 32 * 1024;
-    private static final Pattern MOD_ID = Pattern.compile("(?m)^\\s*id\\s*=\\s*\"([A-Za-z0-9_.-]+)\"\\s*(?:#.*)?$");
 
     private enum Kind { TEXTURE, MOD, SHADER, DATA_PACK }
     private enum ArchiveKind { TEXTURE, JAVA_SHADER, HORIZON_SHADER, UNKNOWN }
@@ -338,36 +335,7 @@ getWindow().setStatusBarColor(0xff090911);
     }
 
     private String readModId(File file) throws Exception {
-        try (ZipFile zip = new ZipFile(file)) {
-            ZipEntry manifest = zip.getEntry("horizon-mod.toml");
-            if (manifest == null || manifest.isDirectory()) return null;
-            String manifestText;
-            try (InputStream input = zip.getInputStream(manifest)) {
-                manifestText = new String(readLimitedBytes(input, 64 * 1024), StandardCharsets.UTF_8);
-            }
-            Matcher matcher = MOD_ID.matcher(manifestText);
-            if (!matcher.find()) return null;
-            ZipEntry wasm = zip.getEntry("mod.wasm");
-            if (wasm != null && !wasm.isDirectory()) return matcher.group(1);
-
-            // Horizon API 0.2 allows content-only .hmod archives with no wasm,
-            // but only when the manifest grants registries and data/assets exist.
-            if (!Pattern.compile("(?m)^\\s*api\\s*=\\s*\"0\\.2\"\\s*$").matcher(manifestText).find()
-                    || !manifestText.contains("\"registries\"")) {
-                return null;
-            }
-            boolean hasContent = false;
-            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
-            while (entries.hasMoreElements()) {
-                ZipEntry entry = entries.nextElement();
-                String name = entry.getName();
-                if (!entry.isDirectory() && (name.startsWith("assets/") || name.startsWith("data/"))) {
-                    hasContent = true;
-                    break;
-                }
-            }
-            return hasContent ? matcher.group(1) : null;
-        } catch (IOException error) { return null; }
+        return HorizonModArchive.readId(file);
     }
 
     private boolean modIdExists(String id) {
