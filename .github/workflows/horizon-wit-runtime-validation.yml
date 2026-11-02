@@ -58,6 +58,10 @@ jobs:
           echo "Building pinned Horizon source: $HORIZON_COMMIT"
 
       - name: Fetch and prepare Horizon Android source
+        env:
+          # This validation targets the official WIT runtime; the separate legacy
+          # compatibility socket patch is not part of this engine integration.
+          HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
         shell: bash
         run: |
           set -euo pipefail
