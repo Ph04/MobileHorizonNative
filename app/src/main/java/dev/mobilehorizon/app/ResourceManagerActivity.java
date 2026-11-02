@@ -63,7 +63,7 @@ public final class ResourceManagerActivity extends Activity {
     private static final int MAX_FOLDER_DEPTH = 64;
     private static final int BUFFER_SIZE = 32 * 1024;
 
-    private enum Kind { TEXTURE, MOD, SHADER, DATA_PACK }
+    private enum Kind { TEXTURE, MOD, NATIVE_MOD, SHADER, DATA_PACK }
     private enum ArchiveKind { TEXTURE, JAVA_SHADER, HORIZON_SHADER, UNKNOWN }
 
     private static final class ResourceItem {
@@ -104,6 +104,7 @@ public final class ResourceManagerActivity extends Activity {
     private File dataPackDir() { return new File(home(), "horizon-datapacks"); }
 
     private File modDir() { return vanillaModDir(); }
+    private File nativeModDir() { return new File(home(), "horizon-native-mods"); }
 
 
     private File shaderDir() { return new File(home(), "shaderpacks"); }
@@ -152,7 +153,7 @@ getWindow().setStatusBarColor(0xff090911);
         LinearLayout.LayoutParams actionsParams = params(-1, -2);
         actionsParams.topMargin = dp(14);
         page.addView(actions, actionsParams);
-        importFilesButton = button("Importar arquivos (.zip / .hmod)", true, v -> chooseFiles());
+        importFilesButton = button("Importar arquivos (.zip / .hmod / .hnmod)", true, v -> chooseFiles());
         actions.addView(importFilesButton, params(-1, dp(50)));
         importFolderButton = button("Pasta de shader", false, v -> chooseShaderFolder());
         Button refresh = button("Atualizar lista", false, v -> refreshResources());
@@ -176,7 +177,7 @@ getWindow().setStatusBarColor(0xff090911);
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "Texturas, mods Horizon, data packs e shaders compatíveis. As mudanças entram em vigor ao reiniciar o Minecraft.",
+                "Texturas, mods Horizon (.hmod), mods nativos Rust (.hnmod), data packs e shaders. Mods nativos são armazenados como código-fonte e ainda precisam de compilação dedicada para funcionar.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(10);
@@ -282,16 +283,50 @@ getWindow().setStatusBarColor(0xff090911);
                 if (input == null) throw new IOException("O Android não conseguiu abrir o arquivo.");
                 copyLimited(input, staging, MAX_IMPORT_BYTES);
             }
+            if (lower.endsWith(".hnmod")) {
+                HorizonNativeModArchive.Manifest nativeManifest = HorizonNativeModArchive.read(staging);
+                validateNativeGame(nativeManifest);
+                ensureDirs(nativeModDir());
+                if (nativeModIdExists(nativeManifest.id)) {
+                    throw new IllegalArgumentException("Já existe um mod nativo com ID '" + nativeManifest.id + "'. Remova a versão antiga antes de importar outra.");
+                }
+                File target = copyToTarget(staging, nativeModDir(), fileName(name, ".hnmod"));
+                return "mod nativo " + nativeManifest.id + " importado como fonte (" + target.getName()
+                        + "). Ainda não compilado: o runtime Android atual não carrega .hnmod diretamente.";
+            }
             if (lower.endsWith(".hmod")) {
-                String id = readModId(staging);
-                if (id == null) throw new IllegalArgumentException("Manifesto .hmod inválido ou incompatível com o Horizon. Verifique id, name, version, api e capabilities; mod.wasm é opcional apenas para mods de conteúdo.");
+                HorizonNativeModArchive.Manifest nativeManifest = HorizonNativeModArchive.readIfPresent(staging);
+                String contentId = readModId(staging);
+                if (nativeManifest != null) {
+                    validateNativeGame(nativeManifest);
+                    if (contentId != null && !contentId.equals(nativeManifest.id)) {
+                        throw new IllegalArgumentException("O ID de horizon-mod.toml não corresponde ao horizon-native.json.");
+                    }
+                    if (nativeModIdExists(nativeManifest.id)) {
+                        throw new IllegalArgumentException("Já existe um mod nativo com ID '" + nativeManifest.id + "'. Remova a versão antiga antes de importar outra.");
+                    }
+                    if (contentId != null && modIdExists(contentId)) {
+                        throw new IllegalArgumentException("Já existe um mod de conteúdo com ID '" + contentId + "'.");
+                    }
+                    ensureDirs(nativeModDir());
+                    File nativeTarget = copyToTarget(staging, nativeModDir(), fileName(name, ".hmod"));
+                    if (contentId != null) {
+                        ensureDirs(modDir());
+                        File contentTarget = copyToTarget(staging, modDir(), fileName(name, ".hmod"));
+                        return "mod " + nativeManifest.id + " importado nas partes de conteúdo e nativa ("
+                                + contentTarget.getName() + "). A parte Rust ainda aguarda compilação Android.";
+                    }
+                    return "mod nativo " + nativeManifest.id + " importado como fonte ("
+                            + nativeTarget.getName() + "). Ainda não compilado: o runtime Android atual não carrega código .hnmod diretamente.";
+                }
+                if (contentId == null) throw new IllegalArgumentException("Manifesto .hmod inválido ou incompatível com o Horizon. Verifique id, name, version, api e capabilities.");
                 ensureDirs(modDir());
-                if (modIdExists(id)) throw new IllegalArgumentException("Já existe um mod com ID '" + id + "'. Remova a versão antiga antes de importar outra.");
+                if (modIdExists(contentId)) throw new IllegalArgumentException("Já existe um mod com ID '" + contentId + "'. Remova a versão antiga antes de importar outra.");
                 File target = copyToTarget(staging, modDir(), fileName(name, ".hmod"));
-                return "mod Horizon " + id + " importado desativado (" + target.getName() + ")";
+                return "mod Horizon " + contentId + " importado desativado (" + target.getName() + ")";
             }
             if (!lower.endsWith(".zip")) {
-                throw new IllegalArgumentException("Formato não suportado. Use .hmod, ZIP de textura, data pack ou shader pack.");
+                throw new IllegalArgumentException("Formato não suportado. Use .hmod, .hnmod, ZIP de textura, data pack ou shader pack.");
             }
             ArchiveKind kind = inspectZip(staging);
             if (kind == ArchiveKind.TEXTURE) {
@@ -340,6 +375,29 @@ getWindow().setStatusBarColor(0xff090911);
 
     private boolean modIdExists(String id) {
         return modIdExistsIn(modDir(), id);
+    }
+
+    private void validateNativeGame(HorizonNativeModArchive.Manifest manifest) {
+        if (!OfficialMinecraftInstaller.VERSION.equals(manifest.game)) {
+            throw new IllegalArgumentException("Este mod nativo foi feito para Minecraft "
+                    + manifest.game + ", mas a instância atual usa " + OfficialMinecraftInstaller.VERSION + ".");
+        }
+    }
+
+    private boolean nativeModIdExists(String id) {
+        File directory = nativeModDir();
+        File[] files = directory.listFiles((dir, name) -> {
+            String lower = name.toLowerCase(Locale.ROOT);
+            return lower.endsWith(".hnmod") || lower.endsWith(".hmod");
+        });
+        if (files == null) return false;
+        for (File file : files) {
+            try {
+                HorizonNativeModArchive.Manifest manifest = HorizonNativeModArchive.readIfPresent(file);
+                if (manifest != null && id.equals(manifest.id)) return true;
+            } catch (Exception ignored) { }
+        }
+        return false;
     }
 
     private boolean modIdExistsIn(File directory, String id) {
@@ -455,11 +513,13 @@ getWindow().setStatusBarColor(0xff090911);
         content.removeAllViews();
         ensureUiDir(textureDir());
         ensureUiDir(modDir());
+        ensureUiDir(nativeModDir());
         ensureUiDir(shaderDir());
         ensureUiDir(dataPackDir());
 
         List<ResourceItem> textures = new ArrayList<>();
         List<ResourceItem> mods = new ArrayList<>();
+        List<ResourceItem> nativeMods = new ArrayList<>();
         List<ResourceItem> shaders = new ArrayList<>();
         List<ResourceItem> dataPacks = new ArrayList<>();
 
@@ -482,6 +542,23 @@ getWindow().setStatusBarColor(0xff090911);
             mods.add(new ResourceItem(Kind.MOD, file.getName(), file, id == null ? "" : id,
                     id != null && readEnabledModIds().contains(id),
                     id == null ? "Manifest inválido; não pode ser ativado." : "ID: " + id + " · Mod Horizon."));
+        }
+        items = nativeModDir().listFiles();
+        if (items != null) for (File file : items) {
+            if (!file.isFile()) continue;
+            String lower = file.getName().toLowerCase(Locale.ROOT);
+            if (!lower.endsWith(".hnmod") && !lower.endsWith(".hmod")) continue;
+            String id = "";
+            String detail = "Manifesto nativo inválido; não pode ser compilado.";
+            try {
+                HorizonNativeModArchive.Manifest manifest = HorizonNativeModArchive.read(file);
+                id = manifest.id;
+                detail = "ID: " + manifest.id + " · Horizon " + manifest.horizon.substring(0, 7)
+                        + " · hooks API " + (manifest.hooks == null ? "não declarada" : manifest.hooks)
+                        + " · Fonte Rust armazenada; aguardando compilador Android.";
+            } catch (Exception ignored) { }
+            nativeMods.add(new ResourceItem(Kind.NATIVE_MOD, file.getName(), file, id,
+                    false, detail));
         }
         items = shaderDir().listFiles();
         if (items != null) for (File file : items) {
@@ -506,13 +583,16 @@ getWindow().setStatusBarColor(0xff090911);
         Comparator<ResourceItem> byName = Comparator.comparing(item -> item.name.toLowerCase(Locale.ROOT));
         Collections.sort(textures, byName);
         Collections.sort(mods, byName);
+        Collections.sort(nativeMods, byName);
         Collections.sort(shaders, byName);
         Collections.sort(dataPacks, byName);
         addSection("Pacotes de textura", "ZIPs Java com pack.mcmeta e assets/.", textures);
-        addSection("Mods Horizon", "Arquivos .hmod; a ativação vale no próximo início.", mods);
+        addSection("Mods Horizon", "Arquivos .hmod de conteúdo; a ativação vale no próximo início.", mods);
+        addSection("Mods nativos Rust", "Arquivos .hnmod e .hmod com horizon-native.json. São validados e armazenados separadamente; ainda não podem ser compilados/carregados pelo runtime Android atual.", nativeMods);
         addSection("Pacotes de dados", "Selecione a pasta de um mundo salvo para copiar o pack para datapacks/.", dataPacks);
         addSection("Shader packs", "Pastas pack.toml/shaders/ e shader ZIPs Java reconhecidos.", shaders);
-        if (textures.isEmpty() && mods.isEmpty() && shaders.isEmpty() && dataPacks.isEmpty()) {
+        if (textures.isEmpty() && mods.isEmpty() && nativeMods.isEmpty()
+                && shaders.isEmpty() && dataPacks.isEmpty()) {
             TextView empty = text("Nenhum recurso compatível instalado. Importe um arquivo ou uma pasta de shader pack.", 14, 0xff68728a, false);
             LinearLayout.LayoutParams p = params(-1, -2);
             p.topMargin = dp(8);
@@ -707,12 +787,14 @@ getWindow().setStatusBarColor(0xff090911);
 
         CheckBox active = new CheckBox(this);
         active.setText(UiLanguage.translate(this,
-                item.kind == Kind.DATA_PACK ? "Por mundo" : item.active ? "Ativo" : "Ativar"));
+                item.kind == Kind.DATA_PACK ? "Por mundo"
+                        : item.kind == Kind.NATIVE_MOD ? "Aguardando compilador"
+                        : item.active ? "Ativo" : "Ativar"));
         active.setTextSize(13);
         active.setTextColor(0xff283550);
         active.setMinHeight(dp(38));
-        active.setChecked(item.kind != Kind.DATA_PACK && item.active);
-        active.setEnabled(item.kind != Kind.DATA_PACK
+        active.setChecked(item.kind != Kind.DATA_PACK && item.kind != Kind.NATIVE_MOD && item.active);
+        active.setEnabled(item.kind != Kind.DATA_PACK && item.kind != Kind.NATIVE_MOD
                 && (item.kind != Kind.MOD || !item.id.isEmpty()));
         active.setOnCheckedChangeListener((button, checked) -> {
             try {
@@ -758,6 +840,9 @@ getWindow().setStatusBarColor(0xff090911);
         if (item.kind == Kind.DATA_PACK) {
             throw new IllegalArgumentException("Pacotes de dados são instalados por mundo.");
         }
+        if (item.kind == Kind.NATIVE_MOD) {
+            throw new IllegalArgumentException("Mods nativos ainda precisam de uma compilação Horizon própria; não podem ser ativados no runtime atual.");
+        }
         if (item.kind == Kind.MOD) {
             if (item.id.isEmpty()) throw new IllegalArgumentException("O manifesto deste mod é inválido.");
             TreeSet<String> ids = readEnabledModIds();
@@ -783,7 +868,9 @@ getWindow().setStatusBarColor(0xff090911);
                 .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
                 .setPositiveButton(UiLanguage.translate(this, "Excluir"), (dialog, which) -> {
                     try {
-                        if (item.kind != Kind.DATA_PACK) setActive(item, false);
+                        if (item.kind != Kind.DATA_PACK && item.kind != Kind.NATIVE_MOD) {
+                            setActive(item, false);
+                        }
                         deleteRecursively(item.path);
                         if (item.kind == Kind.SHADER) new File(shaderDir(), item.name + ".txt").delete();
                         refreshResources();
