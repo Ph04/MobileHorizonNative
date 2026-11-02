@@ -388,6 +388,18 @@ jobs:
           echo "HORIZON_PC_RELEASE_TAG=$HORIZON_RUNTIME_RELEASE_TAG" >> "$GITHUB_ENV"
           echo "HORIZON_TEST_OLD_RELEASE_TAG=$HORIZON_TEST_OLD_RELEASE_TAG" >> "$GITHUB_ENV"
 
+          # The runtime channel follows the moving upstream java-bridge branch.
+          # Validate the release against the branch HEAD, not a stale SHA recorded
+          # when this APK source was last edited.
+          FABRIC_RUNTIME_EXPECTED_COMMIT="$(git ls-remote \
+            "https://github.com/${FABRIC_HORIZON_REPOSITORY}.git" \
+            "refs/heads/${FABRIC_HORIZON_REF}" | awk 'NR == 1 { print $1 }')"
+          if [[ ! "$FABRIC_RUNTIME_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Could not resolve current upstream Java Bridge commit."
+            exit 1
+          fi
+          echo "Expecting Java Bridge upstream commit $FABRIC_RUNTIME_EXPECTED_COMMIT"
+
           RUNTIME_STAGE="$RUNNER_TEMP/horizon-runtime-stage"
           mkdir -p "$RUNTIME_STAGE"
           BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/$FABRIC_RUNTIME_RELEASE_TAG"
@@ -396,7 +408,7 @@ jobs:
           curl --fail --location --retry 4 --retry-all-errors \
             "$BASE/$FABRIC_MANIFEST_ASSET" -o "$RUNTIME_STAGE/manifest.json"
 
-          python3 - "$RUNTIME_STAGE" "$FABRIC_LOADER_VERSION" "$FABRIC_API_VERSION" "$FABRIC_HORIZON_COMMIT" <<'PYFABRIC'
+          python3 - "$RUNTIME_STAGE" "$FABRIC_LOADER_VERSION" "$FABRIC_API_VERSION" "$FABRIC_RUNTIME_EXPECTED_COMMIT" <<'PYFABRIC'
           import hashlib, json, pathlib, re, sys
           stage = pathlib.Path(sys.argv[1])
           expected_loader, expected_api, expected_commit = sys.argv[2:]
