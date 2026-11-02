@@ -38,13 +38,14 @@ public final class HorizonNativeModArchiveTest {
         assertEquals(ID, manifest.id);
     }
 
-    @Test public void recognizesCombinedNativeHmodWithMatchingContentIdentity() throws Exception {
-        String content = "id = \"" + ID + "\"\nname = \"Example\"\n"
-                + "version = \"1.0\"\napi = \"0.2\"\ncapabilities = []\n";
+    @Test public void detectsNativePayloadInsideHmodSoImporterCanRejectIt() throws Exception {
+        String content = "id = \\"" + ID + "\\"\\nname = \\"Example\\"\\n"
+                + "version = \\"1.0\\"\\napi = \\"0.2\\"\\ncapabilities = []\\n";
         File archive = create(".hmod", nativeManifest(ID, HORIZON, MIXINS),
                 mixinManifest(ID, "0.3.0", HORIZON),
                 new String[]{"horizon-mod.toml", content});
-        HorizonNativeModArchive.Manifest manifest = HorizonNativeModArchive.read(archive);
+        HorizonNativeModArchive.Manifest manifest = HorizonNativeModArchive.readIfPresent(archive);
+        assertNotNull(manifest);
         assertEquals(ID, manifest.id);
     }
 
