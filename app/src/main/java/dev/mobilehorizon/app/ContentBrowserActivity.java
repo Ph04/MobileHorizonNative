@@ -2,6 +2,7 @@ package dev.mobilehorizon.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -68,12 +69,15 @@ getWindow().setStatusBarColor(0xff090911);
         page.setPadding(dp(14), dp(16), dp(14), dp(24)); scroll.addView(page); setContentView(scroll);
         page.addView(text("MOBILEHORIZON  /  CONTEÚDO", 11, 0xff9e88ff, true), lp(-1, -2));
         page.addView(text("Explorar conteúdo", 25, 0xfff0ecff, true), top(-1, -2, 4));
-        page.addView(text("Catálogo Modrinth para Minecraft 26.3. Instalação segura de pacotes de recursos e shaders; modpacks somente sem mods/carregadores.", 12, 0xffb9b3d1, false), top(-1, -2, 5));
-        page.addView(button("Voltar", false, v -> finish()), top(-1, 50, 9));
+        page.addView(text("Catálogo Modrinth para Minecraft 26.3: pacotes de textura, data packs, shaders e modpacks sem carregadores.", 12, 0xffb9b3d1, false), top(-1, -2, 5));
+        page.addView(button("Voltar", false, v -> finish()), top(-1, 48, 9));
+        page.addView(button("Gerenciar conteúdo instalado", true,
+                v -> startActivity(new Intent(this, ResourceManagerActivity.class))), top(-1, 46, 7));
         tabs = new LinearLayout(this); tabs.setOrientation(LinearLayout.HORIZONTAL); page.addView(tabs, top(-1, -2, 8));
-        addTab(tabs, "Resource packs", "resourcepack");
+        addTab(tabs, "Texturas", "resourcepack");
+        addTab(tabs, "Dados", "datapack");
         addTab(tabs, "Shaders", "shader");
-        addTab(tabs, "Modpacks vanilla", "modpack");
+        addTab(tabs, "Modpacks", "modpack");
         query = new EditText(this); query.setSingleLine(true); query.setTextColor(0xfff0ecff);
         query.setHintTextColor(0xff827b9f); query.setHint("Pesquisar no Modrinth…");
         query.setBackgroundColor(0xff151321); page.addView(query, top(-1, 48, 8));
@@ -170,7 +174,15 @@ getWindow().setStatusBarColor(0xff090911);
                 File home = GameInstanceManager.getSelectedInstanceHome(this);
                 File staged = download(fileUrl, fileName, file.optJSONObject("hashes"), new File(getCacheDir(), "modrinth-stage"));
                 if ("resourcepack".equals(type)) {
+                    if (!isResourcePackZip(staged)) {
+                        throw new IllegalArgumentException("O arquivo baixado não contém pack.mcmeta e assets/.");
+                    }
                     installed = installSingle(staged, new File(home, "resourcepacks"), fileName);
+                } else if ("datapack".equals(type)) {
+                    if (!isDataPackZip(staged)) {
+                        throw new IllegalArgumentException("O arquivo baixado não contém pack.mcmeta e data/.");
+                    }
+                    installed = installSingle(staged, new File(home, "horizon-datapacks"), fileName);
                 } else if ("shader".equals(type)) {
                     installed = installSingle(staged, new File(home, "shaderpacks"), fileName);
                 } else {
@@ -312,13 +324,19 @@ getWindow().setStatusBarColor(0xff090911);
         File temp = new File(staging, safeFileName(name) + ".part");
         MessageDigest digest = MessageDigest.getInstance("SHA-512");
         HttpURLConnection connection = open(url);
-        try (InputStream input = connection.getInputStream(); FileOutputStream out = new FileOutputStream(temp)) {
-            long total = 0; byte[] buffer = new byte[16384]; int read;
-            while ((read = input.read(buffer)) != -1) {
-                total += read; if (total > MAX_DOWNLOAD) throw new IllegalArgumentException("O arquivo excede o limite de 220 MiB.");
-                digest.update(buffer,0,read); out.write(buffer,0,read);
+        try {
+            int response = connection.getResponseCode();
+            if (response != HttpURLConnection.HTTP_OK) {
+                throw new IllegalStateException("Download Modrinth HTTP " + response + errorDetails(connection));
             }
-            out.getFD().sync();
+            try (InputStream input = connection.getInputStream(); FileOutputStream out = new FileOutputStream(temp)) {
+                long total = 0; byte[] buffer = new byte[16384]; int read;
+                while ((read = input.read(buffer)) != -1) {
+                    total += read; if (total > MAX_DOWNLOAD) throw new IllegalArgumentException("O arquivo excede o limite de 220 MiB.");
+                    digest.update(buffer,0,read); out.write(buffer,0,read);
+                }
+                out.getFD().sync();
+            }
         } catch (Exception error) { temp.delete(); throw error; }
         finally { connection.disconnect(); }
         String expected = hashes == null ? "" : hashes.optString("sha512", "");
@@ -337,12 +355,35 @@ getWindow().setStatusBarColor(0xff090911);
 
     private JSONArray getArray(String url, int limit) throws Exception {
         HttpURLConnection connection = open(url);
-        try (InputStream in = connection.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            if (connection.getResponseCode() != 200) throw new IllegalStateException("Modrinth HTTP " + connection.getResponseCode());
-            byte[] buffer = new byte[8192]; int n;
-            while ((n = in.read(buffer)) != -1) { if (out.size() + n > limit) throw new IllegalStateException("A resposta do catálogo excede o limite."); out.write(buffer,0,n); }
-            return new JSONArray(out.toString("UTF-8"));
+        try {
+            int response = connection.getResponseCode();
+            if (response != HttpURLConnection.HTTP_OK) {
+                throw new IllegalStateException("Modrinth HTTP " + response + errorDetails(connection));
+            }
+            try (InputStream in = connection.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[8192]; int n;
+                while ((n = in.read(buffer)) != -1) {
+                    if (out.size() + n > limit) throw new IllegalStateException("A resposta do catálogo excede o limite.");
+                    out.write(buffer,0,n);
+                }
+                return new JSONArray(out.toString("UTF-8"));
+            }
         } finally { connection.disconnect(); }
+    }
+
+    private String errorDetails(HttpURLConnection connection) {
+        InputStream error = connection.getErrorStream();
+        if (error == null) return "";
+        try (InputStream input = error; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[1024]; int count;
+            while ((count = input.read(buffer)) != -1 && output.size() + count <= 4096) {
+                output.write(buffer, 0, count);
+            }
+            String detail = output.toString("UTF-8").trim();
+            return detail.isEmpty() ? "" : ": " + detail;
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private HttpURLConnection open(String url) throws Exception {
@@ -353,6 +394,36 @@ getWindow().setStatusBarColor(0xff090911);
         c.setRequestProperty("User-Agent","MobileHorizonNative/1.0 (Android launcher)");
         c.setRequestProperty("Accept","application/json");
         return c;
+    }
+
+    private boolean isResourcePackZip(File file) {
+        boolean packMeta = false, assets = false;
+        try (ZipFile zip = new ZipFile(file)) {
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                String name = entry.getName().replace('\\\\', '/');
+                if (name.equals("pack.mcmeta")) packMeta = true;
+                if (name.startsWith("assets/")) assets = true;
+            }
+        } catch (Exception ignored) { return false; }
+        return packMeta && assets;
+    }
+
+    private boolean isDataPackZip(File file) {
+        boolean packMeta = false, data = false;
+        try (ZipFile zip = new ZipFile(file)) {
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                String name = entry.getName().replace('\\\\', '/');
+                if (name.equals("pack.mcmeta")) packMeta = true;
+                if (name.startsWith("data/")) data = true;
+            }
+        } catch (Exception ignored) { return false; }
+        return packMeta && data;
     }
 
     private String cleanArchivePath(String raw) {
