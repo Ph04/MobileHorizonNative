@@ -1199,7 +1199,7 @@ else:
         )
 # Keep splitscreen's trait objects on the same winit user-event type as the
 # Android-aware event loop. The unqualified ApplicationHandler defaults to ().
-split_source = game.parent / "split.rs"
+split_source = game.parent / "game" / "split.rs"
 replace_once(split_source,
     "Option<(&mut dyn ApplicationHandler, WindowId)>",
     "Option<(&mut dyn ApplicationHandler<horizon_client::AndroidInjectedInput>, WindowId)>")
