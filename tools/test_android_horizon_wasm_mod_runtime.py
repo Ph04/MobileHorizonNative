@@ -104,9 +104,24 @@ def main() -> int:
     require('e == "hnmod"' in manifest_source,
             "the WIT loader is not patched to discover dynamic .hnmod archives")
 
+    # The Android overlay extends the official component contract with an
+    # explicit, capability-gated manager API for listing and toggling modules.
+    require("interface mod-manager {" in wit,
+            "WIT contract is missing the mod-manager capability interface")
+    capability_source = manifest_source
+    require("ModManager" in capability_source,
+            "manifest capability parser does not recognize mod-manager")
+    runtime_source = runtime
+    require("impl mod_manager::Host for State" in runtime_source,
+            "the Wasmtime host does not implement mod-manager")
+    require("mod-manager.list" in (root / "crates/horizon-mods/src/api_level.rs").read_text(encoding="utf-8"),
+            "mod-manager functions are not registered in the API-level table")
+    require("Output::ModEnabled" in game_source and "self.start_mods();" in game_source,
+            "the game does not apply enabled-state changes after the current WIT hook returns")
+
     print("WIT modules: enabled for Android.")
     print("Dynamic .hnmod: discovered by Horizon's official component loader.")
-    print("Host API: game/chat/HUD/storage/UI/render/input via versioned WIT.")
+    print("Host API: game/chat/HUD/storage/UI/render/input/mod-manager via versioned WIT.")
     print("Runtime safeguards: 64 MiB per module, fuel metering, capability import checks.")
     print("This is a static source preflight, not an Android Wasmtime build/device test.")
     return 0
