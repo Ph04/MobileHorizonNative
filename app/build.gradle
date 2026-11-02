@@ -110,6 +110,7 @@ android {
         applicationId 'dev.mobilehorizon.app'
         minSdk 26
         targetSdk 35
+        // [build-apk-approved] One-shot standard APK 0.3.32; updater-test APK intentionally excluded.
         versionCode 35
         versionName '0.3.32'
     }
