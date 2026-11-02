@@ -17,4 +17,6 @@ O MobileHorizon procura automaticamente a release que corresponde exatamente aos
 
 O build inicial exige que todos os mods indiquem Minecraft `26.3`, compartilhem a mesma revisão de `horizon-mixins` e sejam compatíveis com os hook points da Nightly selecionada. Mods sem `hooks` precisam fixar a mesma revisão exata do Horizon.
 
-Não use esse workflow para pacotes cuja origem você não conhece. Não envie JARs Fabric ou mods de conteúdo `.hmod` sem manifesto nativo.
+**Limitações deste primeiro compilador Android:** ele aceita injeções Rust, arquivos auxiliares/crates e dados nativos. Ainda rejeita manifestos com `[api]` (traits), `[dependencies]` (resolução automática entre mods) ou `[[post_build]]` (programas executados após a compilação). Esses recursos do launcher de PC ainda não foram portados; a rejeição acontece antes de compilar para evitar um resultado incompleto.
+
+O código compilado executa no processo do jogo, sem sandbox. Não use esse workflow para pacotes cuja origem você não conhece. Não envie JARs Fabric ou mods de conteúdo `.hmod` sem manifesto nativo.
