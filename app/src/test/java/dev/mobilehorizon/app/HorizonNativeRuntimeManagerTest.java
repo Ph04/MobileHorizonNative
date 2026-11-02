@@ -18,6 +18,8 @@ public final class HorizonNativeRuntimeManagerTest {
         assertTrue(directory.mkdirs());
         writeBundle(new File(directory, "b.hnmod"), "mod_b");
         writeBundle(new File(directory, "a.hnmod"), "mod_a");
+        HorizonModSelection.setEnabled(home, "mod_a", true);
+        HorizonModSelection.setEnabled(home, "mod_b", true);
 
         String key = HorizonNativeRuntimeManager.buildKey(home);
         assertEquals(64, key.length());
@@ -31,7 +33,13 @@ public final class HorizonNativeRuntimeManagerTest {
         assertTrue(directory.mkdirs());
         assertFalse(HorizonNativeRuntimeManager.hasNativeMods(home));
         writeBundle(new File(directory, "native.hnmod"), "native_mod");
+        assertFalse("Installed sources are dormant by default",
+                HorizonNativeRuntimeManager.hasNativeMods(home));
+        HorizonModSelection.setEnabled(home, "native_mod", true);
         assertTrue(HorizonNativeRuntimeManager.hasNativeMods(home));
+        HorizonModSelection.setEnabled(home, "native_mod", false);
+        assertFalse("Disabling the last native mod restores the regular runtime",
+                HorizonNativeRuntimeManager.hasNativeMods(home));
     }
 
     private static void writeBundle(File target, String id) throws Exception {
