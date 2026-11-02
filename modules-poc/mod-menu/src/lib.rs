@@ -14,7 +14,7 @@ struct ModMenu {
 }
 
 fn rows() -> Vec<String> {
-    mod_manager::list()
+    mod_manager::modules()
         .into_iter()
         .take(MAX_ROWS)
         .map(|entry| {
@@ -71,7 +71,7 @@ impl Mod for ModMenu {
         if id != MODULE_LIST_WIDGET {
             return;
         }
-        let Some(entry) = mod_manager::list().into_iter().nth(row as usize) else {
+        let Some(entry) = mod_manager::modules().into_iter().nth(row as usize) else {
             return;
         };
         if entry.development {
