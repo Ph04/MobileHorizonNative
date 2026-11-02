@@ -294,6 +294,26 @@ def determine_mixins_revision(bundles: list[dict]) -> str:
     return revisions[0]
 
 
+def pinned_horizon_revision(bundles: list[dict]) -> str | None:
+    """Return the exact Horizon pin required by selected mods without a hooks API.
+
+    A bundle that declares hooks can build on a newer Horizon after its hook API is
+    checked. A bundle without hooks must build on the exact commit it names.
+    """
+    revisions = sorted({
+        bundle["manifest"]["horizon"]
+        for bundle in bundles
+        if bundle["manifest"].get("hooks") is None
+    })
+    if len(revisions) > 1:
+        raise BundleError(
+            "Selected native mods without a hooks API pin different Horizon commits: "
+            + ", ".join(revision[:12] for revision in revisions)
+            + ". They cannot share one Android runtime build."
+        )
+    return revisions[0] if revisions else None
+
+
 def rewrite_horizon_pin(text: str, revision: str, archive: Path) -> str:
     updated, count = HORIZON_PIN_PATTERN.subn(
         lambda match: match.group(1) + '"' + revision + '"' + match.group(3),
@@ -307,6 +327,12 @@ def rewrite_horizon_pin(text: str, revision: str, archive: Path) -> str:
 
 
 def stage_bundles(source: Path, bundles: list[dict], mods_dir: Path, upstream_commit: str) -> None:
+    required_revision = pinned_horizon_revision(bundles)
+    if required_revision is not None and required_revision != upstream_commit:
+        raise BundleError(
+            "Selected native mods require exact Horizon commit "
+            f"{required_revision}, but the source checkout is {upstream_commit}."
+        )
     api = current_hooks_api(source)
     shutil.rmtree(mods_dir, ignore_errors=True)
     mods_dir.mkdir(parents=True)
