@@ -28,6 +28,16 @@ public final class HorizonNativeModArchiveTest {
         assertEquals(Integer.valueOf(1), manifest.hooks);
     }
 
+    @Test public void acceptsValidBundleCopiedToTemporaryPartFile() throws Exception {
+        File source = create(".hnmod", nativeManifest(ID, HORIZON, MIXINS),
+                mixinManifest(ID, "0.3.0", HORIZON), new String[0]);
+        File staging = Files.createTempFile("mh-resource-", ".part").toFile();
+        Files.copy(source.toPath(), staging.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+        HorizonNativeModArchive.Manifest manifest = HorizonNativeModArchive.read(staging);
+        assertEquals(ID, manifest.id);
+    }
+
     @Test public void recognizesCombinedNativeHmodWithMatchingContentIdentity() throws Exception {
         String content = "id = \"" + ID + "\"\nname = \"Example\"\n"
                 + "version = \"1.0\"\napi = \"0.2\"\ncapabilities = []\n";
