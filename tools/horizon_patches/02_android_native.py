@@ -1247,10 +1247,20 @@ elif game_source.count(legacy_event_loop) == 1:
     horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
     event_loop.run_app(&mut game)?;""")
 else:
-    raise SystemExit(
-        f"{game}: expected exactly one supported run_event_loop anchor "
-        f"(current={game_source.count(current_event_loop)}, legacy={game_source.count(legacy_event_loop)})"
-    )
+    # The latest Java Bridge branch moved the interactive event loop into run_loading()
+    # and dispatches both the loading screen and split game through App. Install the
+    # Android-aware factory before that function; current_app_loop below will use it.
+    current_loading_loop = "    let result = EventLoop::new()?.run_app(&mut app);"
+    legacy_loading_loop = "    EventLoop::new()?.run_app(&mut app)?;"
+    loading_loop_count = game_source.count(current_loading_loop) + game_source.count(legacy_loading_loop)
+    if game_source.count("fn run_loading(") == 1 and loading_loop_count == 1:
+        if "fn new_event_loop<T: 'static + Send>()" not in game_source:
+            replace_once(game, "fn run_loading(", event_loop_factory + "fn run_loading(")
+    else:
+        raise SystemExit(
+            f"{game}: no supported run_event_loop or run_loading App event-loop layout "
+            f"(loading={loading_loop_count})"
+        )
 replace_once(game,
     'impl ApplicationHandler for App {\n    fn resumed(&mut self, event_loop: &ActiveEventLoop) {',
     '''impl ApplicationHandler<horizon_client::AndroidInjectedInput> for App {
