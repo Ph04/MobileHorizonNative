@@ -50,6 +50,14 @@ public final class HorizonModArchiveTest {
         assertEquals("example_code", HorizonModArchive.readId(archive));
     }
 
+    @Test public void acceptsPlayerHudWitModuleWithDeclaredCapabilities() throws Exception {
+        File archive = createArchive("horizon_api_probe",
+                "api = \"0.1\"\nside = \"client\"\n"
+                        + "capabilities = [\"game-read\", \"hud\"]\n",
+                false, true);
+        assertEquals("horizon_api_probe", HorizonModArchive.readId(archive));
+    }
+
     @Test public void acceptsValidTomlLiteralStringsAndRejectsUnknownManifestKeys() throws Exception {
         File valid = createArchive("literal_mod",
                 "name = 'Literal mod'\nversion = '1.0.0'\n"
