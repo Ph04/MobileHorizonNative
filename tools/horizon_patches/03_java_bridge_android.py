@@ -507,7 +507,7 @@ android_vm_tuning = """    // Preserve upstream G1 shrink/periodic-GC and string
         "Java Bridge JVM limits: heap={}..{} MiB, processors={}, GC threads={}",
         heap_initial, heap_max, processors, gc_threads
     );"""
-jvm_options_source = jvm_source.read_text(encoding="utf-8")
+jvm_options_source = jvm_source
 if jvm_options_source.count(vm_options_anchor) == 1:
     # Older bridge source: replace the short base options with Android-aware defaults.
     jvm_source = jvm_source.replace(vm_options_anchor, vm_options_replacement, 1)
