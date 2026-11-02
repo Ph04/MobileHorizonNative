@@ -1,6 +1,6 @@
 # Testar Java Bridge By:iaxivers no MobileHorizonNative
 
-Este branch integra, como runtime opcional, o bridge do fork [iaxivers/horizon](https://github.com/iaxivers/horizon/tree/java-bridge), fixado no commit `4bd3fee1b05ab89c047b8212d314b4de0912c077`.
+Este branch integra, como runtime opcional, o bridge do fork [iaxivers/horizon](https://github.com/iaxivers/horizon/tree/java-bridge), fixado no commit `fd41885b988f18ac4881e80d87f8fc8f9c2e6ca3`.
 
 ## Escopo fixado
 
@@ -28,7 +28,7 @@ Não é necessário incluir outro `fabric-api` no pacote: o bridge possui uma ve
 ## Isolamento e segurança
 
 - Vanilla continua usando `HorizonRuntimeManager` e o atualizador normal.
-- O perfil Java Bridge By:iaxivers usa `FabricBridgeRuntimeManager` e o canal de release `fabric-java-bridge-4bd3fee1`.
+- O perfil Java Bridge By:iaxivers usa `FabricBridgeRuntimeManager` e o canal de release `fabric-java-bridge-latest`.
 - O bridge não é iniciado num perfil Vanilla.
 - Os JARs são código executável de terceiros. Importe apenas arquivos de fontes confiáveis.
 - Java Bridge By:iaxivers é experimental. O bridge implementa uma representação Java espelhada do mundo e um cliente Java sem janela; mods que dependam de APIs não mapeadas, renderização GPU própria, mixins fora da cobertura ou recursos ainda ausentes podem não funcionar.
