@@ -1297,7 +1297,7 @@ replace_once(game,
             (App::Loading(loading), horizon_client::AndroidInjectedInput::ImeText { value, submit, .. }) => {
                 loading.android_keyboard_text(&value, submit);
             }
-            (App::Ready(game), event) => game.user_event(event_loop, event),
+            (App::Ready(game), event) => game.host.user_event(event_loop, event),
             (App::Loading(_), _) => {}
         }
     }
