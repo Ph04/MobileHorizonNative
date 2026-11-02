@@ -22,3 +22,17 @@ artifact only; it does not build an APK or a custom Horizon runtime.
 This proves the host/module communication path. It does **not** automatically
 convert the existing mixin-based `.hnmod` packages. Those originals remain
 untouched; a later port would be a separate derived component.
+
+## How the POC is intended to be tested
+
+1. Run the `Build Horizon WIT module proof of concept` workflow on this branch.
+2. Download its `horizon-api-probe-hmod` artifact and import the resulting `.hmod`
+   with MobileHorizonNative's Resource Manager.
+3. Enable the module for an instance and restart the game.
+4. In a world, look for the `WIT API OK` line at the top-left of the HUD. It
+   should show the player's position and dimension.
+
+The Android runtime must itself have been built with the WIT feature enabled.
+The source preflight in the standard/runtime-release pipelines verifies that
+feature selection; it does not rebuild or replace an already published runtime.
+No APK or Android engine has been rebuilt as part of this source-only POC.
