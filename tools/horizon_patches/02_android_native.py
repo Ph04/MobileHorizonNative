@@ -1324,10 +1324,10 @@ replace_once(game,
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: horizon_client::AndroidInjectedInput) {
         match (self, event) {
             (App::Loading(loading), horizon_client::AndroidInjectedInput::KeyboardText { text, submit }) => {
-                loading.android_keyboard_text(&text, submit);
+                loading.menu.android_keyboard_text(&text, submit);
             }
             (App::Loading(loading), horizon_client::AndroidInjectedInput::ImeText { value, submit, .. }) => {
-                loading.android_keyboard_text(&value, submit);
+                loading.menu.android_keyboard_text(&value, submit);
             }
             (App::Ready(game), event) => game.host.user_event(event_loop, event),
             (App::Loading(_), _) => {}
