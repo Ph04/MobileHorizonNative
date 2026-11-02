@@ -207,6 +207,20 @@ def read_bundle(archive: Path) -> dict:
         raise BundleError(f"{archive.name}: {mixin_path} is missing")
 
     mod_table, compatibility = toml_identity(native_files[mixin_path], archive)
+    try:
+        mixin_config = tomllib.loads(native_files[mixin_path].decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise BundleError(f"{archive.name}: invalid {MIXIN_MANIFEST}: {exc}") from exc
+    unsupported = [
+        key for key in ("api", "dependencies", "post_build")
+        if key in mixin_config
+    ]
+    if unsupported:
+        raise BundleError(
+            f"{archive.name}: Android native build does not yet support "
+            + ", ".join(unsupported)
+            + "; remove those features or use a bundle that only needs mixins/crates/data"
+        )
     if (
         mod_table.get("id") != manifest["id"]
         or mod_table.get("version") != manifest["version"]
