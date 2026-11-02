@@ -844,7 +844,7 @@ getWindow().setStatusBarColor(0xff090911);
         control.setEnabled(!item.id.isEmpty());
     }
 
-    private void renderNativeTrustState(CheckBox control, ResourceItem item, boolean trusted) {
+    private void renderNativeTrustState(android.widget.CompoundButton control, ResourceItem item, boolean trusted) {
         control.setOnCheckedChangeListener(null);
         control.setChecked(trusted);
         control.setText(UiLanguage.translate(this,
@@ -853,7 +853,7 @@ getWindow().setStatusBarColor(0xff090911);
                 changeNativeTrust(item, button, checked));
     }
 
-    private void changeNativeTrust(ResourceItem item, CheckBox control, boolean trusted) {
+    private void changeNativeTrust(ResourceItem item, android.widget.CompoundButton control, boolean trusted) {
         if (!trusted) {
             try {
                 HorizonNativeRuntimeManager.setTrusted(this, home(), item.id, false);
