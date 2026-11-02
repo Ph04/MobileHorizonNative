@@ -773,8 +773,8 @@ threads_source_path.write_text(threads_source, encoding="utf-8")
 
 # Start the file watcher early, before any Java-mod startup or Fabric callbacks.
 game_source = game_source_path.read_text(encoding="utf-8")
-run_anchor = "pub fn run() -> Result<()> {\\n    let Some(mut options) = Options::read()? else {"
-run_with_anchor = "pub fn run_with() -> Result<()> {\\n    let Some(mut options) = Options::read()? else {"
+run_anchor = "pub fn run() -> Result<()> {\n    let Some(mut options) = Options::read()? else {"
+run_with_anchor = "pub fn run_with() -> Result<()> {\n    let Some(mut options) = Options::read()? else {"
 run_replacement = """pub fn run() -> Result<()> {
     if let Some(path) = std::env::var_os("HORIZON_MEMORY_PRESSURE_FILE") {
         horizon_threads::watch_memory_pressure_file(std::path::PathBuf::from(path));
