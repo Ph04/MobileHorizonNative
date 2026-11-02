@@ -30,6 +30,36 @@ if "auth.ok_or_else(|| NOT_SIGNED_IN.to_owned())?" in auth_block:
                     }
                 }"""
     net.write_text(net_source[:auth_start] + auth_replacement + net_source[auth_end:], encoding="utf-8")
+elif "let signed_in = auth.is_some();" in auth_block and "Reason::keyed(\"horizon.multiplayer.not_signed_in\", lang)" in auth_block:
+    # Current upstream keeps a Reason object for failed Microsoft authentication. Retain
+    # that exact failure/reconnect policy for signed-in accounts, but do not turn the
+    # absence of a Microsoft session into an unconditional failure before the server
+    # receives the encrypted response.
+    auth_replacement = """                if hello.should_authenticate {
+                    if let Some(account) = auth {
+                        let hash = server_hash(&hello.server_id, &secret, &hello.public_key);
+                        if let Err(err) = crate::auth::join_server(account, &hash) {
+                            let (reason, key) = match err.reason() {
+                                Ok(key) => (tr(lang, key), Some(key.to_owned())),
+                                Err(message) => (message.to_owned(), None),
+                            };
+                            let reason = Reason {
+                                text: plain(
+                                    &translatable("disconnect.loginFailedInfo", &[&reason]),
+                                    lang,
+                                ),
+                                key,
+                            };
+                            if !continues_after_failed_join(lan, true) {
+                                return Err(reason);
+                            }
+                            log::warn!("Authentication failed: {}", reason.text);
+                        }
+                    } else {
+                        log::warn!("Horizon: online-mode challenge received without a Microsoft session; sending the normal encrypted response and allowing the server to decide whether offline fallback is configured");
+                    }
+                }"""
+    net.write_text(net_source[:auth_start] + auth_replacement + net_source[auth_end:], encoding="utf-8")
 elif "if let Some(account) = auth" in auth_block:
     pass
 else:
