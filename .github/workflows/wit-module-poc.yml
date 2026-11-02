@@ -5,7 +5,11 @@ on:
   push:
     branches: ["feature/fabric-java-bridge-test"]
     paths:
-      - "modules-poc/wit-player-hud/**"
+      - "modules-poc/**"
+      - "tools/horizon_patches/02_android_native.py"
+      - "tools/horizon_patches/09_dynamic_hnmod_modules.py"
+      - "tools/horizon_patches/10_mod_manager_api.py"
+      - "tools/patch_horizon_android_touch.py"
       - ".github/workflows/wit-module-poc.yml"
 
 permissions:
@@ -18,7 +22,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout proof-of-concept source
         uses: actions/checkout@v4
@@ -31,33 +35,80 @@ jobs:
           toolchain: "1.99.1"
           targets: wasm32-unknown-unknown
 
-      - name: Install the pinned Horizon mod packager
+      - name: Fetch and patch the exact Horizon WIT SDK
+        shell: bash
+        env:
+          HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
         run: |
-          cargo install --locked --git https://github.com/horizon-rust/horizon \
-            --rev 6817cb4af09c63f09e299bf5a78e64de79792a8a cargo-horizon-mod
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/horizon-wit-sdk"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin https://github.com/horizon-rust/horizon.git
+          git -C "$SOURCE" fetch --depth 1 origin 6817cb4af09c63f09e299bf5a78e64de79792a8a
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "6817cb4af09c63f09e299bf5a78e64de79792a8a"
 
-      - name: Lock the POC dependency graph
-        working-directory: modules-poc/wit-player-hud
-        run: cargo generate-lockfile
+          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py
+          python3 tools/patch_horizon_android_touch.py "$SOURCE"
 
-      - name: Test the module's pure logic
-        working-directory: modules-poc/wit-player-hud
-        run: cargo test --locked
+          cargo build --release --manifest-path "$SOURCE/Cargo.toml" -p cargo-horizon-mod
+          install -m 0755 "$SOURCE/target/release/cargo-horizon-mod" "$HOME/.cargo/bin/cargo-horizon-mod"
+          echo "HORIZON_PATCHED_SOURCE=$SOURCE" >> "$GITHUB_ENV"
 
-      - name: Build and validate the sandboxed Horizon component
+      - name: Point the WIT samples at the patched SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+          root = Path(os.environ["GITHUB_WORKSPACE"])
+          sdk = Path(os.environ["RUNNER_TEMP"]) / "horizon-wit-sdk/crates/horizon-mod-sdk"
+          for relative in (
+              "modules-poc/wit-player-hud/Cargo.toml",
+              "modules-poc/mod-menu/Cargo.toml",
+          ):
+              path = root / relative
+              text = path.read_text(encoding="utf-8")
+              pattern = r'horizon-mod-sdk = \{ git = "[^"]+", rev = "[0-9a-f]{40}" \}'
+              replacement = 'horizon-mod-sdk = { path = "' + str(sdk) + '" }'
+              updated, count = re.subn(pattern, replacement, text)
+              if count != 1:
+                  raise SystemExit(f"{relative}: expected one pinned SDK dependency, found {count}")
+              path.write_text(updated, encoding="utf-8")
+          PY
+
+      - name: Test and build player HUD sample
         working-directory: modules-poc/wit-player-hud
         run: |
           set -euo pipefail
+          cargo generate-lockfile
+          cargo test --locked
           cargo horizon-mod build
           cargo horizon-mod check target/horizon-mod/horizon_api_probe.hmod
           test -s target/horizon-mod/horizon_api_probe.hmod
           cp target/horizon-mod/horizon_api_probe.hmod target/horizon-mod/horizon_api_probe.hnmod
           test -s target/horizon-mod/horizon_api_probe.hnmod
 
-      - name: Upload the dynamic .hnmod proof-of-concept
+      - name: Test and build the WIT Mod Menu port
+        working-directory: modules-poc/mod-menu
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          cargo test --locked
+          cargo horizon-mod build
+          cargo horizon-mod check target/horizon-mod/mobilehorizon_mod_menu.hmod
+          test -s target/horizon-mod/mobilehorizon_mod_menu.hmod
+          cp target/horizon-mod/mobilehorizon_mod_menu.hmod target/horizon-mod/mobilehorizon_mod_menu.hnmod
+          test -s target/horizon-mod/mobilehorizon_mod_menu.hnmod
+
+      - name: Upload dynamic .hnmod test packages
         uses: actions/upload-artifact@v4
         with:
-          name: horizon-api-probe-hnmod
-          path: modules-poc/wit-player-hud/target/horizon-mod/horizon_api_probe.hnmod
+          name: mobilehorizon-wit-hnmod-modules
+          path: |
+            modules-poc/wit-player-hud/target/horizon-mod/horizon_api_probe.hnmod
+            modules-poc/mod-menu/target/horizon-mod/mobilehorizon_mod_menu.hnmod
           if-no-files-found: error
           retention-days: 30
