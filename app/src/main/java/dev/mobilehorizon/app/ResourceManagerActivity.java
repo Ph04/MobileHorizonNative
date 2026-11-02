@@ -177,7 +177,7 @@ getWindow().setStatusBarColor(0xff090911);
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "Texturas, mods Horizon (.hmod), mods nativos Rust (.hnmod), data packs e shaders. Mods nativos começam desativados. A runtime ARM64 correspondente precisa ser obtida uma vez; depois fica em cache e pode ser usada offline. Alterar o conjunto de mods exige outra runtime compatível.",
+                "Texturas, mods Horizon (.hmod), mods nativos Rust (.hnmod), data packs e shaders. Mods nativos começam desativados. A primeira obtenção da runtime ARM64 correspondente exige conexão; depois ela fica em cache e pode ser usada offline. Alterar o conjunto de mods exige outra runtime compatível.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(10);
