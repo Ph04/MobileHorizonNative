@@ -1183,18 +1183,20 @@ else:
     )
 
 # Publish whether Horizon is in the active world or currently displaying a menu.
-# Java polls this lightweight atomic to hide its virtual cursor during gameplay.
-replace_once(game,
-    """        if let Err(e) = result {
+# Java polls these atomics to hide the virtual cursor during gameplay. Newer Horizon
+# routes window events through handle_window_event_inner and reports errors via
+# exit_on_error; keep the refresh after that current event-dispatch path.
+android_state_update_legacy = """        if let Err(e) = result {
             self.error = Some(e);
             event_loop.exit();
         }
-    }""",
-    """        if let Err(e) = result {
+    }"""
+android_state_update_current = """        self.screen_chars_typed(typed.as_deref());
+        if let Err(e) = result {
             self.error = Some(e);
-            event_loop.exit();
-        }
-        horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
+            self.exit_on_error(event_loop);
+        }"""
+android_state_refresh = """        horizon_client::set_android_world_active(self.player.is_some() && self.title.is_none());
         horizon_client::set_android_gameplay(
             self.player.is_some()
                 && self.title.is_none()
@@ -1208,8 +1210,31 @@ replace_once(game,
                 && matches!(self.screen, Screen::Playing | Screen::Chat)
                 && self.sign_edit.is_none()
                 && self.book.is_none(),
-        );
-    }""")
+        );"""
+game_content = game.read_text(encoding="utf-8")
+if game_content.count(android_state_update_legacy) == 1:
+    replace_once(
+        game,
+        android_state_update_legacy,
+        """        if let Err(e) = result {
+            self.error = Some(e);
+            event_loop.exit();
+        }
+""" + android_state_refresh + """
+    }""",
+    )
+elif game_content.count(android_state_update_current) == 1:
+    replace_once(
+        game,
+        android_state_update_current,
+        android_state_update_current + "\n" + android_state_refresh,
+    )
+else:
+    raise SystemExit(
+        f"{game}: expected one known Android state-update hook "
+        f"(legacy={game_content.count(android_state_update_legacy)}, "
+        f"current={game_content.count(android_state_update_current)})"
+    )
 
 event_loop_factory = """fn new_event_loop<T: 'static + Send>() -> Result<EventLoop<T>> {
     #[cfg(target_os = "android")]
