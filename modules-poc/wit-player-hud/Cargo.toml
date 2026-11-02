@@ -1,0 +1,13 @@
+[package]
+name = "horizon-api-probe"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Small Horizon WIT module proving player reads and HUD host calls"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+horizon-mod-sdk = { git = "https://github.com/horizon-rust/horizon", rev = "6817cb4af09c63f09e299bf5a78e64de79792a8a" }
