@@ -19,7 +19,7 @@ import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 
 /**
- * Read-only validator for Horizon native source bundles (.hnmod and native .hmod).
+ * Read-only validator for Horizon native source bundles (.hnmod only).
  *
  * The bundle contains Rust/TOML source, not a loadable Android library. This class
  * never extracts or executes it; it mirrors the desktop horizon_mods::index::native
