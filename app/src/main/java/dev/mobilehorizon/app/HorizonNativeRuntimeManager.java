@@ -1,6 +1,9 @@
 package dev.mobilehorizon.app;
 
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -33,6 +36,8 @@ final class HorizonNativeRuntimeManager {
     private static final String MANIFEST_ASSET = "horizon-native-runtime-manifest.json";
     private static final String ENGINE_ASSET = "horizon-native-runtime-arm64-v8a.so";
     private static final String ENGINE_FILE = "libhorizon_engine.so";
+    private static final long UPDATE_CHECK_INTERVAL_MS = 60L * 60L * 1000L;
+    private static final String UPDATE_PREFS = "horizon_native_runtime_updates";
     private static final long MAX_ENGINE_BYTES = 300L * 1024L * 1024L;
     private static final int MAX_MANIFEST_BYTES = 64 * 1024;
     private static final int BUFFER_SIZE = 128 * 1024;
@@ -134,51 +139,6 @@ final class HorizonNativeRuntimeManager {
 
         String key = buildKey(mods);
         String tag = RELEASE_PREFIX + key.substring(0, 16);
-        String releaseUrl = "https://api.github.com/repos/" + REPOSITORY
-                + "/releases/tags/" + tag;
-        JSONObject release;
-        try {
-            release = new JSONObject(new String(readUrl(releaseUrl, 1024 * 1024),
-                    StandardCharsets.UTF_8));
-        } catch (IOException missing) {
-            throw new IOException("Ainda não existe runtime ARM64 compilada para este conjunto de mods ativados ("
-                    + tag + "). A compilação considera apenas os IDs marcados como true em horizon-mods.txt. "
-                    + "Adicione os mesmos arquivos originais à pasta native-mods/ do repositório "
-                    + REPOSITORY + " na branch feature/fabric-java-bridge-test, habilite seus IDs em "
-                    + "native-mods/enabled-mods.txt e faça um commit com [trust-native-mods] na mensagem. "
-                    + "Esse marcador confirma que você revisou e confia no código Rust; o workflow compila "
-                    + "e publica somente o conjunto ativado. "
-                    + "Acompanhe em https://github.com/" + REPOSITORY
-                    + "/actions/workflows/native-mod-android-runtime.yml", missing);
-        } catch (org.json.JSONException invalid) {
-            throw new IOException("A resposta da release do runtime nativo não contém JSON válido.", invalid);
-        }
-
-        if (!tag.equals(release.optString("tag_name", ""))
-                || release.optBoolean("draft", true)) {
-            throw new IOException("A release do runtime nativo não corresponde ao conjunto de mods desta instância.");
-        }
-        JSONArray assets = release.optJSONArray("assets");
-        if (assets == null) throw new IOException("A release do runtime nativo não contém assets.");
-        String manifestUrl = assetUrl(assets, MANIFEST_ASSET, tag);
-        String engineUrl = assetUrl(assets, ENGINE_ASSET, tag);
-        if (manifestUrl == null || engineUrl == null) {
-            throw new IOException("A release do runtime nativo não contém o manifesto ou a biblioteca ARM64.");
-        }
-
-        JSONObject manifest;
-        try {
-            manifest = new JSONObject(new String(readUrl(manifestUrl, MAX_MANIFEST_BYTES),
-                    StandardCharsets.UTF_8));
-        } catch (org.json.JSONException invalid) {
-            throw new IOException("O manifesto do runtime nativo é inválido.", invalid);
-        }
-        validateManifest(manifest, mods, key, tag);
-
-        String expectedSha = manifest.optString("sha256", "").toLowerCase(Locale.ROOT);
-        if (!expectedSha.matches("[0-9a-f]{64}")) {
-            throw new IOException("O manifesto não contém SHA-256 válido para a biblioteca.");
-        }
 
         File root = new File(app.getFilesDir(), "horizon-native-runtimes").getCanonicalFile();
         ensureDirectory(root);
@@ -197,40 +157,195 @@ final class HorizonNativeRuntimeManager {
         if (!versionDir.equals(library.getParentFile()) || Files.isSymbolicLink(library.toPath())) {
             throw new IOException("O caminho da biblioteca nativa é inseguro.");
         }
+        File cachedManifestFile = new File(versionDir, MANIFEST_ASSET).getCanonicalFile();
+        if (!versionDir.equals(cachedManifestFile.getParentFile())
+                || Files.isSymbolicLink(cachedManifestFile.toPath())) {
+            throw new IOException("O caminho do manifesto em cache é inseguro.");
+        }
 
-        if (!isValidEngine(library, expectedSha)) {
-            File partial = new File(versionDir, "." + ENGINE_FILE + ".partial");
-            if (Files.isSymbolicLink(partial.toPath())) {
-                throw new IOException("O arquivo temporário do runtime não pode ser link simbólico.");
+        // Offline-first: the manifest is kept beside the verified ELF. The cache is
+        // valid only for the exact IDs, versions and SHA-256 hashes selected above.
+        PreparedRuntime cachedRuntime = readCachedRuntime(
+                root, versionDir, library, cachedManifestFile, mods, key, tag);
+        long now = System.currentTimeMillis();
+        long lastCheck = app.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE)
+                .getLong("last_check_" + tag, 0L);
+        boolean checkDue = cachedRuntime == null || now < lastCheck
+                || now - lastCheck >= UPDATE_CHECK_INTERVAL_MS;
+        if (cachedRuntime != null && (!hasUsableInternet(app) || !checkDue)) {
+            return cachedRuntime;
+        }
+
+        String releaseUrl = "https://api.github.com/repos/" + REPOSITORY
+                + "/releases/tags/" + tag;
+        try {
+            JSONObject release = new JSONObject(new String(readUrl(releaseUrl, 1024 * 1024),
+                    StandardCharsets.UTF_8));
+            if (!tag.equals(release.optString("tag_name", ""))
+                    || release.optBoolean("draft", true)) {
+                throw new IOException("A release do runtime nativo não corresponde ao conjunto de mods desta instância.");
             }
-            if (partial.exists() && !partial.delete()) {
-                throw new IOException("Não foi possível limpar a transferência anterior do runtime nativo.");
+            JSONArray assets = release.optJSONArray("assets");
+            if (assets == null) throw new IOException("A release do runtime nativo não contém assets.");
+            String manifestUrl = assetUrl(assets, MANIFEST_ASSET, tag);
+            String engineUrl = assetUrl(assets, ENGINE_ASSET, tag);
+            if (manifestUrl == null || engineUrl == null) {
+                throw new IOException("A release do runtime nativo não contém o manifesto ou a biblioteca ARM64.");
             }
-            download(engineUrl, partial);
-            if (!isValidEngine(partial, expectedSha)) {
-                partial.delete();
-                throw new IOException("O runtime baixado não corresponde ao SHA-256/ELF ARM64 do manifesto.");
-            }
-            makeExecutable(partial);
+
+            JSONObject manifest;
             try {
-                Files.move(partial.toPath(), library.toPath(), StandardCopyOption.REPLACE_EXISTING,
-                        StandardCopyOption.ATOMIC_MOVE);
-            } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
-                Files.move(partial.toPath(), library.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            } finally {
-                if (partial.exists()) partial.delete();
+                manifest = new JSONObject(new String(readUrl(manifestUrl, MAX_MANIFEST_BYTES),
+                        StandardCharsets.UTF_8));
+            } catch (org.json.JSONException invalid) {
+                throw new IOException("O manifesto do runtime nativo é inválido.", invalid);
             }
-        }
-        if (!isValidEngine(library, expectedSha)) {
-            throw new IOException("A biblioteca nativa instalada falhou na verificação final.");
-        }
-        makeExecutable(library);
+            validateManifest(manifest, mods, key, tag);
 
+            String expectedSha = manifest.optString("sha256", "").toLowerCase(Locale.ROOT);
+            if (!expectedSha.matches("[0-9a-f]{64}")) {
+                throw new IOException("O manifesto não contém SHA-256 válido para a biblioteca.");
+            }
+
+            if (!isValidEngine(library, expectedSha)) {
+                File partial = new File(versionDir, "." + ENGINE_FILE + ".partial");
+                if (Files.isSymbolicLink(partial.toPath())) {
+                    throw new IOException("O arquivo temporário do runtime não pode ser link simbólico.");
+                }
+                if (partial.exists() && !partial.delete()) {
+                    throw new IOException("Não foi possível limpar a transferência anterior do runtime nativo.");
+                }
+                download(engineUrl, partial);
+                if (!isValidEngine(partial, expectedSha)) {
+                    partial.delete();
+                    throw new IOException("O runtime baixado não corresponde ao SHA-256/ELF ARM64 do manifesto.");
+                }
+                makeExecutable(partial);
+                try {
+                    Files.move(partial.toPath(), library.toPath(), StandardCopyOption.REPLACE_EXISTING,
+                            StandardCopyOption.ATOMIC_MOVE);
+                } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+                    Files.move(partial.toPath(), library.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                } finally {
+                    if (partial.exists()) partial.delete();
+                }
+            }
+            if (!isValidEngine(library, expectedSha)) {
+                throw new IOException("A biblioteca nativa instalada falhou na verificação final.");
+            }
+
+            writeCachedManifest(cachedManifestFile, manifest);
+            app.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE).edit()
+                    .putLong("last_check_" + tag, now).apply();
+            return createPreparedRuntime(root, versionDir, library, tag);
+        } catch (IOException failure) {
+            // A last known-good build remains usable when GitHub or the connection is
+            // temporarily unavailable. The failed update never replaces its manifest.
+            if (cachedRuntime != null) return cachedRuntime;
+            if (!hasUsableInternet(app)) {
+                throw new IOException("Não há uma runtime ARM64 em cache para este conjunto de .hnmod e o aparelho está offline. O app não compila Rust no celular: é necessária uma runtime pré-compilada correspondente ao conjunto de mods.", failure);
+            }
+            throw new IOException("Ainda não existe uma runtime ARM64 compilada e publicada para este conjunto de mods ativados ("
+                    + tag + "). Adicione os mesmos arquivos originais à pasta native-mods/ do repositório "
+                    + REPOSITORY + " na branch feature/fabric-java-bridge-test, habilite seus IDs em "
+                    + "native-mods/enabled-mods.txt e faça um commit com [trust-native-mods] na mensagem. "
+                    + "O workflow compila fora do celular e publica a runtime pronta; depois de baixada, ela fica em cache e pode ser usada offline. "
+                    + "Acompanhe em https://github.com/" + REPOSITORY
+                    + "/actions/workflows/native-mod-android-runtime.yml", failure);
+        }
+    }
+
+    private static PreparedRuntime readCachedRuntime(
+            File root, File versionDir, File library, File manifestFile,
+            List<NativeFile> mods, String key, String tag) {
+        if (!manifestFile.isFile() || Files.isSymbolicLink(manifestFile.toPath())
+                || manifestFile.length() <= 0 || manifestFile.length() > MAX_MANIFEST_BYTES) {
+            return null;
+        }
+        try {
+            byte[] bytes = readFileLimited(manifestFile, MAX_MANIFEST_BYTES);
+            JSONObject manifest = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+            validateManifest(manifest, mods, key, tag);
+            String expectedSha = manifest.optString("sha256", "").toLowerCase(Locale.ROOT);
+            if (!expectedSha.matches("[0-9a-f]{64}") || !isValidEngine(library, expectedSha)) {
+                return null;
+            }
+            return createPreparedRuntime(root, versionDir, library, tag);
+        } catch (Exception invalidCache) {
+            return null;
+        }
+    }
+
+    private static PreparedRuntime createPreparedRuntime(
+            File root, File versionDir, File library, String tag) throws IOException {
+        makeExecutable(library);
         File status = new File(versionDir, "loader-status.txt");
+        if (Files.isSymbolicLink(status.toPath())) {
+            throw new IOException("O arquivo de estado de inicialização não pode ser link simbólico.");
+        }
         if (status.exists() && !status.delete()) {
             throw new IOException("Não foi possível limpar o estado de inicialização anterior do runtime nativo.");
         }
         return new PreparedRuntime(root, library, status, tag);
+    }
+
+    private static void writeCachedManifest(File target, JSONObject manifest) throws IOException {
+        byte[] bytes = manifest.toString().getBytes(StandardCharsets.UTF_8);
+        if (bytes.length == 0 || bytes.length > MAX_MANIFEST_BYTES) {
+            throw new IOException("O manifesto do runtime nativo excede o limite de cache.");
+        }
+        File temporary = new File(target.getParentFile(), "." + target.getName() + ".partial");
+        if (Files.isSymbolicLink(target.toPath()) || Files.isSymbolicLink(temporary.toPath())) {
+            throw new IOException("O caminho temporário do manifesto não é seguro.");
+        }
+        if (temporary.exists() && !temporary.delete()) {
+            throw new IOException("Não foi possível limpar o manifesto temporário anterior.");
+        }
+        try (FileOutputStream output = new FileOutputStream(temporary, false)) {
+            output.write(bytes);
+            output.flush();
+            output.getFD().sync();
+        }
+        try {
+            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            if (temporary.exists()) temporary.delete();
+        }
+    }
+
+    private static byte[] readFileLimited(File file, int limit) throws IOException {
+        try (InputStream input = new FileInputStream(file);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                if (output.size() + count > limit) {
+                    throw new IOException("O manifesto em cache excede o limite.");
+                }
+                output.write(buffer, 0, count);
+            }
+            return output.toByteArray();
+        }
+    }
+
+    private static boolean hasUsableInternet(Context context) {
+        try {
+            ConnectivityManager manager = (ConnectivityManager)
+                    context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (manager == null) return false;
+            Network active = manager.getActiveNetwork();
+            if (active == null) return false;
+            NetworkCapabilities capabilities = manager.getNetworkCapabilities(active);
+            return capabilities != null
+                    && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+        } catch (RuntimeException unavailable) {
+            // If Android cannot report connectivity, try the normal HTTPS path.
+            return true;
+        }
     }
 
     private static List<NativeFile> nativeFiles(File instanceHome) throws IOException {
