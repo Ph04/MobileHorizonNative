@@ -553,12 +553,15 @@ getWindow().setStatusBarColor(0xff090911);
             try {
                 HorizonNativeModArchive.Manifest manifest = HorizonNativeModArchive.read(file);
                 id = manifest.id;
+                boolean enabled = HorizonModSelection.isEnabled(home(), manifest.id);
                 detail = "ID: " + manifest.id + " · Horizon " + manifest.horizon.substring(0, 7)
                         + " · hooks API " + (manifest.hooks == null ? "não declarada" : manifest.hooks)
-                        + " · Fonte Rust armazenada. Código nativo não é isolado e aguarda compilação ARM64.";
+                        + (enabled ? " · Selecionado para a próxima compilação ARM64." : " · Instalado e desativado.")
+                        + " Código Rust nativo não roda em sandbox.";
             } catch (Exception ignored) { }
+            boolean enabled = !id.isEmpty() && readEnabledModIds().contains(id);
             nativeMods.add(new ResourceItem(Kind.NATIVE_MOD, file.getName(), file, id,
-                    false, detail));
+                    enabled, detail));
         }
         items = shaderDir().listFiles();
         if (items != null) for (File file : items) {
@@ -588,7 +591,7 @@ getWindow().setStatusBarColor(0xff090911);
         Collections.sort(dataPacks, byName);
         addSection("Pacotes de textura", "ZIPs Java com pack.mcmeta e assets/.", textures);
         addSection("Mods Horizon", "Arquivos .hmod de conteúdo; a ativação vale no próximo início.", mods);
-        addSection("Mods nativos Rust", "Arquivos .hnmod e .hmod com horizon-native.json. São validados e armazenados separadamente; ainda não podem ser compilados/carregados pelo runtime Android atual.", nativeMods);
+        addSection("Mods nativos Rust", "Instale sem ativar. Autorize o código e marque Ativar para incluí-lo no conjunto ARM64. Desativar remove o mod da próxima compilação; não há hot-unload de código Rust.", nativeMods);
         addSection("Pacotes de dados", "Selecione a pasta de um mundo salvo para copiar o pack para datapacks/.", dataPacks);
         addSection("Shader packs", "Pastas pack.toml/shaders/ e shader ZIPs Java reconhecidos.", shaders);
         if (textures.isEmpty() && mods.isEmpty() && nativeMods.isEmpty()
@@ -790,7 +793,14 @@ getWindow().setStatusBarColor(0xff090911);
         active.setTextColor(0xff283550);
         active.setMinHeight(dp(38));
         if (item.kind == Kind.NATIVE_MOD) {
-            configureNativeTrustControl(active, item);
+            configureNativeEnableControl(active, item);
+            CheckBox trusted = new CheckBox(this);
+            trusted.setTextSize(12);
+            trusted.setTextColor(0xff283550);
+            trusted.setMinHeight(dp(38));
+            configureNativeTrustControl(trusted, item);
+            actions.addView(active, new LinearLayout.LayoutParams(0, dp(40), 1f));
+            actions.addView(trusted, new LinearLayout.LayoutParams(0, dp(40), 1f));
         } else {
             active.setText(UiLanguage.translate(this,
                     item.kind == Kind.DATA_PACK ? "Por mundo" : item.active ? "Ativo" : "Ativar"));
@@ -820,8 +830,8 @@ getWindow().setStatusBarColor(0xff090911);
                     showStatus("Não foi possível alterar " + item.name + ": " + message(error));
                 }
             });
+            actions.addView(active, new LinearLayout.LayoutParams(0, dp(40), 1f));
         }
-        actions.addView(active, new LinearLayout.LayoutParams(0, dp(40), 1f));
 
         if (item.kind == Kind.DATA_PACK) {
             Button install = button("Instalar", true, v -> chooseWorldForDataPack(item.path));
@@ -838,6 +848,31 @@ getWindow().setStatusBarColor(0xff090911);
         actions.addView(delete, params(dp(76), dp(38)));
     }
 
+    private void configureNativeEnableControl(CheckBox control, ResourceItem item) {
+        control.setOnCheckedChangeListener(null);
+        control.setChecked(item.active);
+        control.setText(UiLanguage.translate(this, item.active ? "Ativo" : "Ativar"));
+        boolean trusted = HorizonNativeRuntimeManager.isTrusted(this, home(), item.id);
+        control.setEnabled(!item.id.isEmpty() && trusted);
+        control.setOnCheckedChangeListener((button, enabled) -> {
+            try {
+                setActive(item, enabled);
+                showStatus(item.name + (enabled
+                        ? " incluído no conjunto nativo selecionado."
+                        : " removido do conjunto nativo selecionado.")
+                        + " A alteração exige a runtime ARM64 desse conjunto; com todos desativados, o jogo usa a runtime normal.");
+                refreshResources();
+            } catch (Exception error) {
+                button.setOnCheckedChangeListener(null);
+                button.setChecked(item.active);
+                button.setText(UiLanguage.translate(this, item.active ? "Ativo" : "Ativar"));
+                configureNativeEnableControl(button instanceof CheckBox
+                        ? (CheckBox) button : control, item);
+                showStatus("Não foi possível alterar " + item.name + ": " + message(error));
+            }
+        });
+    }
+
     private void configureNativeTrustControl(CheckBox control, ResourceItem item) {
         boolean trusted = HorizonNativeRuntimeManager.isTrusted(this, home(), item.id);
         renderNativeTrustState(control, item, trusted);
@@ -847,8 +882,7 @@ getWindow().setStatusBarColor(0xff090911);
     private void renderNativeTrustState(android.widget.CompoundButton control, ResourceItem item, boolean trusted) {
         control.setOnCheckedChangeListener(null);
         control.setChecked(trusted);
-        control.setText(UiLanguage.translate(this,
-                trusted ? "Código confiado" : "Confiar no código"));
+        control.setText(UiLanguage.translate(this, trusted ? "Confiado" : "Confiar"));
         control.setOnCheckedChangeListener((button, checked) ->
                 changeNativeTrust(item, button, checked));
     }
@@ -856,10 +890,12 @@ getWindow().setStatusBarColor(0xff090911);
     private void changeNativeTrust(ResourceItem item, android.widget.CompoundButton control, boolean trusted) {
         if (!trusted) {
             try {
+                if (HorizonModSelection.isEnabled(home(), item.id)) setActive(item, false);
                 HorizonNativeRuntimeManager.setTrusted(this, home(), item.id, false);
                 renderNativeTrustState(control, item, false);
                 showStatus("Confiança removida de " + item.name
-                        + ". O runtime nativo não será selecionado para esta instância.");
+                        + ". O mod também foi retirado do conjunto ativo.");
+                refreshResources();
             } catch (Exception error) {
                 renderNativeTrustState(control, item, true);
                 showStatus("Não foi possível remover a confiança: " + message(error));
@@ -878,7 +914,8 @@ getWindow().setStatusBarColor(0xff090911);
                                 HorizonNativeRuntimeManager.setTrusted(this, home(), item.id, true);
                                 renderNativeTrustState(control, item, true);
                                 showStatus("Confiança registrada para " + item.name
-                                        + ". O runtime ARM64 precisa ser compilado antes de iniciar o jogo.");
+                                        + ". Agora você pode ativá-lo para incluí-lo na compilação ARM64.");
+                                refreshResources();
                             } catch (Exception error) {
                                 renderNativeTrustState(control, item, false);
                                 showStatus("Não foi possível registrar a confiança: " + message(error));
@@ -891,11 +928,12 @@ getWindow().setStatusBarColor(0xff090911);
         if (item.kind == Kind.DATA_PACK) {
             throw new IllegalArgumentException("Pacotes de dados são instalados por mundo.");
         }
-        if (item.kind == Kind.NATIVE_MOD) {
-            throw new IllegalArgumentException("Mods nativos ainda precisam de uma compilação Horizon própria; não podem ser ativados no runtime atual.");
-        }
-        if (item.kind == Kind.MOD) {
+        if (item.kind == Kind.MOD || item.kind == Kind.NATIVE_MOD) {
             if (item.id.isEmpty()) throw new IllegalArgumentException("O manifesto deste mod é inválido.");
+            if (item.kind == Kind.NATIVE_MOD && enabled
+                    && !HorizonNativeRuntimeManager.isTrusted(this, home(), item.id)) {
+                throw new IllegalStateException("Autorize o código nativo antes de ativar este mod.");
+            }
             TreeSet<String> ids = readEnabledModIds();
             if (enabled) ids.add(item.id); else ids.remove(item.id);
             writeEnabledModIds(ids);
@@ -919,8 +957,11 @@ getWindow().setStatusBarColor(0xff090911);
                 .setNegativeButton(UiLanguage.translate(this, "Cancelar"), null)
                 .setPositiveButton(UiLanguage.translate(this, "Excluir"), (dialog, which) -> {
                     try {
-                        if (item.kind != Kind.DATA_PACK && item.kind != Kind.NATIVE_MOD) {
+                        if (item.kind != Kind.DATA_PACK) {
                             setActive(item, false);
+                        }
+                        if (item.kind == Kind.NATIVE_MOD && !item.id.isEmpty()) {
+                            HorizonNativeRuntimeManager.setTrusted(this, home(), item.id, false);
                         }
                         deleteRecursively(item.path);
                         if (item.kind == Kind.SHADER) new File(shaderDir(), item.name + ".txt").delete();
@@ -969,29 +1010,15 @@ getWindow().setStatusBarColor(0xff090911);
     }
 
     private TreeSet<String> readEnabledModIds() {
-        TreeSet<String> ids = new TreeSet<>();
-        if (!modListFile().isFile()) return ids;
         try {
-            for (String line : java.nio.file.Files.readAllLines(modListFile().toPath(), StandardCharsets.UTF_8)) {
-                String trimmed = line.trim();
-                int colon = trimmed.indexOf(':');
-                if (colon <= 0 || !"true".equals(trimmed.substring(colon + 1).trim())) continue;
-                String key = trimmed.substring(0, colon).trim();
-                if (key.startsWith("mod.")) {
-                    String id = key.substring(4);
-                    if (id.matches("[A-Za-z0-9_.-]+")) ids.add(id);
-                }
-            }
-        } catch (IOException ignored) {}
-        return ids;
+            return HorizonModSelection.readEnabledIds(home());
+        } catch (IOException ignored) {
+            return new TreeSet<>();
+        }
     }
 
     private void writeEnabledModIds(Set<String> ids) throws IOException {
-        StringBuilder text = new StringBuilder();
-        for (String id : new TreeSet<>(ids)) {
-            if (id.matches("[A-Za-z0-9_.-]+")) text.append("mod.").append(id).append(":true\n");
-        }
-        writeUtf8(modListFile(), text.toString());
+        HorizonModSelection.writeEnabledIds(home(), ids);
     }
 
     private String readGraphicsOption(String key) { return readOption(graphicsFile(), key); }
