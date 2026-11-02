@@ -8,6 +8,9 @@ on:
     paths:
       - "native-mods/*.hnmod"
       - "native-mods/*.hmod"
+      - "native-mods/enabled-mods.txt"
+      - "tools/build_horizon_native_android_runtime.py"
+      - "tools/test_native_mod_selection.py"
   workflow_dispatch:
     inputs:
       trust_confirmation:
@@ -27,7 +30,7 @@ concurrency:
 
 jobs:
   build:
-    if: (github.event_name == 'workflow_dispatch' && inputs.trust_confirmation == 'I TRUST THESE NATIVE MODS') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[trust-native-mods]'))
+    if: (github.event_name == 'workflow_dispatch' && inputs.trust_confirmation == 'I TRUST THESE NATIVE MODS') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[trust-native-mods]') && hashFiles('native-mods/*.hnmod', 'native-mods/*.hmod') != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
@@ -119,11 +122,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile tools/build_horizon_native_android_runtime.py tools/test_android_native_entrypoint.py
+          python3 -m py_compile tools/build_horizon_native_android_runtime.py tools/test_android_native_entrypoint.py tools/test_native_mod_selection.py
+          python3 tools/test_native_mod_selection.py
           python3 tools/test_android_native_entrypoint.py --source "$HORIZON_SOURCE"
           python3 tools/build_horizon_native_android_runtime.py \
             --source "$HORIZON_SOURCE" \
             --mod-dir "$GITHUB_WORKSPACE/native-mods" \
+            --enabled-list "$GITHUB_WORKSPACE/native-mods/enabled-mods.txt" \
             --out-dir "$RUNNER_TEMP/horizon-native-build"
           STAGE="$RUNNER_TEMP/horizon-native-build/stage"
           test -s "$STAGE/Cargo.toml"
