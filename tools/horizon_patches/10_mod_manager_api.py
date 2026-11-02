@@ -88,8 +88,8 @@ replace_once(
 )
 replace_once(
     manifest,
-    "            Capability::Recipes => \"recipes\",\n        }",
-    "            Capability::Recipes => \"recipes\",\n            Capability::ModManager => \"mod-manager\",\n        }",
+    "            Capability::Recipes => \"recipes\",\n        }\n    }\n    /// May change in any release: a mod uses it only with",
+    "            Capability::Recipes => \"recipes\",\n            Capability::ModManager => \"mod-manager\",\n        }\n    }\n    /// May change in any release: a mod uses it only with",
     "map ModManager WIT interface"
 )
 replace_once(
