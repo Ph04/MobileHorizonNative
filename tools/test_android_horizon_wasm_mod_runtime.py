@@ -8,7 +8,6 @@ Android cdylib enables it only when the full SDK/runtime are present.
 from __future__ import annotations
 
 import argparse
-import re
 import tomllib
 from pathlib import Path
 
@@ -43,8 +42,7 @@ def main() -> int:
 
     client = read_toml(client_cargo_path)
     android = read_toml(android_cargo_path)
-    client_features = client.get("features", {})
-    mods_feature = client_features.get("mods", [])
+    mods_feature = client.get("features", {}).get("mods", [])
     has_official_runtime = (
         mods_cargo_path.is_file()
         and mods_runtime_path.is_file()
@@ -77,19 +75,19 @@ def main() -> int:
             "Wasmtime needs an execution backend")
 
     runtime = mods_runtime_path.read_text(encoding="utf-8")
-    for pattern, reason in (
-        (r"consume_fuel\\(true\\)", "fuel metering is not enabled"),
-        (r"memory_size\\(MEMORY\\)", "per-module memory limit is not installed"),
-        (r"set_fuel\\(FUEL_INIT\\)", "initialization fuel is not bounded"),
-        (r"MEMORY:\\s*usize\\s*=\\s*64\\s*<<\\s*20", "expected 64 MiB module memory cap is missing"),
-        (r"FUEL_TICK:\\s*u64\\s*=\\s*50_000_000", "tick fuel budget is missing"),
+    for marker, reason in (
+        ("consume_fuel(true)", "fuel metering is not enabled"),
+        ("memory_size(MEMORY)", "per-module memory limit is not installed"),
+        ("set_fuel(FUEL_INIT)", "initialization fuel is not bounded"),
+        ("const MEMORY: usize = 64 << 20;", "expected 64 MiB module memory cap is missing"),
+        ("const FUEL_TICK: u64 = 50_000_000;", "tick fuel budget is missing"),
     ):
-        require(re.search(pattern, runtime) is not None, reason)
+        require(marker in runtime, reason)
 
     wit = wit_path.read_text(encoding="utf-8")
     require("package horizon:mods@" in wit, "WIT contract has no versioned horizon:mods package")
     for interface in ("game", "chat", "hud", "storage", "ui", "render", "input"):
-        require(re.search(rf"(?m)^interface\\s+{interface}\\s*\\{{", wit) is not None,
+        require(f"interface {interface} {{" in wit,
                 f"WIT contract is missing the {interface} interface")
 
     game_mods = root / "crates/horizon-client/src/game/mods.rs"
