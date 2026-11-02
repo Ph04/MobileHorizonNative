@@ -283,9 +283,10 @@ jobs:
           git -C "$SOURCE" fetch --depth 1 origin "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
           git -C "$SOURCE" checkout --detach "$UPSTREAM_TAG"
           test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
-          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py
+          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py tools/test_android_horizon_wasm_mod_runtime.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
-          echo "Prepared $UPSTREAM_TAG ($UPSTREAM_COMMIT) with the Android compatibility overlay."
+          python3 tools/test_android_horizon_wasm_mod_runtime.py --source "$SOURCE"
+          echo "Prepared $UPSTREAM_TAG ($UPSTREAM_COMMIT) with the Android compatibility overlay and WIT module feature check."
 
       - name: Test patched platform-neutral Horizon crates
         shell: bash
