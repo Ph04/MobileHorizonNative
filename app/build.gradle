@@ -110,8 +110,8 @@ android {
         applicationId 'dev.mobilehorizon.app'
         minSdk 26
         targetSdk 35
-        versionCode 33
-        versionName '0.3.30'
+        versionCode 34
+        versionName '0.3.31'
     }
 
     compileOptions {
