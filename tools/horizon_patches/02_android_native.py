@@ -486,6 +486,7 @@ pub fn android_app() -> Result<winit::platform::android::activity::AndroidApp> {
 }'''
 legacy_result_alias = 'pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;'
 core_result_alias = 'pub use horizon_client_core::Result;'
+client_lib_glob_reexport = 'pub use horizon_client_lib::*;'
 lib_source = lib.read_text(encoding="utf-8")
 if lib_source.count(legacy_result_alias) == 1:
     # Horizon <= v0.2.75 defined the result alias locally; insert Android bridge here.
@@ -494,10 +495,21 @@ elif lib_source.count(core_result_alias) == 1:
     # v0.2.76 moved Result into horizon-client-core; preserve that public re-export.
     android_runtime_additions = android_runtime_api.split("\n\n", 1)[1]
     replace_once(lib, core_result_alias, core_result_alias + "\n\n" + android_runtime_additions)
+elif lib_source.count(client_lib_glob_reexport) == 1:
+    # Newer Java Bridge nightlies move the reusable Result alias into horizon-client-lib
+    # and re-export it through this glob. Add Android APIs after the same public export.
+    android_runtime_additions = android_runtime_api.split("\n\n", 1)[1]
+    replace_once(
+        lib,
+        client_lib_glob_reexport,
+        client_lib_glob_reexport + "\n\n" + android_runtime_additions,
+    )
 else:
     raise SystemExit(
-        f"{lib}: expected one supported Result export (legacy alias or horizon_client_core re-export); "
-        f"found legacy={lib_source.count(legacy_result_alias)}, core={lib_source.count(core_result_alias)}"
+        f"{lib}: expected one supported Result export (legacy alias, core re-export, "
+        f"or horizon-client-lib glob); found legacy={lib_source.count(legacy_result_alias)}, "
+        f"core={lib_source.count(core_result_alias)}, "
+        f"client-lib={lib_source.count(client_lib_glob_reexport)}"
     )
 
 replace_once(hud,
