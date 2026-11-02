@@ -23,7 +23,8 @@ import java.util.zip.ZipFile;
  *
  * The bundle contains Rust/TOML source, not a loadable Android library. This class
  * never extracts or executes it; it mirrors the desktop horizon_mods::index::native
- * archive contract before the file is stored for a future native build step.
+ * archive contract. Validation is based on ZIP manifests rather than the temporary
+ * staging filename used by Android's document provider.
  */
 final class HorizonNativeModArchive {
     static final String MANIFEST = "horizon-native.json";
