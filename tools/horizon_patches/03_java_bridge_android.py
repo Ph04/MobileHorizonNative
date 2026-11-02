@@ -773,15 +773,27 @@ threads_source_path.write_text(threads_source, encoding="utf-8")
 
 # Start the file watcher early, before any Java-mod startup or Fabric callbacks.
 game_source = game_source_path.read_text(encoding="utf-8")
-run_anchor = "pub fn run() -> Result<()> {\n    let Some(mut options) = Options::read()? else {"
+run_anchor = "pub fn run() -> Result<()> {\\n    let Some(mut options) = Options::read()? else {"
+run_with_anchor = "pub fn run_with() -> Result<()> {\\n    let Some(mut options) = Options::read()? else {"
 run_replacement = """pub fn run() -> Result<()> {
     if let Some(path) = std::env::var_os("HORIZON_MEMORY_PRESSURE_FILE") {
         horizon_threads::watch_memory_pressure_file(std::path::PathBuf::from(path));
     }
     let Some(mut options) = Options::read()? else {"""
-if game_source.count(run_anchor) != 1:
-    raise SystemExit(f"{game_source_path}: run() memory watcher anchor changed")
-game_source = game_source.replace(run_anchor, run_replacement, 1)
+run_with_replacement = """pub fn run_with() -> Result<()> {
+    if let Some(path) = std::env::var_os("HORIZON_MEMORY_PRESSURE_FILE") {
+        horizon_threads::watch_memory_pressure_file(std::path::PathBuf::from(path));
+    }
+    let Some(mut options) = Options::read()? else {"""
+if game_source.count(run_anchor) == 1:
+    game_source = game_source.replace(run_anchor, run_replacement, 1)
+elif game_source.count(run_with_anchor) == 1:
+    game_source = game_source.replace(run_with_anchor, run_with_replacement, 1)
+else:
+    raise SystemExit(
+        f"{game_source_path}: expected one supported run()/run_with() options anchor, "
+        f"found run={game_source.count(run_anchor)}, run_with={game_source.count(run_with_anchor)}"
+    )
 game_source_path.write_text(game_source, encoding="utf-8")
 
 # Let horizon-jvm read the same lightweight pressure level as the native engine.
