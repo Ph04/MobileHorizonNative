@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 final class ServerFavoriteStore {
     static final class Favorite {
@@ -31,8 +33,8 @@ final class ServerFavoriteStore {
     static void add(Context context, String name, String address) {
         String safeName = validateName(name), safeAddress = validateAddress(address);
         ArrayList<Favorite> values = new ArrayList<>(list(context));
-        for (Favorite value : values) if (value.address.equalsIgnoreCase(safeAddress)) {
-            throw new IllegalArgumentException("Esse endereço já está salvo.");
+        for (Favorite value : values) if (sameAddress(value.address, safeAddress)) {
+            throw new IllegalArgumentException("Esse endereço já está salvo (incluindo a porta padrão 25565).");
         }
         if (values.size() >= 100) throw new IllegalStateException("O limite de 100 servidores favoritos foi atingido.");
         values.add(new Favorite(safeName, safeAddress)); write(context, values);
@@ -40,7 +42,7 @@ final class ServerFavoriteStore {
 
     static void delete(Context context, String address) {
         ArrayList<Favorite> values = new ArrayList<>(list(context));
-        values.removeIf(value -> value.address.equalsIgnoreCase(address));
+        values.removeIf(value -> sameAddress(value.address, address));
         write(context, values);
     }
 
@@ -76,6 +78,54 @@ final class ServerFavoriteStore {
             if (n < 1 || n > 65535) throw new IllegalArgumentException("A porta deve ficar entre 1 e 65535.");
         }
         return value;
+    }
+
+    static boolean sameAddress(String first, String second) {
+        return normalizeAddress(first).equals(normalizeAddress(second));
+    }
+
+    static String normalizeAddress(String address) {
+        String value = address == null ? "" : address.trim().toLowerCase(Locale.ROOT);
+        if (value.endsWith(":25565")) return value.substring(0, value.length() - 6);
+        return value;
+    }
+
+    /** Addresses last written into servers.dat, for removing only stale launcher-managed rows. */
+    static Set<String> syncedAddresses(Context context) {
+        JSONArray array = preferences(context).getString("synced_addresses", "[]") == null
+                ? new JSONArray()
+                : parseArray(preferences(context).getString("synced_addresses", "[]"));
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        for (int i = 0; i < array.length(); i++) {
+            String value = array.optString(i, "");
+            if (!value.isEmpty()) result.add(normalizeAddress(value));
+        }
+        return result;
+    }
+
+    /** Persist only after servers.dat has been written successfully. */
+    static void markSynced(Context context, List<Favorite> values) {
+        JSONArray array = new JSONArray();
+        try {
+            for (Favorite value : values) array.put(value.address);
+        } catch (Exception error) {
+            throw new IllegalStateException("Não foi possível registrar os servidores sincronizados.", error);
+        }
+        if (!preferences(context).edit().putString("synced_addresses", array.toString()).commit()) {
+            throw new IllegalStateException("Não foi possível salvar o estado da sincronização.");
+        }
+    }
+
+    private static JSONArray parseArray(String raw) {
+        try { return new JSONArray(raw); }
+        catch (JSONException ignored) { return new JSONArray(); }
+    }
+
+    private static SharedPreferences preferences(Context context) {
+        String id;
+        try { id = GameInstanceManager.getSelectedInstance(context).id; }
+        catch (Exception error) { id = GameInstanceManager.DEFAULT_ID; }
+        return context.getSharedPreferences("server_favorites_" + id, Context.MODE_PRIVATE);
     }
 
     private static JSONArray read(Context context) {
