@@ -1403,14 +1403,51 @@ dst = root / "crates/mobilehorizon-android"
 shutil.copyfile(repo_root / "android-native/Cargo.toml", dst / "Cargo.toml")
 shutil.copyfile(repo_root / "android-native/src/lib.rs", dst / "src/lib.rs")
 
-# Some Horizon revisions provide the official sandboxed WIT/WebAssembly mod runtime.
-# Enable it only when the complete runtime and SDK contract exist in this exact checkout.
-# Older Nightlies used by native .hnmod mixins do not have this runtime and must keep
-# building without the Wasmtime/Cranelift dependency.
+# Select only features that this exact Horizon checkout declares. The Android
+# overlay has historically requested "java-mods", but upstream v0.2.81 and
+# some stable/nightly revisions do not provide that feature. Keep it when a
+# newer/alternate Horizon source actually has it; otherwise do not make the
+# entire Android cdylib dependency graph unresolvable.
+import json
+import re
+import tomllib
+
+client_manifest_text = client_cargo.read_text(encoding="utf-8")
+try:
+    client_manifest_data = tomllib.loads(client_manifest_text)
+    client_features = set(client_manifest_data.get("features", {}))
+except tomllib.TOMLDecodeError as error:
+    raise SystemExit(f"{client_cargo}: invalid TOML while selecting Android features: {error}")
+
+android_manifest = dst / "Cargo.toml"
+android_text = android_manifest.read_text(encoding="utf-8")
+try:
+    android_manifest_data = tomllib.loads(android_text)
+    requested_features = android_manifest_data["dependencies"]["horizon-client"]["features"]
+except (tomllib.TOMLDecodeError, KeyError, TypeError) as error:
+    raise SystemExit(f"{android_manifest}: cannot read horizon-client feature selection: {error}")
+
+unsupported = sorted(set(requested_features) - client_features)
+# java-mods is an optional bridge integration from selected Horizon forks,
+# not a feature every official Horizon release has. Other unknown features
+# are treated as real integration errors instead of being silently hidden.
+unexpected = [feature for feature in unsupported if feature != "java-mods"]
+if unexpected:
+    raise SystemExit(
+        f"{client_cargo}: Android overlay requests unsupported Horizon features: "
+        + ", ".join(unexpected)
+    )
+if "java-mods" in unsupported:
+    print(
+        "Horizon revision has no java-mods feature; omitting it from this engine. "
+        "The Java compatibility bridge is not enabled by this upstream revision."
+    )
+
+# The official sandboxed WIT/WebAssembly runtime is optional. Enable it only
+# when the complete runtime, manifest parser and SDK contract exist together.
 mods_runtime = root / "crates/horizon-mods/src/runtime.rs"
 mods_manifest = root / "crates/horizon-mods/Cargo.toml"
 mods_wit = root / "crates/horizon-mod-sdk/wit/horizon.wit"
-client_manifest_text = client_cargo.read_text(encoding="utf-8")
 has_wit_mod_runtime = (
     mods_runtime.is_file()
     and mods_manifest.is_file()
@@ -1418,22 +1455,36 @@ has_wit_mod_runtime = (
     and 'mods = ["horizon-mods/runtime"]' in client_manifest_text
     and 'wasmtime = {' in mods_manifest.read_text(encoding="utf-8")
 )
-if has_wit_mod_runtime:
-    android_manifest = dst / "Cargo.toml"
-    android_text = android_manifest.read_text(encoding="utf-8")
-    old_features = 'features = ["audio", "java-mods"]'
-    new_features = 'features = ["audio", "java-mods", "mods"]'
-    if android_text.count(old_features) == 1:
-        android_manifest.write_text(
-            android_text.replace(old_features, new_features, 1), encoding="utf-8"
-        )
-    elif android_text.count(new_features) != 1:
+selected_features = [feature for feature in requested_features if feature in client_features]
+if has_wit_mod_runtime and "mods" not in selected_features:
+    if "mods" not in client_features:
         raise SystemExit(
-            f"{android_manifest}: expected one Android Horizon feature list "
-            "before enabling the WIT module runtime"
+            f"{client_cargo}: complete WIT runtime detected without client feature 'mods'"
         )
+    selected_features.append("mods")
+elif not has_wit_mod_runtime and "mods" in selected_features:
+    raise SystemExit(
+        "Android enables Horizon mods but this source revision has no complete WIT runtime."
+    )
+
+dependency_line = re.compile(r"(?m)^horizon-client\\s*=\\s*\\{[^\\n]*\\}$")
+matches = list(dependency_line.finditer(android_text))
+if len(matches) != 1:
+    raise SystemExit(
+        f"{android_manifest}: expected exactly one inline horizon-client dependency, found {len(matches)}"
+    )
+line = matches[0].group(0)
+feature_value = "features = " + json.dumps(selected_features)
+feature_pattern = re.compile(r"features\\s*=\\s*\\[[^\\]]*\\]")
+if len(feature_pattern.findall(line)) != 1:
+    raise SystemExit(f"{android_manifest}: could not find its single horizon-client feature list")
+updated_line = feature_pattern.sub(feature_value, line, count=1)
+android_text = android_text[:matches[0].start()] + updated_line + android_text[matches[0].end():]
+android_manifest.write_text(android_text, encoding="utf-8")
+
+if has_wit_mod_runtime:
     print("Enabled Horizon's sandboxed WebAssembly/WIT mod runtime for this source revision.")
 else:
-    print("This Horizon revision has no complete WIT mod runtime; keeping the native mixin build unchanged.")
-
+    print("This Horizon revision has no complete WIT mod runtime; native mixin build remains unchanged.")
+print("Selected Android Horizon features:", ", ".join(selected_features) or "(none)")
 print("Patched Horizon Android touch input and created the NativeActivity cdylib target.")
