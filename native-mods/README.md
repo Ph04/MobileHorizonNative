@@ -1,11 +1,20 @@
 # Horizon native mods — Android ARM64 build input
 
 Place only the original, reviewed `.hnmod` Rust source packages in this directory.
-Ordinary `.hmod` content packages are imported and managed separately by the app.
+The app also supports official `.hmod` packages. A code-bearing `.hmod` may contain
+`mod.wasm`: Horizon's WebAssembly component system, whose WIT host API exposes
+game/player reads, chat, HUD, UI, render and input services through declared
+capabilities. The component runtime is enabled for Android only when the exact
+upstream checkout contains the full `horizon-mods/runtime` and WIT SDK.
 
-**Never rename a `.hmod` to `.hnmod`.** The formats are separate and not interchangeable. The native workflow applies
-Rust sources to Horizon and compiles a game library. This code runs inside the game
-process with the app's permissions; it is not sandboxed.
+**Never rename a `.hmod` to `.hnmod`.** The formats are separate and not interchangeable.
+A WIT `.hmod` is a sandboxed component with capability checks, fuel metering and a
+64 MiB per-module memory cap. The `.hnmod` packages in this directory remain Rust
+mixin bundles: the current PC-style build path applies their source to Horizon and
+compiles a game library. That code runs inside the game process with the app's
+permissions and is not sandboxed. There is no automatic conversion from an existing
+mixin `.hnmod` to a WIT component; any future port must be a separate derived artifact,
+leaving the original package unchanged.
 
 ## Select which mods are compiled
 
