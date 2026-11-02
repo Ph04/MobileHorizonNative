@@ -59,3 +59,6 @@ The Android compiler supports native mixin bundles, Rust source/crates and data.
 The workflow uses the Horizon workspace's `fast` Cargo profile (optimized, 16 codegen units, incremental compilation) and stores Cargo's target directory, registry, Git checkouts, and the pinned `horizon-mixins` CLI in GitHub Actions cache. Cache keys are scoped to the Android target, Rust toolchain, profile, and Horizon commit—not to the native modset—so a changed `.hnmod` can reuse unchanged dependencies and crates. Cargo fingerprints decide what must actually be rebuilt; changed source or dependencies are not skipped. The final Android engine still has to be linked for each distinct selected modset.
 
 This is incremental **recompilation of the Horizon workspace**, not independent hot-loaded `.so` files for arbitrary mixin mods. Separate per-mod shared libraries would require a stable dynamic plugin ABI and loader that this Horizon integration does not currently provide.
+
+
+Do not use this workflow for packages whose source you have not reviewed. Rust code executes in-process with the game's permissions and may access app-private data or the network. Enabling a mod is a code execution decision, not just a content toggle.
