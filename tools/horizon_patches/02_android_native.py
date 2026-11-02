@@ -75,6 +75,38 @@ fn open_device(
     } else {
         Err(format!("no usable output audio configuration: {}", errors.join("; ")).into())
     }
+}
+
+/// Try one output device for Horizon's audio selection loop. The upstream
+/// caller still expects this helper after the Android-specific config probing
+/// replaces the desktop default-output implementation.
+#[cfg(feature = "audio")]
+fn try_open_device(
+    device: &cpal::Device,
+    mixer: Arc<Mutex<Mixer>>,
+    tried: &mut Vec<String>,
+    errors: &mut Vec<String>,
+) -> Option<cpal::Stream> {
+    let name = device.name().unwrap_or_else(|_| "unnamed device".into());
+    if tried.contains(&name) {
+        return None;
+    }
+    tried.push(name.clone());
+    match open_device(device, mixer) {
+        Ok((stream, config)) => {
+            log::info!(
+                "Horizon: audio output {name} ({} Hz, {} channels, {})",
+                config.sample_rate().0,
+                config.channels(),
+                config.sample_format()
+            );
+            Some(stream)
+        }
+        Err(error) => {
+            errors.push(format!("{name}: {error}"));
+            None
+        }
+    }
 }"""
 if audio_end_marker == audio_end_markers[1]:
     # The external java-bridge fork's Mixer has no desktop device-name/lost fields.
