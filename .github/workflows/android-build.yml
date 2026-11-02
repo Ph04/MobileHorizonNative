@@ -1,4 +1,5 @@
 # One-shot approval: build the standard APK against the published Java Bridge runtime.
+# The Android overlay preflight supports both upstream Game and Bridge Split event loops.
 name: Android build, official downloader and Horizon runtime
 
 concurrency:
