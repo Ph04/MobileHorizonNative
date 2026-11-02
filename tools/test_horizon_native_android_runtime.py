@@ -74,15 +74,19 @@ def main():
             f"mixins/{MOD_ID}/hook.rs",
         }
 
-        # The same native code can be bundled with content, but both IDs must agree.
+        # Native Rust source is exclusively .hnmod; .hmod remains content-only.
         combined = root / "combined.hmod"
         make_bundle(combined, extras=[
             ("horizon-mod.toml",
-             f'id = "{MOD_ID}"\nname = "Sample"\nversion = "1.0.0"\napi = "0.2"\n'),
+             f'id = "{MOD_ID}"\\nname = "Sample"\\nversion = "1.0.0"\\napi = "0.2"\\n'),
             ("assets/sample_native/lang/en_us.json", "{}"),
             ("data/sample_native/tags/item/test.json", "{}"),
         ])
-        assert BUILDER.read_bundle(combined)["manifest"]["id"] == MOD_ID
+        try:
+            BUILDER.read_bundle(combined)
+            raise AssertionError(".hmod must not enter the native Rust compiler")
+        except BUILDER.BundleError:
+            pass
 
         injected = root / "injected.hnmod"
         make_bundle(injected, mod_id="injected_native", injections=True)
