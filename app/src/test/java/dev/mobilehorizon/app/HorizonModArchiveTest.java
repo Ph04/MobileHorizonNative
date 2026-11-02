@@ -52,14 +52,14 @@ public final class HorizonModArchiveTest {
 
     @Test public void acceptsValidTomlLiteralStringsAndRejectsUnknownManifestKeys() throws Exception {
         File valid = createArchive("literal_mod",
-                "name = 'Literal mod'\\nversion = '1.0.0'\\n"
-                        + "api = '0.2'\\ncapabilities = ['registries']\\n",
+                "name = 'Literal mod'\nversion = '1.0.0'\n"
+                        + "api = '0.2'\ncapabilities = ['registries']\n",
                 true, false);
         assertEquals("literal_mod", HorizonModArchive.readId(valid));
 
         File invalid = createArchive("unknown_mod",
-                "api = \"0.2\"\\ncapabilities = [\"registries\"]\\n"
-                        + "unsupported_field = \"not accepted by PC Horizon\"\\n",
+                "api = \"0.2\"\ncapabilities = [\"registries\"]\n"
+                        + "unsupported_field = \"not accepted by PC Horizon\"\n",
                 true, false);
         assertNull(HorizonModArchive.readId(invalid));
     }
