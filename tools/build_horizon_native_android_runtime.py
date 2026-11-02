@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate native Horizon bundles, apply horizon-mixins, and stage one Android native build.
+"""Validate .hnmod source bundles, apply horizon-mixins, and stage one Android native build.
 
 This script never executes a mod. It validates/extracts source and invokes the
 pinned horizon-mixins CLI to patch a separate Horizon source tree. Cargo later
@@ -128,7 +128,7 @@ def has_mixin_content(raw: bytes, archive: Path) -> bool:
 
 
 def read_bundle(archive: Path) -> dict:
-    if archive.is_symlink() or not archive.is_file() or archive.suffix.lower() not in (".hnmod", ".hmod"):
+    if archive.is_symlink() or not archive.is_file() or archive.suffix.lower() != ".hnmod":
         raise BundleError(f"unsupported or unsafe native package: {archive}")
     try:
         zf = zipfile.ZipFile(archive)
@@ -393,7 +393,7 @@ def main() -> int:
         )
     archives = sorted(
         path for path in package_dir.iterdir()
-        if path.is_file() and path.suffix.lower() in (".hnmod", ".hmod")
+        if path.is_file() and path.suffix.lower() == ".hnmod"
     )
     if not archives:
         raise SystemExit("native-mods/ is empty; add at least one .hnmod package")
