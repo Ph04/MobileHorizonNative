@@ -185,6 +185,8 @@ jobs:
           set -euo pipefail
           python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py
           python3 tools/patch_horizon_android_touch.py "$HORIZON_NATIVE_STAGE"
+          python3 -m py_compile tools/test_android_horizon_wasm_mod_runtime.py
+          python3 tools/test_android_horizon_wasm_mod_runtime.py --source "$HORIZON_NATIVE_STAGE"
           test -s "$HORIZON_NATIVE_STAGE/crates/mobilehorizon-android/Cargo.toml"
 
       - name: Compile the modded Horizon engine for Android ARM64
