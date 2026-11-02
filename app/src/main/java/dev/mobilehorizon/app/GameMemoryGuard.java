@@ -52,6 +52,10 @@ final class GameMemoryGuard {
     private final Object logLock = new Object();
 
     private volatile int currentLevel;
+    private volatile int configuredJavaHeapInitialMiB = 128;
+    private volatile int configuredJavaHeapMaxMiB = 640;
+    private volatile int configuredJavaProcessors = 2;
+    private volatile int configuredJavaGcThreads = 1;
     private long lastCpuSampleElapsedMs;
     private long lastCpuSampleTimeMs;
     private int recoverySamples;
@@ -87,6 +91,10 @@ final class GameMemoryGuard {
         int heapMaxMiB = recommendedJavaHeapMaxMiB(totalRam);
         int javaProcessors = recommendedJavaProcessorCount(totalRam);
         int gcThreads = recommendedJavaGcThreadCount(totalRam);
+        configuredJavaHeapInitialMiB = heapInitialMiB;
+        configuredJavaHeapMaxMiB = heapMaxMiB;
+        configuredJavaProcessors = javaProcessors;
+        configuredJavaGcThreads = gcThreads;
         setEnvironment("HORIZON_MEMORY_PRESSURE_FILE", pressureFile.getAbsolutePath());
         setEnvironment("HORIZON_JAVA_DIAGNOSTICS_DIR", logsDirectory.getAbsolutePath());
         setEnvironment("HORIZON_JAVA_HEAP_INITIAL_MIB", Integer.toString(heapInitialMiB));
@@ -174,6 +182,13 @@ final class GameMemoryGuard {
         appendLog("ANDROID_LOW_MEMORY_CALLBACK elapsedRealtimeMs=" + SystemClock.elapsedRealtime());
         forceAtLeast(3, "Android onLowMemory()");
     }
+
+    // Values shared with NativeGameActivity so the embedded JNI VM receives the same
+    // limits that this guard records in its diagnostics.
+    int javaHeapInitialMiB() { return configuredJavaHeapInitialMiB; }
+    int javaHeapMaxMiB() { return configuredJavaHeapMaxMiB; }
+    int javaProcessorCount() { return configuredJavaProcessors; }
+    int javaGcThreadCount() { return configuredJavaGcThreads; }
 
     private static String trimLevelName(int level) {
         switch (level) {
