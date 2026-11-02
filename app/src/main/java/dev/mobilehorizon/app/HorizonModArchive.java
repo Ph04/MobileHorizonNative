@@ -66,7 +66,11 @@ final class HorizonModArchive {
             // PC Horizon permits a code-free package only when its manifest declares
             // the registries capability. Its parser accepts TOML comments after values.
             Matcher capabilities = CAPABILITIES.matcher(text);
-            if (!capabilities.find() || !REGISTRIES.matcher(capabilities.group(1)).find()) {
+            // API 0.1 is code-only; the PC manifest parser requires registries
+            // content to use API 0.2. API 0.3 is reserved for server-side code mods.
+            if (!"0.2".equals(api.group(1))
+                    || !capabilities.find()
+                    || !REGISTRIES.matcher(capabilities.group(1)).find()) {
                 return null;
             }
 
