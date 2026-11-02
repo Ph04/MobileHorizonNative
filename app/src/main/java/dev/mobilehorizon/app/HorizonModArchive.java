@@ -33,9 +33,9 @@ final class HorizonModArchive {
             "side", "capabilities", "namespaces", "experimental"));
     private static final Set<String> ALLOWED_CAPABILITIES = new HashSet<>(Arrays.asList(
             "game-read", "chat", "hud", "storage", "command", "registries",
-            "ui", "render", "input", "players", "world", "recipes"));
+            "ui", "render", "input", "players", "world", "recipes", "mod-manager"));
     private static final Set<String> EXPERIMENTAL_CAPABILITIES = new HashSet<>(
-            Arrays.asList("ui", "render", "input", "recipes"));
+            Arrays.asList("ui", "render", "input", "recipes", "mod-manager"));
     private static final Pattern KEY = Pattern.compile("(?m)^\\s*([A-Za-z0-9_-]+)\\s*=");
     private static final Pattern STRING_TOKEN = Pattern.compile("(['\"])(.*?)\\1");
 
@@ -144,7 +144,7 @@ final class HorizonModArchive {
         if (server != "0.3".equals(api)) return null;
         if (capabilities.contains("registries") && !"0.2".equals(api)) return null;
         if (server && containsAny(capabilities, "game-read", "chat", "hud", "command",
-                "registries", "ui", "render", "input", "recipes")) return null;
+                "registries", "ui", "render", "input", "recipes", "mod-manager")) return null;
         if (!server && containsAny(capabilities, "players", "world")) return null;
         if (!experimental.containsAll(intersection(capabilities, EXPERIMENTAL_CAPABILITIES))) {
             return null;
