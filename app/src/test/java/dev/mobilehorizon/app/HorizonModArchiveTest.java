@@ -50,6 +50,20 @@ public final class HorizonModArchiveTest {
         assertEquals("example_code", HorizonModArchive.readId(archive));
     }
 
+    @Test public void acceptsValidTomlLiteralStringsAndRejectsUnknownManifestKeys() throws Exception {
+        File valid = createArchive("literal_mod",
+                "name = 'Literal mod'\\nversion = '1.0.0'\\n"
+                        + "api = '0.2'\\ncapabilities = ['registries']\\n",
+                true, false);
+        assertEquals("literal_mod", HorizonModArchive.readId(valid));
+
+        File invalid = createArchive("unknown_mod",
+                "api = \"0.2\"\\ncapabilities = [\"registries\"]\\n"
+                        + "unsupported_field = \"not accepted by PC Horizon\"\\n",
+                true, false);
+        assertNull(HorizonModArchive.readId(invalid));
+    }
+
     private static File createArchive(String id, String extra, boolean content, boolean wasm)
             throws Exception {
         File archive = Files.createTempFile("horizon-mod-", ".hmod").toFile();
