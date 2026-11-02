@@ -114,7 +114,7 @@ def main() -> int:
     runtime_source = runtime
     require("impl mod_manager::Host for State" in runtime_source,
             "the Wasmtime host does not implement mod-manager")
-    require("mod-manager.list" in (root / "crates/horizon-mods/src/api_level.rs").read_text(encoding="utf-8"),
+    require("mod-manager.modules" in (root / "crates/horizon-mods/src/api_level.rs").read_text(encoding="utf-8"),
             "mod-manager functions are not registered in the API-level table")
     require("Output::ModEnabled" in game_source and "self.start_mods();" in game_source,
             "the game does not apply enabled-state changes after the current WIT hook returns")
