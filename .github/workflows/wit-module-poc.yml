@@ -1,0 +1,57 @@
+name: Build Horizon WIT module proof of concept
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["feature/fabric-java-bridge-test"]
+    paths:
+      - "modules-poc/wit-player-hud/**"
+      - ".github/workflows/wit-module-poc.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: horizon-wit-module-poc-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout proof-of-concept source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust and WebAssembly target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+          targets: wasm32-unknown-unknown
+
+      - name: Install the pinned Horizon mod packager
+        run: |
+          cargo install --locked --git https://github.com/horizon-rust/horizon \
+            --rev 6817cb4af09c63f09e299bf5a78e64de79792a8a cargo-horizon-mod
+
+      - name: Test the module's pure logic
+        working-directory: modules-poc/wit-player-hud
+        run: cargo test --locked
+
+      - name: Build and validate the sandboxed Horizon component
+        working-directory: modules-poc/wit-player-hud
+        run: |
+          set -euo pipefail
+          cargo horizon-mod build
+          cargo horizon-mod check target/horizon-mod/horizon_api_probe.hmod
+          test -s target/horizon-mod/horizon_api_probe.hmod
+
+      - name: Upload the .hmod proof-of-concept
+        uses: actions/upload-artifact@v4
+        with:
+          name: horizon-api-probe-hmod
+          path: modules-poc/wit-player-hud/target/horizon-mod/horizon_api_probe.hmod
+          if-no-files-found: error
+          retention-days: 30
