@@ -245,6 +245,34 @@ def read_bundle(archive: Path) -> dict:
     }
 
 
+def read_enabled_mod_ids(path: Path) -> set[str]:
+    """Read the desktop-compatible mod.<id>:true selection used by one instance."""
+    if not path.is_file():
+        raise BundleError(f"enabled-mods selection file is missing: {path}")
+    enabled: set[str] = set()
+    seen: set[str] = set()
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            raise BundleError(f"{path}:{number}: expected mod.<id>:true or mod.<id>:false")
+        key, state = (part.strip() for part in line.split(":", 1))
+        if not key.startswith("mod."):
+            raise BundleError(f"{path}:{number}: only mod.<id> entries are supported")
+        mod_id = key[4:]
+        if not ID_PATTERN.fullmatch(mod_id):
+            raise BundleError(f"{path}:{number}: invalid native mod ID {mod_id!r}")
+        if state not in {"true", "false"}:
+            raise BundleError(f"{path}:{number}: state must be true or false")
+        if mod_id in seen:
+            raise BundleError(f"{path}:{number}: duplicate selection for mod {mod_id}")
+        seen.add(mod_id)
+        if state == "true":
+            enabled.add(mod_id)
+    return enabled
+
+
 def current_hooks_api(source: Path) -> int:
     path = source / "crates/horizon-client/src/game/native_hooks.rs"
     if not path.is_file():
@@ -347,6 +375,11 @@ def main() -> int:
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--mod-dir", required=True, type=Path)
     parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument(
+        "--enabled-list",
+        type=Path,
+        help="optional horizon-mods.txt-style file; compile only mod.<id>:true entries",
+    )
     args = parser.parse_args()
 
     source = args.source.resolve()
@@ -369,6 +402,27 @@ def main() -> int:
     ids = [bundle["manifest"]["id"] for bundle in bundles]
     if len(ids) != len(set(ids)):
         raise BundleError("Two native packages declare the same mod ID")
+    if args.enabled_list is not None:
+        enabled_ids = read_enabled_mod_ids(args.enabled_list.resolve())
+        known_ids = set(ids)
+        missing = sorted(enabled_ids - known_ids)
+        if missing:
+            raise BundleError(
+                "enabled selection refers to native packages not present in native-mods/: "
+                + ", ".join(missing)
+            )
+        bundles = [
+            bundle for bundle in bundles
+            if bundle["manifest"]["id"] in enabled_ids
+        ]
+        if not bundles:
+            raise BundleError(
+                "no native mod is enabled; the launcher should use its regular Horizon runtime"
+            )
+        print(
+            "Selected native mods:",
+            ", ".join(sorted(bundle["manifest"]["id"] for bundle in bundles)),
+        )
     bundles.sort(key=lambda item: item["manifest"]["id"])
     mixins_revision = determine_mixins_revision(bundles)
     upstream_commit = subprocess.check_output(
