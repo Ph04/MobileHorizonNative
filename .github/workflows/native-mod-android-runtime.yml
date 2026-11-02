@@ -7,7 +7,6 @@ on:
     branches: ["feature/fabric-java-bridge-test"]
     paths:
       - "native-mods/*.hnmod"
-      - "native-mods/*.hmod"
       - "native-mods/enabled-mods.txt"
   workflow_dispatch:
     inputs:
