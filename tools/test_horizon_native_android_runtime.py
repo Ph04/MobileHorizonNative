@@ -47,12 +47,13 @@ def mixin_toml(mod_id=MOD_ID, version="1.0.0", revision=REVISION, injections=Fal
     return text
 
 
-def make_bundle(path: Path, mod_id=MOD_ID, extras=(), injections=False):
+def make_bundle(path: Path, mod_id=MOD_ID, extras=(), injections=False,
+                extra_mixin_manifest=""):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("horizon-native.json", native_json(mod_id))
         archive.writestr(
             f"mixins/{mod_id}/horizon-mixin.toml",
-            mixin_toml(mod_id=mod_id, injections=injections),
+            mixin_toml(mod_id=mod_id, injections=injections) + extra_mixin_manifest,
         )
         archive.writestr(f"mixins/{mod_id}/hook.rs", "fn hook() {}\n")
         for name, content in extras:
@@ -87,6 +88,22 @@ def main():
         make_bundle(injected, mod_id="injected_native", injections=True)
         injected_bundle = BUILDER.read_bundle(injected)
         assert injected_bundle["mixins_content"] is True
+
+        # Android build deliberately refuses desktop-only extensions until they are ported.
+        unsupported_features = [
+            "[api]\npath = \"native-api\"\n",
+            "[dependencies]\nother_mod = \"^1.0\"\n",
+            "[[post_build]]\nprogram = \"tools/build.rs\"\n",
+        ]
+        for index, extra in enumerate(unsupported_features):
+            unsupported = root / f"unsupported-{index}.hnmod"
+            make_bundle(unsupported, mod_id=f"unsupported_{index}",
+                        extra_mixin_manifest=extra)
+            try:
+                BUILDER.read_bundle(unsupported)
+                raise AssertionError("unsupported desktop native feature should have been rejected")
+            except BUILDER.BundleError as error:
+                assert "does not yet support" in str(error)
 
         # Data-only native bundles bypass mixin injection but still populate native-data/<id>.
         mods_dir = root / "mods"
