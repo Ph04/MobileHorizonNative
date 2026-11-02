@@ -301,9 +301,49 @@ replace_once(pad_menu,
     "    fn pad_osk_output(&mut self, out: osk::Output) {",
     "    pub(super) fn pad_osk_output(&mut self, out: osk::Output) {")
 
-# The loading menu keeps its own UI input path. The Android IME is sent to the
-# active game after startup; do not attach a method to StartupMenu with Loading-owned
-# fields (menu/gui), which are not members of StartupMenu.
+replace_once(startup_menu,
+    "    pub(super) fn menu_event(",
+    """    pub(super) fn android_keyboard_text(&mut self, text: &str, submit: bool) {
+        if self.menu.pending.is_some() {
+            return;
+        }
+        if self.menu.options_open {
+            if let Some(gui) = self.gui.as_ref() {
+                self.menu.options.type_text(&gui.atlas, text);
+            }
+            return;
+        }
+        let (Some(title), clipboard) =
+            (self.menu.title.as_mut(), &mut self.menu.clipboard)
+        else {
+            return;
+        };
+        if title.focused_field().is_none() {
+            return;
+        }
+        if title.has_caret_field() {
+            title.field_shortcut(
+                horizon_client::clipboard::EditShortcut::SelectAll,
+                clipboard,
+            );
+            if text.is_empty() {
+                title.field_key(winit::keyboard::KeyCode::Backspace, false, false);
+            } else {
+                title.type_text(text);
+            }
+        } else {
+            if let Some((_, value, _)) = title.focused_field() {
+                value.clear();
+            }
+            title.type_text(text);
+        }
+        if submit {
+            title.confirm_edit();
+        }
+        self.save_menu_address();
+    }
+
+    pub(super) fn menu_event(""")
 android_runtime_api = '''pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Clone, Debug)]
@@ -1212,6 +1252,12 @@ replace_once(game,
     '''impl ApplicationHandler<horizon_client::AndroidInjectedInput> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: horizon_client::AndroidInjectedInput) {
         match (self, event) {
+            (App::Loading(loading), horizon_client::AndroidInjectedInput::KeyboardText { text, submit }) => {
+                loading.android_keyboard_text(&text, submit);
+            }
+            (App::Loading(loading), horizon_client::AndroidInjectedInput::ImeText { value, submit, .. }) => {
+                loading.android_keyboard_text(&value, submit);
+            }
             (App::Ready(game), event) => game.host.user_event(event_loop, event),
             (App::Loading(_), _) => {}
         }
