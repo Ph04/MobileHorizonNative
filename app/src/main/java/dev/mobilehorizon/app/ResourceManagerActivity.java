@@ -284,15 +284,37 @@ getWindow().setStatusBarColor(0xff090911);
                 copyLimited(input, staging, MAX_IMPORT_BYTES);
             }
             if (lower.endsWith(".hnmod")) {
-                HorizonNativeModArchive.Manifest nativeManifest = HorizonNativeModArchive.read(staging);
-                validateNativeGame(nativeManifest);
-                ensureDirs(nativeModDir());
-                if (nativeModIdExists(nativeManifest.id)) {
-                    throw new IllegalArgumentException("Já existe um mod nativo com ID '" + nativeManifest.id + "'. Remova a versão antiga antes de importar outra.");
+                // .hnmod has two explicit package layouts:
+                // - horizon-native.json: legacy Rust source/mixin bundle, compiled into a runtime.
+                // - horizon-mod.toml + mod.wasm: dynamic WIT component, loaded by the running Horizon engine.
+                HorizonNativeModArchive.Manifest nativeManifest =
+                        HorizonNativeModArchive.readIfPresent(staging);
+                if (nativeManifest != null) {
+                    validateNativeGame(nativeManifest);
+                    ensureDirs(nativeModDir());
+                    if (nativeModIdExists(nativeManifest.id)) {
+                        throw new IllegalArgumentException("Já existe um mod nativo com ID '" + nativeManifest.id + "'. Remova a versão antiga antes de importar outra.");
+                    }
+                    File target = copyToTarget(staging, nativeModDir(), fileName(name, ".hnmod"));
+                    return "mod nativo Rust " + nativeManifest.id + " instalado desativado (" + target.getName()
+                            + "). Ele usa mixins e exige uma runtime compilada para o conjunto selecionado.";
                 }
-                File target = copyToTarget(staging, nativeModDir(), fileName(name, ".hnmod"));
-                return "mod nativo " + nativeManifest.id + " instalado desativado (" + target.getName()
-                        + "). Autorize o código e ative-o para incluí-lo no conjunto da runtime ARM64.";
+
+                String moduleId = HorizonModArchive.readId(staging);
+                if (moduleId == null || !hasWasmModule(staging)) {
+                    throw new IllegalArgumentException(
+                            "Este .hnmod não é um módulo WIT válido. Use horizon-mod.toml + mod.wasm "
+                                    + "para módulos dinâmicos ou horizon-native.json para pacotes Rust de origem.");
+                }
+                ensureDirs(modDir());
+                if (modIdExists(moduleId)) {
+                    throw new IllegalArgumentException(
+                            "Já existe um módulo Horizon com ID '" + moduleId
+                                    + "'. Remova a versão antiga antes de importar outra.");
+                }
+                File target = copyToTarget(staging, modDir(), fileName(name, ".hnmod"));
+                return "módulo WIT " + moduleId + " importado desativado (" + target.getName()
+                        + "). Ele será carregado pela runtime Horizon existente ao iniciar o jogo.";
             }
             if (lower.endsWith(".hmod")) {
                 HorizonNativeModArchive.Manifest embeddedNative =
@@ -529,7 +551,9 @@ getWindow().setStatusBarColor(0xff090911);
         }
         items = modDir().listFiles();
         if (items != null) for (File file : items) {
-            if (!file.isFile() || !file.getName().toLowerCase(Locale.ROOT).endsWith(".hmod")) continue;
+            if (!file.isFile()) continue;
+            String modExtension = file.getName().toLowerCase(Locale.ROOT);
+            if (!modExtension.endsWith(".hmod") && !modExtension.endsWith(".hnmod")) continue;
             String id = null;
             boolean wasmModule = hasWasmModule(file);
             try { id = readModId(file); } catch (Exception ignored) {}
@@ -587,8 +611,8 @@ getWindow().setStatusBarColor(0xff090911);
         Collections.sort(shaders, byName);
         Collections.sort(dataPacks, byName);
         addSection("Pacotes de textura", "ZIPs Java com pack.mcmeta e assets/.", textures);
-        addSection("Módulos e conteúdo Horizon", "Arquivos .hmod: módulos WebAssembly com API WIT e/ou conteúdo assets/data. As capacidades são conferidas pelo Horizon; reinicie o jogo após ativar.", mods);
-        addSection("Mods nativos Rust (.hnmod)", "Pacotes de código nativo baseados em mixins. Exigem uma runtime Horizon compilada para o conjunto ativado; não são módulos .so independentes nem têm hot-unload.", nativeMods);
+        addSection("Módulos e conteúdo Horizon", "Arquivos .hmod ou .hnmod WIT: módulos WebAssembly com API WIT e/ou conteúdo assets/data, carregados pela runtime existente. As capacidades são conferidas pelo Horizon; reinicie o jogo após ativar.", mods);
+        addSection("Mods nativos Rust (.hnmod original)", "Pacotes de código-fonte baseados em mixins (horizon-native.json). Não são módulos dinâmicos: exigem compilação de uma runtime para o conjunto ativado. Os .hnmod WIT ficam na seção anterior.", nativeMods);
         addSection("Pacotes de dados", "Selecione a pasta de um mundo salvo para copiar o pack para datapacks/.", dataPacks);
         addSection("Shader packs", "Pastas pack.toml/shaders/ e shader ZIPs Java reconhecidos.", shaders);
         if (textures.isEmpty() && mods.isEmpty() && nativeMods.isEmpty()
