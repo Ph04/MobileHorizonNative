@@ -93,6 +93,20 @@ def main():
         injected_bundle = BUILDER.read_bundle(injected)
         assert injected_bundle["mixins_content"] is True
 
+        # A native bundle without a hooks API must build on its exact Horizon pin.
+        pinned_bundle = {"manifest": {"id": "mod_menu", "horizon": REVISION, "hooks": None}}
+        nightly = "c" * 40
+        assert BUILDER.pinned_horizon_revision([pinned_bundle]) == REVISION
+        hook_bundle = {"manifest": {"id": "hook_mod", "horizon": REVISION, "hooks": 1}}
+        assert BUILDER.pinned_horizon_revision([hook_bundle]) is None
+        assert BUILDER.pinned_horizon_revision([pinned_bundle, hook_bundle]) == REVISION
+        different_pin = {"manifest": {"id": "other", "horizon": nightly, "hooks": None}}
+        try:
+            BUILDER.pinned_horizon_revision([pinned_bundle, different_pin])
+            raise AssertionError("mods without hooks API cannot mix different Horizon pins")
+        except BUILDER.BundleError:
+            pass
+
         # Android build deliberately refuses desktop-only extensions until they are ported.
         unsupported_features = [
             "[api]\npath = \"native-api\"\n",
