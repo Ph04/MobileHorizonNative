@@ -464,54 +464,67 @@ vm_options_replacement = """    // Android's guard sets conservative values from
     log::info!(
         "Java Bridge JVM limits: heap={}..{} MiB, processors={}, GC threads={}",
         heap_initial, heap_max, processors, gc_threads
-    );
-    // Termux's OpenJDK embeds its build-time /data/data/com.termux home.
-    // Override it for mods that use System.getProperty("user.home") for caches.
-    if let Some(raw_home) = std::env::var_os("HOME") {
-        let user_home = PathBuf::from(raw_home);
-        if user_home.is_absolute() {
-            std::fs::create_dir_all(&user_home).map_err(|error| {
-                format!("cannot create writable Java user.home {}: {error}", user_home.display())
-            })?;
-            options.push(format!("-Duser.home={}", user_home.to_string_lossy()));
-            log::info!("Java Bridge: overriding user.home to {}", user_home.display());
-        }
-    }
-    if let Some(raw_directory) = std::env::var_os("HORIZON_JAVA_DIAGNOSTICS_DIR") {
-        let directory = PathBuf::from(raw_directory);
-        std::fs::create_dir_all(&directory).map_err(|error| {
-            format!("cannot create JVM diagnostics directory {}: {error}", directory.display())
-        })?;
-        options.push(format!(
-            "-Xlog:gc*,safepoint:file={}:time,uptime,level,tags:filecount=4,filesize=2M",
-            directory.join("java-gc.log").display()
-        ));
-        options.push(format!(
-            "-XX:ErrorFile={}",
-            directory.join("hs_err_pid%p.log").display()
-        ));
-    }
-    if let Some(raw_directory) = std::env::var_os("HORIZON_LWJGL_LIBRARY_PATH") {
-        let directory = PathBuf::from(raw_directory);
-        let library = directory.join("liblwjgl.so");
-        if !directory.is_absolute() || !library.is_file() {
-            return Err(format!(
-                "LWJGL native library directory is invalid or has no liblwjgl.so: {}",
-                directory.display()
-            ));
-        }
-        options.push(format!(
-            "-Dorg.lwjgl.librarypath={}",
-            directory.to_string_lossy()
-        ));
-        log::info!(
-            "Java Bridge: passing -Dorg.lwjgl.librarypath={} directly to JNI_CreateJavaVM",
-            directory.display()
-        );
-    }"""
-if jvm_source.count(vm_options_anchor) != 1:
-    raise SystemExit(f"{jvm_source_path}: JNI VM options anchor changed")
-jvm_source = jvm_source.replace(vm_options_anchor, vm_options_replacement, 1)
+    );"""
+latest_gc_options_tail = """        "-XX:+UseStringDeduplication".into(),
+    ];"""
+android_vm_tuning = """    // Preserve upstream G1 shrink/periodic-GC and string-deduplication defaults.
+    // Append device-aware caps afterwards so HotSpot uses the last sizing options.
+    let heap_initial = std::env::var("HORIZON_JAVA_HEAP_INITIAL_MIB")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| (64..=2048).contains(value))
+        .unwrap_or(128);
+    let heap_max = std::env::var("HORIZON_JAVA_HEAP_MAX_MIB")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| (512..=4096).contains(value))
+        .filter(|value| *value > heap_initial)
+        .unwrap_or(896);
+    let processors = std::env::var("HORIZON_JAVA_PROCESSORS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| (1..=8).contains(value))
+        .unwrap_or(2);
+    let gc_threads = std::env::var("HORIZON_JAVA_GC_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| (1..=4).contains(value))
+        .unwrap_or(1)
+        .min(processors);
+    options.extend([
+        format!("-Xms{heap_initial}m"),
+        format!("-Xmx{heap_max}m"),
+        format!("-XX:ActiveProcessorCount={processors}"),
+        format!("-XX:ParallelGCThreads={gc_threads}"),
+        "-XX:ConcGCThreads=1".into(),
+        "-XX:MaxGCPauseMillis=180".into(),
+        format!(
+            "-Djava.util.concurrent.ForkJoinPool.common.parallelism={}",
+            processors.saturating_sub(1).max(1)
+        ),
+    ]);
+    log::info!(
+        "Java Bridge JVM limits: heap={}..{} MiB, processors={}, GC threads={}",
+        heap_initial, heap_max, processors, gc_threads
+    );"""
+jvm_options_source = jvm_source.read_text(encoding="utf-8")
+if jvm_options_source.count(vm_options_anchor) == 1:
+    # Older bridge source: replace the short base options with Android-aware defaults.
+    jvm_source = jvm_source.replace(vm_options_anchor, vm_options_replacement, 1)
+elif jvm_options_source.count(latest_gc_options_tail) == 1:
+    # Current bridge source already defines G1 shrink, periodic collection and string
+    # deduplication. Keep all upstream options and append the Android device-aware caps.
+    jvm_source = jvm_source.replace(
+        latest_gc_options_tail,
+        latest_gc_options_tail + "\n" + android_vm_tuning,
+        1,
+    )
+else:
+    raise SystemExit(
+        f"{jvm_source_path}: JNI VM options anchor changed; "
+        f"legacy={jvm_options_source.count(vm_options_anchor)}, "
+        f"latest={jvm_options_source.count(latest_gc_options_tail)}"
+    )
 jvm_source_path.write_text(jvm_source, encoding="utf-8")
 
 # Make the actual FabricBoot lifecycle visible in the same persistent log file.
