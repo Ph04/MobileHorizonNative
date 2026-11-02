@@ -1403,4 +1403,37 @@ dst = root / "crates/mobilehorizon-android"
 shutil.copyfile(repo_root / "android-native/Cargo.toml", dst / "Cargo.toml")
 shutil.copyfile(repo_root / "android-native/src/lib.rs", dst / "src/lib.rs")
 
+# Some Horizon revisions provide the official sandboxed WIT/WebAssembly mod runtime.
+# Enable it only when the complete runtime and SDK contract exist in this exact checkout.
+# Older Nightlies used by native .hnmod mixins do not have this runtime and must keep
+# building without the Wasmtime/Cranelift dependency.
+mods_runtime = root / "crates/horizon-mods/src/runtime.rs"
+mods_manifest = root / "crates/horizon-mods/Cargo.toml"
+mods_wit = root / "crates/horizon-mod-sdk/wit/horizon.wit"
+client_manifest_text = client_cargo.read_text(encoding="utf-8")
+has_wit_mod_runtime = (
+    mods_runtime.is_file()
+    and mods_manifest.is_file()
+    and mods_wit.is_file()
+    and 'mods = ["horizon-mods/runtime"]' in client_manifest_text
+    and 'wasmtime = {' in mods_manifest.read_text(encoding="utf-8")
+)
+if has_wit_mod_runtime:
+    android_manifest = dst / "Cargo.toml"
+    android_text = android_manifest.read_text(encoding="utf-8")
+    old_features = 'features = ["audio", "java-mods"]'
+    new_features = 'features = ["audio", "java-mods", "mods"]'
+    if android_text.count(old_features) == 1:
+        android_manifest.write_text(
+            android_text.replace(old_features, new_features, 1), encoding="utf-8"
+        )
+    elif android_text.count(new_features) != 1:
+        raise SystemExit(
+            f"{android_manifest}: expected one Android Horizon feature list "
+            "before enabling the WIT module runtime"
+        )
+    print("Enabled Horizon's sandboxed WebAssembly/WIT mod runtime for this source revision.")
+else:
+    print("This Horizon revision has no complete WIT mod runtime; keeping the native mixin build unchanged.")
+
 print("Patched Horizon Android touch input and created the NativeActivity cdylib target.")
