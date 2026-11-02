@@ -256,14 +256,8 @@ final class HorizonNativeRuntimeManager {
         for (File file : candidates) {
             if (!file.isFile() || Files.isSymbolicLink(file.toPath())) continue;
             String lower = file.getName().toLowerCase(Locale.ROOT);
-            if (!lower.endsWith(".hnmod") && !lower.endsWith(".hmod")) continue;
-            HorizonNativeModArchive.Manifest manifest;
-            if (lower.endsWith(".hnmod")) {
-                manifest = HorizonNativeModArchive.read(file);
-            } else {
-                manifest = HorizonNativeModArchive.readIfPresent(file);
-                if (manifest == null) continue;
-            }
+            if (!lower.endsWith(".hnmod")) continue;
+            HorizonNativeModArchive.Manifest manifest = HorizonNativeModArchive.read(file);
             if (!OfficialMinecraftInstaller.VERSION.equals(manifest.game)) {
                 throw new IOException("O mod nativo " + manifest.id + " foi feito para Minecraft "
                         + manifest.game + ", não para " + OfficialMinecraftInstaller.VERSION + ".");
