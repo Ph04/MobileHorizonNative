@@ -125,7 +125,7 @@ jobs:
               print("No exact Horizon pin required; selected official Nightly:", commit)
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write("commit=" + commit + "\\n")
+              output.write("commit=" + commit + "\n")
           PY
 
       - name: Fetch immutable Horizon source
