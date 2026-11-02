@@ -41,7 +41,7 @@ controlled service API, not arbitrary code execution.
 
 The original UI and layout code stays intact. A derived WIT port can move its
 filtering/list presentation to the WIT SDK's `ui` widgets and use
-`mod-manager.list()` / `mod-manager.set-enabled()` instead of reaching into
+`mod-manager.modules()` / `mod-manager.set-enabled()` instead of reaching into
 Horizon internals. Its initial port can list, inspect and toggle modules; text
 search, sorting and parity with every desktop-only action can be added through
 the supported widgets and future API additions.
