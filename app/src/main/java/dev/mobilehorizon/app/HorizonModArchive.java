@@ -97,12 +97,8 @@ final class HorizonModArchive {
         String name = scalar(text, "name");
         String version = scalar(text, "version");
         String api = scalar(text, "api");
-        String description = scalar(text, "description");
         String side = scalar(text, "side");
-        if ((containsKey(text, "description") && description == null)
-                || stringArray(text, "authors") == null) {
-            return null;
-        }
+        if (stringArray(text, "authors") == null) return null;
         if (side == null) side = "client";
 
         if (id == null || !id.matches("[a-z0-9_]{1,64}")
