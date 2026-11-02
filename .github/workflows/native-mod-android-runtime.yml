@@ -1,6 +1,13 @@
 name: Build Horizon native mods runtime (Android ARM64)
 
 on:
+  # This branch-local trigger keeps native builds available without adding a workflow
+  # to main. A push only builds when its commit explicitly carries the trust marker.
+  push:
+    branches: ["feature/fabric-java-bridge-test"]
+    paths:
+      - "native-mods/*.hnmod"
+      - "native-mods/*.hmod"
   workflow_dispatch:
     inputs:
       trust_confirmation:
@@ -20,7 +27,7 @@ concurrency:
 
 jobs:
   build:
-    if: inputs.trust_confirmation == 'I TRUST THESE NATIVE MODS'
+    if: (github.event_name == 'workflow_dispatch' && inputs.trust_confirmation == 'I TRUST THESE NATIVE MODS') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[trust-native-mods]'))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
