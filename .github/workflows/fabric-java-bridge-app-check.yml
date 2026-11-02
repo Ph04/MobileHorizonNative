@@ -104,8 +104,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile tools/build_horizon_native_android_runtime.py tools/test_horizon_native_android_runtime.py
+          python3 -m py_compile tools/build_horizon_native_android_runtime.py tools/test_horizon_native_android_runtime.py tools/test_native_mod_selection.py
           python3 tools/test_horizon_native_android_runtime.py
+          python3 tools/test_native_mod_selection.py
 
       - name: Build complete ARM64 LWJGL 3.4.3 core (no APK)
         shell: bash
