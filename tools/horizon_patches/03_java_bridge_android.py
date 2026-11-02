@@ -543,28 +543,59 @@ fabric_boot_replacements = [
         Natives.log("Java Bridge: Fabric discovered " + loader.getAllMods().size() + " mod(s); preparing entrypoints");""",
     ),
     (
-        """        constants.getMethod("tryDetectVersion").invoke(null);
+        """            loader.invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize);""",
+        """            loader.invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize);
+            Natives.log("Java Bridge: Fabric main entrypoints completed");""",
+    ),
+    (
+        """                loader.invokeEntrypoints("client", ClientModInitializer.class, ClientModInitializer::onInitializeClient);""",
+        """                loader.invokeEntrypoints("client", ClientModInitializer.class, ClientModInitializer::onInitializeClient);
+                Natives.log("Java Bridge: Fabric client entrypoints completed");""",
+    ),
+    (
+        """private static void bootstrapGame() throws ReflectiveOperationException {
+        long started = System.nanoTime();
+        Class<?> constants;
+        try {
+            constants = Class.forName("net.minecraft.SharedConstants", true, gameLoader);
+        } catch (ClassNotFoundException e) {
+            Natives.log("No Minecraft bootstrap: the game jar holds no net.minecraft.SharedConstants");
+            return;
+        }
+        constants.getMethod("tryDetectVersion").invoke(null);
         Class<?> bootstrap = Class.forName("net.minecraft.server.Bootstrap", true, gameLoader);
         bootstrap.getMethod("bootStrap").invoke(null);
         bootstrap.getMethod("validate").invoke(null);
-        Natives.log("Minecraft bootstrap done in " + (System.nanoTime() - started) / 1_000_000 + " ms");""",
-        """        String stage = "SharedConstants.tryDetectVersion";
+        Natives.log("Minecraft bootstrap done in " + (System.nanoTime() - started) / 1_000_000 + " ms");
+    }""",
+        """private static void bootstrapGame() throws ReflectiveOperationException {
+        long started = System.nanoTime();
+        String stage = "loading net.minecraft.SharedConstants";
         try {
-            Natives.log("Java Bridge: bootstrap 1/4; SharedConstants class loaded");
+            Class<?> constants;
+            try {
+                constants = Class.forName("net.minecraft.SharedConstants", true, gameLoader);
+            } catch (ClassNotFoundException e) {
+                Natives.log("No Minecraft bootstrap: the game jar holds no net.minecraft.SharedConstants");
+                return;
+            }
+            Natives.log("Java Bridge: bootstrap 1/5; SharedConstants class loaded");
+
+            stage = "SharedConstants.tryDetectVersion";
             constants.getMethod("tryDetectVersion").invoke(null);
-            Natives.log("Java Bridge: bootstrap 2/4; Minecraft version detected");
+            Natives.log("Java Bridge: bootstrap 2/5; Minecraft version detected");
 
             stage = "loading net.minecraft.server.Bootstrap";
             Class<?> bootstrap = Class.forName("net.minecraft.server.Bootstrap", true, gameLoader);
-            Natives.log("Java Bridge: bootstrap 3/4; Bootstrap class loaded");
+            Natives.log("Java Bridge: bootstrap 3/5; Bootstrap class loaded");
 
             stage = "Bootstrap.bootStrap registry initialization";
             bootstrap.getMethod("bootStrap").invoke(null);
-            Natives.log("Java Bridge: bootstrap registry initialization completed");
+            Natives.log("Java Bridge: bootstrap 4/5; registry initialization completed");
 
             stage = "Bootstrap.validate registry validation";
             bootstrap.getMethod("validate").invoke(null);
-            Natives.log("Java Bridge: bootstrap registry validation completed");
+            Natives.log("Java Bridge: bootstrap 5/5; registry validation completed");
             Natives.log("Minecraft bootstrap done in " + (System.nanoTime() - started) / 1_000_000 + " ms");
         } catch (Throwable failure) {
             Throwable root = failure;
@@ -584,7 +615,8 @@ fabric_boot_replacements = [
                 throw (Error) failure;
             }
             throw new ReflectiveOperationException("Minecraft bootstrap failed at " + stage, failure);
-        }""",
+        }
+    }""",
     ),
     (
         """        if (env == EnvType.CLIENT) {
