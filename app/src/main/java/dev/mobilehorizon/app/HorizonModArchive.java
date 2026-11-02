@@ -44,7 +44,8 @@ final class HorizonModArchive {
     /** Returns the manifest ID if the archive follows PC Horizon's package rules. */
     static String readId(File archive) throws IOException {
         if (archive == null || !archive.isFile()
-                || !archive.getName().toLowerCase(Locale.ROOT).endsWith(".hmod")) {
+                || !(archive.getName().toLowerCase(Locale.ROOT).endsWith(".hmod")
+                || archive.getName().toLowerCase(Locale.ROOT).endsWith(".hnmod"))) {
             return null;
         }
 
