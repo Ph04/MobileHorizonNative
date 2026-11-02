@@ -400,6 +400,34 @@ jobs:
           fi
           echo "Expecting Java Bridge upstream commit $FABRIC_RUNTIME_EXPECTED_COMMIT"
 
+          # Match the overlay fingerprint used by the runtime publisher. This prevents
+          # the APK from pairing a current upstream SHA with an older Android/diagnostic
+          # overlay runtime built before the persistent Java Bridge logs were added.
+          FABRIC_RUNTIME_EXPECTED_OVERLAY="$(python3 - <<'PY'
+          import hashlib, pathlib, subprocess
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\\0")
+          paths = sorted(p for p in tracked if p and (
+              p.startswith(b"android-native/")
+              or p in {
+                  b"tools/patch_horizon_android_touch.py",
+                  b"tools/horizon_patches/01_offline_server_login.py",
+                  b"tools/horizon_patches/02_android_native.py",
+                  b"tools/horizon_patches/03_java_bridge_android.py",
+                  b"tools/fabric-java-bridge-revision.env",
+                  b".github/workflows/fabric-java-bridge-runtime.yml",
+              }
+          ))
+          h = hashlib.sha256()
+          for raw in paths:
+              path = pathlib.Path(raw.decode())
+              if not path.is_file():
+                  raise SystemExit("Missing runtime input: " + str(path))
+              h.update(raw + b"\\0" + path.read_bytes() + b"\\0")
+          print(h.hexdigest()[:8])
+          PY
+          )"
+          echo "Expecting Java Bridge Android overlay $FABRIC_RUNTIME_EXPECTED_OVERLAY"
+
           RUNTIME_STAGE="$RUNNER_TEMP/horizon-runtime-stage"
           mkdir -p "$RUNTIME_STAGE"
           BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/$FABRIC_RUNTIME_RELEASE_TAG"
@@ -408,10 +436,10 @@ jobs:
           curl --fail --location --retry 4 --retry-all-errors \
             "$BASE/$FABRIC_MANIFEST_ASSET" -o "$RUNTIME_STAGE/manifest.json"
 
-          python3 - "$RUNTIME_STAGE" "$FABRIC_LOADER_VERSION" "$FABRIC_API_VERSION" "$FABRIC_RUNTIME_EXPECTED_COMMIT" <<'PYFABRIC'
+          python3 - "$RUNTIME_STAGE" "$FABRIC_LOADER_VERSION" "$FABRIC_API_VERSION" "$FABRIC_RUNTIME_EXPECTED_COMMIT" "$FABRIC_RUNTIME_EXPECTED_OVERLAY" <<'PYFABRIC'
           import hashlib, json, pathlib, re, sys
           stage = pathlib.Path(sys.argv[1])
-          expected_loader, expected_api, expected_commit = sys.argv[2:]
+          expected_loader, expected_api, expected_commit, expected_overlay = sys.argv[2:]
           manifest = json.loads((stage / "manifest.json").read_text(encoding="utf-8"))
           engine = stage / "libhorizon_engine.so"
           digest = hashlib.sha256(engine.read_bytes()).hexdigest()
@@ -422,6 +450,9 @@ jobs:
           assert manifest.get("bridge_commit") == commit
           assert commit == expected_commit, f"APK runtime is stale: expected {expected_commit}, got {commit}"
           assert manifest.get("version", "").startswith("fabric-java-bridge-" + commit[:8] + "-o")
+          assert manifest.get("overlay") == expected_overlay, (
+              f"APK runtime overlay is stale: expected {expected_overlay}, got {manifest.get('overlay')}"
+          )
           assert manifest.get("fabric_loader_version") == expected_loader
           assert manifest.get("fabric_api_version") == expected_api
           assert manifest.get("abi") == "arm64-v8a"
