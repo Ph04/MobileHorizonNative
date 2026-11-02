@@ -92,6 +92,21 @@ public final class NativeGameActivity extends NativeActivity {
         }
     }
 
+    /**
+     * Keeps runtime-specific JAVA_TOOL_OPTIONS (for example Termux's java.io.tmpdir)
+     * and adds bounded HotSpot settings for this device. HotSpot reads this variable
+     * when the embedded JVM is created through JNI_CreateJavaVM.
+     */
+    private static String appendJvmOptionIfMissing(String current, String option, String prefix) {
+        String value = current == null ? "" : current.trim();
+        if (!value.isEmpty()) {
+            for (String token : value.split("\\s+")) {
+                if (token.startsWith(prefix)) return value;
+            }
+        }
+        return value.isEmpty() ? option : value + " " + option;
+    }
+
     private void bridgeLog(String level, String message) {
         String line = "[" + System.currentTimeMillis() + "][" + level
                 + "][JavaBridge] " + message;
@@ -363,6 +378,27 @@ public final class NativeGameActivity extends NativeActivity {
 
                 javaEnvironment.put("HORIZON_JAVA_PROFILE",
                         usePojavRuntime ? "mojo-pojav-openjdk-25" : "termux-openjdk-25");
+                GameMemoryGuard javaMemoryGuard = memoryGuard;
+                int javaHeapInitialMiB = javaMemoryGuard == null ? 128
+                        : javaMemoryGuard.javaHeapInitialMiB();
+                int javaHeapMaxMiB = javaMemoryGuard == null ? 640
+                        : javaMemoryGuard.javaHeapMaxMiB();
+                int javaProcessors = javaMemoryGuard == null ? 2
+                        : javaMemoryGuard.javaProcessorCount();
+                int javaGcThreads = javaMemoryGuard == null ? 1
+                        : javaMemoryGuard.javaGcThreadCount();
+                String javaToolOptions = javaEnvironment.getOrDefault("JAVA_TOOL_OPTIONS", "");
+                javaToolOptions = appendJvmOptionIfMissing(javaToolOptions,
+                        "-Xms" + javaHeapInitialMiB + "m", "-Xms");
+                javaToolOptions = appendJvmOptionIfMissing(javaToolOptions,
+                        "-Xmx" + javaHeapMaxMiB + "m", "-Xmx");
+                javaToolOptions = appendJvmOptionIfMissing(javaToolOptions,
+                        "-XX:ActiveProcessorCount=" + javaProcessors, "-XX:ActiveProcessorCount=");
+                javaToolOptions = appendJvmOptionIfMissing(javaToolOptions,
+                        "-XX:ParallelGCThreads=" + javaGcThreads, "-XX:ParallelGCThreads=");
+                javaToolOptions = appendJvmOptionIfMissing(javaToolOptions,
+                        "-XX:ConcGCThreads=" + javaGcThreads, "-XX:ConcGCThreads=");
+                javaEnvironment.put("JAVA_TOOL_OPTIONS", javaToolOptions);
                 java.io.File lwjglLibraryDirectory =
                         FabricBridgeRuntimeManager.prepareLwjglLibraryDirectory(this);
                 String lwjglLibraryPath = lwjglLibraryDirectory.getCanonicalPath();
@@ -372,6 +408,9 @@ public final class NativeGameActivity extends NativeActivity {
                 for (java.util.Map.Entry<String, String> entry : javaEnvironment.entrySet()) {
                     android.system.Os.setenv(entry.getKey(), entry.getValue(), true);
                 }
+                bridgeLog("INFO", "Limites HotSpot enviados a JNI_CreateJavaVM: Xms="
+                        + javaHeapInitialMiB + " MiB, Xmx=" + javaHeapMaxMiB
+                        + " MiB, CPUs=" + javaProcessors + ", GC threads=" + javaGcThreads);
                 // This experimental profile records JNI call sites, Java entity snapshot
                 // sizes and modded worldgen payloads to the diagnostic log. Vanilla launches
                 // and other compatibility profiles never inherit this instrumentation.
