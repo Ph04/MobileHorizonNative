@@ -60,8 +60,8 @@ mod tests {
     #[test]
     fn formats_a_player_snapshot_without_accessing_engine_types() {
         assert_eq!(
-            player_line(12.25, 64.0, -3.5, "minecraft:overworld"),
-            "WIT API OK  12.2 / 64.0 / -3.5  [minecraft:overworld]"
+            player_line(12.34, 64.0, -3.56, "minecraft:overworld"),
+            "WIT API OK  12.3 / 64.0 / -3.6  [minecraft:overworld]"
         );
     }
 }
