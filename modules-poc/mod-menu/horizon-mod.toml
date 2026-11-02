@@ -1,0 +1,9 @@
+id = "mobilehorizon_mod_menu"
+name = "MobileHorizon Mod Menu"
+version = "0.1.0"
+description = "Lists installed Horizon modules and toggles non-development modules through the WIT mod-manager capability."
+authors = ["MobileHorizonNative"]
+api = "0.1"
+side = "client"
+capabilities = ["ui", "mod-manager"]
+experimental = ["ui", "mod-manager"]
