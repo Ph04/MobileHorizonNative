@@ -177,7 +177,7 @@ getWindow().setStatusBarColor(0xff090911);
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "Texturas, mods Horizon (.hmod), mods nativos Rust (.hnmod), data packs e shaders. Mods nativos começam desativados: autorize a origem e ative apenas os que deseja incluir na compilação ARM64.",
+                "Texturas, mods Horizon (.hmod), mods nativos Rust (.hnmod), data packs e shaders. Mods nativos começam desativados. A runtime ARM64 correspondente precisa ser obtida uma vez; depois fica em cache e pode ser usada offline. Alterar o conjunto de mods exige outra runtime compatível.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(10);
@@ -292,7 +292,7 @@ getWindow().setStatusBarColor(0xff090911);
                 }
                 File target = copyToTarget(staging, nativeModDir(), fileName(name, ".hnmod"));
                 return "mod nativo " + nativeManifest.id + " instalado desativado (" + target.getName()
-                        + "). Autorize o código e ative-o na lista para incluí-lo na compilação ARM64.";
+                        + "). Autorize o código e ative-o para incluí-lo no conjunto da runtime ARM64.";
             }
             if (lower.endsWith(".hmod")) {
                 HorizonNativeModArchive.Manifest embeddedNative =
