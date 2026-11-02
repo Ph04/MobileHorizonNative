@@ -59,3 +59,25 @@ The resource manager distinguishes package layouts by their internal manifests:
 This lets future ports keep the .hnmod suffix while using Horizon's stable,
 versioned component API. The suffix change does not make the current Rust mixin
 code dynamically loadable; each mod's source logic still needs to be ported.
+
+
+## WIT module-manager capability (experimental API level 8)
+
+The Android overlay extends Horizon's versioned WIT contract with an explicit
+`mod-manager` capability. A component that declares
+`capabilities = ["mod-manager"]` and
+`experimental = ["mod-manager"]` may:
+
+- list installed modules with readable manifests, enabled state, runtime status,
+  development status and whether they have a settings page;
+- request an enable/disable change for an installed non-development module.
+
+The host applies queued changes only after the current WIT hook returns, saves
+`horizon-mods.txt`, and reloads the Horizon module set. It does not expose raw
+filesystem access, process spawning, sockets, native pointers or arbitrary code
+execution. Modules must explicitly request the capability and the user sees it
+in the manifest's permission summary.
+
+This host API is the foundation for a WIT port of `mod_menu`. It covers modules
+loaded through Horizon's WIT/content manager; it does not change how legacy
+`horizon-native.json` mixin bundles are compiled.
