@@ -109,6 +109,10 @@ getWindow().setStatusBarColor(0xff090911);getWindow().setNavigationBarColor(0xff
             File zipFile=new File(getCacheDir(),"mobilehorizon-diagnostics-"+System.currentTimeMillis()+".zip");
             Exception failure=null;
             try(ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(zipFile))){
+                // Capture Android's historical :game process exit reason before copying logs.
+                // A force-killed NativeActivity cannot run onDestroy(), so this is the
+                // reliable point to persist LOW_MEMORY/CRASH_NATIVE/ANR and its trace.
+                GameMemoryGuard.captureHistoricalExitsForDiagnostics(this,getFilesDir());
                 File appLogs=new File(getFilesDir(),"logs");
                 addDiagnosticDirectory(zip,appLogs,"app-logs/");
                 addDiagnosticFile(zip,new File(getFilesDir(),"horizon-memory-pressure.level"),
