@@ -3,7 +3,7 @@
 //! and requests enable/disable operations through the capability-scoped host API.
 use horizon_mod_sdk::{
     Mod, Registration, mod_manager,
-    ui::{self, ListWidget, Widget},
+    ui::{self, ListWidget, TextWidget, Widget},
 };
 
 const MODULE_LIST_WIDGET: u32 = 1;
@@ -38,11 +38,19 @@ impl ModMenu {
         if current == self.last_rows {
             return;
         }
-        ui::set_settings(&[Widget::List(ListWidget {
-            id: MODULE_LIST_WIDGET,
-            rows: current.clone(),
-            selected: None,
-        })]);
+        if current.is_empty() {
+            ui::set_settings(&[Widget::Text(TextWidget {
+                id: 2,
+                text: "No Horizon WIT/content modules found".to_owned(),
+                color: 0xB8B0C8,
+            })]);
+        } else {
+            ui::set_settings(&[Widget::List(ListWidget {
+                id: MODULE_LIST_WIDGET,
+                rows: current.clone(),
+                selected: None,
+            })]);
+        }
         self.last_rows = current;
     }
 }
