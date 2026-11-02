@@ -232,7 +232,7 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
         || -> horizon_client::Result<()> {
             horizon_client::logging::init(&home, "Render thread");
             horizon_client::crash::install(home.clone(), "client");
-            let game_result = horizon_client::game::run();
+            let game_result = horizon_client::game::run_with();
             if let Err(error) = game_result {
                 eprintln!("Horizon: {error}");
                 horizon_client::crash::report_error(&home, "client", &*error);
