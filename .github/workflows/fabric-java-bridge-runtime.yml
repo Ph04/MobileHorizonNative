@@ -124,9 +124,12 @@ jobs:
           # MobileHorizon offline-login and Android NativeActivity adaptations.
           export HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE=1
           export HORIZON_ANDROID_PATCH_APPLY_JAVA_BRIDGE=1
+          # Keep the Java Bridge diagnostic/bootstrap overlay syntax-checked as
+          # part of every runtime publication, not only when the wrapper imports it.
           python3 -m py_compile tools/patch_horizon_android_touch.py \
             tools/horizon_patches/01_offline_server_login.py \
-            tools/horizon_patches/02_android_native.py
+            tools/horizon_patches/02_android_native.py \
+            tools/horizon_patches/03_java_bridge_android.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
 
           # The Android patch step already generates crates/mobilehorizon-android
