@@ -179,8 +179,13 @@ final class HorizonNativeRuntimeManager {
         String releaseUrl = "https://api.github.com/repos/" + REPOSITORY
                 + "/releases/tags/" + tag;
         try {
-            JSONObject release = new JSONObject(new String(readUrl(releaseUrl, 1024 * 1024),
-                    StandardCharsets.UTF_8));
+            JSONObject release;
+            try {
+                release = new JSONObject(new String(readUrl(releaseUrl, 1024 * 1024),
+                        StandardCharsets.UTF_8));
+            } catch (org.json.JSONException invalid) {
+                throw new IOException("A resposta da release do runtime nativo é JSON inválido.", invalid);
+            }
             if (!tag.equals(release.optString("tag_name", ""))
                     || release.optBoolean("draft", true)) {
                 throw new IOException("A release do runtime nativo não corresponde ao conjunto de mods desta instância.");
