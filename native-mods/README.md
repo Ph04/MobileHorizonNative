@@ -6,12 +6,10 @@ Coloque aqui os arquivos originais `.hnmod` (ou `.hmod` que contenham `horizon-n
 
 ## Como compilar
 
-1. Adicione os arquivos originais na pasta `native-mods/` deste repositório, na branch `feature/fabric-java-bridge-test`.
-2. O GitHub só mostra **Run workflow** depois que esse workflow também existir na branch padrão do repositório. Este arquivo está atualmente na branch `feature/fabric-java-bridge-test`; será necessário integrá-lo à branch padrão antes da execução manual.
-3. Depois disso, abra **Actions → Build Horizon native mods runtime (Android ARM64)** e selecione a branch `feature/fabric-java-bridge-test`.
-4. Confirme que revisou/confiou nos pacotes selecionando **I TRUST THESE NATIVE MODS** e inicie o workflow.
-5. Aguarde a compilação ARM64. Ela não gera APK.
-6. O workflow publica uma release `horizon-native-android-<hash>` com a biblioteca e o manifesto.
+1. Revise todos os arquivos .hnmod/.hmod nativos e adicione os originais à pasta `native-mods/` deste repositório, na branch `feature/fabric-java-bridge-test`.
+2. Faça o commit que adiciona os pacotes com a frase exata `[trust-native-mods]` na mensagem. Esse marcador confirma explicitamente que você revisou e confia no código Rust. O workflow roda diretamente nesta branch; não é necessário alterar `main`.
+3. Aguarde a validação e compilação ARM64. Essa execução não gera APK.
+4. O workflow publica uma release `horizon-native-android-<hash>` com a biblioteca e o manifesto, vinculados às hashes exatas dos arquivos.
 
 O MobileHorizon procura automaticamente a release que corresponde exatamente aos arquivos nativos da instância. Se os bytes do arquivo mudarem, a hash muda e será necessária outra compilação.
 
