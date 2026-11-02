@@ -1,0 +1,8 @@
+id = "horizon_api_probe"
+name = "Horizon API Probe"
+version = "0.1.0"
+description = "Shows player position through the official Horizon WIT game and HUD interfaces."
+authors = ["MobileHorizonNative"]
+api = "0.1"
+side = "client"
+capabilities = ["game-read", "hud"]
