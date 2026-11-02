@@ -1467,7 +1467,7 @@ elif not has_wit_mod_runtime and "mods" in selected_features:
         "Android enables Horizon mods but this source revision has no complete WIT runtime."
     )
 
-dependency_line = re.compile(r"(?m)^horizon-client\\s*=\\s*\\{[^\\n]*\\}$")
+dependency_line = re.compile(r"(?m)^horizon-client\s*=\s*\{[^\n]*\}$")
 matches = list(dependency_line.finditer(android_text))
 if len(matches) != 1:
     raise SystemExit(
@@ -1475,7 +1475,7 @@ if len(matches) != 1:
     )
 line = matches[0].group(0)
 feature_value = "features = " + json.dumps(selected_features)
-feature_pattern = re.compile(r"features\\s*=\\s*\\[[^\\]]*\\]")
+feature_pattern = re.compile(r"features\s*=\s*\[[^\]]*\]")
 if len(feature_pattern.findall(line)) != 1:
     raise SystemExit(f"{android_manifest}: could not find its single horizon-client feature list")
 updated_line = feature_pattern.sub(feature_value, line, count=1)
