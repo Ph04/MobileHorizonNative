@@ -285,15 +285,6 @@ final class HorizonNativeModArchive {
                 value = matcher.group(3);
             }
         }
-        if (table.isEmpty()) {
-            for (String raw : lines) {
-                Matcher matcher = TOML_STRING.matcher(raw.trim());
-                if (matcher.matches() && key.equals(matcher.group(1))) {
-                    if (value != null) return null;
-                    value = matcher.group(3);
-                }
-            }
-        }
         return value;
     }
 
