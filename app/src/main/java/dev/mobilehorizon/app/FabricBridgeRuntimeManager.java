@@ -26,7 +26,7 @@ import java.util.zip.ZipFile;
  */
 final class FabricBridgeRuntimeManager {
     static final String LOADER_VERSION = "0.20.1";
-    static final String UPSTREAM_COMMIT = "db117c9060552f1fe62bedf3d746a7b3c189dd3f";
+    static final String UPSTREAM_COMMIT = "fd41885b988f18ac4881e80d87f8fc8f9c2e6ca3";
     static final String RELEASE_TAG = "fabric-java-bridge-latest";
     static final String ENGINE_ASSET = "fabric-horizon-runtime-arm64-v8a.so";
     // The stable NativeActivity bootstrap requires this local basename, regardless of
