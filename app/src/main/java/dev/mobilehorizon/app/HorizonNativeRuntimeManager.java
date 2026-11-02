@@ -241,7 +241,11 @@ final class HorizonNativeRuntimeManager {
         } catch (IOException failure) {
             // A last known-good build remains usable when GitHub or the connection is
             // temporarily unavailable. The failed update never replaces its manifest.
-            if (cachedRuntime != null) return cachedRuntime;
+            if (cachedRuntime != null) {
+                app.getSharedPreferences(UPDATE_PREFS, Context.MODE_PRIVATE).edit()
+                        .putLong("last_check_" + tag, now).apply();
+                return cachedRuntime;
+            }
             if (!hasUsableInternet(app)) {
                 throw new IOException("Não há uma runtime ARM64 em cache para este conjunto de .hnmod e o aparelho está offline. O app não compila Rust no celular: é necessária uma runtime pré-compilada correspondente ao conjunto de mods.", failure);
             }
