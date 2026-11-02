@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -74,11 +73,8 @@ final class HorizonNativeModArchive {
         if (archive == null || !archive.isFile()) {
             throw new IOException("O arquivo do mod nativo não existe.");
         }
-        String lowerName = archive.getName().toLowerCase(Locale.ROOT);
-        if (!lowerName.endsWith(".hnmod") && !lowerName.endsWith(".hmod")) {
-            throw new IOException("Mod nativo precisa usar .hnmod ou .hmod.");
-        }
-
+        // A staging file may use a temporary suffix. The caller already dispatches by
+        // the selected filename; the archive format is identified by its ZIP manifest.
         try (ZipFile zip = new ZipFile(archive)) {
             byte[] manifestBytes = null;
             byte[] contentManifestBytes = null;
