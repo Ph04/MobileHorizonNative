@@ -301,9 +301,8 @@ replace_once(pad_menu,
     "    fn pad_osk_output(&mut self, out: osk::Output) {",
     "    pub(super) fn pad_osk_output(&mut self, out: osk::Output) {")
 
-replace_once(startup_menu,
-    "    pub(super) fn menu_event(",
-    """    pub(super) fn android_keyboard_text(&mut self, text: &str, submit: bool) {
+loading_keyboard_method = """impl super::Loading {
+    pub(super) fn android_keyboard_text(&mut self, text: &str, submit: bool) {
         if self.menu.pending.is_some() {
             return;
         }
@@ -342,8 +341,11 @@ replace_once(startup_menu,
         }
         self.save_menu_address();
     }
+}
 
-    pub(super) fn menu_event(""")
+"""
+replace_once(startup_menu, "impl StartupMenu {\n",
+             loading_keyboard_method + "impl StartupMenu {\n")
 android_runtime_api = '''pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Clone, Debug)]
@@ -1237,8 +1239,9 @@ else:
             f"{game}: no supported run_event_loop or run_loading App event-loop layout "
             f"(loading={loading_loop_count})"
         )
-# The non-loading run_event_loop path still creates the default EventLoop<()>.
-# Use the same user-event type as the Android-aware Split and Game handlers.
+# The Java Bridge fork uses a splitscreen wrapper; the upstream Horizon pin
+# used by the standard APK can run a Game directly. Keep both event-loop shapes
+# supported, and only patch the split adapter when that module exists.
 split_event_loop_old = """    let mut split = split::Split::new(game);
     let result = EventLoop::new()?.run_app(&mut split);
     game = split.host;"""
@@ -1247,21 +1250,29 @@ split_event_loop_new = """    let mut split = split::Split::new(game);
     horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
     let result = event_loop.run_app(&mut split);
     game = split.host;"""
-replace_once(game, split_event_loop_old, split_event_loop_new)
+split_loop_count = game_source.count(split_event_loop_old)
+if split_loop_count == 1:
+    replace_once(game, split_event_loop_old, split_event_loop_new)
+    split_source = game.parent / "game" / "split.rs"
+    if not split_source.is_file():
+        raise SystemExit(f"{split_source}: split event loop exists but split module is missing")
+    replace_once(split_source,
+        "Option<(&mut dyn ApplicationHandler, WindowId)>",
+        "Option<(&mut dyn ApplicationHandler<horizon_client::AndroidInjectedInput>, WindowId)>")
+    replace_once(split_source,
+        "impl ApplicationHandler for Split<'_>",
+        "impl ApplicationHandler<horizon_client::AndroidInjectedInput> for Split<'_>")
+elif split_loop_count != 0:
+    raise SystemExit(f"{game}: unsupported split event-loop anchor count {split_loop_count}")
 
-# Keep splitscreen's trait objects on the same winit user-event type as the
-# Android-aware event loop. The unqualified ApplicationHandler defaults to ().
-split_source = game.parent / "game" / "split.rs"
-replace_once(split_source,
-    "Option<(&mut dyn ApplicationHandler, WindowId)>",
-    "Option<(&mut dyn ApplicationHandler<horizon_client::AndroidInjectedInput>, WindowId)>")
-replace_once(split_source,
-    "impl ApplicationHandler for Split<'_>",
-    "impl ApplicationHandler<horizon_client::AndroidInjectedInput> for Split<'_>")
-
-replace_once(game,
-    'impl ApplicationHandler for App {\n    fn resumed(&mut self, event_loop: &ActiveEventLoop) {',
-    '''impl ApplicationHandler<horizon_client::AndroidInjectedInput> for App {
+app_source = game.read_text(encoding="utf-8")
+if "Ready(Box<split::Split<'static>>)" in app_source:
+    app_ready_dispatch = "game.host.user_event(event_loop, event)"
+elif "Ready(Box<Game<'static>>)" in app_source:
+    app_ready_dispatch = "game.user_event(event_loop, event)"
+else:
+    raise SystemExit(f"{game}: could not identify the App::Ready event handler target")
+app_handler = '''impl ApplicationHandler<horizon_client::AndroidInjectedInput> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: horizon_client::AndroidInjectedInput) {
         match (self, event) {
             (App::Loading(loading), horizon_client::AndroidInjectedInput::KeyboardText { text, submit }) => {
@@ -1270,11 +1281,15 @@ replace_once(game,
             (App::Loading(loading), horizon_client::AndroidInjectedInput::ImeText { value, submit, .. }) => {
                 loading.android_keyboard_text(&value, submit);
             }
-            (App::Ready(game), event) => game.host.user_event(event_loop, event),
+            (App::Ready(game), event) => READY_DISPATCH,
             (App::Loading(_), _) => {}
         }
     }
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {''')
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {'''
+app_handler = app_handler.replace("READY_DISPATCH", app_ready_dispatch)
+replace_once(game,
+    'impl ApplicationHandler for App {\n    fn resumed(&mut self, event_loop: &ActiveEventLoop) {',
+    app_handler)
 
 legacy_app_loop = '    EventLoop::new()?.run_app(&mut app)?;'
 current_app_loop = '    let result = EventLoop::new()?.run_app(&mut app);'
