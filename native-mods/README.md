@@ -1,9 +1,9 @@
 # Horizon native mods — Android ARM64 build input
 
-Place the original, reviewed `.hnmod` files (or native `.hmod` files containing
-`horizon-native.json`) in this directory.
+Place only the original, reviewed `.hnmod` Rust source packages in this directory.
+Ordinary `.hmod` content packages are imported and managed separately by the app.
 
-**Never rename a content-only `.hmod` to `.hnmod`.** The native workflow applies
+**Never rename a `.hmod` to `.hnmod`.** The formats are separate and not interchangeable. The native workflow applies
 Rust sources to Horizon and compiles a game library. This code runs inside the game
 process with the app's permissions; it is not sandboxed.
 
