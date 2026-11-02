@@ -703,7 +703,7 @@ replace_once(game,
     'use self::chat::chat_tree;\nuse horizon_core::{\n    biome::{BiomeZoom, obfuscate_seed},')
 replace_once(game,
     'event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent},',
-    'event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent},')
+    'event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent},')
 # Android touch controls are delivered through AndroidInjectedInput by the native
 # activity. Do not add a second WindowEvent::Touch-to-mouse path here: this file's
 # event-loop host is App/Loading, not the active Game, and it breaks the split
@@ -1237,6 +1237,18 @@ else:
             f"{game}: no supported run_event_loop or run_loading App event-loop layout "
             f"(loading={loading_loop_count})"
         )
+# The non-loading run_event_loop path still creates the default EventLoop<()>.
+# Use the same user-event type as the Android-aware Split and Game handlers.
+split_event_loop_old = """    let mut split = split::Split::new(game);
+    let result = EventLoop::new()?.run_app(&mut split);
+    game = split.host;"""
+split_event_loop_new = """    let mut split = split::Split::new(game);
+    let event_loop = new_event_loop::<horizon_client::AndroidInjectedInput>()?;
+    horizon_client::set_android_event_loop_proxy(event_loop.create_proxy());
+    let result = event_loop.run_app(&mut split);
+    game = split.host;"""
+replace_once(game, split_event_loop_old, split_event_loop_new)
+
 # Keep splitscreen's trait objects on the same winit user-event type as the
 # Android-aware event loop. The unqualified ApplicationHandler defaults to ().
 split_source = game.parent / "game" / "split.rs"
