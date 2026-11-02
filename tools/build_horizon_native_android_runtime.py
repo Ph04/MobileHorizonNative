@@ -116,6 +116,17 @@ def toml_identity(raw: bytes, archive: Path) -> tuple[dict, dict]:
     return mod, compatibility
 
 
+def has_mixin_content(raw: bytes, archive: Path) -> bool:
+    try:
+        value = tomllib.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise BundleError(f"{archive.name}: invalid {MIXIN_MANIFEST}: {exc}") from exc
+    return any(
+        key not in {"mod", "compatibility", "api", "dependencies"}
+        for key in value
+    )
+
+
 def read_bundle(archive: Path) -> dict:
     if archive.is_symlink() or not archive.is_file() or archive.suffix.lower() not in (".hnmod", ".hmod"):
         raise BundleError(f"unsupported or unsafe native package: {archive}")
@@ -204,6 +215,7 @@ def read_bundle(archive: Path) -> dict:
         raise BundleError(
             f"{archive.name}: {NATIVE_MANIFEST} and {MIXIN_MANIFEST} identity/revision differ"
         )
+    mixins_content = has_mixin_content(native_files[mixin_path], archive)
 
     archive_digest = hashlib.sha256()
     with archive.open("rb") as stream:
@@ -215,6 +227,7 @@ def read_bundle(archive: Path) -> dict:
         "manifest": manifest,
         "files": native_files,
         "sha256": archive_sha,
+        "mixins_content": mixins_content,
     }
 
 
@@ -288,6 +301,19 @@ def stage_bundles(source: Path, bundles: list[dict], mods_dir: Path, upstream_co
             destination.write_bytes(payload)
 
 
+def stage_trait_data(stage: Path, bundles: list[dict], mods_dir: Path) -> None:
+    """Mirror the desktop launcher for bundles that do not need mixin transformation."""
+    for bundle in bundles:
+        if bundle["mixins_content"]:
+            continue
+        data = mods_dir / bundle["manifest"]["id"] / "data"
+        if not data.is_dir():
+            continue
+        destination = stage / "native-data" / bundle["manifest"]["id"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(data, destination, dirs_exist_ok=True)
+
+
 def build_modset_key(bundles: list[dict]) -> str:
     digest = hashlib.sha256()
     for bundle in sorted(bundles, key=lambda item: item["manifest"]["id"]):
@@ -347,22 +373,39 @@ def main() -> int:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     stage_bundles(source, bundles, mods_dir, upstream_commit)
-
-    if not mixins_binary.is_file():
-        run([
-            "cargo", "install", "--locked", "--git",
-            "https://github.com/horizon-rust/horizon-mixins",
-            "--rev", mixins_revision, "--root", str(tool_root),
-            "horizon-mixins-cli",
-        ])
-
     shutil.rmtree(stage_dir, ignore_errors=True)
-    run([
-        str(mixins_binary), "apply",
-        "--workspace", str(source),
-        "--mods", str(mods_dir),
-        "--out", str(stage_dir),
-    ])
+
+    needs_mixins = any(bundle["mixins_content"] for bundle in bundles)
+    if needs_mixins:
+        mixins_input = output_dir / "mixins-input"
+        shutil.rmtree(mixins_input, ignore_errors=True)
+        mixins_input.mkdir(parents=True)
+        for bundle in bundles:
+            if bundle["mixins_content"]:
+                mod_id = bundle["manifest"]["id"]
+                shutil.copytree(mods_dir / mod_id, mixins_input / mod_id)
+
+        if not mixins_binary.is_file():
+            run([
+                "cargo", "install", "--locked", "--git",
+                "https://github.com/horizon-rust/horizon-mixins",
+                "--rev", mixins_revision, "--root", str(tool_root),
+                "horizon-mixins-cli",
+            ])
+        run([
+            str(mixins_binary), "apply",
+            "--workspace", str(source),
+            "--mods", str(mixins_input),
+            "--out", str(stage_dir),
+        ])
+    else:
+        # The desktop launcher copies pristine source when every native mod is data-only.
+        shutil.copytree(
+            source, stage_dir,
+            ignore=shutil.ignore_patterns(".git", ".github"),
+        )
+
+    stage_trait_data(stage_dir, bundles, mods_dir)
 
     metadata = {
         "format": 1,
