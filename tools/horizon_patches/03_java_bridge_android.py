@@ -538,6 +538,55 @@ fabric_boot_replacements = [
             loader.invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize);""",
     ),
     (
+        """        loader.prepareModInit(HorizonGameProvider.gameDir, null);""",
+        """        loader.prepareModInit(HorizonGameProvider.gameDir, null);
+        Natives.log("Java Bridge: Fabric discovered " + loader.getAllMods().size() + " mod(s); preparing entrypoints");""",
+    ),
+    (
+        """        constants.getMethod("tryDetectVersion").invoke(null);
+        Class<?> bootstrap = Class.forName("net.minecraft.server.Bootstrap", true, gameLoader);
+        bootstrap.getMethod("bootStrap").invoke(null);
+        bootstrap.getMethod("validate").invoke(null);
+        Natives.log("Minecraft bootstrap done in " + (System.nanoTime() - started) / 1_000_000 + " ms");""",
+        """        String stage = "SharedConstants.tryDetectVersion";
+        try {
+            Natives.log("Java Bridge: bootstrap 1/4; SharedConstants class loaded");
+            constants.getMethod("tryDetectVersion").invoke(null);
+            Natives.log("Java Bridge: bootstrap 2/4; Minecraft version detected");
+
+            stage = "loading net.minecraft.server.Bootstrap";
+            Class<?> bootstrap = Class.forName("net.minecraft.server.Bootstrap", true, gameLoader);
+            Natives.log("Java Bridge: bootstrap 3/4; Bootstrap class loaded");
+
+            stage = "Bootstrap.bootStrap registry initialization";
+            bootstrap.getMethod("bootStrap").invoke(null);
+            Natives.log("Java Bridge: bootstrap registry initialization completed");
+
+            stage = "Bootstrap.validate registry validation";
+            bootstrap.getMethod("validate").invoke(null);
+            Natives.log("Java Bridge: bootstrap registry validation completed");
+            Natives.log("Minecraft bootstrap done in " + (System.nanoTime() - started) / 1_000_000 + " ms");
+        } catch (Throwable failure) {
+            Throwable root = failure;
+            while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+            Natives.log("Java Bridge: Minecraft bootstrap FAILED at " + stage + ": " + root);
+            StackTraceElement[] frames = root.getStackTrace();
+            for (int f = 0; f < Math.min(frames.length, 24); f++) {
+                Natives.log("    at " + frames[f]);
+            }
+            if (failure instanceof ReflectiveOperationException) {
+                throw (ReflectiveOperationException) failure;
+            }
+            if (failure instanceof RuntimeException) {
+                throw (RuntimeException) failure;
+            }
+            if (failure instanceof Error) {
+                throw (Error) failure;
+            }
+            throw new ReflectiveOperationException("Minecraft bootstrap failed at " + stage, failure);
+        }""",
+    ),
+    (
         """        if (env == EnvType.CLIENT) {
             // Every client entrypoint runs, then Fabric throws what failed:""",
         """        if (env == EnvType.CLIENT) {
