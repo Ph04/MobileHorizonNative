@@ -77,6 +77,7 @@ steps = [
     "01_offline_server_login.py",
     "02_android_native.py",
     "09_dynamic_hnmod_modules.py",
+    "10_mod_manager_api.py",
 ]
 # The third patch only applies to the pinned iaxivers/java-bridge checkout.
 if os.environ.get("HORIZON_ANDROID_PATCH_APPLY_JAVA_BRIDGE") == "1":
