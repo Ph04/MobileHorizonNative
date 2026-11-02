@@ -1,20 +1,58 @@
-# Pacotes para build dos mods nativos Horizon no Android
+# Horizon native mods — Android ARM64 build input
 
-Coloque aqui os arquivos originais `.hnmod` (ou `.hmod` que contenham `horizon-native.json`) que deseja compilar para Android ARM64.
+Place the original, reviewed `.hnmod` files (or native `.hmod` files containing
+`horizon-native.json`) in this directory.
 
-**Nunca renomeie `.hmod` para `.hnmod`** e não inclua arquivos que você não tenha revisado. O workflow aplica fontes Rust ao código do Horizon e compila uma biblioteca que será executada dentro do processo do jogo; esse código não fica em sandbox.
+**Never rename a content-only `.hmod` to `.hnmod`.** The native workflow applies
+Rust sources to Horizon and compiles a game library. This code runs inside the game
+process with the app's permissions; it is not sandboxed.
 
-## Como compilar
+## Select which mods are compiled
 
-1. Revise todos os arquivos .hnmod/.hmod nativos e adicione os originais à pasta `native-mods/` deste repositório, na branch `feature/fabric-java-bridge-test`.
-2. Faça o commit que adiciona os pacotes com a frase exata `[trust-native-mods]` na mensagem. Esse marcador confirma explicitamente que você revisou e confia no código Rust. O workflow roda diretamente nesta branch; não é necessário alterar `main`.
-3. Aguarde a validação e compilação ARM64. Essa execução não gera APK.
-4. O workflow publica uma release `horizon-native-android-<hash>` com a biblioteca e o manifesto, vinculados às hashes exatas dos arquivos.
+Edit [`enabled-mods.txt`](enabled-mods.txt). It uses the same selection syntax as
+the PC launcher's per-instance `horizon-mods.txt`:
 
-O MobileHorizon procura automaticamente a release que corresponde exatamente aos arquivos nativos da instância. Se os bytes do arquivo mudarem, a hash muda e será necessária outra compilação.
+```text
+mod.mod_menu:true
+mod.map_overlay:false
+```
 
-O build inicial exige que todos os mods indiquem Minecraft `26.3`, compartilhem a mesma revisão de `horizon-mixins` e sejam compatíveis com os hook points da Nightly selecionada. Mods sem `hooks` precisam fixar a mesma revisão exata do Horizon.
+Only `true` entries are compiled. A package that is present in `native-mods/` but
+marked `false` (or omitted) remains installed on Android and is not included in
+the compiled runtime. The IDs must match the `id` in each `horizon-native.json`.
+The Android app writes the same `mod.<id>:true` rows when the user activates a
+native mod.
 
-**Limitações deste primeiro compilador Android:** ele aceita injeções Rust, arquivos auxiliares/crates e dados nativos. Ainda rejeita manifestos com `[api]` (traits), `[dependencies]` (resolução automática entre mods) ou `[[post_build]]` (programas executados após a compilação). Esses recursos do launcher de PC ainda não foram portados; a rejeição acontece antes de compilar para evitar um resultado incompleto.
+Native mods are compiled into the selected Horizon build; they are **not** hot-unloaded
+like sandboxed plugins. Turning a mod off removes it from the next build selection.
+The exact selected set has its own runtime build. With every native mod disabled,
+the app uses the regular Horizon runtime instead.
 
-O código compilado executa no processo do jogo, sem sandbox. Não use esse workflow para pacotes cuja origem você não conhece. Não envie JARs Fabric ou mods de conteúdo `.hmod` sem manifesto nativo.
+## Compile and publish
+
+1. Review each archive and its Rust source. Add the exact original archive(s) to
+   `native-mods/`.
+2. Set only the intended mod IDs to `true` in `enabled-mods.txt`.
+3. Commit the package and selection changes to
+   `feature/fabric-java-bridge-test` with `[trust-native-mods]` in the commit
+   message. This is an explicit acknowledgement that you reviewed and trust the
+   Rust code. Alternatively, manually dispatch the workflow and confirm
+   `I TRUST THESE NATIVE MODS`.
+4. The workflow validates the selected package set, applies `horizon-mixins`,
+   compiles the ARM64 Android Horizon engine, and publishes a versioned release
+   with the binary and SHA-256 manifest. This workflow does not build an APK.
+
+Every release is tied to the exact package bytes, IDs, selected set, upstream Horizon
+commit, and `horizon-mixins` revision. A changed source archive or changed selection
+requires a matching build.
+
+## Compatibility limits
+
+The first Android compiler supports native mixin bundles, Rust source/crates and
+data. The build currently rejects `[api]` (traits), `[dependencies]` (automatic
+inter-mod dependency resolution), and `[[post_build]]` programs. Those PC launcher
+features have not yet been ported to this Android workflow.
+
+Do not use this workflow for packages whose source you have not reviewed. Rust code
+executes in-process with the game's permissions and may access app-private data or
+the network. Enabling a mod is a code execution decision, not just a content toggle.
