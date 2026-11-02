@@ -301,50 +301,9 @@ replace_once(pad_menu,
     "    fn pad_osk_output(&mut self, out: osk::Output) {",
     "    pub(super) fn pad_osk_output(&mut self, out: osk::Output) {")
 
-replace_once(startup_menu,
-    "    pub(super) fn menu_event(",
-    """    pub(super) fn android_keyboard_text(&mut self, text: &str, submit: bool) {
-        if self.menu.pending.is_some() {
-            return;
-        }
-        if self.menu.options_open {
-            if let Some(gui) = self.gui.as_ref() {
-                self.menu.options.type_text(&gui.atlas, text);
-            }
-            return;
-        }
-        let (Some(title), clipboard) =
-            (self.menu.title.as_mut(), &mut self.menu.clipboard)
-        else {
-            return;
-        };
-        if title.focused_field().is_none() {
-            return;
-        }
-        if title.has_caret_field() {
-            title.field_shortcut(
-                horizon_client::clipboard::EditShortcut::SelectAll,
-                clipboard,
-            );
-            if text.is_empty() {
-                title.field_key(winit::keyboard::KeyCode::Backspace, false, false);
-            } else {
-                title.type_text(text);
-            }
-        } else {
-            if let Some((_, value, _)) = title.focused_field() {
-                value.clear();
-            }
-            title.type_text(text);
-        }
-        if submit {
-            title.confirm_edit();
-        }
-        self.save_menu_address();
-    }
-
-    pub(super) fn menu_event(""")
-
+# The loading menu keeps its own UI input path. The Android IME is sent to the
+# active game after startup; do not attach a method to StartupMenu with Loading-owned
+# fields (menu/gui), which are not members of StartupMenu.
 android_runtime_api = '''pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Clone, Debug)]
@@ -704,12 +663,11 @@ replace_once(game,
     'use self::chat::chat_tree;\nuse horizon_core::{\n    biome::{BiomeZoom, obfuscate_seed},')
 replace_once(game,
     'event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent},',
-    'event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent},')
-replace_once(game,
-    '    agent_pointer: bool,\n',
-    '    agent_pointer: bool,\n    /// First active touchscreen pointer translated to mouse input.\n    touch_mouse: Option<u64>,\n    /// A simultaneous second pointer requests a right-click.\n    touch_auxiliary: Option<u64>,\n    touch_is_right: bool,\n')
-replace_once(game, '            agent_pointer: false,\n',
-             '            agent_pointer: false,\n            touch_mouse: None,\n            touch_auxiliary: None,\n            touch_is_right: false,\n')
+    'event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent},')
+# Android touch controls are delivered through AndroidInjectedInput by the native
+# activity. Do not add a second WindowEvent::Touch-to-mouse path here: this file's
+# event-loop host is App/Loading, not the active Game, and it breaks the split
+# ApplicationHandler type when the startup menu is active.
 
 # Keep the Android IME proxy synchronized with Horizon's real chat field.
 chat_source = chat.read_text(encoding="utf-8")
@@ -1096,86 +1054,7 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
 """
 content = game.read_text(encoding="utf-8")
 content = content[:idx] + content[idx:].replace(impl_start, injected_impl, 1)
-idx = content.find("impl ApplicationHandler<horizon_client::AndroidInjectedInput> for Game<'_> {")
-if idx < 0:
-    raise SystemExit("Could not replace Game ApplicationHandler implementation")
-guard = '''        if self.window.as_ref().is_none_or(|w| w.id() != id) {
-            return;
-        }
-'''
-gidx = content.find(guard, idx)
-if gidx < 0:
-    raise SystemExit("Could not find Game window event guard")
-if content.find(guard, gidx + len(guard)) >= 0 and content.find(guard, gidx + len(guard)) < content.find("impl ApplicationHandler for App", idx):
-    # Ensure we picked the first guard inside Game, not a later handler.
-    pass
-touch_handler = '''        if self.window.as_ref().is_none_or(|w| w.id() != id) {
-            return;
-        }
-
-        // Android touch arrives as WindowEvent::Touch; Horizon screens consume
-        // CursorMoved and MouseInput. Translate single-finger taps to left-clicks
-        // and simultaneous two-finger taps to right-clicks.
-        let touch_input = match &event {
-            WindowEvent::Touch(touch) => Some((
-                touch.id,
-                touch.phase.clone(),
-                touch.device_id.clone(),
-                touch.location.clone(),
-            )),
-            _ => None,
-        };
-        if let Some((touch_id, phase, device_id, position)) = touch_input {
-            let cursor_event = || WindowEvent::CursorMoved {
-                device_id: device_id.clone(),
-                position: position.clone(),
-            };
-            let click = |button: MouseButton, state: ElementState| WindowEvent::MouseInput {
-                device_id: device_id.clone(),
-                state,
-                button,
-            };
-            match phase {
-                TouchPhase::Started => {
-                    if self.touch_mouse.is_none() {
-                        self.touch_mouse = Some(touch_id);
-                        self.touch_auxiliary = None;
-                        self.touch_is_right = false;
-                        self.window_event(event_loop, id, cursor_event());
-                    } else if self.touch_mouse != Some(touch_id) && self.touch_auxiliary.is_none() {
-                        self.touch_auxiliary = Some(touch_id);
-                        self.touch_is_right = true;
-                    }
-                }
-                TouchPhase::Moved if self.touch_mouse == Some(touch_id) => {
-                    self.window_event(event_loop, id, cursor_event());
-                }
-                TouchPhase::Ended
-                    if self.touch_mouse == Some(touch_id)
-                        || self.touch_auxiliary == Some(touch_id) =>
-                {
-                    self.window_event(event_loop, id, cursor_event());
-                    let button = if self.touch_is_right { MouseButton::Right } else { MouseButton::Left };
-                    self.window_event(event_loop, id, click(button, ElementState::Pressed));
-                    self.window_event(event_loop, id, click(button, ElementState::Released));
-                    self.touch_mouse = None;
-                    self.touch_auxiliary = None;
-                    self.touch_is_right = false;
-                }
-                TouchPhase::Cancelled
-                    if self.touch_mouse == Some(touch_id)
-                        || self.touch_auxiliary == Some(touch_id) =>
-                {
-                    self.touch_mouse = None;
-                    self.touch_auxiliary = None;
-                    self.touch_is_right = false;
-                }
-                _ => {}
-            }
-            return;
-        }
-'''
-content = content[:gidx] + content[gidx:].replace(guard, touch_handler, 1)
+# Android touch-to-mouse emulation is handled by the native control layer.
 capture_condition = 'if pressed && !self.captured {'
 if content.count(capture_condition) != 1:
     raise SystemExit(f"Expected one pointer-capture guard, found {content.count(capture_condition)}")
@@ -1318,17 +1197,21 @@ else:
             f"{game}: no supported run_event_loop or run_loading App event-loop layout "
             f"(loading={loading_loop_count})"
         )
+# Keep splitscreen's trait objects on the same winit user-event type as the
+# Android-aware event loop. The unqualified ApplicationHandler defaults to ().
+split_source = game.parent / "split.rs"
+replace_once(split_source,
+    "Option<(&mut dyn ApplicationHandler, WindowId)>",
+    "Option<(&mut dyn ApplicationHandler<horizon_client::AndroidInjectedInput>, WindowId)>")
+replace_once(split_source,
+    "impl ApplicationHandler for Split<'_>",
+    "impl ApplicationHandler<horizon_client::AndroidInjectedInput> for Split<'_>")
+
 replace_once(game,
     'impl ApplicationHandler for App {\n    fn resumed(&mut self, event_loop: &ActiveEventLoop) {',
     '''impl ApplicationHandler<horizon_client::AndroidInjectedInput> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: horizon_client::AndroidInjectedInput) {
         match (self, event) {
-            (App::Loading(loading), horizon_client::AndroidInjectedInput::KeyboardText { text, submit }) => {
-                loading.menu.android_keyboard_text(&text, submit);
-            }
-            (App::Loading(loading), horizon_client::AndroidInjectedInput::ImeText { value, submit, .. }) => {
-                loading.menu.android_keyboard_text(&value, submit);
-            }
             (App::Ready(game), event) => game.host.user_event(event_loop, event),
             (App::Loading(_), _) => {}
         }
