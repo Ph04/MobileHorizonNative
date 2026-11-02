@@ -132,7 +132,7 @@ replace_once(
 replace_once(
     api_level,
     "    (\"render.set-far-terrain\", 7),\n];",
-    "    (\"render.set-far-terrain\", 7),\n    (\"mod-manager.list\", 8),\n    (\"mod-manager.set-enabled\", 8),\n];",
+    "    (\"render.set-far-terrain\", 7),\n    (\"mod-manager.modules\", 8),\n    (\"mod-manager.set-enabled\", 8),\n];",
     "register mod-manager API level"
 )
 
@@ -264,7 +264,8 @@ replace_once(
                     version: manifest.version.clone(),
                     description: manifest.description.clone(),
                     status,
-                    enabled: !matches!(&entry.status, Status::Off),
+                    enabled: self.settings.mods.enabled.contains(&manifest.id)
+                        || self.mods.dev.contains(&entry.path),
                     development: self.mods.dev.contains(&entry.path),
                     has_settings: entry.has_ui_settings(),
                     problem,
