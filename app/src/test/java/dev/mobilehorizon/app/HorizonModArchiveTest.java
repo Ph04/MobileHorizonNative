@@ -58,6 +58,22 @@ public final class HorizonModArchiveTest {
         assertEquals("horizon_api_probe", HorizonModArchive.readId(archive));
     }
 
+    @Test public void acceptsModManagerCapabilityOnlyWhenMarkedExperimental() throws Exception {
+        File archive = createArchive("mobilehorizon_mod_menu",
+                "api = \"0.1\"\nside = \"client\"\n"
+                        + "capabilities = [\"ui\", \"mod-manager\"]\n"
+                        + "experimental = [\"ui\", \"mod-manager\"]\n",
+                false, true);
+        assertEquals("mobilehorizon_mod_menu", HorizonModArchive.readId(archive));
+
+        File unmarked = createArchive("mobilehorizon_mod_menu",
+                "api = \"0.1\"\nside = \"client\"\n"
+                        + "capabilities = [\"ui\", \"mod-manager\"]\n"
+                        + "experimental = [\"ui\"]\n",
+                false, true);
+        assertNull(HorizonModArchive.readId(unmarked));
+    }
+
     @Test public void acceptsWitComponentPackagedAsDynamicHnmod() throws Exception {
         File archive = createArchiveWithExtension("horizon_api_probe",
                 "api = \"0.1\"\nside = \"client\"\n"
