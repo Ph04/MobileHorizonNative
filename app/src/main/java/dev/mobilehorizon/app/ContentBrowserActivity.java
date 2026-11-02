@@ -168,7 +168,7 @@ getWindow().setStatusBarColor(0xff090911);
                 JSONArray versions = getArray(url, 6 * 1024 * 1024);
                 if (versions.length() == 0) throw new IllegalStateException("O projeto não possui versão publicada para Minecraft " + OfficialMinecraftInstaller.VERSION + ".");
                 JSONObject version = versions.getJSONObject(0);
-                JSONObject file = primaryFile(version.getJSONArray("files"));
+                JSONObject file = primaryFile(version.getJSONArray("files"), type);
                 String fileUrl = file.optString("url", "");
                 String fileName = safeFileName(file.optString("filename", "download.zip"));
                 File home = GameInstanceManager.getSelectedInstanceHome(this);
@@ -200,14 +200,27 @@ getWindow().setStatusBarColor(0xff090911);
         });
     }
 
-    private JSONObject primaryFile(JSONArray files) throws Exception {
-        if (files == null || files.length() == 0) throw new IllegalStateException("A versão não possui arquivo para download.");
-        JSONObject fallback = files.getJSONObject(0);
+    private JSONObject primaryFile(JSONArray files, String kind) throws Exception {
+        if (files == null || files.length() == 0) {
+            throw new IllegalStateException("A versão não possui arquivo para download.");
+        }
+        String extension = "modpack".equals(kind) ? ".mrpack" : ".zip";
+        JSONObject primary = null;
+        JSONObject matching = null;
         for (int i = 0; i < files.length(); i++) {
             JSONObject file = files.getJSONObject(i);
-            if (file.optBoolean("primary", false)) return file;
+            String name = file.optString("filename", "").toLowerCase(Locale.ROOT);
+            boolean formatMatches = name.endsWith(extension);
+            if (file.optBoolean("primary", false)) primary = file;
+            if (formatMatches && file.optBoolean("primary", false)) return file;
+            if (formatMatches && matching == null) matching = file;
         }
-        return fallback;
+        if (matching != null) return matching;
+        if (primary != null) {
+            throw new IllegalStateException("A versão não publicou um arquivo " + extension
+                    + " compatível com esta categoria.");
+        }
+        throw new IllegalStateException("A versão não possui arquivo " + extension + " compatível.");
     }
 
     private String installSingle(File source, File folder, String fileName) throws Exception {
