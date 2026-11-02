@@ -62,7 +62,7 @@ getWindow().setStatusBarColor(0xff090911);getWindow().setNavigationBarColor(0xff
         page.addView(button("Voltar",false,v->finish()),top(-1,48,10));
         page.addView(button("Exportar diagnóstico completo (ZIP)",true,v->exportDiagnostics()),
                 top(-1,48,8));
-        page.addView(text("Inclui memória Android/ART/nativa, histórico de encerramento do Android, GC/heap da JVM, erros fatais e latest.log da instância. Revise antes de compartilhar: logs do jogo podem conter endereços de servidores e mensagens.",10,0xffb9b3d1,false),top(-1,-2,4));
+        page.addView(text("Inclui java-bridge-startup.log, memory-guard.log, memória Android/ART/nativa, motivo do encerramento do processo :game, traces, GC/heap da JVM, erros fatais e latest.log da instância. Revise antes de compartilhar: logs do jogo podem conter endereços de servidores e mensagens.",10,0xffb9b3d1,false),top(-1,-2,4));
         LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
         filter=new EditText(this);filter.setSingleLine(true);filter.setTextColor(0xfff0ecff);filter.setHintTextColor(0xff827b9f);filter.setHint("Filtrar logs…");
         filter.setBackgroundColor(0xff151321);row.addView(filter,new LinearLayout.LayoutParams(0,dp(48),1f));
