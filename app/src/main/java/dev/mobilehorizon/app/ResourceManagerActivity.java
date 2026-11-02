@@ -555,7 +555,7 @@ getWindow().setStatusBarColor(0xff090911);
                 id = manifest.id;
                 detail = "ID: " + manifest.id + " · Horizon " + manifest.horizon.substring(0, 7)
                         + " · hooks API " + (manifest.hooks == null ? "não declarada" : manifest.hooks)
-                        + " · Fonte Rust armazenada; aguardando compilador Android.";
+                        + " · Fonte Rust armazenada. Código nativo não é isolado e aguarda compilação ARM64.";
             } catch (Exception ignored) { }
             nativeMods.add(new ResourceItem(Kind.NATIVE_MOD, file.getName(), file, id,
                     false, detail));
@@ -786,39 +786,41 @@ getWindow().setStatusBarColor(0xff090911);
         row.addView(actions, actionsParams);
 
         CheckBox active = new CheckBox(this);
-        active.setText(UiLanguage.translate(this,
-                item.kind == Kind.DATA_PACK ? "Por mundo"
-                        : item.kind == Kind.NATIVE_MOD ? "Aguardando compilador"
-                        : item.active ? "Ativo" : "Ativar"));
         active.setTextSize(13);
         active.setTextColor(0xff283550);
         active.setMinHeight(dp(38));
-        active.setChecked(item.kind != Kind.DATA_PACK && item.kind != Kind.NATIVE_MOD && item.active);
-        active.setEnabled(item.kind != Kind.DATA_PACK && item.kind != Kind.NATIVE_MOD
-                && (item.kind != Kind.MOD || !item.id.isEmpty()));
-        active.setOnCheckedChangeListener((button, checked) -> {
-            try {
-                setActive(item, checked);
-                button.setText(UiLanguage.translate(this, checked ? "Ativo" : "Ativar"));
-                showStatus(item.name + (checked ? " ativado" : " desativado")
-                        + ". A mudança será aplicada quando o Minecraft iniciar novamente.");
-                refreshResources();
-            } catch (Exception error) {
-                button.setOnCheckedChangeListener(null);
-                button.setChecked(item.active);
-                button.setText(UiLanguage.translate(this, item.active ? "Ativo" : "Ativar"));
-                button.setOnCheckedChangeListener((b, value) -> {
-                    try {
-                        setActive(item, value);
-                        showStatus(item.name + (value ? " ativado" : " desativado") + ".");
-                        refreshResources();
-                    } catch (Exception e) {
-                        showStatus(message(e));
-                    }
-                });
-                showStatus("Não foi possível alterar " + item.name + ": " + message(error));
-            }
-        });
+        if (item.kind == Kind.NATIVE_MOD) {
+            configureNativeTrustControl(active, item);
+        } else {
+            active.setText(UiLanguage.translate(this,
+                    item.kind == Kind.DATA_PACK ? "Por mundo" : item.active ? "Ativo" : "Ativar"));
+            active.setChecked(item.kind != Kind.DATA_PACK && item.active);
+            active.setEnabled(item.kind != Kind.DATA_PACK
+                    && (item.kind != Kind.MOD || !item.id.isEmpty()));
+            active.setOnCheckedChangeListener((button, checked) -> {
+                try {
+                    setActive(item, checked);
+                    button.setText(UiLanguage.translate(this, checked ? "Ativo" : "Ativar"));
+                    showStatus(item.name + (checked ? " ativado" : " desativado")
+                            + ". A mudança será aplicada quando o Minecraft iniciar novamente.");
+                    refreshResources();
+                } catch (Exception error) {
+                    button.setOnCheckedChangeListener(null);
+                    button.setChecked(item.active);
+                    button.setText(UiLanguage.translate(this, item.active ? "Ativo" : "Ativar"));
+                    button.setOnCheckedChangeListener((b, value) -> {
+                        try {
+                            setActive(item, value);
+                            showStatus(item.name + (value ? " ativado" : " desativado") + ".");
+                            refreshResources();
+                        } catch (Exception e) {
+                            showStatus(message(e));
+                        }
+                    });
+                    showStatus("Não foi possível alterar " + item.name + ": " + message(error));
+                }
+            });
+        }
         actions.addView(active, new LinearLayout.LayoutParams(0, dp(40), 1f));
 
         if (item.kind == Kind.DATA_PACK) {
@@ -834,6 +836,55 @@ getWindow().setStatusBarColor(0xff090911);
         delete.setMinimumHeight(dp(38));
         delete.setPadding(dp(5), dp(2), dp(5), dp(2));
         actions.addView(delete, params(dp(76), dp(38)));
+    }
+
+    private void configureNativeTrustControl(CheckBox control, ResourceItem item) {
+        boolean trusted = HorizonNativeRuntimeManager.isTrusted(this, home(), item.id);
+        renderNativeTrustState(control, item, trusted);
+        control.setEnabled(!item.id.isEmpty());
+    }
+
+    private void renderNativeTrustState(CheckBox control, ResourceItem item, boolean trusted) {
+        control.setOnCheckedChangeListener(null);
+        control.setChecked(trusted);
+        control.setText(UiLanguage.translate(this,
+                trusted ? "Código confiado" : "Confiar no código"));
+        control.setOnCheckedChangeListener((button, checked) ->
+                changeNativeTrust(item, button, checked));
+    }
+
+    private void changeNativeTrust(ResourceItem item, CheckBox control, boolean trusted) {
+        if (!trusted) {
+            try {
+                HorizonNativeRuntimeManager.setTrusted(this, home(), item.id, false);
+                renderNativeTrustState(control, item, false);
+                showStatus("Confiança removida de " + item.name
+                        + ". O runtime nativo não será selecionado para esta instância.");
+            } catch (Exception error) {
+                renderNativeTrustState(control, item, true);
+                showStatus("Não foi possível remover a confiança: " + message(error));
+            }
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(UiLanguage.translate(this, "Confiar neste código nativo?"))
+                .setMessage(UiLanguage.translate(this,
+                        "Este pacote contém código Rust nativo. Ele NÃO roda em sandbox e, quando compilado e usado, terá as permissões do processo do jogo. Pode acessar dados armazenados pelo aplicativo e usar a rede. Confie somente se você verificou a origem e deseja usar este mod."))
+                .setNegativeButton(UiLanguage.translate(this, "Cancelar"),
+                        (dialog, which) -> renderNativeTrustState(control, item, false))
+                .setPositiveButton(UiLanguage.translate(this, "Confiar neste mod"),
+                        (dialog, which) -> {
+                            try {
+                                HorizonNativeRuntimeManager.setTrusted(this, home(), item.id, true);
+                                renderNativeTrustState(control, item, true);
+                                showStatus("Confiança registrada para " + item.name
+                                        + ". O runtime ARM64 precisa ser compilado antes de iniciar o jogo.");
+                            } catch (Exception error) {
+                                renderNativeTrustState(control, item, false);
+                                showStatus("Não foi possível registrar a confiança: " + message(error));
+                            }
+                        })
+                .show();
     }
 
     private void setActive(ResourceItem item, boolean enabled) throws Exception {

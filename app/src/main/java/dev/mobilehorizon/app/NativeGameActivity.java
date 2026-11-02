@@ -209,7 +209,20 @@ public final class NativeGameActivity extends NativeActivity {
             java.io.File runtimeFallback = null;
             java.io.File runtimeStatus;
             String runtimeVersion;
-            if (fabricJavaBridge) {
+            boolean instanceHasNativeMods = HorizonNativeRuntimeManager.hasNativeMods(home);
+            if (fabricJavaBridge && instanceHasNativeMods) {
+                throw new java.io.IOException("Mods nativos Rust (.hnmod) não podem ser combinados com o perfil Fabric Java Bridge. Use uma instância Horizon normal para esse conjunto.");
+            }
+            if (instanceHasNativeMods) {
+                HorizonNativeRuntimeManager.PreparedRuntime runtime =
+                        HorizonNativeRuntimeManager.prepare(this, home);
+                runtimeRoot = runtime.root;
+                runtimeLibrary = runtime.activeLibrary;
+                runtimeStatus = runtime.statusFile;
+                runtimeVersion = runtime.activeVersion;
+                bridgeLog("INFO", "Runtime Horizon compilado com mods nativos: "
+                        + runtime.activeVersion + ", biblioteca=" + runtime.activeLibrary.getAbsolutePath());
+            } else if (fabricJavaBridge) {
                 bridgeLog("INFO", "Pré-checagem 2/7: verificando o runtime externo Java Bridge By:iaxivers.");
                 FabricBridgeRuntimeManager.PreparedRuntime runtime =
                         FabricBridgeRuntimeManager.prepare(this);
