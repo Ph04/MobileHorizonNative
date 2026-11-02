@@ -122,7 +122,11 @@ getWindow().setStatusBarColor(0xff090911);
         io.execute(() -> {
             JSONArray hits = null; Exception failure = null;
             try {
-                String facets = "[[\"project_type:" + type + "\"],[\"versions:" + OfficialMinecraftInstaller.VERSION + "\"]]";
+                String projectFacet = "datapack".equals(type)
+                        ? "all_project_types:datapack"
+                        : "project_type:" + type;
+                String facets = "[[\"" + projectFacet + "\"],[\"versions:"
+                        + OfficialMinecraftInstaller.VERSION + "\"]]";
                 String url = API + "/search?query=" + URLEncoder.encode(term, "UTF-8")
                         + "&facets=" + URLEncoder.encode(facets, "UTF-8") + "&limit=24&index=relevance";
                 hits = getArray(url, 6 * 1024 * 1024);
