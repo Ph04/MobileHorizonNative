@@ -28,22 +28,31 @@ def native_json(mod_id=MOD_ID):
     })
 
 
-def mixin_toml(mod_id=MOD_ID, version="1.0.0", revision=REVISION):
-    return (
+def mixin_toml(mod_id=MOD_ID, version="1.0.0", revision=REVISION, injections=False):
+    text = (
         "[mod]\n"
         f'id = "{mod_id}"\n'
         f'version = "{version}"\n'
         "[compatibility]\n"
         f'horizon_revision = "{revision}"\n'
     )
+    if injections:
+        text += (
+            "\n[[injection]]\n"
+            'id = "head"\n'
+            'target = "fixture::tick"\n'
+            'kind = "HEAD"\n'
+            'helper = "hook.rs"\n'
+        )
+    return text
 
 
-def make_bundle(path: Path, mod_id=MOD_ID, extras=()):
+def make_bundle(path: Path, mod_id=MOD_ID, extras=(), injections=False):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("horizon-native.json", native_json(mod_id))
         archive.writestr(
             f"mixins/{mod_id}/horizon-mixin.toml",
-            mixin_toml(mod_id=mod_id),
+            mixin_toml(mod_id=mod_id, injections=injections),
         )
         archive.writestr(f"mixins/{mod_id}/hook.rs", "fn hook() {}\n")
         for name, content in extras:
@@ -58,6 +67,7 @@ def main():
         parsed = BUILDER.read_bundle(valid)
         assert parsed["manifest"]["id"] == MOD_ID
         assert parsed["manifest"]["hooks"] == 1
+        assert parsed["mixins_content"] is False
         assert set(parsed["files"]) == {
             f"mixins/{MOD_ID}/horizon-mixin.toml",
             f"mixins/{MOD_ID}/hook.rs",
@@ -72,6 +82,23 @@ def main():
             ("data/sample_native/tags/item/test.json", "{}"),
         ])
         assert BUILDER.read_bundle(combined)["manifest"]["id"] == MOD_ID
+
+        injected = root / "injected.hnmod"
+        make_bundle(injected, mod_id="injected_native", injections=True)
+        injected_bundle = BUILDER.read_bundle(injected)
+        assert injected_bundle["mixins_content"] is True
+
+        # Data-only native bundles bypass mixin injection but still populate native-data/<id>.
+        mods_dir = root / "mods"
+        data_root = mods_dir / MOD_ID / "data" / "example"
+        data_root.mkdir(parents=True)
+        (data_root / "payload.json").write_text("{}", encoding="utf-8")
+        stage = root / "stage"
+        stage.mkdir()
+        BUILDER.stage_trait_data(stage, [parsed], mods_dir)
+        assert (stage / "native-data" / MOD_ID / "example" / "payload.json").read_text(
+            encoding="utf-8"
+        ) == "{}"
 
         bad_path = root / "bad-path.hnmod"
         make_bundle(
