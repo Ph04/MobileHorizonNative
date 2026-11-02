@@ -154,9 +154,11 @@ final class HorizonNativeRuntimeManager {
                     StandardCharsets.UTF_8));
         } catch (IOException missing) {
             throw new IOException("Ainda não existe runtime ARM64 compilada para este conjunto de mods ("
-                    + tag + "). Envie os mesmos arquivos para a pasta native-mods/ do repositório "
-                    + REPOSITORY + " e execute o workflow de compilação nativa: "
-                    + "https://github.com/" + REPOSITORY
+                    + tag + "). Para compilar: adicione os mesmos arquivos originais à pasta native-mods/ "
+                    + "do repositório " + REPOSITORY + " na branch feature/fabric-java-bridge-test e "
+                    + "faça um commit com [trust-native-mods] na mensagem. Esse marcador confirma que "
+                    + "você revisou e confia no código Rust; o workflow então compila e publica a runtime. "
+                    + "Acompanhe em https://github.com/" + REPOSITORY
                     + "/actions/workflows/native-mod-android-runtime.yml", missing);
         } catch (org.json.JSONException invalid) {
             throw new IOException("A resposta da release do runtime nativo não contém JSON válido.", invalid);
