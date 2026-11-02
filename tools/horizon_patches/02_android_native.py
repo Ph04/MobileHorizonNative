@@ -1141,24 +1141,38 @@ capture_guard_old = """        if capture && !self.focused {
 capture_guard_current = """        if capture && (!self.focused || self.server_packs.prompt.is_some() || self.dialog_open()) {
             return;
         }"""
+capture_guard_latest = """        if capture
+            && (!self.focused
+                || self.server_packs.prompt.is_some()
+                || self.dialog_open()
+                || self.command_prompt.is_some())
+        {
+            return;
+        }"""
 capture_android_hook = """        #[cfg(target_os = "android")]
         horizon_client::set_android_gameplay(
             self.player.is_some()
                 && self.title.is_none()
                 && self.screen == Screen::Playing
-                && self.sign_edit.is_none()
-                && self.book.is_none(),
+                && !self.screen_over_playing(),
         );"""
 game_content = game.read_text(encoding="utf-8")
-if game_content.count(capture_guard_old) == 1:
-    replace_once(game, capture_guard_old, capture_guard_old + "\n" + capture_android_hook)
-elif game_content.count(capture_guard_current) == 1:
-    replace_once(game, capture_guard_current, capture_guard_current + "\n" + capture_android_hook)
-else:
+recognized_capture_guards = [
+    guard for guard in (capture_guard_old, capture_guard_current, capture_guard_latest)
+    if game_content.count(guard) == 1
+]
+if len(recognized_capture_guards) != 1:
     raise SystemExit(
-        f"{game}: expected one recognized cursor-capture guard, found "
-        f"old={game_content.count(capture_guard_old)}, current={game_content.count(capture_guard_current)}"
+        f"{game}: expected exactly one recognized cursor-capture guard, found "
+        f"old={game_content.count(capture_guard_old)}, "
+        f"current={game_content.count(capture_guard_current)}, "
+        f"latest={game_content.count(capture_guard_latest)}"
     )
+replace_once(
+    game,
+    recognized_capture_guards[0],
+    recognized_capture_guards[0] + "\n" + capture_android_hook,
+)
 
 # Publish whether Horizon is in the active world or currently displaying a menu.
 # Java polls these atomics to hide the virtual cursor during gameplay. Newer Horizon
