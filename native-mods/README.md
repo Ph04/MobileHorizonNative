@@ -7,14 +7,21 @@ game/player reads, chat, HUD, UI, render and input services through declared
 capabilities. The component runtime is enabled for Android only when the exact
 upstream checkout contains the full `horizon-mods/runtime` and WIT SDK.
 
-**Never rename a `.hmod` to `.hnmod`.** The formats are separate and not interchangeable.
-A WIT `.hmod` is a sandboxed component with capability checks, fuel metering and a
-64 MiB per-module memory cap. The `.hnmod` packages in this directory remain Rust
-mixin bundles: the current PC-style build path applies their source to Horizon and
-compiles a game library. That code runs inside the game process with the app's
-permissions and is not sandboxed. There is no automatic conversion from an existing
-mixin `.hnmod` to a WIT component; any future port must be a separate derived artifact,
-leaving the original package unchanged.
+MobileHorizonNative now recognizes two internal layouts that may use the
+`.hnmod` suffix:
+
+- **Legacy source bundle:** `horizon-native.json` plus `mixins/<id>/...`. This is
+  what belongs in this `native-mods/` build-input folder. Horizon mixins apply its
+  Rust source during compilation; the result is native code in the game process,
+  not a sandboxed plugin.
+- **Dynamic WIT component:** `horizon-mod.toml` plus `mod.wasm`. The app stores
+  this beside regular `.hmod` components in the instance's `horizon-mods/` folder
+  and loads it through the existing Horizon component runtime. Only the file suffix
+  differs from the official desktop `.hmod` container.
+
+Do not rename or rewrite an existing source `.hnmod` and expect it to become
+dynamic. A mixin package is not a WebAssembly component; its code must be ported
+to the WIT SDK, and the original archive remains unchanged.
 
 ## Select which mods are compiled
 
