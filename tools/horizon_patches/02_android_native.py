@@ -1019,16 +1019,12 @@ content = content[:idx] + content[idx:].replace(impl_start, injected_impl, 1)
 idx = content.find("impl ApplicationHandler<horizon_client::AndroidInjectedInput> for Game<'_> {")
 if idx < 0:
     raise SystemExit("Could not replace Game ApplicationHandler implementation")
-guard = '''        if self.window.as_ref().is_none_or(|w| w.id() != id) {
-            return;
-        }
-'''
-gidx = content.find(guard, idx)
-if gidx < 0:
-    raise SystemExit("Could not find Game window event guard")
-if content.find(guard, gidx + len(guard)) >= 0 and content.find(guard, gidx + len(guard)) < content.find("impl ApplicationHandler for App", idx):
-    # Ensure we picked the first guard inside Game, not a later handler.
-    pass
+game_window_event = """    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+"""
+window_event_at = content.find(game_window_event, idx)
+device_event_at = content.find("    fn device_event(", window_event_at + len(game_window_event))
+if window_event_at < 0 or device_event_at < 0:
+    raise SystemExit("Could not locate Game::window_event inside its Android ApplicationHandler")
 touch_handler = '''        if self.window.as_ref().is_none_or(|w| w.id() != id) {
             return;
         }
@@ -1095,7 +1091,7 @@ touch_handler = '''        if self.window.as_ref().is_none_or(|w| w.id() != id) 
             return;
         }
 '''
-content = content[:gidx] + content[gidx:].replace(guard, touch_handler, 1)
+content = content[:window_event_at + len(game_window_event)] + touch_handler + content[window_event_at + len(game_window_event):]
 capture_condition = 'if pressed && !self.captured {'
 if content.count(capture_condition) != 1:
     raise SystemExit(f"Expected one pointer-capture guard, found {content.count(capture_condition)}")
@@ -1217,6 +1213,13 @@ if game_source.count(split_event_loop) == 1:
         // Android's virtual controls and IME target the primary player (P1).
         self.host.user_event(event_loop, event);
     }"""
+    )
+    // Split routes mouse/window events through type-erased player handlers. Keep the
+    // Winit user-event parameter aligned with the Android event-loop proxy's type.
+    replace_once(
+        split_source,
+        "fn player(&mut self, i: usize) -> Option<(&mut dyn ApplicationHandler, WindowId)> {",
+        "fn player(&mut self, i: usize) -> Option<(&mut dyn ApplicationHandler<horizon_client::AndroidInjectedInput>, WindowId)> {",
     )
     run_event_loop_signature = "fn run_event_loop(mut game: Game<'_>) -> Result<()> {"
     if game_source.count(run_event_loop_signature) != 1:
