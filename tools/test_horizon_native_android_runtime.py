@@ -16,10 +16,10 @@ MIXINS = "b" * 40
 MOD_ID = "sample_native"
 
 
-def native_json():
+def native_json(mod_id=MOD_ID):
     return json.dumps({
         "schema": 1,
-        "id": MOD_ID,
+        "id": mod_id,
         "version": "1.0.0",
         "game": "26.3",
         "horizon": REVISION,
@@ -38,14 +38,14 @@ def mixin_toml(mod_id=MOD_ID, version="1.0.0", revision=REVISION):
     )
 
 
-def make_bundle(path: Path, extras=()):
+def make_bundle(path: Path, mod_id=MOD_ID, extras=()):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("horizon-native.json", native_json())
+        archive.writestr("horizon-native.json", native_json(mod_id))
         archive.writestr(
-            f"mixins/{MOD_ID}/horizon-mixin.toml",
-            mixin_toml(),
+            f"mixins/{mod_id}/horizon-mixin.toml",
+            mixin_toml(mod_id=mod_id),
         )
-        archive.writestr(f"mixins/{MOD_ID}/hook.rs", "fn hook() {}\n")
+        archive.writestr(f"mixins/{mod_id}/hook.rs", "fn hook() {}\n")
         for name, content in extras:
             archive.writestr(name, content)
 
@@ -65,7 +65,7 @@ def main():
 
         # The same native code can be bundled with content, but both IDs must agree.
         combined = root / "combined.hmod"
-        make_bundle(combined, [
+        make_bundle(combined, extras=[
             ("horizon-mod.toml",
              f'id = "{MOD_ID}"\nname = "Sample"\nversion = "1.0.0"\napi = "0.2"\n'),
             ("assets/sample_native/lang/en_us.json", "{}"),
@@ -94,10 +94,12 @@ def main():
         except BUILDER.BundleError:
             pass
 
-        duplicate_a = BUILDER.read_bundle(valid)
-        duplicate_b = BUILDER.read_bundle(combined)
-        key_ab = BUILDER.build_modset_key([duplicate_a, duplicate_b])
-        key_ba = BUILDER.build_modset_key([duplicate_b, duplicate_a])
+        second = root / "second.hnmod"
+        make_bundle(second, mod_id="other_native")
+        bundle_a = BUILDER.read_bundle(valid)
+        bundle_b = BUILDER.read_bundle(second)
+        key_ab = BUILDER.build_modset_key([bundle_a, bundle_b])
+        key_ba = BUILDER.build_modset_key([bundle_b, bundle_a])
         assert key_ab == key_ba
         assert len(key_ab) == 64
         print("Native runtime builder contract tests passed.")
