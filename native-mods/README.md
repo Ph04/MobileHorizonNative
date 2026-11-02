@@ -38,9 +38,13 @@ the app uses the regular Horizon runtime instead.
    message. This is an explicit acknowledgement that you reviewed and trust the
    Rust code. Alternatively, manually dispatch the workflow and confirm
    `I TRUST THESE NATIVE MODS`.
-4. The workflow validates the selected package set, applies `horizon-mixins`,
-   compiles the ARM64 Android Horizon engine, and publishes a versioned release
-   with the binary and SHA-256 manifest. This workflow does not build an APK.
+4. The workflow validates the selected package set and its exact source pins.
+   A mod without a `hooks` API is built against the exact Horizon commit in its
+   `horizon-native.json`; when every selected mod declares a hooks API, the workflow
+   may use the latest official Nightly after checking that API. The matching pinned
+   `horizon-mixins` revision is used for the transformation. It then compiles the
+   ARM64 Android Horizon engine and publishes a versioned release with the binary
+   and SHA-256 manifest. This workflow does not build an APK.
 
 Every release is tied to the exact package bytes, IDs, selected set, upstream Horizon
 commit, and `horizon-mixins` revision. A changed source archive or changed selection
