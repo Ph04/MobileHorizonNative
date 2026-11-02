@@ -129,10 +129,12 @@ new_start_once = """fn start_once(root: &Path, dir: &Path, jars: Vec<PathBuf>, s
         ),
     );
 
-    let home = match horizon_jvm::find_java_home() {
+    let component = java_component(root);
+    let java_log = |line: String| bridge_log("INFO", &line);
+    let home = match horizon_jvm::find_or_fetch_java_home(component.as_deref(), &java_log) {
         Ok(home) => home,
         Err(error) => {
-            bridge_log("ERROR", &format!("Etapa 3/7 falhou ao localizar Java 25: {error}"));
+            bridge_log("ERROR", &format!("Etapa 3/7 falhou ao localizar/preparar Java 25: {error}"));
             return false;
         }
     };
@@ -153,12 +155,22 @@ new_start_once = """fn start_once(root: &Path, dir: &Path, jars: Vec<PathBuf>, s
         ),
     );
 
+    // Shared Class Data (CDS) adds a large first-quit write and has not yet been verified
+    // with the Android OpenJDK build. Keep it disabled on Android until a device test proves
+    // that this runtime supports creating and mapping the archive reliably.
+    let archive = if cfg!(target_os = "android") {
+        bridge_log("INFO", "CDS desativado no Android até validação de compatibilidade do runtime móvel.");
+        None
+    } else {
+        class_archive(&jars)
+    };
     let config = horizon_jvm::Config {
         home,
         work: work.clone(),
         jars: jars.clone(),
         class_path: Vec::new(),
         fabric: Some(fabric_config),
+        class_archive: archive.clone(),
     };
     bridge_log("INFO", "Etapa 4/7: criando a JVM por JNI e inicializando Knot/Fabric Loader.");
     let bridge = match horizon_jvm::start(&config) {
@@ -174,6 +186,13 @@ new_start_once = """fn start_once(root: &Path, dir: &Path, jars: Vec<PathBuf>, s
             "A chamada de inicialização retornou uma JVM sem Fabric; abortando a integração de mods.",
         );
         return false;
+    }
+    if let Some(archive) = &archive {
+        if archive.exists() {
+            bridge_log("INFO", &format!("Classes Java mapeadas do arquivo CDS {}", archive.display()));
+        } else {
+            bridge_log("INFO", &format!("As classes Java serão arquivadas ao sair do jogo ({})", archive.display()));
+        }
     }
 
     let mods: Vec<&str> = bridge
@@ -393,7 +412,7 @@ jvm_source = jvm_source.replace(platform_anchor, platform_export, 1)
 
 # JNI_CreateJavaVM receives LWJGL's library path as a real VM option. This avoids
 # relying on JAVA_TOOL_OPTIONS when the JVM is embedded inside the native engine.
-vm_options_anchor = """    let options = [
+vm_options_anchor = """    let mut options = vec![
         // Leave SIGINT, SIGTERM and SIGHUP to the game: Ctrl+C and shutdown stay Horizon's.
         "-Xrs".to_string(),
         "-Dfile.encoding=UTF-8".into(),
@@ -527,10 +546,12 @@ fabric_boot_replacements = [
     ),
     (
         """        freezeRegistries();
-        List<String> mods = new ArrayList<>();""",
+        if (env == EnvType.CLIENT) {
+            // Minecraft's constructor goes on to its options: the mods' injections there.""",
         """        Natives.log("Java Bridge: finalizing registries after mod entrypoints");
         freezeRegistries();
-        List<String> mods = new ArrayList<>();""",
+        if (env == EnvType.CLIENT) {
+            // Minecraft's constructor goes on to its options: the mods' injections there.""",
     ),
 ]
 for old, new in fabric_boot_replacements:
@@ -1201,8 +1222,8 @@ java_mods_source_path.write_text(java_mods_source, encoding="utf-8")
 
 # Adaptive snapshot cadence: preserve every Java/Fabric tick and every action, but reduce
 # expensive renderer extraction + JSON serialization during high Android memory pressure.
-server_mods_path = root / "crates/horizon-client/src/game/server_mods.rs"
-server_mods_source = server_mods_path.read_text(encoding="utf-8")
+java_server_path = root / "crates/horizon-client/src/game/java_server.rs"
+java_server_source = java_server_path.read_text(encoding="utf-8")
 snapshot_anchor = "let entities = java_mods_on().then(horizon_jvm::events::entities);"
 snapshot_replacement = """let entities = if java_mods_on() {
                     static SNAPSHOT_SEQUENCE: std::sync::atomic::AtomicU64 =
@@ -1219,35 +1240,35 @@ snapshot_replacement = """let entities = if java_mods_on() {
                 } else {
                     None
                 };"""
-if "static SNAPSHOT_SEQUENCE:" not in server_mods_source:
-    if server_mods_source.count(snapshot_anchor) != 1:
-        raise SystemExit(f"{server_mods_path}: Java entity snapshot anchor changed")
-    server_mods_source = server_mods_source.replace(
+if "static SNAPSHOT_SEQUENCE:" not in java_server_source:
+    if java_server_source.count(snapshot_anchor) != 1:
+        raise SystemExit(f"{java_server_path}: Java entity snapshot anchor changed")
+    java_server_source = java_server_source.replace(
         snapshot_anchor, snapshot_replacement, 1
     )
 
 # Build the player's own rendered entities as a String directly instead of allocating
 # Vec<&str> and then a second String through join().
-own_vec_anchor = "                    let mut own = Vec::new();"
-own_vec_replacement = "                    let mut own = String::new();"
-if own_vec_anchor in server_mods_source:
-    server_mods_source = server_mods_source.replace(own_vec_anchor, own_vec_replacement, 1)
-    own_push_anchor = """                            own.push(e.e.get());
-                            continue;"""
-    own_push_replacement = """                            if !own.is_empty() {
-                                own.push(',');
-                            }
-                            own.push_str(e.e.get());
-                            continue;"""
-    if server_mods_source.count(own_push_anchor) != 1:
-        raise SystemExit(f"{server_mods_path}: own entity payload anchor changed")
-    server_mods_source = server_mods_source.replace(own_push_anchor, own_push_replacement, 1)
-    server_mods_source = server_mods_source.replace(
+own_vec_anchor = "                let mut own = Vec::new();"
+own_vec_replacement = "                let mut own = String::new();"
+if own_vec_anchor in java_server_source:
+    java_server_source = java_server_source.replace(own_vec_anchor, own_vec_replacement, 1)
+    own_push_anchor = """                        own.push(e.e.get());
+                        continue;"""
+    own_push_replacement = """                        if !own.is_empty() {
+                            own.push(',');
+                        }
+                        own.push_str(e.e.get());
+                        continue;"""
+    if java_server_source.count(own_push_anchor) != 1:
+        raise SystemExit(f"{java_server_path}: own entity payload anchor changed")
+    java_server_source = java_server_source.replace(own_push_anchor, own_push_replacement, 1)
+    java_server_source = java_server_source.replace(
         'out.push_str(&own.join(","));',
         'out.push_str(&own);',
         1,
     )
-server_mods_path.write_text(server_mods_source, encoding="utf-8")
+java_server_path.write_text(java_server_source, encoding="utf-8")
 
 # Minecraft 26.3 applies the stored graphics preset while Options loads options.txt.
 # That calls RenderSystem.getDevice(), so install Horizon's wgpu-backed device first.
