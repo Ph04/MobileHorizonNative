@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard the Android NativeActivity wrapper against Horizon entrypoint API drift."""
+"""Verify the Android NativeActivity wrapper uses the selected Horizon public entrypoint."""
 from __future__ import annotations
 
 import argparse
@@ -17,36 +17,32 @@ def main() -> int:
     wrapper = args.wrapper.resolve()
     game = source / "crates/horizon-client/src/game.rs"
     lib = source / "crates/horizon-client/src/lib.rs"
-
-    for required in (wrapper, game, lib):
-        if not required.is_file():
-            raise SystemExit(f"Android native entrypoint check: missing {required}")
+    for path in (wrapper, game, lib):
+        if not path.is_file():
+            raise SystemExit(f"Android NativeActivity entrypoint check: missing {path}")
 
     wrapper_text = wrapper.read_text(encoding="utf-8")
     game_text = game.read_text(encoding="utf-8")
     lib_text = lib.read_text(encoding="utf-8")
 
-    call = "horizon_client::game::run_with()"
-    if wrapper_text.count(call) != 1:
+    expected_call = "horizon_client::game::run_with()"
+    actual_old_call = "horizon_client::game::run()"
+    if wrapper_text.count(expected_call) != 1:
         raise SystemExit(
             "Android NativeActivity wrapper must call horizon_client::game::run_with() "
-            f"exactly once; found {wrapper_text.count(call)}"
+            f"exactly once; found {wrapper_text.count(expected_call)}"
         )
-    if "horizon_client::game::run()" in wrapper_text:
-        raise SystemExit(
-            "Obsolete horizon_client::game::run() call remains in the Android wrapper"
-        )
+    if actual_old_call in wrapper_text:
+        raise SystemExit("Obsolete horizon_client::game::run() call remains in the Android wrapper")
     if "pub fn run_with()" not in game_text:
         raise SystemExit(
-            "The selected Horizon checkout does not export game::run_with(); "
-            "adapt the Android wrapper to this upstream API before compiling"
+            "Selected Horizon checkout does not export game::run_with(); "
+            "update the Android wrapper before compiling"
         )
     if "pub mod game;" not in lib_text:
-        raise SystemExit(
-            "The selected Horizon checkout does not publicly export its game module"
-        )
+        raise SystemExit("Selected Horizon checkout does not publicly export the game module")
 
-    print("Android NativeActivity entrypoint matches the selected Horizon game::run_with() API.")
+    print("Android NativeActivity wrapper matches the selected Horizon game::run_with() entrypoint.")
     return 0
 
 
