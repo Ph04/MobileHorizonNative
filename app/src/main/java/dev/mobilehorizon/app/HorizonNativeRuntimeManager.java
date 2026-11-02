@@ -66,21 +66,9 @@ final class HorizonNativeRuntimeManager {
 
     private HorizonNativeRuntimeManager() { }
 
-    static boolean hasNativeMods(File instanceHome) {
-        File directory = new File(instanceHome, "horizon-native-mods");
-        File[] files = directory.listFiles();
-        if (files == null) return false;
-        for (File file : files) {
-            if (!file.isFile()) continue;
-            String name = file.getName().toLowerCase(Locale.ROOT);
-            if (name.endsWith(".hnmod")) return true;
-            if (name.endsWith(".hmod")) {
-                try {
-                    if (HorizonNativeModArchive.readIfPresent(file) != null) return true;
-                } catch (Exception ignored) { }
-            }
-        }
-        return false;
+    /** Only enabled native sources select a custom runtime; installed-but-disabled mods stay dormant. */
+    static boolean hasNativeMods(File instanceHome) throws IOException {
+        return !nativeFiles(instanceHome).isEmpty();
     }
 
     static String buildKey(File instanceHome) throws IOException {
@@ -104,7 +92,7 @@ final class HorizonNativeRuntimeManager {
 
     static void setTrusted(Context context, File instanceHome, String modId, boolean trusted)
             throws IOException {
-        List<NativeFile> files = nativeFiles(instanceHome);
+        List<NativeFile> files = installedNativeFiles(instanceHome);
         NativeFile selected = null;
         for (NativeFile nativeFile : files) {
             if (nativeFile.manifest.id.equals(modId)) {
@@ -121,7 +109,7 @@ final class HorizonNativeRuntimeManager {
 
     static boolean isTrusted(Context context, File instanceHome, String modId) {
         try {
-            List<NativeFile> files = nativeFiles(instanceHome);
+            List<NativeFile> files = installedNativeFiles(instanceHome);
             String instanceKey = instanceKey(instanceHome);
             for (NativeFile nativeFile : files) {
                 if (nativeFile.manifest.id.equals(modId)) {
@@ -138,7 +126,7 @@ final class HorizonNativeRuntimeManager {
         Context app = context.getApplicationContext();
         List<NativeFile> mods = nativeFiles(instanceHome);
         if (mods.isEmpty()) {
-            throw new IOException("Nenhum mod nativo está instalado nesta instância.");
+            throw new IOException("Nenhum mod nativo está ativado nesta instância. Os pacotes instalados e desativados não alteram a runtime normal.");
         }
         if (!isTrusted(app, instanceHome)) {
             throw new IOException("Os mods nativos ainda não foram autorizados. Abra Biblioteca → Gerenciador de recursos e marque Confiar no código para cada pacote cuja origem você verificou.");
@@ -153,11 +141,13 @@ final class HorizonNativeRuntimeManager {
             release = new JSONObject(new String(readUrl(releaseUrl, 1024 * 1024),
                     StandardCharsets.UTF_8));
         } catch (IOException missing) {
-            throw new IOException("Ainda não existe runtime ARM64 compilada para este conjunto de mods ("
-                    + tag + "). Para compilar: adicione os mesmos arquivos originais à pasta native-mods/ "
-                    + "do repositório " + REPOSITORY + " na branch feature/fabric-java-bridge-test e "
-                    + "faça um commit com [trust-native-mods] na mensagem. Esse marcador confirma que "
-                    + "você revisou e confia no código Rust; o workflow então compila e publica a runtime. "
+            throw new IOException("Ainda não existe runtime ARM64 compilada para este conjunto de mods ativados ("
+                    + tag + "). A compilação considera apenas os IDs marcados como true em horizon-mods.txt. "
+                    + "Adicione os mesmos arquivos originais à pasta native-mods/ do repositório "
+                    + REPOSITORY + " na branch feature/fabric-java-bridge-test, habilite seus IDs em "
+                    + "native-mods/enabled-mods.txt e faça um commit com [trust-native-mods] na mensagem. "
+                    + "Esse marcador confirma que você revisou e confia no código Rust; o workflow compila "
+                    + "e publica somente o conjunto ativado. "
                     + "Acompanhe em https://github.com/" + REPOSITORY
                     + "/actions/workflows/native-mod-android-runtime.yml", missing);
         } catch (org.json.JSONException invalid) {
@@ -244,6 +234,17 @@ final class HorizonNativeRuntimeManager {
     }
 
     private static List<NativeFile> nativeFiles(File instanceHome) throws IOException {
+        List<NativeFile> installed = installedNativeFiles(instanceHome);
+        java.util.Set<String> enabled = HorizonModSelection.readEnabledIds(instanceHome);
+        List<NativeFile> selected = new ArrayList<>();
+        for (NativeFile nativeFile : installed) {
+            if (enabled.contains(nativeFile.manifest.id)) selected.add(nativeFile);
+        }
+        return selected;
+    }
+
+    /** All installed packages, including disabled ones, are used for trust and management UI. */
+    private static List<NativeFile> installedNativeFiles(File instanceHome) throws IOException {
         File directory = new File(instanceHome, "horizon-native-mods").getCanonicalFile();
         if (!directory.exists()) return new ArrayList<>();
         if (!directory.isDirectory() || Files.isSymbolicLink(directory.toPath())) {
