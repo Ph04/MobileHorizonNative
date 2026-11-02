@@ -22,8 +22,9 @@ api_level = root / "crates/horizon-mods/src/api_level.rs"
 runtime = root / "crates/horizon-mods/src/runtime.rs"
 sdk = root / "crates/horizon-mod-sdk/src/lib.rs"
 game_mods = root / "crates/horizon-client/src/game/mods.rs"
+packager_check = root / "crates/cargo-horizon-mod/src/check.rs"
 
-required = [wit, manifest, api_level, runtime, sdk, game_mods]
+required = [wit, manifest, api_level, runtime, sdk, game_mods, packager_check]
 missing = [str(path) for path in required if not path.is_file()]
 if missing:
     raise SystemExit("WIT mod manager requires Horizon's complete mod runtime: " + ", ".join(missing))
@@ -324,6 +325,18 @@ replace_once(
                 }""",
     "apply mod-manager enabled changes"
 )
+replace_once(
+    packager_check,
+    "            Output::Give { item, count, .. } => format!(\"gave {count} {item}\"),\n            Output::Shake { strength, seconds } => {",
+    """            Output::Give { item, count, .. } => format!("gave {count} {item}"),
+            Output::ModEnabled { id, enabled } => format!(
+                "requested {} for Horizon module {id}",
+                if enabled { "enable" } else { "disable" }
+            ),
+            Output::Shake { strength, seconds } => {""",
+    "handle ModManager output in the official component checker"
+)
+
 replace_once(
     game_mods,
     "        // A mod may set or clear its settings page in any call, not only\n",
