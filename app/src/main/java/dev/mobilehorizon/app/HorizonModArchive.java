@@ -37,10 +37,6 @@ final class HorizonModArchive {
     private static final Set<String> EXPERIMENTAL_CAPABILITIES = new HashSet<>(
             Arrays.asList("ui", "render", "input", "recipes"));
     private static final Pattern KEY = Pattern.compile("(?m)^\\s*([A-Za-z0-9_-]+)\\s*=");
-    private static final Pattern QUOTED_VALUE = Pattern.compile(
-            "(?m)^\\s*%s\\s*=\\s*(['\"])(.*?)\\1\\s*$");
-    private static final Pattern ARRAY_START = Pattern.compile(
-            "(?ms)^\\s*%s\\s*=\\s*\\[(.*?)\\]");
     private static final Pattern STRING_TOKEN = Pattern.compile("(['\"])(.*?)\\1");
 
     private HorizonModArchive() { }
@@ -92,10 +88,6 @@ final class HorizonModArchive {
 
     private static Manifest parseManifest(String raw) {
         String text = stripComments(raw);
-        for (String key : ALLOWED_KEYS) {
-            // Presence is checked below for required fields; this set documents
-            // and enforces the same deny_unknown_fields contract as PC Horizon.
-        }
         Matcher keys = KEY.matcher(text);
         while (keys.find()) {
             if (!ALLOWED_KEYS.contains(keys.group(1))) return null;
@@ -105,7 +97,12 @@ final class HorizonModArchive {
         String name = scalar(text, "name");
         String version = scalar(text, "version");
         String api = scalar(text, "api");
+        String description = scalar(text, "description");
         String side = scalar(text, "side");
+        if ((containsKey(text, "description") && description == null)
+                || stringArray(text, "authors") == null) {
+            return null;
+        }
         if (side == null) side = "client";
 
         if (id == null || !id.matches("[a-z0-9_]{1,64}")
