@@ -36,6 +36,10 @@ jobs:
           cargo install --locked --git https://github.com/horizon-rust/horizon \
             --rev 6817cb4af09c63f09e299bf5a78e64de79792a8a cargo-horizon-mod
 
+      - name: Lock the POC dependency graph
+        working-directory: modules-poc/wit-player-hud
+        run: cargo generate-lockfile
+
       - name: Test the module's pure logic
         working-directory: modules-poc/wit-player-hud
         run: cargo test --locked
