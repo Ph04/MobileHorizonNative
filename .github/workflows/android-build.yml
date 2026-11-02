@@ -405,7 +405,7 @@ jobs:
           # overlay runtime built before the persistent Java Bridge logs were added.
           FABRIC_RUNTIME_EXPECTED_OVERLAY="$(python3 - <<'PY'
           import hashlib, pathlib, subprocess
-          tracked = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\\0")
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
           paths = sorted(p for p in tracked if p and (
               p.startswith(b"android-native/")
               or p in {
@@ -422,7 +422,7 @@ jobs:
               path = pathlib.Path(raw.decode())
               if not path.is_file():
                   raise SystemExit("Missing runtime input: " + str(path))
-              h.update(raw + b"\\0" + path.read_bytes() + b"\\0")
+              h.update(raw + b"\0" + path.read_bytes() + b"\0")
           print(h.hexdigest()[:8])
           PY
           )"
