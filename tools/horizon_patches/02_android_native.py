@@ -499,6 +499,28 @@ elif lib_source.count(client_lib_glob_reexport) == 1:
     # Newer Java Bridge nightlies move the reusable Result alias into horizon-client-lib
     # and re-export it through this glob. Add Android APIs after the same public export.
     android_runtime_additions = android_runtime_api.split("\n\n", 1)[1]
+
+    # Current horizon-client already defines this self-alias and the public game module
+    # above the glob re-export. Injecting them again creates two distinct copies of every
+    # game type (crate::game and crate::game#1), breaking the entire split-screen client.
+    if "extern crate self as horizon_client;" in lib_source:
+        duplicate_alias = (
+            '#[cfg(target_os = "android")]\n'
+            'extern crate self as horizon_client;\n\n'
+        )
+        if android_runtime_additions.count(duplicate_alias) != 1:
+            raise SystemExit(f"{lib}: expected one Android self-alias injection to suppress")
+        android_runtime_additions = android_runtime_additions.replace(duplicate_alias, "", 1)
+
+    if "pub mod game;" in lib_source:
+        duplicate_game = (
+            '#[cfg(target_os = "android")]\n'
+            'pub mod game;\n\n'
+        )
+        if android_runtime_additions.count(duplicate_game) != 1:
+            raise SystemExit(f"{lib}: expected one Android game-module injection to suppress")
+        android_runtime_additions = android_runtime_additions.replace(duplicate_game, "", 1)
+
     replace_once(
         lib,
         client_lib_glob_reexport,
