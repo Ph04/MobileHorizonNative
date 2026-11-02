@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.zip.ZipFile;
 
 /**
  * Selects a separately compiled Android ARM64 Horizon runtime for one exact set of
@@ -191,9 +190,15 @@ final class HorizonNativeRuntimeManager {
 
         File root = new File(app.getFilesDir(), "horizon-native-runtimes").getCanonicalFile();
         ensureDirectory(root);
-        File versionDir = new File(root, tag).getCanonicalFile();
-        if (!root.equals(versionDir.getParentFile())) {
-            throw new IOException("O caminho do runtime nativo saiu da pasta privada.");
+        // android-bootstrap only accepts downloaded engines under <runtime-root>/versions/<tag>/.
+        File versions = new File(root, "versions").getCanonicalFile();
+        if (!root.equals(versions.getParentFile())) {
+            throw new IOException("A pasta versions do runtime nativo saiu da raiz privada.");
+        }
+        ensureDirectory(versions);
+        File versionDir = new File(versions, tag).getCanonicalFile();
+        if (!versions.equals(versionDir.getParentFile())) {
+            throw new IOException("O caminho da versão nativa saiu da pasta versions.");
         }
         ensureDirectory(versionDir);
         File library = new File(versionDir, ENGINE_FILE).getCanonicalFile();
