@@ -3,6 +3,8 @@ package dev.mobilehorizon.app;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.content.ClipboardManager;
 import android.content.ClipData;
 import android.content.Context;
@@ -18,16 +20,36 @@ import android.graphics.drawable.GradientDrawable;
 import java.io.File;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class ServerFavoritesActivity extends Activity {
     private LinearLayout list;
     private TextView status;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private boolean syncInProgress;
+    private boolean syncQueued;
+    private boolean queuedNotify;
 
     @Override protected void onCreate(Bundle state) {
-        super.onCreate(state); 
+        super.onCreate(state);
         LauncherButtonStyle.install(this);
-getWindow().setStatusBarColor(0xff090911); getWindow().setNavigationBarColor(0xff090911);
-        buildUi(); refresh();
+        getWindow().setStatusBarColor(0xff090911);
+        getWindow().setNavigationBarColor(0xff090911);
+        buildUi();
+        refresh();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        refresh();
+        sync(false);
+    }
+
+    @Override protected void onDestroy() {
+        io.shutdownNow();
+        super.onDestroy();
     }
 
     private void buildUi() {
@@ -74,8 +96,11 @@ getWindow().setStatusBarColor(0xff090911); getWindow().setNavigationBarColor(0xf
         new AlertDialog.Builder(this).setTitle("Adicionar favorito").setView(panel)
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Salvar", (d, w) -> {
-                    try { ServerFavoriteStore.add(this, name.getText().toString(), address.getText().toString()); refresh(); }
-                    catch (Exception error) { showError(error.getMessage()); }
+                    try {
+                        ServerFavoriteStore.add(this, name.getText().toString(), address.getText().toString());
+                        refresh();
+                        sync(false);
+                    } catch (Exception error) { showError(error.getMessage()); }
                 }).show();
     }
 
@@ -83,19 +108,68 @@ getWindow().setStatusBarColor(0xff090911); getWindow().setNavigationBarColor(0xf
         new AlertDialog.Builder(this).setTitle("Excluir favorito?")
                 .setMessage("Remover " + server.name + " da lista deste perfil?")
                 .setNegativeButton("Cancelar", null).setPositiveButton("Excluir", (d, w) -> {
-                    ServerFavoriteStore.delete(this, server.address); refresh();
+                    ServerFavoriteStore.delete(this, server.address);
+                    refresh();
+                    sync(false);
                 }).show();
     }
 
     private void sync() {
-        try {
-            List<ServerFavoriteStore.Favorite> favorites = ServerFavoriteStore.list(this);
-            ArrayList<MinecraftServerList.Server> entries = new ArrayList<>();
-            for (ServerFavoriteStore.Favorite item : favorites) entries.add(new MinecraftServerList.Server(item.name, item.address));
-            File target = new File(GameInstanceManager.getSelectedInstanceHome(this), "servers.dat");
-            MinecraftServerList.merge(target, entries);
-            status.setText("Lista sincronizada em servers.dat. Os servidores existentes foram preservados.");
-        } catch (Exception error) { showError(error.getMessage()); }
+        sync(true);
+    }
+
+    private void sync(boolean notifyOnError) {
+        if (syncInProgress) {
+            syncQueued = true;
+            queuedNotify |= notifyOnError;
+            return;
+        }
+        syncInProgress = true;
+        if (notifyOnError) status.setText("Sincronizando a lista do Minecraft…");
+        io.execute(() -> {
+            Exception failure = null;
+            int count = 0;
+            try {
+                List<ServerFavoriteStore.Favorite> favorites =
+                        ServerFavoriteStore.list(getApplicationContext());
+                count = favorites.size();
+                ArrayList<MinecraftServerList.Server> entries = new ArrayList<>();
+                for (ServerFavoriteStore.Favorite item : favorites) {
+                    entries.add(new MinecraftServerList.Server(item.name, item.address));
+                }
+                java.util.Set<String> previouslySynced =
+                        ServerFavoriteStore.syncedAddresses(getApplicationContext());
+                File target = new File(
+                        GameInstanceManager.getSelectedInstanceHome(getApplicationContext()),
+                        "servers.dat");
+                MinecraftServerList.merge(target, entries, previouslySynced);
+                ServerFavoriteStore.markSynced(getApplicationContext(), favorites);
+            } catch (Exception error) {
+                failure = error;
+            }
+
+            final Exception error = failure;
+            final int syncedCount = count;
+            mainHandler.post(() -> {
+                syncInProgress = false;
+                if (!isFinishing() && !isDestroyed()) {
+                    if (error != null) {
+                        String detail = error.getMessage() == null ? error.toString() : error.getMessage();
+                        if (notifyOnError) showError(detail);
+                        else status.setText("Não foi possível sincronizar automaticamente: " + detail);
+                    } else {
+                        status.setText("Favoritos: " + syncedCount
+                                + " · lista do Minecraft sincronizada nesta instância.");
+                    }
+                }
+                if (syncQueued && !isFinishing() && !isDestroyed()) {
+                    boolean notify = queuedNotify;
+                    syncQueued = false;
+                    queuedNotify = false;
+                    sync(notify);
+                }
+            });
+        });
     }
 
     private void showError(String message) {
