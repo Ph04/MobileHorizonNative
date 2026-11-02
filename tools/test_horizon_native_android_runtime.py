@@ -74,7 +74,10 @@ def main():
         assert BUILDER.read_bundle(combined)["manifest"]["id"] == MOD_ID
 
         bad_path = root / "bad-path.hnmod"
-        make_bundle(bad_path, [(f"mixins/{MOD_ID}/data/../escape.rs", "bad")])
+        make_bundle(
+            bad_path,
+            extras=[(f"mixins/{MOD_ID}/data/../escape.rs", "bad")],
+        )
         try:
             BUILDER.read_bundle(bad_path)
             raise AssertionError("path traversal should have been rejected")
