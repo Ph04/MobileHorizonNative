@@ -138,9 +138,22 @@ if uses_input_crate:
     replace_once(client_input_cargo,
         'controllers = ["dep:horizon-dualsense"]',
         'controllers = ["dep:horizon-dualsense"]\nsystem-clipboard = ["dep:arboard"]')
-    replace_once(client_cargo,
+    # Newer upstream revisions also route controller support through horizon-client-lib.
+    # Preserve either supported desktop feature shape while adding the optional clipboard feature.
+    controller_features = (
         'controllers = ["dep:gilrs", "dep:horizon-dualsense", "horizon-client-input/controllers"]',
-        'controllers = ["dep:gilrs", "dep:horizon-dualsense", "horizon-client-input/controllers"]\nsystem-clipboard = ["horizon-client-input/system-clipboard"]')
+        'controllers = ["horizon-client-lib/controllers", "dep:gilrs", "dep:horizon-dualsense", "horizon-client-input/controllers"]',
+    )
+    matched_controller_features = [feature for feature in controller_features
+                                   if feature in client_cargo.read_text(encoding="utf-8")]
+    if len(matched_controller_features) != 1:
+        raise SystemExit(
+            f"{client_cargo}: expected exactly one supported controllers feature shape, "
+            f"found {len(matched_controller_features)}"
+        )
+    controller_feature = matched_controller_features[0]
+    replace_once(client_cargo, controller_feature,
+                 controller_feature + '\nsystem-clipboard = ["horizon-client-input/system-clipboard"]')
 else:
     replace_once(client_cargo,
         'controllers = ["dep:gilrs", "dep:horizon-dualsense"]',
