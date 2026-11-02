@@ -197,7 +197,7 @@ final class HorizonModArchive {
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             if (comment) {
-                if (c == '\\n') {
+                if (c == '\n') {
                     comment = false;
                     result.append(c);
                 }
@@ -205,7 +205,7 @@ final class HorizonModArchive {
             }
             if (quote != 0) {
                 result.append(c);
-                if (quote == '"' && c == '\\\\' && !escaped) {
+                if (quote == '"' && c == '\\' && !escaped) {
                     escaped = true;
                 } else {
                     if (c == quote && !escaped) quote = 0;
