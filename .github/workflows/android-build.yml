@@ -1,3 +1,4 @@
+# One-shot approval: build the standard APK against the published Java Bridge runtime.
 name: Android build, official downloader and Horizon runtime
 
 concurrency:
