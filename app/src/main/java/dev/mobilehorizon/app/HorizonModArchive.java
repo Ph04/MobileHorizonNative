@@ -60,6 +60,22 @@ final class HorizonModArchive {
             Manifest parsed = parseManifest(manifest);
             if (parsed == null) return null;
 
+            // Content (API 0.2 / registries) must contain actual assets/ or data/
+            // files. A manifest that merely declares registries but ships no content
+            // is not a valid content package and otherwise gets installed as an empty mod.
+            boolean hasContentFiles = false;
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                String name = entry.getName();
+                if (!entry.isDirectory()
+                        && (name.startsWith("assets/") || name.startsWith("data/"))) {
+                    hasContentFiles = true;
+                    break;
+                }
+            }
+            if (parsed.capabilities.contains("registries") && !hasContentFiles) return null;
+
             ZipEntry wasm = zip.getEntry("mod.wasm");
             if (wasm != null && !wasm.isDirectory()) {
                 if (wasm.getSize() > MAX_WASM_BYTES) return null;
