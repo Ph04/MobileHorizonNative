@@ -35,6 +35,10 @@ on:
       - "tools/build_lwjgl_android.sh"
       - "settings.gradle"
       - ".github/workflows/fabric-java-bridge-app-check.yml"
+      - ".github/workflows/native-mod-android-runtime.yml"
+      - "tools/build_horizon_native_android_runtime.py"
+      - "tools/test_horizon_native_android_runtime.py"
+      - "native-mods/**"
   pull_request:
     paths:
       - "app/src/main/java/dev/mobilehorizon/app/FabricBridgeRuntimeManager.java"
@@ -59,6 +63,10 @@ on:
       - "tools/build_lwjgl_android.sh"
       - "settings.gradle"
       - ".github/workflows/fabric-java-bridge-app-check.yml"
+      - ".github/workflows/native-mod-android-runtime.yml"
+      - "tools/build_horizon_native_android_runtime.py"
+      - "tools/test_horizon_native_android_runtime.py"
+      - "native-mods/**"
   workflow_dispatch:
 
 permissions:
@@ -91,6 +99,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+
+      - name: Validate native mod runtime builder (no package execution)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/build_horizon_native_android_runtime.py tools/test_horizon_native_android_runtime.py
+          python3 tools/test_horizon_native_android_runtime.py
 
       - name: Build complete ARM64 LWJGL 3.4.3 core (no APK)
         shell: bash
