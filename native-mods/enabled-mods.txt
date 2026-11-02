@@ -1,0 +1,5 @@
+# Native Android build selection.
+# Keep the installed packages in native-mods/, but compile only IDs marked true.
+# Use the same syntax as the selected instance's horizon-mods.txt.
+# Example: mod.mod_menu:true
+# Disabled packages remain installed in the app but are excluded from the ARM64 build.
