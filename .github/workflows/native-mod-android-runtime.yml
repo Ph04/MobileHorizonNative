@@ -141,6 +141,26 @@ jobs:
           git -C "$SOURCE" checkout --detach FETCH_HEAD
           test "$(git -C "$SOURCE" rev-parse HEAD)" = "$HORIZON_COMMIT"
           echo "HORIZON_SOURCE=$SOURCE" >> "$GITHUB_ENV"
+          # Keep Cargo artifacts outside the disposable staged workspace so Actions
+          # can restore them before horizon-mixins and the Android engine are built.
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/horizon-native-cargo-target" >> "$GITHUB_ENV"
+          echo "CARGO_INCREMENTAL=1" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/horizon-native-cargo-target"
+
+      - name: Restore reusable Cargo build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/horizon-native-cargo-target
+            ${{ runner.temp }}/horizon-native-build/horizon-mixins-tool
+          # Do not key by modset: changing a mod should reuse unaffected crates.
+          # Cargo fingerprints still force every source/dependency change to rebuild.
+          key: horizon-native-cargo-linux-arm64-rust-1.99.1-fast-${{ steps.upstream.outputs.commit }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            horizon-native-cargo-linux-arm64-rust-1.99.1-fast-${{ steps.upstream.outputs.commit }}-
+            horizon-native-cargo-linux-arm64-rust-1.99.1-fast-
 
       - name: Validate packages and apply horizon-mixins to a clean source copy
         shell: bash
@@ -178,11 +198,11 @@ jobs:
           export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
           export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
           export CARGO_BUILD_JOBS=2
-          cargo build --release --no-default-features \
+          cargo build --profile fast --no-default-features \
             --manifest-path "$HORIZON_NATIVE_STAGE/Cargo.toml" \
             -p mobilehorizon-android --target aarch64-linux-android
 
-          LIB="$HORIZON_NATIVE_STAGE/target/aarch64-linux-android/release/libhorizon_engine.so"
+          LIB="$CARGO_TARGET_DIR/aarch64-linux-android/fast/libhorizon_engine.so"
           test -s "$LIB"
           "$TOOLCHAIN/llvm-readelf" -h "$LIB" > "$RUNNER_TEMP/native-engine-header.txt"
           grep -Fq "AArch64" "$RUNNER_TEMP/native-engine-header.txt"
@@ -190,13 +210,24 @@ jobs:
           grep -Fq "ANativeActivity_onCreate" "$RUNNER_TEMP/native-engine-symbols.txt"
           grep -Fq "android_main" "$RUNNER_TEMP/native-engine-symbols.txt"
 
+      - name: Save reusable Cargo build cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/horizon-native-cargo-target
+            ${{ runner.temp }}/horizon-native-build/horizon-mixins-tool
+          key: horizon-native-cargo-linux-arm64-rust-1.99.1-fast-${{ steps.upstream.outputs.commit }}-${{ github.run_id }}-${{ github.run_attempt }}
+
       - name: Package runtime and manifest
         shell: bash
         run: |
           set -euo pipefail
           OUTPUT="$RUNNER_TEMP/native-runtime-release"
           mkdir -p "$OUTPUT"
-          cp "$HORIZON_NATIVE_STAGE/target/aarch64-linux-android/release/libhorizon_engine.so" \
+          cp "$CARGO_TARGET_DIR/aarch64-linux-android/fast/libhorizon_engine.so" \
              "$OUTPUT/horizon-native-runtime-arm64-v8a.so"
           python3 - "$HORIZON_NATIVE_METADATA" "$OUTPUT/horizon-native-runtime-manifest.json" \
             "$OUTPUT/horizon-native-runtime-arm64-v8a.so" <<'PY'
