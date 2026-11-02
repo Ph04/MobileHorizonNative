@@ -1,0 +1,117 @@
+name: Validate Android Horizon WIT runtime (engine only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["feature/fabric-java-bridge-test"]
+    paths:
+      - "android-native/**"
+      - "tools/horizon-revisions.env"
+      - "tools/patch_horizon_android_touch.py"
+      - "tools/horizon_patches/**"
+      - "tools/test_android_horizon_wasm_mod_runtime.py"
+      - ".github/workflows/horizon-wit-runtime-validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: horizon-wit-runtime-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout MobileHorizonNative overlay
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust and Android target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+          targets: aarch64-linux-android
+
+      - name: Install Android SDK and NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018"
+
+      - name: Resolve immutable Horizon runtime pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          HORIZON_COMMIT="$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path("tools/horizon-revisions.env").read_text(encoding="utf-8")
+          match = re.search(r'^HORIZON_RUNTIME_COMMIT="([0-9a-f]{40})"$', text, re.M)
+          if not match:
+              raise SystemExit("HORIZON_RUNTIME_COMMIT is missing or not immutable.")
+          print(match.group(1))
+          PY
+          )"
+          echo "HORIZON_COMMIT=$HORIZON_COMMIT" >> "$GITHUB_ENV"
+          echo "Building pinned Horizon source: $HORIZON_COMMIT"
+
+      - name: Fetch and prepare Horizon Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/horizon-wit-source"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin https://github.com/horizon-rust/horizon.git
+          git -C "$SOURCE" fetch --depth 1 origin "$HORIZON_COMMIT"
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$HORIZON_COMMIT"
+
+          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py tools/test_android_horizon_wasm_mod_runtime.py
+          python3 tools/patch_horizon_android_touch.py "$SOURCE"
+          python3 tools/test_android_horizon_wasm_mod_runtime.py --source "$SOURCE"
+          echo "HORIZON_SOURCE=$SOURCE" >> "$GITHUB_ENV"
+
+      - name: Test Horizon's sandboxed Wasmtime runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path "$HORIZON_SOURCE/Cargo.toml" \
+            -p horizon-mods --lib --features runtime
+
+      - name: Build Horizon NativeActivity engine for Android ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          export CARGO_BUILD_JOBS=2
+          export CARGO_INCREMENTAL=0
+          cargo build --profile fast --no-default-features \
+            --manifest-path "$HORIZON_SOURCE/Cargo.toml" \
+            -p mobilehorizon-android --target aarch64-linux-android
+
+          LIB="$HORIZON_SOURCE/target/aarch64-linux-android/fast/libhorizon_engine.so"
+          test -s "$LIB"
+          "$TOOLCHAIN/llvm-readelf" -h "$LIB" > "$RUNNER_TEMP/horizon-wit-elf-header.txt"
+          grep -Fq "AArch64" "$RUNNER_TEMP/horizon-wit-elf-header.txt"
+          "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" > "$RUNNER_TEMP/horizon-wit-elf-symbols.txt"
+          grep -Fq "ANativeActivity_onCreate" "$RUNNER_TEMP/horizon-wit-elf-symbols.txt"
+          grep -Fq "android_main" "$RUNNER_TEMP/horizon-wit-elf-symbols.txt"
+
+          mkdir -p "$RUNNER_TEMP/horizon-wit-engine"
+          cp "$LIB" "$RUNNER_TEMP/horizon-wit-engine/libhorizon_engine.so"
+          sha256sum "$LIB" > "$RUNNER_TEMP/horizon-wit-engine/SHA256SUMS"
+
+      - name: Upload the WIT-enabled Android engine (no APK, no release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: horizon-android-wit-engine-arm64
+          path: ${{ runner.temp }}/horizon-wit-engine/*
+          if-no-files-found: error
+          retention-days: 14
