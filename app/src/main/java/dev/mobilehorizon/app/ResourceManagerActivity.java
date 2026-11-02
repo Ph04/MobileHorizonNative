@@ -177,7 +177,7 @@ getWindow().setStatusBarColor(0xff090911);
         statusCard.addView(progress, progressParams);
 
         TextView note = text(
-                "Texturas, mods Horizon (.hmod), mods nativos Rust (.hnmod), data packs e shaders. Mods nativos começam desativados. A primeira obtenção da runtime ARM64 correspondente exige conexão; depois ela fica em cache e pode ser usada offline. Alterar o conjunto de mods exige outra runtime compatível.",
+                "Texturas, módulos Horizon WebAssembly (.hmod), conteúdo e mods nativos Rust (.hnmod). Módulos .hmod usam capacidades WIT controladas pelo Horizon; .hnmod continuam sendo código Rust nativo compilado junto do motor. A runtime .hnmod preparada fica em cache e pode ser usada offline.",
                 12, 0xff68728a, false);
         LinearLayout.LayoutParams noteParams = params(-1, -2);
         noteParams.topMargin = dp(10);
@@ -315,7 +315,7 @@ getWindow().setStatusBarColor(0xff090911);
                                     + "'. Remova a versão antiga antes de importar outra.");
                 }
                 File target = copyToTarget(staging, modDir(), fileName(name, ".hmod"));
-                return "mod Horizon " + contentId + " importado desativado ("
+                return "mod/módulo Horizon " + contentId + " importado desativado ("
                         + target.getName() + ")";
             }
             if (!lower.endsWith(".zip")) {
@@ -531,10 +531,14 @@ getWindow().setStatusBarColor(0xff090911);
         if (items != null) for (File file : items) {
             if (!file.isFile() || !file.getName().toLowerCase(Locale.ROOT).endsWith(".hmod")) continue;
             String id = null;
+            boolean wasmModule = hasWasmModule(file);
             try { id = readModId(file); } catch (Exception ignored) {}
+            String detail = id == null ? "Manifest inválido; não pode ser ativado."
+                    : "ID: " + id + (wasmModule
+                    ? " · Módulo WebAssembly (WIT), executado nas capacidades concedidas pelo Horizon."
+                    : " · Mod de conteúdo/registries do Horizon.");
             mods.add(new ResourceItem(Kind.MOD, file.getName(), file, id == null ? "" : id,
-                    id != null && readEnabledModIds().contains(id),
-                    id == null ? "Manifest inválido; não pode ser ativado." : "ID: " + id + " · Mod Horizon."));
+                    id != null && readEnabledModIds().contains(id), detail));
         }
         items = nativeModDir().listFiles();
         if (items != null) for (File file : items) {
@@ -583,8 +587,8 @@ getWindow().setStatusBarColor(0xff090911);
         Collections.sort(shaders, byName);
         Collections.sort(dataPacks, byName);
         addSection("Pacotes de textura", "ZIPs Java com pack.mcmeta e assets/.", textures);
-        addSection("Mods Horizon", "Arquivos .hmod de conteúdo; a ativação vale no próximo início.", mods);
-        addSection("Mods nativos Rust", "Instale sem ativar. Autorize o código e marque Ativar para incluí-lo no conjunto ARM64. Desativar remove o mod da próxima compilação; não há hot-unload de código Rust.", nativeMods);
+        addSection("Módulos e conteúdo Horizon", "Arquivos .hmod: módulos WebAssembly com API WIT e/ou conteúdo assets/data. As capacidades são conferidas pelo Horizon; reinicie o jogo após ativar.", mods);
+        addSection("Mods nativos Rust (.hnmod)", "Pacotes de código nativo baseados em mixins. Exigem uma runtime Horizon compilada para o conjunto ativado; não são módulos .so independentes nem têm hot-unload.", nativeMods);
         addSection("Pacotes de dados", "Selecione a pasta de um mundo salvo para copiar o pack para datapacks/.", dataPacks);
         addSection("Shader packs", "Pastas pack.toml/shaders/ e shader ZIPs Java reconhecidos.", shaders);
         if (textures.isEmpty() && mods.isEmpty() && nativeMods.isEmpty()
@@ -717,6 +721,15 @@ getWindow().setStatusBarColor(0xff090911);
             }
         } catch (IOException ignored) {}
         return false;
+    }
+
+    private boolean hasWasmModule(File file) {
+        try (ZipFile zip = new ZipFile(file)) {
+            ZipEntry wasm = zip.getEntry("mod.wasm");
+            return wasm != null && !wasm.isDirectory();
+        } catch (IOException ignored) {
+            return false;
+        }
     }
 
     private boolean isJavaShaderZip(File file) {
