@@ -9,8 +9,6 @@ on:
       - "native-mods/*.hnmod"
       - "native-mods/*.hmod"
       - "native-mods/enabled-mods.txt"
-      - "tools/build_horizon_native_android_runtime.py"
-      - "tools/test_native_mod_selection.py"
   workflow_dispatch:
     inputs:
       trust_confirmation:
@@ -30,7 +28,7 @@ concurrency:
 
 jobs:
   build:
-    if: (github.event_name == 'workflow_dispatch' && inputs.trust_confirmation == 'I TRUST THESE NATIVE MODS') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[trust-native-mods]') && hashFiles('native-mods/*.hnmod', 'native-mods/*.hmod') != '')
+    if: (github.event_name == 'workflow_dispatch' && inputs.trust_confirmation == 'I TRUST THESE NATIVE MODS') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[trust-native-mods]'))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
