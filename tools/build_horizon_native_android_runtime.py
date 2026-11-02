@@ -41,6 +41,8 @@ class BundleError(ValueError):
 
 
 def read_limited(stream, maximum: int, label: str) -> bytes:
+    if maximum < 0:
+        raise BundleError(f"{label} exceeds its uncompressed size limit")
     data = stream.read(maximum + 1)
     if len(data) > maximum:
         raise BundleError(f"{label} exceeds its uncompressed size limit")
@@ -115,8 +117,8 @@ def toml_identity(raw: bytes, archive: Path) -> tuple[dict, dict]:
 
 
 def read_bundle(archive: Path) -> dict:
-    if not archive.is_file() or archive.suffix.lower() not in (".hnmod", ".hmod"):
-        raise BundleError(f"unsupported native package: {archive}")
+    if archive.is_symlink() or not archive.is_file() or archive.suffix.lower() not in (".hnmod", ".hmod"):
+        raise BundleError(f"unsupported or unsafe native package: {archive}")
     try:
         zf = zipfile.ZipFile(archive)
     except (OSError, zipfile.BadZipFile) as exc:
@@ -203,7 +205,11 @@ def read_bundle(archive: Path) -> dict:
             f"{archive.name}: {NATIVE_MANIFEST} and {MIXIN_MANIFEST} identity/revision differ"
         )
 
-    archive_sha = hashlib.sha256(archive.read_bytes()).hexdigest()
+    archive_digest = hashlib.sha256()
+    with archive.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            archive_digest.update(chunk)
+    archive_sha = archive_digest.hexdigest()
     return {
         "archive": archive,
         "manifest": manifest,
