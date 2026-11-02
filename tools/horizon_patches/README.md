@@ -7,7 +7,7 @@ These files are ordered patch steps, not reusable gameplay mods. They patch Hori
 Only two patch steps are active in the default Android engine:
 
 1. `01_offline_server_login.py` — preserves offline-nickname joining on servers configured for offline mode and lets hybrid servers decide whether a missing Microsoft session is acceptable. Servers that truly require official online authentication still require a valid Microsoft session.
-2. `02_android_native.py` — Android NativeActivity integration, touch/keyboard/clipboard support, audio fallback, GUI scale and native build configuration. It also copies the Android `cdylib` entrypoint into the pinned Horizon source tree for compilation.
+2. `02_android_native.py` — Android NativeActivity integration, touch/keyboard/clipboard support, audio fallback, GUI scale and native build configuration. It also copies the Android `cdylib` entrypoint into the pinned Horizon source tree for compilation. When the exact Horizon revision includes the official `horizon-mods/runtime` and WIT SDK, it additionally enables the existing sandboxed WebAssembly component runtime for `.hmod` code modules. Older Nightlies without that complete runtime keep the original minimal feature set.
 
 The server compatibility experiments remain available in source, but are **not applied to the default runtime** while this work is paused:
 
@@ -19,6 +19,21 @@ The server compatibility experiments remain available in source, but are **not a
 - `07_protocol_maps_and_signs.py` — server map/sign/component rendering compatibility.
 
 These paused files are not deleted, so they can be reactivated selectively after the basic launcher and runtime updater are stable. Editing a paused file does not change the default engine's overlay hash or require a new runtime build.
+
+
+## Sandboxed WIT modules versus native `.hnmod`
+
+On revisions that contain Horizon's `crates/horizon-mods/src/runtime.rs` and
+`crates/horizon-mod-sdk/wit/horizon.wit`, Android enables the upstream
+`horizon-client/mods` feature. These `.hmod` components call Horizon through
+versioned WIT host interfaces; the engine enforces declared capabilities, fuel
+budgets and a 64 MiB memory cap per module. The Wasmtime engine is created lazily
+when code mods are actually loaded.
+
+This does **not** convert the existing Rust mixin `.hnmod` packages into
+WebAssembly components. Those remain on the existing native build path, and older
+Horizon pins that lack the WIT runtime do not enable the feature. Original mod
+archives remain untouched.
 
 ## Updating Horizon
 
