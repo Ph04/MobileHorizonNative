@@ -295,35 +295,28 @@ getWindow().setStatusBarColor(0xff090911);
                         + "). Autorize o código e ative-o na lista para incluí-lo na compilação ARM64.";
             }
             if (lower.endsWith(".hmod")) {
-                HorizonNativeModArchive.Manifest nativeManifest = HorizonNativeModArchive.readIfPresent(staging);
-                String contentId = readModId(staging);
-                if (nativeManifest != null) {
-                    validateNativeGame(nativeManifest);
-                    if (contentId != null && !contentId.equals(nativeManifest.id)) {
-                        throw new IllegalArgumentException("O ID de horizon-mod.toml não corresponde ao horizon-native.json.");
-                    }
-                    if (nativeModIdExists(nativeManifest.id)) {
-                        throw new IllegalArgumentException("Já existe um mod nativo com ID '" + nativeManifest.id + "'. Remova a versão antiga antes de importar outra.");
-                    }
-                    if (contentId != null && modIdExists(contentId)) {
-                        throw new IllegalArgumentException("Já existe um mod de conteúdo com ID '" + contentId + "'.");
-                    }
-                    ensureDirs(nativeModDir());
-                    File nativeTarget = copyToTarget(staging, nativeModDir(), fileName(name, ".hmod"));
-                    if (contentId != null) {
-                        ensureDirs(modDir());
-                        File contentTarget = copyToTarget(staging, modDir(), fileName(name, ".hmod"));
-                        return "mod " + nativeManifest.id + " importado nas partes de conteúdo e nativa ("
-                                + contentTarget.getName() + "). A parte nativa foi instalada desativada; autorize e ative-a para incluí-la na compilação ARM64.";
-                    }
-                    return "mod nativo " + nativeManifest.id + " instalado desativado como fonte ("
-                            + nativeTarget.getName() + "). Autorize o código e ative-o para a compilação ARM64.";
+                HorizonNativeModArchive.Manifest embeddedNative =
+                        HorizonNativeModArchive.readIfPresent(staging);
+                if (embeddedNative != null) {
+                    throw new IllegalArgumentException(
+                            "Código nativo Rust deve ser distribuído separadamente em .hnmod. "
+                                    + "O formato .hmod é reservado exclusivamente a mods de conteúdo.");
                 }
-                if (contentId == null) throw new IllegalArgumentException("Manifesto .hmod inválido ou incompatível com o Horizon. Verifique id, name, version, api e capabilities.");
+                String contentId = readModId(staging);
+                if (contentId == null) {
+                    throw new IllegalArgumentException(
+                            "Manifesto .hmod inválido ou incompatível com o Horizon. "
+                                    + "Verifique id, name, version, api e capabilities.");
+                }
                 ensureDirs(modDir());
-                if (modIdExists(contentId)) throw new IllegalArgumentException("Já existe um mod com ID '" + contentId + "'. Remova a versão antiga antes de importar outra.");
+                if (modIdExists(contentId)) {
+                    throw new IllegalArgumentException(
+                            "Já existe um mod com ID '" + contentId
+                                    + "'. Remova a versão antiga antes de importar outra.");
+                }
                 File target = copyToTarget(staging, modDir(), fileName(name, ".hmod"));
-                return "mod Horizon " + contentId + " importado desativado (" + target.getName() + ")";
+                return "mod Horizon " + contentId + " importado desativado ("
+                        + target.getName() + ")";
             }
             if (!lower.endsWith(".zip")) {
                 throw new IllegalArgumentException("Formato não suportado. Use .hmod, .hnmod, ZIP de textura, data pack ou shader pack.");
@@ -388,7 +381,7 @@ getWindow().setStatusBarColor(0xff090911);
         File directory = nativeModDir();
         File[] files = directory.listFiles((dir, name) -> {
             String lower = name.toLowerCase(Locale.ROOT);
-            return lower.endsWith(".hnmod") || lower.endsWith(".hmod");
+            return lower.endsWith(".hnmod");
         });
         if (files == null) return false;
         for (File file : files) {
@@ -547,7 +540,7 @@ getWindow().setStatusBarColor(0xff090911);
         if (items != null) for (File file : items) {
             if (!file.isFile()) continue;
             String lower = file.getName().toLowerCase(Locale.ROOT);
-            if (!lower.endsWith(".hnmod") && !lower.endsWith(".hmod")) continue;
+            if (!lower.endsWith(".hnmod")) continue;
             String id = "";
             String detail = "Manifesto nativo inválido; não pode ser compilado.";
             try {
