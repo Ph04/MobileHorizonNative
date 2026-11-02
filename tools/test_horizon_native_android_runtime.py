@@ -78,7 +78,7 @@ def main():
         combined = root / "combined.hmod"
         make_bundle(combined, extras=[
             ("horizon-mod.toml",
-             f'id = "{MOD_ID}"\\nname = "Sample"\\nversion = "1.0.0"\\napi = "0.2"\\n'),
+             f'id = "{MOD_ID}"\nname = "Sample"\nversion = "1.0.0"\napi = "0.2"\n'),
             ("assets/sample_native/lang/en_us.json", "{}"),
             ("data/sample_native/tags/item/test.json", "{}"),
         ])
