@@ -1,43 +1,59 @@
-# Horizon dynamic .hnmod WIT module proof of concept
+# Horizon WIT modules on Android
 
-This is a separate sample component. It does not edit, unpack, convert or replace
-any existing `.hnmod` archive.
+This folder contains two derived WIT modules. Neither replaces, edits or
+converts the original source-based `.hnmod` packages.
 
-`wit-player-hud/` implements the pinned Horizon `horizon-mod-sdk` contract.
-It requests only two capabilities:
+## Player HUD probe
 
-- `game-read`: read the local player's position and dimension.
-- `hud`: ask Horizon to draw one text line in its own HUD renderer.
+`wit-player-hud/` reads the local player's position and dimension via
+`game-read` and asks Horizon to draw one HUD line via `hud`. It is a
+small read-only proof of the component-to-host path.
 
-The sample is deliberately small and read-only. It receives player data from the
-Horizon host on the tick hook and sends a HUD request back through WIT. It does
-not hold pointers into Horizon, load native libraries, access files or sockets,
-or launch processes.
+## Mod Menu port seed
 
-Build output is first generated and validated as the official Horizon `.hmod`
-component, then packaged under the MobileHorizonNative dynamic `.hnmod` suffix.
-The archive still contains `horizon-mod.toml` and `mod.wasm`; only its suffix
-changes. The Android importer stores it in `horizon-mods/`, and the patched
-Horizon package discovery loads it through the official WIT runtime. The POC
-workflow produces this `.hnmod` artifact only; it does not build an APK or a
-custom Horizon runtime.
+`mod-menu/` is the first derived WIT port slice of the original
+`mod_menu-0.3.0.hnmod`. It uses Horizon's own settings-page list widget and
+the experimental `mod-manager` capability to list and toggle installed
+WIT/content modules. It deliberately does not claim full parity yet: text
+search, sorting, artwork/badges, legacy native-mixin inventory and all
+desktop-specific operations still need additional widgets or host APIs.
 
-This proves the host/module communication path and the new dynamic `.hnmod`
-package route. It does **not** automatically convert existing mixin-based
-`.hnmod` packages: their original `horizon-native.json` archives remain
-untouched and still require their current native runtime build path. A port of
-each original must be a separate WIT implementation with the required host APIs.
+The manager capability is explicit in the module manifest:
+`capabilities = ["ui", "mod-manager"]` and
+`experimental = ["ui", "mod-manager"]`. Horizon checks imported interfaces
+against these declarations. The host refuses to toggle development modules
+and applies a requested change only after the current hook returns.
 
-## How the POC is intended to be tested
+## Build workflow
 
-1. Run the `Build Horizon WIT module proof of concept` workflow on this branch.
-2. Download its `horizon-api-probe-hnmod` artifact and import the dynamic `.hnmod`
-   with MobileHorizonNative's Resource Manager.
-3. Enable the module for an instance and restart the game.
-4. In a world, look for the `WIT API OK` line at the top-left of the HUD. It
-   should show the player's position and dimension.
+The workflow checks out the exact pinned Horizon revision, applies the Android
+WIT overlay (including the mod-manager API), builds the patched
+`cargo-horizon-mod` packager, then builds and validates both components.
+It uploads a single artifact named `mobilehorizon-wit-hnmod-modules`
+containing:
 
-The Android runtime must itself have been built with the WIT feature enabled.
-The source preflight in the standard/runtime-release pipelines verifies that
-feature selection; it does not rebuild or replace an already published runtime.
-No APK or Android engine has been rebuilt as part of this source-only POC.
+- `horizon_api_probe.hnmod`
+- `mobilehorizon_mod_menu.hnmod`
+
+Each output is produced by the official Horizon component packager as
+`.hmod`, checked, then copied with the MobileHorizonNative dynamic
+`.hnmod` suffix. The internal ZIP format remains
+`horizon-mod.toml` + `mod.wasm`.
+
+This workflow builds component packages only. It does not compile or publish
+an Android engine, APK or runtime release.
+
+## Testing on Android
+
+The game runtime must be built from the patched Horizon source with WIT
+enabled. Import the two dynamic `.hnmod` files through the Resource Manager,
+enable them in an instance and restart the game. The HUD probe displays
+`WIT API OK` in a world. The Mod Menu seed appears as a settings page in
+Options > Mods; selecting a row requests the host to toggle that WIT/content
+module, after which Horizon reloads the module set.
+
+The original `crossversion-0.6.0.hnmod` and
+`mod_menu-0.3.0.hnmod` source archives remain unchanged. These are
+separate derived ports. CrossVersion still needs a host-managed Java/ViaProxy
+service because the WIT sandbox intentionally has no unrestricted process,
+filesystem or network access.
