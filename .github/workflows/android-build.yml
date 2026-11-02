@@ -516,7 +516,7 @@ jobs:
           grep -Fq 'assets/horizon-prepare/jdk-manifest.json' "$RUNNER_TEMP/apk-file-list.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/standard-apk-badging.txt"
           grep -F "name='dev.mobilehorizon.app" "$RUNNER_TEMP/standard-apk-badging.txt"
-          grep -F "versionCode='34'" "$RUNNER_TEMP/standard-apk-badging.txt"
+          grep -F "versionCode='35'" "$RUNNER_TEMP/standard-apk-badging.txt"
           sha256sum "$APK"
           CERT_SHA256="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')"
           echo "$APK signer certificate SHA-256: $CERT_SHA256"
