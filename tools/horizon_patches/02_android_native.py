@@ -1214,8 +1214,8 @@ if game_source.count(split_event_loop) == 1:
         self.host.user_event(event_loop, event);
     }"""
     )
-    // Split routes mouse/window events through type-erased player handlers. Keep the
-    // Winit user-event parameter aligned with the Android event-loop proxy's type.
+    # Split routes mouse/window events through type-erased player handlers. Keep the
+    # Winit user-event parameter aligned with the Android event-loop proxy's type.
     replace_once(
         split_source,
         "fn player(&mut self, i: usize) -> Option<(&mut dyn ApplicationHandler, WindowId)> {",
