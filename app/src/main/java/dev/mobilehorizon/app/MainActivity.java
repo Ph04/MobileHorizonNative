@@ -2344,6 +2344,12 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                 File androidExitHistoryLog = new File(appLogsDirectory, "android-exit-history.log");
                 File javaBridgeLog = new File(appLogsDirectory, "java-bridge-startup.log");
                 File memoryGuardLog = new File(appLogsDirectory, "memory-guard.log");
+                File nativeLifecycleLog = new File(appLogsDirectory, "horizon-native-lifecycle.log");
+                File nativeBootstrapLog = new File(appLogsDirectory, "horizon-bootstrap.log");
+                File horizonRuntimeStatus = new File(
+                        new File(getFilesDir(), "horizon-runtime"), "loader-status.txt");
+                File fabricRuntimeStatus = new File(
+                        new File(getFilesDir(), "fabric-horizon-runtime"), "loader-status.txt");
                 File[] gcLogs = appLogsDirectory.listFiles((dir, name) ->
                         (name.equals("java-gc.log") || name.startsWith("java-gc.log.")));
                 if (gcLogs == null) gcLogs = new File[0];
@@ -2377,6 +2383,10 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                         + "java_bridge_log_present=" + javaBridgeLog.isFile() + "\n"
                         + "memory_guard_log_present=" + memoryGuardLog.isFile() + "\n"
                         + "android_exit_history_present=" + androidExitHistoryLog.isFile() + "\n"
+                        + "native_lifecycle_log_present=" + nativeLifecycleLog.isFile() + "\n"
+                        + "native_bootstrap_log_present=" + nativeBootstrapLog.isFile() + "\n"
+                        + "horizon_runtime_status_present=" + horizonRuntimeStatus.isFile() + "\n"
+                        + "fabric_runtime_status_present=" + fabricRuntimeStatus.isFile() + "\n"
                         + "hotspot_gc_logs_found=" + gcLogs.length + "\n"
                         + "hotspot_fatal_error_present=" + (hotspotErrors.length > 0) + "\n"
                         + "android_exit_traces_found=" + exitTraces.length + "\n"
@@ -2394,9 +2404,17 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                     }
                     addDiagnosticFile(zip, clientResult, "diagnostic/horizon-client-result.txt");
                     addDiagnosticFile(zip, smokeResult, "diagnostic/horizon-native-smoke-result.txt");
+                    addDiagnosticFile(zip, horizonRuntimeStatus,
+                            "diagnostic/horizon-runtime-loader-status.txt");
+                    addDiagnosticFile(zip, fabricRuntimeStatus,
+                            "diagnostic/fabric-runtime-loader-status.txt");
 
                     // Bound each diagnostic entry so a long session or fatal JVM report
                     // cannot create an unexpectedly large archive.
+                    addDiagnosticFileTail(zip, nativeLifecycleLog,
+                            "native/horizon-native-lifecycle.log", 128 * 1024);
+                    addDiagnosticFileTail(zip, nativeBootstrapLog,
+                            "native/horizon-bootstrap.log", 128 * 1024);
                     addDiagnosticFileTail(zip, javaBridgeLog,
                             "java-bridge/java-bridge-startup.log", 512 * 1024);
                     addDiagnosticFileTail(zip, memoryGuardLog,
