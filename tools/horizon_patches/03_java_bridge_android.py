@@ -727,14 +727,32 @@ for required_memory_source in (threads_source_path, game_source_path, events_sou
 
 # Make the JVM memory-pressure signal available to the bridge without Android dependencies.
 threads_source = threads_source_path.read_text(encoding="utf-8")
-threads_import = "use std::sync::atomic::{AtomicBool, Ordering};"
-if threads_source.count(threads_import) != 1:
-    raise SystemExit(f"{threads_source_path}: atomic import anchor changed")
-threads_source = threads_source.replace(
-    threads_import,
-    "use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};",
-    1,
+# Stable Horizon imports atomics through a standalone use; the current Java Bridge
+# branch groups them inside use std::{ ... }. Extend whichever exact form is present.
+threads_imports = (
+    (
+        "use std::sync::atomic::{AtomicBool, Ordering};",
+        "use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};",
+    ),
+    (
+        "atomic::{AtomicBool, Ordering},",
+        "atomic::{AtomicBool, AtomicU8, Ordering},",
+    ),
 )
+if "static MOBILE_MEMORY_PRESSURE: AtomicU8" in threads_source:
+    raise SystemExit(f"{threads_source_path}: duplicate memory watcher")
+matched_imports = [
+    (old, new) for old, new in threads_imports
+    if threads_source.count(old) == 1
+]
+if len(matched_imports) != 1:
+    counts = [threads_source.count(old) for old, _ in threads_imports]
+    raise SystemExit(
+        f"{threads_source_path}: expected one supported atomic import shape; "
+        f"matched {len(matched_imports)} variants with counts {counts}"
+    )
+old_import, new_import = matched_imports[0]
+threads_source = threads_source.replace(old_import, new_import, 1)
 watcher_code = r"""
 
 /// The Android launcher publishes 0..=3; higher levels mean less memory headroom.
