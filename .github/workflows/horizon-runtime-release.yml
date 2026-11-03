@@ -24,7 +24,7 @@ on:
         type: string
         default: feature/fabric-java-bridge-test
   push:
-    branches: ["feature/android-launcher-parity", "feature/horizon-runtime-loader", "feature/fabric-java-bridge-test"]
+    branches: ["feature/android-launcher-parity", "feature/horizon-runtime-loader"]
     paths:
       - "android-native/**"
       - "tools/horizon-revisions.env"
