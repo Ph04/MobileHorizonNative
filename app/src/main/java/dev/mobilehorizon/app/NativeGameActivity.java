@@ -227,25 +227,38 @@ public final class NativeGameActivity extends NativeActivity {
                 runtimeStatus = runtime.statusFile;
                 runtimeVersion = runtime.activeVersion;
             }
-            android.system.Os.unsetenv("HORIZON_NATIVE_MODS_ACTIVE");
+            boolean nativeModsRuntimeSelected = false;
             if (!fabricJavaBridge) {
-                HorizonNativeModManager.PreparedRuntime nativeRuntime =
-                        HorizonNativeModManager.prepareForLaunch(
-                                this, instanceId, runtimeVersion, runtimeLibrary);
+                HorizonNativeModManager.PreparedRuntime nativeRuntime = null;
+                try {
+                    nativeRuntime = HorizonNativeModManager.prepareForLaunch(
+                            this, instanceId, runtimeVersion, runtimeLibrary);
+                } catch (Exception nativeModError) {
+                    android.util.Log.e("MobileHorizon",
+                            "A seleção/runtime .hnmod está inválida; iniciando com Horizon limpo.",
+                            nativeModError);
+                }
                 if (nativeRuntime != null) {
                     runtimeRoot = nativeRuntime.root;
                     runtimeLibrary = nativeRuntime.activeLibrary;
                     runtimeFallback = nativeRuntime.fallbackLibrary;
                     runtimeStatus = nativeRuntime.statusFile;
                     runtimeVersion = nativeRuntime.activeVersion;
-                    android.system.Os.setenv("HORIZON_NATIVE_MODS_ACTIVE",
-                            Integer.toString(nativeRuntime.modCount), true);
+                    nativeModsRuntimeSelected = true;
                     android.util.Log.i("MobileHorizon",
                             "Native .hnmod runtime selected for instance " + instanceId
                                     + ": " + runtimeVersion + " (" + nativeRuntime.modCount + " mods)");
-                } else if (!HorizonNativeModManager.selectedIds(this, instanceId).isEmpty()) {
-                    android.util.Log.w("MobileHorizon",
-                            "Native .hnmod selection is not built for the installed Horizon runtime; starting clean Horizon.");
+                } else {
+                    try {
+                        if (!HorizonNativeModManager.selectedIds(this, instanceId).isEmpty()) {
+                            android.util.Log.w("MobileHorizon",
+                                    "Native .hnmod selection has no matching safe build; starting clean Horizon.");
+                        }
+                    } catch (Exception selectionError) {
+                        android.util.Log.w("MobileHorizon",
+                                "Native .hnmod selection could not be read; starting clean Horizon.",
+                                selectionError);
+                    }
                 }
             }
             android.system.Os.setenv("HORIZON_RUNTIME_HOME", runtimeRoot.getAbsolutePath(), true);
@@ -505,6 +518,19 @@ public final class NativeGameActivity extends NativeActivity {
                     if (session.toPath().startsWith(sessions.toPath()) && session.isFile()) {
                         android.system.Os.setenv("HORIZON_SESSION_FILE", session.getAbsolutePath(), true);
                     }
+                }
+            }
+            if (nativeModsRuntimeSelected) {
+                try (java.io.FileOutputStream marker = new java.io.FileOutputStream(runtimeStatus, false)) {
+                    marker.write(("STARTING:" + runtimeVersion + "\n")
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    marker.flush();
+                    marker.getFD().sync();
+                } catch (Exception markerError) {
+                    // A validated native engine may still be used; log the lost crash-loop guard.
+                    android.util.Log.w("MobileHorizon",
+                            "Não foi possível gravar o marcador STARTING da runtime .hnmod.",
+                            markerError);
                 }
             }
             if (javaBridgeLogFile != null) {

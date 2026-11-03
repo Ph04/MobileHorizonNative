@@ -45,6 +45,10 @@ final class HorizonNativeModManager {
     private static final String ACTIVE_FILE = "active.json";
     private static final String MANIFEST_FILE = "horizon-native-runtime-manifest.json";
     private static final String LIBRARY_NAME = "libhorizon_engine.so";
+    private static final String STATUS_FILE = "loader-status.txt";
+    private static final String REJECTED_FILE = "rejected.json";
+    private static final int MAX_INSTALLED_MODS = 24;
+    private static final long MAX_TOTAL_MOD_BYTES = 256L * 1024L * 1024L;
     private static final long MAX_RUNTIME_BYTES = 300L * 1024L * 1024L;
     private static final int MAX_MANIFEST_BYTES = 1024 * 1024;
     private static final Pattern SAFE_VERSION = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._+-]{0,95}");
@@ -90,6 +94,7 @@ final class HorizonNativeModManager {
         Set<String> enabled = readEnabled(directory);
         File[] files = directory.listFiles((dir, name) ->
                 name.toLowerCase(Locale.ROOT).endsWith(".hnmod"));
+        enforceModArchiveBudget(files, 0L);
         ArrayList<InstalledMod> result = new ArrayList<>();
         if (files != null) {
             for (File file : files) {
@@ -113,6 +118,9 @@ final class HorizonNativeModManager {
         if (target.exists()) {
             throw new IOException("O módulo " + descriptor.id + " já está importado nesta instância.");
         }
+        File[] existing = directory.listFiles((dir, name) ->
+                name.toLowerCase(Locale.ROOT).endsWith(".hnmod"));
+        enforceModArchiveBudget(existing, source.length());
         File temporary = new File(directory,
                 "." + descriptor.id + "." + android.os.Process.myPid() + ".partial");
         if (Files.isSymbolicLink(temporary.toPath())) {
@@ -301,6 +309,9 @@ final class HorizonNativeModManager {
         } catch (JSONException impossible) {
             throw new IOException("Não foi possível registrar o runtime nativo.", impossible);
         }
+        // A manual reinstall is an explicit recovery action for a previously rejected build.
+        clearRuntimeMarker(new File(runtimeRoot, STATUS_FILE));
+        clearRuntimeMarker(new File(runtimeRoot, REJECTED_FILE));
         writeAtomic(new File(runtimeRoot, ACTIVE_FILE), active.toString().getBytes(StandardCharsets.UTF_8));
         return version;
     }
@@ -339,7 +350,27 @@ final class HorizonNativeModManager {
         ensureInside(versionDirectory, library);
         if (!sha256(library).equals(activeHash)) return null;
         verifyAarch64Elf(library);
-        File status = new File(runtimeRoot, "loader-status.txt");
+
+        File status = new File(runtimeRoot, STATUS_FILE);
+        File rejected = new File(runtimeRoot, REJECTED_FILE);
+        String previousStatus = readSmallText(status);
+        if (previousStatus.startsWith("RUNNING:")) {
+            // android_main reached the engine: retire an old startup marker/rejection.
+            clearRuntimeMarker(status);
+            clearRuntimeMarker(rejected);
+        } else if (previousStatus.startsWith("STARTING:")
+                || previousStatus.startsWith("FALLBACK:")
+                || previousStatus.startsWith("ERROR:")
+                || previousStatus.startsWith("FAIL:")) {
+            writeRejectedMarker(rejected, version, activeHash, baseRuntimeVersion);
+            clearRuntimeMarker(status);
+            Log.e(TAG, "A inicialização anterior do Native Mod não chegou a android_main. Usando Horizon limpo nesta instância.");
+            return null;
+        }
+        if (isRejectedBuild(rejected, version, activeHash, baseRuntimeVersion)) {
+            Log.w(TAG, "Runtime .hnmod previamente rejeitada; usando Horizon limpo.");
+            return null;
+        }
         return new PreparedRuntime(runtimeRoot, library, cleanEngine.getCanonicalFile(),
                 status, version, selected.size());
     }
@@ -360,6 +391,10 @@ final class HorizonNativeModManager {
             }
             File versionDirectory = safeChildDirectory(safeChildDirectory(runtimeRoot, "versions"), version);
             File library = new File(versionDirectory, LIBRARY_NAME).getCanonicalFile();
+            if (isRejectedBuild(new File(runtimeRoot, REJECTED_FILE),
+                    version, hash, baseRuntimeVersion)) {
+                return false;
+            }
             JSONObject manifest = readJson(new File(versionDirectory, MANIFEST_FILE), MAX_MANIFEST_BYTES);
             String baseCommit = manifest.optString("base_commit", "");
             String mixinsCommit = manifest.optString("mixins_commit", "");
@@ -374,6 +409,67 @@ final class HorizonNativeModManager {
         } catch (Exception error) {
             return false;
         }
+    }
+
+    private static void enforceModArchiveBudget(File[] files, long additionalBytes) throws IOException {
+        int count = files == null ? 0 : files.length;
+        if (count + (additionalBytes > 0 ? 1 : 0) > MAX_INSTALLED_MODS) {
+            throw new IOException("Uma instância pode manter no máximo " + MAX_INSTALLED_MODS + " módulos nativos.");
+        }
+        long total = additionalBytes;
+        if (files != null) {
+            for (File file : files) {
+                if (Files.isSymbolicLink(file.toPath()) || !file.isFile()) {
+                    throw new IOException("Arquivo .hnmod inválido na pasta de módulos: " + file.getName());
+                }
+                total += file.length();
+                if (total > MAX_TOTAL_MOD_BYTES) {
+                    throw new IOException("Os módulos desta instância excedem 256 MiB no total.");
+                }
+            }
+        }
+    }
+
+    private static String readSmallText(File file) throws IOException {
+        if (Files.isSymbolicLink(file.toPath())) {
+            throw new IOException("Marcador da runtime nativa não pode ser um link simbólico.");
+        }
+        if (!file.isFile()) return "";
+        if (file.length() > 4096) {
+            throw new IOException("Marcador da runtime nativa excede o limite permitido.");
+        }
+        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+    }
+
+    private static void clearRuntimeMarker(File file) throws IOException {
+        if (Files.isSymbolicLink(file.toPath())) {
+            throw new IOException("Marcador da runtime nativa não pode ser um link simbólico.");
+        }
+        if (file.exists() && !file.delete()) {
+            throw new IOException("Não foi possível limpar o marcador da runtime nativa: " + file.getName());
+        }
+    }
+
+    private static void writeRejectedMarker(File file, String version, String hash,
+                                            String baseRuntimeVersion) throws IOException {
+        JSONObject rejected = new JSONObject();
+        try {
+            rejected.put("version", version);
+            rejected.put("sha256", hash);
+            rejected.put("base_runtime_version", baseRuntimeVersion);
+        } catch (JSONException impossible) {
+            throw new IOException("Não foi possível registrar a runtime nativa rejeitada.", impossible);
+        }
+        writeAtomic(file, rejected.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static boolean isRejectedBuild(File file, String version, String hash,
+                                           String baseRuntimeVersion) throws IOException {
+        if (!file.isFile()) return false;
+        JSONObject rejected = readJson(file, 16 * 1024);
+        return version.equals(rejected.optString("version", ""))
+                && hash.equals(rejected.optString("sha256", "").toLowerCase(Locale.ROOT))
+                && baseRuntimeVersion.equals(rejected.optString("base_runtime_version", ""));
     }
 
     private static List<InstalledMod> selectedMods(Context context, String instanceId) throws IOException {

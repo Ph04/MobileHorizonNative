@@ -32,7 +32,7 @@ public final class NativeModsActivity extends Activity {
     private static final int PICK_HNMOD = 7101;
     private static final int PICK_RUNTIME = 7102;
     private static final long MAX_HNMOD_BYTES = 64L * 1024L * 1024L;
-    private static final long MAX_RUNTIME_ARTIFACT_BYTES = 350L * 1024L * 1024L;
+    private static final long MAX_RUNTIME_ARTIFACT_BYTES = 301L * 1024L * 1024L;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private String instanceId;
     private TextView status;
@@ -186,7 +186,7 @@ public final class NativeModsActivity extends Activity {
                 while ((read = input.read(buffer)) != -1) {
                     total += read;
                     if (total > maxBytes) {
-                        throw new IOException(".hnmod limitado a 64 MiB; artefato de runtime limitado a 350 MiB.");
+                        throw new IOException(".hnmod limitado a 64 MiB; artefato de runtime limitado a 301 MiB.");
                     }
                     output.write(buffer, 0, read);
                 }
@@ -331,7 +331,7 @@ public final class NativeModsActivity extends Activity {
                 + "   overlay_source_commit = " + overlayCommit + "\n\n"
                 + "3. Aguarde o workflow validar os pacotes com o parser Rust oficial do Horizon, aplicar os mixins e compilar ARM64.\n\n"
                 + "4. Baixe o artifact ZIP mobilehorizon-native-runtime na execução do Actions (não uma release). Depois selecione o ZIP em “Instalar runtime compilada”.\n\n"
-                + "A compilação roda em runner isolado, sem segredos e sem alterar a runtime limpa compartilhada. O build só será ativado nesta instância se o manifesto, a revisão Horizon, os módulos selecionados, o SHA-256 e o ELF ARM64 corresponderem exatamente.";
+                + "A compilação roda em runner isolado, sem segredos e sem alterar a runtime limpa compartilhada. O build só será ativado nesta instância se o manifesto, a revisão Horizon, os módulos selecionados, o SHA-256 e o ELF ARM64 corresponderem exatamente. Módulos que declarem [[post_build]] são recusados nesta primeira versão porque a execução dessas etapas ainda não foi portada para Android.";
         new AlertDialog.Builder(this)
                 .setTitle("Compilar .hnmod para esta instância")
                 .setMessage(message)
