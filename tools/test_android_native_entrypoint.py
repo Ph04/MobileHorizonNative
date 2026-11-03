@@ -54,6 +54,30 @@ def main() -> int:
     if "pub mod game;" not in lib_text:
         raise SystemExit("Selected Horizon checkout does not publicly export the game module")
 
+    # Android keyboard injection must follow the exact Stable/Nightly API signature.
+    mapped_key_signature = re.search(
+        r"fn mapped_key\\(\\s*&mut self\\s*,\\s*key:\\s*KeyCode\\s*,"
+        r"\\s*pressed:\\s*bool\\s*,\\s*repeat:\\s*bool"
+        r"(?P<raw>\\s*,\\s*raw:\\s*KeyCode)?\\s*\\)\\s*->\\s*Result<\\(\\)>",
+        game_text,
+    )
+    if mapped_key_signature is None:
+        raise SystemExit("Selected Horizon checkout has an unsupported mapped_key signature")
+    mapped_key_call = (
+        "self.mapped_key(mapped_key, pressed, false, key)"
+        if mapped_key_signature.group("raw")
+        else "self.mapped_key(mapped_key, pressed, false)"
+    )
+    if game_text.count(mapped_key_call) != 1:
+        raise SystemExit(
+            f"Generated Android keyboard adapter must call {mapped_key_call!r} exactly once"
+        )
+    if ("fn new_event_loop<T: 'static + Send>() -> Result<EventLoop<T>>" not in game_text
+            or "Ok(EventLoop::<T>::with_user_event().build()?)" not in game_text):
+        raise SystemExit(
+            "Generated Android event-loop factory must build generic Winit user events on both targets"
+        )
+
     print(
         f"Generated Android NativeActivity wrapper matches selected "
         f"Horizon game::{selected}() entrypoint."
