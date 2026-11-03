@@ -1176,7 +1176,10 @@ capture_android_hook = """        #[cfg(target_os = "android")]
             self.player.is_some()
                 && self.title.is_none()
                 && self.screen == Screen::Playing
-                && !self.screen_over_playing(),
+                && self.book.is_none()
+                && self.sign_edit.is_none()
+                && !self.dialog_open()
+                && self.server_packs.prompt.is_none(),
         );"""
 game_content = game.read_text(encoding="utf-8")
 recognized_capture_guards = [
