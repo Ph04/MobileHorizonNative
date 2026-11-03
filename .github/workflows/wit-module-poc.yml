@@ -1,4 +1,4 @@
-name: Build Horizon dynamic hnmod module proof of concept
+name: Build Horizon official WIT .hmod modules
 
 on:
   workflow_dispatch:
@@ -7,7 +7,6 @@ on:
     paths:
       - "modules-poc/**"
       - "tools/horizon_patches/02_android_native.py"
-      - "tools/horizon_patches/09_dynamic_hnmod_modules.py"
       - "tools/horizon_patches/10_mod_manager_api.py"
       - "tools/patch_horizon_android_touch.py"
       - ".github/workflows/wit-module-poc.yml"
@@ -88,8 +87,6 @@ jobs:
           cargo horizon-mod build
           cargo horizon-mod check target/horizon-mod/horizon_api_probe.hmod
           test -s target/horizon-mod/horizon_api_probe.hmod
-          cp target/horizon-mod/horizon_api_probe.hmod target/horizon-mod/horizon_api_probe.hnmod
-          test -s target/horizon-mod/horizon_api_probe.hnmod
 
       - name: Test and build the WIT Mod Menu port
         working-directory: modules-poc/mod-menu
@@ -100,15 +97,13 @@ jobs:
           cargo horizon-mod build
           cargo horizon-mod check target/horizon-mod/mobilehorizon_mod_menu.hmod
           test -s target/horizon-mod/mobilehorizon_mod_menu.hmod
-          cp target/horizon-mod/mobilehorizon_mod_menu.hmod target/horizon-mod/mobilehorizon_mod_menu.hnmod
-          test -s target/horizon-mod/mobilehorizon_mod_menu.hnmod
 
-      - name: Upload dynamic .hnmod test packages
+      - name: Upload official .hmod test packages
         uses: actions/upload-artifact@v4
         with:
-          name: mobilehorizon-wit-hnmod-modules
+          name: mobilehorizon-wit-hmod-modules
           path: |
-            modules-poc/wit-player-hud/target/horizon-mod/horizon_api_probe.hnmod
-            modules-poc/mod-menu/target/horizon-mod/mobilehorizon_mod_menu.hnmod
+            modules-poc/wit-player-hud/target/horizon-mod/horizon_api_probe.hmod
+            modules-poc/mod-menu/target/horizon-mod/mobilehorizon_mod_menu.hmod
           if-no-files-found: error
           retention-days: 30
