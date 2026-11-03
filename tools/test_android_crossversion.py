@@ -63,6 +63,13 @@ def main() -> int:
             "server-list compatibility must follow the pinned Horizon protocol")
     require("HORIZON_CROSSVERSION_DATA_DIR" in engine,
             "the engine and app must share the same private CrossVersion directory")
+    require("is_loopback_address(address)" in engine
+            and "forced.is_none()" in engine,
+            "local servers must not be probed automatically unless an override is configured")
+    offline_login_patch = read(repo / "tools/horizon_patches/01_offline_server_login.py")
+    require("offline-mode fallback did not reach the server" in offline_login_patch
+            and "sending the normal encrypted response" in offline_login_patch,
+            "offline-account login behavior and its matching Rust test must remain aligned")
     require("HORIZON_CROSSVERSION_JAVA" in engine
             and "java_command(java)" in engine,
             "ViaProxy must use the Java runtime selected by MobileHorizonNative")
