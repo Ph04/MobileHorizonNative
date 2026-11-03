@@ -1,4 +1,4 @@
-name: Validate Java Bridge By:iaxivers Android integration (no APK)
+name: Validate Java Bridge Android integration (no APK)
 
 on:
   push:
@@ -29,9 +29,6 @@ on:
       - "tools/horizon_patches/01_offline_server_login.py"
       - "tools/horizon_patches/02_android_native.py"
       - "tools/horizon_patches/03_java_bridge_android.py"
-      - "tools/horizon_patches/11_crossversion_builtin.py"
-      - "tools/crossversion/**"
-      - "tools/test_android_crossversion.py"
       - "tools/test_android_native_entrypoint.py"
       - "tools/patch_horizon_android_touch.py"
       - "tools/patch_android_lwjgl_recipe.py"
@@ -61,9 +58,6 @@ on:
       - "tools/horizon_patches/01_offline_server_login.py"
       - "tools/horizon_patches/02_android_native.py"
       - "tools/horizon_patches/03_java_bridge_android.py"
-      - "tools/horizon_patches/11_crossversion_builtin.py"
-      - "tools/crossversion/**"
-      - "tools/test_android_crossversion.py"
       - "tools/test_android_native_entrypoint.py"
       - "tools/patch_horizon_android_touch.py"
       - "tools/patch_android_lwjgl_recipe.py"
@@ -106,7 +100,6 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Validate Java Bridge and built-in CrossVersion source (no APK)
         shell: bash
         run: |
           set -euo pipefail
@@ -125,11 +118,8 @@ jobs:
 
           export HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE=1
           export HORIZON_ANDROID_PATCH_APPLY_JAVA_BRIDGE=1
-          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py tools/test_android_native_entrypoint.py tools/test_android_crossversion.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
           python3 tools/test_android_native_entrypoint.py --source "$SOURCE"
-          python3 tools/test_android_crossversion.py --source "$SOURCE" --repo "$GITHUB_WORKSPACE"
-          echo "Java Bridge source, Android entry point, and built-in CrossVersion preflight passed."
 
       - name: Build complete ARM64 LWJGL 3.4.3 core (no APK)
         shell: bash

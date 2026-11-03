@@ -1,4 +1,4 @@
-# [build-apk-approved] One-shot isolated test APK for the validated Horizon Nightly + CrossVersion ARM64 runtime.
+# Standard ARM64 APK validation against the independently updated Horizon-only runtime.
 # The Android overlay preflight supports both upstream Game and Bridge Split event loops.
 name: Android build, official downloader and Horizon runtime
 
@@ -19,8 +19,6 @@ on:
       - "tools/patch_horizon_prepare_android_linker.py"
       - "tools/patch_horizon_prepare_asset_index.py"
       - "tools/horizon_patches/**"
-      - "tools/crossversion/**"
-      - "tools/test_android_crossversion.py"
       - "tools/test_android_native_entrypoint.py"
       - "tools/tests/**"
       - "tools/test_android_horizon_wasm_mod_runtime.py"
@@ -304,7 +302,6 @@ jobs:
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Build Horizon NativeActivity client with touch-to-mouse translation
-        if: github.ref != 'refs/heads/feature/fabric-java-bridge-test'
         shell: bash
         env:
           HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
@@ -383,90 +380,6 @@ jobs:
           echo "Built the engine for CI validation and updater-test fixtures only; it is not included in either APK."
           sha256sum "$RUNTIME_STAGE/libhorizon_engine.so" | tee "$RUNNER_TEMP/horizon-engine-sha256.txt"
 
-      - name: Stage the already validated Fabric Java Bridge runtime
-        if: github.ref == 'refs/heads/feature/fabric-java-bridge-test'
-        shell: bash
-        run: |
-          set -euo pipefail
-          source tools/horizon-revisions.env
-          source tools/fabric-java-bridge-revision.env
-          echo "HORIZON_PC_RELEASE_TAG=$HORIZON_RUNTIME_RELEASE_TAG" >> "$GITHUB_ENV"
-          echo "HORIZON_TEST_OLD_RELEASE_TAG=$HORIZON_TEST_OLD_RELEASE_TAG" >> "$GITHUB_ENV"
-
-          # The runtime channel follows the moving upstream java-bridge branch.
-          # Validate the release against the branch HEAD, not a stale SHA recorded
-          # when this APK source was last edited.
-          FABRIC_RUNTIME_EXPECTED_COMMIT="$(git ls-remote \
-            "https://github.com/${FABRIC_HORIZON_REPOSITORY}.git" \
-            "refs/heads/${FABRIC_HORIZON_REF}" | awk 'NR == 1 { print $1 }')"
-          if [[ ! "$FABRIC_RUNTIME_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::Could not resolve current upstream Java Bridge commit."
-            exit 1
-          fi
-          echo "Expecting Java Bridge upstream commit $FABRIC_RUNTIME_EXPECTED_COMMIT"
-
-          # Match the overlay fingerprint used by the runtime publisher. This prevents
-          # the APK from pairing a current upstream SHA with an older Android/diagnostic
-          # overlay runtime built before the persistent Java Bridge logs were added.
-          FABRIC_RUNTIME_EXPECTED_OVERLAY="$(python3 - <<'PY'
-          import hashlib, pathlib, subprocess
-          tracked = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
-          paths = sorted(p for p in tracked if p and (
-              p.startswith(b"android-native/")
-              or p.startswith(b"tools/crossversion/")
-              or p in {
-                  b"tools/patch_horizon_android_touch.py",
-                  b"tools/horizon_patches/01_offline_server_login.py",
-                  b"tools/horizon_patches/02_android_native.py",
-                  b"tools/horizon_patches/03_java_bridge_android.py",
-                  b"tools/horizon_patches/11_crossversion_builtin.py",
-                  b"tools/fabric-java-bridge-revision.env",
-                  b".github/workflows/fabric-java-bridge-runtime.yml",
-              }
-          ))
-          h = hashlib.sha256()
-          for raw in paths:
-              path = pathlib.Path(raw.decode())
-              if not path.is_file():
-                  raise SystemExit("Missing runtime input: " + str(path))
-              h.update(raw + b"\0" + path.read_bytes() + b"\0")
-          print(h.hexdigest()[:8])
-          PY
-          )"
-          echo "Expecting Java Bridge Android overlay $FABRIC_RUNTIME_EXPECTED_OVERLAY"
-
-          RUNTIME_STAGE="$RUNNER_TEMP/horizon-runtime-stage"
-          mkdir -p "$RUNTIME_STAGE"
-          BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/$FABRIC_RUNTIME_RELEASE_TAG"
-          curl --fail --location --retry 4 --retry-all-errors \
-            "$BASE/$FABRIC_ENGINE_ASSET" -o "$RUNTIME_STAGE/libhorizon_engine.so"
-          curl --fail --location --retry 4 --retry-all-errors \
-            "$BASE/$FABRIC_MANIFEST_ASSET" -o "$RUNTIME_STAGE/manifest.json"
-
-          python3 - "$RUNTIME_STAGE" "$FABRIC_LOADER_VERSION" "$FABRIC_API_VERSION" "$FABRIC_RUNTIME_EXPECTED_COMMIT" "$FABRIC_RUNTIME_EXPECTED_OVERLAY" <<'PYFABRIC'
-          import hashlib, json, pathlib, re, sys
-          stage = pathlib.Path(sys.argv[1])
-          expected_loader, expected_api, expected_commit, expected_overlay = sys.argv[2:]
-          manifest = json.loads((stage / "manifest.json").read_text(encoding="utf-8"))
-          engine = stage / "libhorizon_engine.so"
-          digest = hashlib.sha256(engine.read_bytes()).hexdigest()
-          commit = manifest.get("upstream_commit", "")
-          assert manifest.get("upstream_repository") == "iaxivers/horizon"
-          assert manifest.get("upstream_ref") == "java-bridge"
-          assert re.fullmatch(r"[0-9a-f]{40}", commit)
-          assert manifest.get("bridge_commit") == commit
-          assert commit == expected_commit, f"APK runtime is stale: expected {expected_commit}, got {commit}"
-          assert manifest.get("version", "").startswith("fabric-java-bridge-" + commit[:8] + "-o")
-          assert manifest.get("overlay") == expected_overlay, (
-              f"APK runtime overlay is stale: expected {expected_overlay}, got {manifest.get('overlay')}"
-          )
-          assert manifest.get("fabric_loader_version") == expected_loader
-          assert manifest.get("fabric_api_version") == expected_api
-          assert manifest.get("abi") == "arm64-v8a"
-          assert manifest.get("sha256", "").lower() == digest
-          print("Verified latest prebuilt Fabric Java Bridge runtime:", commit, digest)
-          PYFABRIC
-
       - name: Build complete Android ARM64 LWJGL core
         shell: bash
         run: |
@@ -529,12 +442,7 @@ jobs:
           echo "$APK signer certificate SHA-256: $CERT_SHA256"
           test -s "$RUNNER_TEMP/horizon-runtime-stage/libhorizon_engine.so"
           test -s "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
-          if [[ "$GITHUB_REF" == "refs/heads/feature/fabric-java-bridge-test" ]]; then
-            grep -Fq "upstream_repository" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
-            grep -Fq "fabric_loader_version" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
-          else
-            grep -Fq "upstream_tag" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
-          fi
+          grep -Fq "upstream_tag" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
           grep -Fq "sha256" "$RUNNER_TEMP/horizon-runtime-stage/manifest.json"
           if [[ "$STABLE_SIGNING" != "true" ]]; then
             echo "::warning::The standard APK uses an isolated test signing identity and cannot replace the stable installation."

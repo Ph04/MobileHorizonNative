@@ -81,7 +81,6 @@ steps = [
 # The capability-scoped WIT module manager extends Horizon's official .hmod
 # runtime, but some upstream Nightlies no longer ship that complete SDK/runtime.
 # Keep this extension optional: a missing WIT runtime must never block the
-# unrelated built-in CrossVersion integration or a normal Android engine build.
 wit_mod_manager_inputs = (
     root / "crates/horizon-mod-sdk/wit/horizon.wit",
     root / "crates/horizon-mods/src/runtime.rs",
@@ -99,8 +98,6 @@ else:
     print("Horizon has no complete WIT mod-manager source set; skipping only "
           "the optional mod-manager extension: " + ", ".join(missing))
 
-# CrossVersion is an engine feature and is independent of optional WIT support.
-steps.append("11_crossversion_builtin.py")
 # The third patch only applies to the pinned iaxivers/java-bridge checkout.
 if os.environ.get("HORIZON_ANDROID_PATCH_APPLY_JAVA_BRIDGE") == "1":
     steps.append("03_java_bridge_android.py")

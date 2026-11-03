@@ -106,16 +106,6 @@ getWindow().setStatusBarColor(0xff090911);
         updatePojavRuntimeStatus();
         page.addView(javaRuntime, top(-1, -2, 12));
 
-        LinearLayout crossVersion = card();
-        crossVersion.addView(text("CrossVersion integrado", 16, 0xfff0ecff, true), lp(-1, -2));
-        crossVersion.addView(text(
-                "Traduza automaticamente conexões para servidores Java de versões anteriores usando ViaProxy e o Java 25 já instalado pelo launcher. A autenticação online do proxy é configurada separadamente por código de dispositivo Microsoft.",
-                12, 0xffb9b3d1, false), top(-1, -2, 6));
-        crossVersion.addView(button("Abrir configurações CrossVersion", true,
-                v -> startActivity(new android.content.Intent(this, CrossVersionActivity.class))),
-                top(-1, 48, 8));
-        page.addView(crossVersion, top(-1, -2, 12));
-
         LinearLayout notes = card();
         notes.addView(text("Novidades desta compilação", 16, 0xfff0ecff, true), lp(-1, -2));
         addNote(notes, "Runtime Horizon Nightly",
@@ -135,7 +125,7 @@ getWindow().setStatusBarColor(0xff090911);
         LinearLayout limitations = card();
         limitations.addView(text("Limitações conhecidas", 15, 0xfff0ecff, true), lp(-1, -2));
         limitations.addView(text(
-                "CrossVersion usa ViaProxy para conectar a servidores Java de outras versões; ele não é uma ponte para servidores Bedrock e não contorna anticheats. A prévia de skin mostra a textura 64 × 64, não um personagem 3D giratório. Modpacks que exigem carregadores ou mods continuam fora desta linha vanilla.",
+                "A prévia de skin mostra a textura 64 × 64, não um personagem 3D giratório. Modpacks que exigem carregadores ou mods continuam fora desta linha vanilla.",
                 11, 0xffaaa2c6, false), top(-1, -2, 6));
         page.addView(limitations, top(-1, -2, 12));
 

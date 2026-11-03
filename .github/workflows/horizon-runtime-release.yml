@@ -31,8 +31,6 @@ on:
       - "tools/horizon-revisions.env"
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
-      - "tools/crossversion/**"
-      - "tools/test_android_crossversion.py"
       - ".github/workflows/horizon-runtime-release.yml"
 
 permissions:
@@ -134,7 +132,6 @@ jobs:
               if entry in exact_inputs
               or entry.startswith(b"android-native/")
               or entry.startswith(b"tools/horizon_patches/")
-              or entry.startswith(b"tools/crossversion/")
           )
           if not overlay_paths:
               raise SystemExit("No tracked Android runtime build inputs were found.")
@@ -281,7 +278,6 @@ jobs:
         env:
           UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
           UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
-          # The legacy compatibility socket is not part of this runtime. CrossVersion
           # is the supported protocol adapter and is injected by patch group 11.
           HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
         shell: bash
@@ -293,10 +289,8 @@ jobs:
           git -C "$SOURCE" fetch --depth 1 origin "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
           git -C "$SOURCE" checkout --detach "$UPSTREAM_TAG"
           test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
-          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py tools/test_android_horizon_wasm_mod_runtime.py tools/test_android_crossversion.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
           python3 tools/test_android_horizon_wasm_mod_runtime.py --source "$SOURCE"
-          python3 tools/test_android_crossversion.py --source "$SOURCE" --repo "$GITHUB_WORKSPACE"
           echo "Prepared $UPSTREAM_TAG ($UPSTREAM_COMMIT) with the Android compatibility overlay and WIT module feature check."
 
       - name: Test patched platform-neutral Horizon crates

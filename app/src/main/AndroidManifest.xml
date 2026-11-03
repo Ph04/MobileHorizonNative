@@ -33,12 +33,6 @@
         <activity android:name=".LibraryActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Biblioteca" />
         <activity android:name=".SettingsActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Configurações e novidades" />
 
-        <activity
-            android:name=".CrossVersionActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:exported="false"
-            android:label="CrossVersion" />
-
         <activity android:name=".ProfilesActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Perfis e contas" />
 
         <activity android:name=".SkinCapeActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:label="Skins e capas" />
@@ -106,11 +100,6 @@
             android:foregroundServiceType="dataSync" />
         <service
             android:name=".MicrosoftAuthService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <service
-            android:name=".CrossVersionService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
