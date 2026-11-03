@@ -232,6 +232,8 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
         || -> horizon_client::Result<()> {
             horizon_client::logging::init(&home, "Render thread");
             horizon_client::crash::install(home.clone(), "client");
+            // The Horizon patcher selects game::run() for Stable and rewrites this
+            // call to game::run_with() when the selected Nightly exports that API.
             let game_result = horizon_client::game::run();
             if let Err(error) = game_result {
                 eprintln!("Horizon: {error}");
