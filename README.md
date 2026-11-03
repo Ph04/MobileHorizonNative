@@ -85,12 +85,34 @@ Sem a chave persistente, os APKs de teste são assinados por uma chave de CI tem
 
 The main screen follows the Horizon launcher layout adapted to mobile: a pixel-art runtime banner and play action, readiness rows, downloads and conversion, the resource manager, offline/Microsoft profiles, local logs, Vulkan diagnostics, and runtime updates. In landscape on sufficiently wide screens it uses an instance/navigation sidebar; in portrait it becomes a single scrolling dashboard. The resource manager shares the same dark/purple visual theme.
 
-## Horizon PC release and updater test
+## Horizon runtime update channel
 
-The launcher shows the PC Horizon release tag (currently pinned to `v0.2.50`) separately from the unique Android engine build. The stable runtime publisher checks upstream releases hourly. A separate `updaterTestDebug` APK is built for the upgrade path: first it downloads the previous engine (`v0.2.49`), then the normal manual/automatic check can upgrade to `v0.2.50`. The test APK is distributed as the `mobilehorizon-native-horizon-updater-test` Actions artifact and uses a dedicated prerelease fixture ignored by the standard updater.
+The Horizon engine runtime is updated independently from the Android APK. The
+publisher resolves the official moving Horizon Nightly tag to an immutable
+40-character commit, compiles the Android ARM64 engine and publishes a versioned
+runtime release with its manifest and SHA-256. The runtime ID includes the
+upstream commit and the Android overlay fingerprint.
 
-## Native Horizon runtime updates
+The app checks the runtime channel every five minutes, validates the release
+manifest, asset digest and ARM64 ELF, and installs only when the verified active
+runtime ID differs from the published build. A valid installed runtime is not
+downloaded again. Changes under `tools/crossversion/` are included in the
+overlay fingerprint, so CrossVersion engine changes produce a new runtime
+without requiring an APK update.
 
-The `feature/horizon-runtime-loader` design keeps a small `libhorizon_android.so` bootstrap inside the APK and stores each verified Horizon engine (`libhorizon_engine.so`) in a separate app-private version directory. SHA-256/ARM64 checks, an atomic active-version record, and a bundled fallback are implemented as the foundation for in-place engine updates. See [the native runtime updater notes](docs/native-runtime-updater.md).
+The periodic scheduler must remain on the default branch because GitHub only
+runs scheduled workflows from there. PR #23 switches that scheduler to use
+`feature/fabric-java-bridge-test` as the runtime source. The source branch's
+push-triggered publication remains disabled while this integration is being
+validated; the reusable workflow can still be dispatched explicitly. These
+workflows publish only the Horizon engine runtime, not an APK.
 
-This branch also adds a release-checking service and a scheduled workflow that builds/publishes versioned Android ARM64 engines. Signed-manifest verification, detailed download progress, updates for the preparer/resource modules, and device validation remain outstanding. This work has not yet been compiled or tested on-device.
+## CrossVersion
+
+CrossVersion lets the Minecraft 26.3 client connect to older-protocol servers
+by routing those connections through ViaProxy on loopback. Same-version 26.3
+servers continue to connect directly. It is a network protocol translator, not
+a general cross-version mod, world, or resource-pack compatibility layer.
+The Android integration uses the Java 25 runtime already managed by the
+launcher and is built into the Horizon engine runtime. See
+[CrossVersion integration](docs/crossversion-integration.md).
