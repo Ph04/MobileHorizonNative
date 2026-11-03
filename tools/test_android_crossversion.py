@@ -56,6 +56,11 @@ def main() -> int:
     require("crossversion::should_badge()" in net
             and "crossversion_decisions::badge(json, address)" in net,
             "server-list status pings must display the translated protocol")
+    require("fn mobilehorizon_authenticate_if_present<T, E>(" in net
+            and "mobilehorizon_offline_auth_tests" in net
+            and "no_microsoft_session_does_not_preempt_encrypted_challenge" in net
+            and "configured_microsoft_session_still_runs_join_authentication" in net,
+            "the patched Horizon login must pass the no-account encrypted-challenge tests on stable and Nightly sources")
     require("pub mod crossversion" in net
             and 'include!("crossversion_engine.rs")' in net,
             "CrossVersion must be compiled into horizon-client, not loaded as a mod")
