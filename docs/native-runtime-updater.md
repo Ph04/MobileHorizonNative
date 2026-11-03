@@ -45,15 +45,18 @@ The default Horizon runtime applies the Android integration and the checked Cros
 
 ## Updater-test APK
 
-The `updaterTestDebug` flavor is a separate package and is uploaded as `mobilehorizon-native-horizon-updater-test`. On its first launch it downloads the real Android engine built from PC release `v0.2.49`, verifies it, and selects it as the active runtime. A manual update check (or a later automatic check) then downloads the engine built from `v0.2.50` from a dedicated prerelease fixture and activates it for the next game launch. The fixture release is marked prerelease and is intentionally ignored by the standard updater.
-
-The normal `standardDebug` APK never runs the forced-old-version seed logic. The updater-test APK is specifically for validating the remote-download/hash/install/activation path; do not use its prerelease endpoint as a production update channel.
+The automatic runtime publisher builds and releases only the Android ARM64
+Horizon engine; it does not assemble an extra APK. The standard Android build
+workflow also skips APK assembly on this development branch unless an explicit
+`[build-apk-approved]` marker is present in a push commit. Any updater-test
+fixture remains isolated to explicit test variants and is ignored by the
+standard updater, which accepts published non-prerelease runtime releases only.
 
 ## Remaining production requirements
 
 The manifest is **not cryptographically signed yet**. The current trust model is HTTPS plus GitHub's published asset digests and the project's release account; it detects incomplete/corrupt downloads, but it does not protect against a compromised release account. Before treating this as production-hardened, add a project-controlled signature over the manifest and verify it in the app.
 
-The current updater targets the Horizon engine only. The `horizon-prepare` executable, JDK runtime metadata, resource data, and compatibility modules are still packaged or managed separately; their versioned updating and dependency compatibility need a subsequent phase. Detailed download progress, automatic cleanup of old versions, and a user-facing auto-update toggle are also outstanding.
+The updater targets the Horizon engine only. `tools/horizon-revisions.env` remains a static pin for the Android preparation/fallback packaging path; it does not cap the separate moving-Nightly runtime updater. The `horizon-prepare` executable, JDK runtime metadata, resource data, and compatibility modules are still packaged or managed separately; their versioned updating and dependency compatibility need a subsequent phase. Detailed download progress, automatic cleanup of old versions, and a user-facing auto-update toggle are also outstanding.
 
 Before merging, the build must be authorized and then verify that the CMake bootstrap exports `ANativeActivity_onCreate`, the Rust engine exports the activity and JNI entry points, the APK packages both components, and a device can load the engine from app-private storage on Android 16. This branch has not been compiled or device-tested yet.
 
