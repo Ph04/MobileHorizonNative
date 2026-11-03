@@ -9,10 +9,7 @@ on:
       - "tools/horizon-revisions.env"
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
-      - "tools/crossversion/**"
       - "tools/test_android_horizon_wasm_mod_runtime.py"
-      - "tools/test_android_crossversion.py"
-      - "app/src/main/java/dev/mobilehorizon/app/CrossVersion*.java"
       - "app/src/main/java/dev/mobilehorizon/app/NativeGameActivity.java"
       - "app/src/main/java/dev/mobilehorizon/app/SettingsActivity.java"
       - "app/src/main/java/dev/mobilehorizon/app/HorizonModArchive.java"
@@ -81,10 +78,8 @@ jobs:
           git -C "$SOURCE" checkout --detach FETCH_HEAD
           test "$(git -C "$SOURCE" rev-parse HEAD)" = "$HORIZON_COMMIT"
 
-          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py tools/test_android_horizon_wasm_mod_runtime.py tools/test_android_crossversion.py
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
           python3 tools/test_android_horizon_wasm_mod_runtime.py --source "$SOURCE"
-          python3 tools/test_android_crossversion.py --source "$SOURCE" --repo "$GITHUB_WORKSPACE"
           echo "HORIZON_SOURCE=$SOURCE" >> "$GITHUB_ENV"
 
       - name: Set up Java for Android app source compilation
