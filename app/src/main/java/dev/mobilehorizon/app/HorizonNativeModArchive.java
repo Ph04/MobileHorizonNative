@@ -88,7 +88,7 @@ final class HorizonNativeModArchive {
             JSONObject manifest;
             try {
                 manifest = new JSONObject(new String(manifestBytes, StandardCharsets.UTF_8));
-            } catch (RuntimeException error) {
+            } catch (org.json.JSONException | RuntimeException error) {
                 throw new IOException("horizon-native.json não contém JSON válido.", error);
             }
             rejectUnknownManifestKeys(manifest);
