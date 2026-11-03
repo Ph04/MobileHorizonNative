@@ -29,6 +29,17 @@ def main() -> int:
     source = args.source.resolve()
     repo = args.repo.resolve()
 
+    adapter_path = repo / "tools/horizon_patches/11_crossversion_builtin.py"
+    adapter = read(adapter_path)
+    for marker, reason in (
+        ("connect_legacy_old", "the stable Horizon connect signature is not supported"),
+        ("connect_current_old", "the current Nightly connect signature is not supported"),
+        ("transfer_legacy_old", "the stable transferred-connect signature is not supported"),
+        ("transfer_current_old", "the current Nightly transferred-connect signature is not supported"),
+        ("replace_one_of", "the adapter no longer validates exact supported API anchors"),
+    ):
+        require(marker in adapter, reason)
+
     net_path = source / "crates/horizon-client/src/net.rs"
     engine_path = source / "crates/horizon-client/src/crossversion_engine.rs"
     decisions_path = source / "crates/horizon-client/src/crossversion_decisions.rs"
