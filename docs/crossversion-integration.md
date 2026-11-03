@@ -27,6 +27,28 @@ configuration. The proxy is released when the game session ends. This translates
 network protocol traffic only; it does not make old mods, worlds or resource packs
 compatible.
 
+## Offline accounts and older servers
+
+When no Microsoft account is selected in the ViaProxy account manager, the engine
+starts ViaProxy with `--auth-method NONE`. This is ViaProxy's offline backend
+authentication mode. The Android Horizon login patch also allows a no-account
+profile to complete the encrypted protocol challenge instead of rejecting it
+locally; the destination server then decides whether to admit that player name.
+
+This is intended to support older servers that permit offline players
+(`online-mode=false`) when their protocol is supported by ViaProxy. It does not
+bypass premium authentication: servers that require Microsoft/Mojang online-mode
+authentication still require a valid account. Server plugins, whitelists, UUID
+policies, proxy networks or name restrictions may also reject an offline profile.
+Offline UUIDs and premium UUIDs are different, so permissions, inventories or
+skins tied to a premium UUID are not guaranteed to match. If automatic version
+detection cannot identify a legacy server, the per-address target-version
+override can be used.
+
+The Rust tests cover the no-account handshake and the `NONE` ViaProxy launch
+argument independently. A real Android connection to an offline-mode server is
+still required for end-to-end confirmation.
+
 The Android app owns `filesDir/crossversion/config.json` and the private
 ViaProxy directory. It supplies those paths and the existing Java runtime to the
 engine as process environment variables. Microsoft device-code sign-in is handled
