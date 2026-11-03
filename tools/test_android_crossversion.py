@@ -82,9 +82,11 @@ def main() -> int:
             and "automatic_mode_uses_a_saved_microsoft_account" in engine,
             "offline override, no-account, and automatic Microsoft account modes must have Rust unit tests")
     offline_login_patch = read(repo / "tools/horizon_patches/01_offline_server_login.py")
-    require("offline-mode fallback did not reach the server" in offline_login_patch
-            and "sending the normal encrypted response" in offline_login_patch,
-            "offline-account login behavior and its matching Rust test must remain aligned")
+    require("mobilehorizon_authenticate_if_present" in offline_login_patch
+            and "no_microsoft_session_does_not_preempt_encrypted_challenge" in offline_login_patch
+            and "configured_microsoft_session_still_runs_join_authentication" in offline_login_patch
+            and "offline-mode fallback did not reach the server" in offline_login_patch,
+            "offline-account login behavior and its helper tests must remain aligned across Stable and Nightly")
     android_native_patch = read(repo / "tools/horizon_patches/02_android_native.py")
     require("entrypoints = {" in android_native_patch
             and 'if len(entrypoints) != 1:' in android_native_patch
