@@ -31,7 +31,8 @@ public final class NativeModsActivity extends Activity {
     public static final String EXTRA_INSTANCE_ID = "instance_id";
     private static final int PICK_HNMOD = 7101;
     private static final int PICK_RUNTIME = 7102;
-    private static final long MAX_IMPORT_BYTES = 64L * 1024L * 1024L;
+    private static final long MAX_HNMOD_BYTES = 64L * 1024L * 1024L;
+    private static final long MAX_RUNTIME_ARTIFACT_BYTES = 350L * 1024L * 1024L;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private String instanceId;
     private TextView status;
@@ -128,8 +129,9 @@ public final class NativeModsActivity extends Activity {
         io.execute(() -> {
             Exception failure = null;
             String resultText = "";
+            File staged = null;
             try {
-                File staged = copySelectedUri(uri, requestCode == PICK_HNMOD ? ".hnmod" : ".zip");
+                staged = copySelectedUri(uri, requestCode == PICK_HNMOD ? ".hnmod" : ".zip");
                 if (requestCode == PICK_HNMOD) {
                     HorizonNativeModArchive.Descriptor descriptor =
                             HorizonNativeModManager.importArchive(this, instanceId, staged);
@@ -144,9 +146,16 @@ public final class NativeModsActivity extends Activity {
                             this, instanceId, staged, base);
                     resultText = "Runtime nativa verificada e instalada: " + version
                             + ". Será usada somente nesta instância na próxima inicialização.";
+                } else {
+                    throw new IOException("Operação de importação desconhecida.");
                 }
             } catch (Exception error) {
                 failure = error;
+            } finally {
+                if (staged != null && staged.exists() && !staged.delete()) {
+                    android.util.Log.w("HorizonNativeMods",
+                            "Não foi possível remover o arquivo temporário " + staged);
+                }
             }
             final Exception error = failure;
             final String message = resultText;
@@ -164,6 +173,8 @@ public final class NativeModsActivity extends Activity {
         if (!displayName.toLowerCase(Locale.ROOT).endsWith(expectedExtension)) {
             throw new IOException("Selecione um arquivo " + expectedExtension + ".");
         }
+        long maxBytes = ".hnmod".equals(expectedExtension)
+                ? MAX_HNMOD_BYTES : MAX_RUNTIME_ARTIFACT_BYTES;
         File staging = new File(getCacheDir(), "native-mod-import-" + android.os.Process.myPid()
                 + "-" + System.nanoTime() + expectedExtension);
         try (InputStream input = getContentResolver().openInputStream(uri)) {
@@ -174,7 +185,9 @@ public final class NativeModsActivity extends Activity {
                 int read;
                 while ((read = input.read(buffer)) != -1) {
                     total += read;
-                    if (total > MAX_IMPORT_BYTES) throw new IOException("O arquivo excede 64 MiB.");
+                    if (total > maxBytes) {
+                        throw new IOException(".hnmod limitado a 64 MiB; artefato de runtime limitado a 350 MiB.");
+                    }
                     output.write(buffer, 0, read);
                 }
                 output.flush();
@@ -309,13 +322,16 @@ public final class NativeModsActivity extends Activity {
             return;
         }
         String baseTag = HorizonNativeModManager.baseRuntimeReleaseTag(base);
+        String overlayCommit = "4b19ed9d767bd715dda1d6092d12b9348effe8ea";
         String message = "Build remoto para esta instância:\n\n"
                 + "1. Na página Releases do repositório MobileHorizonNative, crie uma release temporária com uma tag única (por exemplo hnmod-input-01) e envie como assets somente os .hnmod que estão selecionados nesta instância.\n\n"
                 + "2. Abra o workflow Build Horizon native .hnmod runtime e informe:\n"
-                + "   mod_release_tag = tag da release temporária\n"
+                + "   mod_release_tag = tag da release dos .hnmod\n"
                 + "   base_runtime_tag = " + baseTag + "\n\n"
-                + "3. Aguarde o artefato mobilehorizon-native-runtime. Baixe o ZIP e use “Instalar runtime compilada” nesta tela.\n\n"
-                + "A compilação acontece em runner isolado, sem segredos do repositório. O workflow valida cada arquivo com o parser nativo oficial do Horizon e exige que o pacote corresponda exatamente ao commit da runtime base.";
+                + "   overlay_source_commit = " + overlayCommit + "\n\n"
+                + "3. Aguarde o workflow validar os pacotes com o parser Rust oficial do Horizon, aplicar os mixins e compilar ARM64.\n\n"
+                + "4. Baixe o artifact ZIP mobilehorizon-native-runtime na execução do Actions (não uma release). Depois selecione o ZIP em “Instalar runtime compilada”.\n\n"
+                + "A compilação roda em runner isolado, sem segredos e sem alterar a runtime limpa compartilhada. O build só será ativado nesta instância se o manifesto, a revisão Horizon, os módulos selecionados, o SHA-256 e o ELF ARM64 corresponderem exatamente.";
         new AlertDialog.Builder(this)
                 .setTitle("Compilar .hnmod para esta instância")
                 .setMessage(message)
