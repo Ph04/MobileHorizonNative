@@ -36,7 +36,7 @@
 use std::{
     fs,
     io::Read,
-    net::{TcpListener, TcpStream},
+    net::{IpAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
@@ -157,6 +157,21 @@ thread_local! {
     static IN_ROUTE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// Detect loopback targets. These are often local servers and test fixtures that
+/// expose only the login handshake, not the status protocol. They stay direct by
+/// default; an explicit per-server version override or diagnostic "always" mode
+/// can still route them through ViaProxy.
+fn is_loopback_address(address: &str) -> bool {
+    let host = if let Some(rest) = address.strip_prefix('[') {
+        rest.split_once(']').map(|(host, _)| host).unwrap_or(rest)
+    } else {
+        address.rsplit_once(':').map(|(host, _)| host).unwrap_or(address)
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host.ends_with(".localhost")
+        || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
 /// Where a join should go: `Some("127.0.0.1:<port>")` when the server needs the
 /// proxy, `None` to leave the client alone.
 pub fn route(address: &str) -> Option<String> {
@@ -184,6 +199,9 @@ pub fn route(address: &str) -> Option<String> {
         .find(|(known, _)| known.eq_ignore_ascii_case(address))
         .map(|(_, version)| version.clone())
         .filter(|version| version != "auto");
+    if forced.is_none() && !settings.always && is_loopback_address(address) {
+        return None;
+    }
     let protocol = if forced.is_some() {
         None
     } else {
@@ -1109,5 +1127,22 @@ mod tests {
     #[test]
     fn a_java_home_needs_a_release_file() {
         assert_eq!(release_major(Path::new("/nonexistent")), None);
+    }
+
+    #[test]
+    fn loopback_targets_are_recognized_without_parsing_the_port_as_a_host() {
+        for address in [
+            "localhost:25565",
+            "host.localhost:25565",
+            "127.0.0.1:25565",
+            "127.42.0.9:25565",
+            "[::1]:25565",
+            "[::ffff:127.0.0.1]:25565",
+        ] {
+            assert!(is_loopback_address(address), "{address}");
+        }
+        for address in ["example.net:25565", "192.168.1.5:25565", "[2001:db8::1]:25565"] {
+            assert!(!is_loopback_address(address), "{address}");
+        }
     }
 }
