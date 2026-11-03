@@ -94,14 +94,29 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.setenv("HORIZON_CROSSVERSION_JAVA_TOOL_OPTIONS",
                     options, true);
         } catch (Exception error) {
-            android.system.Os.unsetenv("HORIZON_CROSSVERSION_JAVA");
-            android.system.Os.unsetenv("HORIZON_CROSSVERSION_JAVA_HOME");
-            android.system.Os.unsetenv("HORIZON_CROSSVERSION_LD_LIBRARY_PATH");
-            android.system.Os.unsetenv("HORIZON_CROSSVERSION_HOME");
-            android.system.Os.unsetenv("HORIZON_CROSSVERSION_TMPDIR");
-            android.system.Os.unsetenv("HORIZON_CROSSVERSION_JAVA_TOOL_OPTIONS");
+            clearCrossVersionEnvironment();
             android.util.Log.w("MobileHorizon", "CrossVersion will be unavailable: "
                     + (error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage()));
+        }
+    }
+
+    /** Best-effort cleanup; a failed unset must not mask the original Java setup error. */
+    private static void clearCrossVersionEnvironment() {
+        String[] variables = {
+                "HORIZON_CROSSVERSION_JAVA",
+                "HORIZON_CROSSVERSION_JAVA_HOME",
+                "HORIZON_CROSSVERSION_LD_LIBRARY_PATH",
+                "HORIZON_CROSSVERSION_HOME",
+                "HORIZON_CROSSVERSION_TMPDIR",
+                "HORIZON_CROSSVERSION_JAVA_TOOL_OPTIONS"
+        };
+        for (String variable : variables) {
+            try {
+                android.system.Os.unsetenv(variable);
+            } catch (android.system.ErrnoException cleanupError) {
+                android.util.Log.w("MobileHorizon",
+                        "Não foi possível limpar " + variable, cleanupError);
+            }
         }
     }
 
