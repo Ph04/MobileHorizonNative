@@ -40,27 +40,6 @@ archives remain untouched.
 Inspect release notes and the upstream source diff before changing the pin. Adapt the Android and compatibility overlay to the newer source layout, then perform a static anchor/preflight check. **Do not dispatch the APK build until the project owner authorizes it.** Keep upgrade work on a separate branch rather than pushing directly to `main`, because the latter triggers the Android workflow. A successful static preflight is not a substitute for compiling, installing, or testing on a device.
 
 
-## Dynamic .hnmod WIT packages on Android
-
-The Android overlay adds one narrowly scoped compatibility rule to Horizon's
-official package discovery: the WIT component loader also scans .hnmod
-archives placed in horizon-mods/. Their internal format is still the official
-horizon-mod.toml + mod.wasm; only the filename suffix is different.
-
-The resource manager distinguishes package layouts by their internal manifests:
-
-- horizon-native.json identifies a legacy Rust mixin source bundle. It remains
-  in horizon-native-mods/ and follows the existing compile-a-runtime path.
-- horizon-mod.toml + mod.wasm identifies a dynamic WIT component. It is
-  installed in horizon-mods/ and loaded by the already-built Horizon runtime.
-- A native source .hnmod is never rewritten into a WIT archive and is not
-  converted automatically.
-
-This lets future ports keep the .hnmod suffix while using Horizon's stable,
-versioned component API. The suffix change does not make the current Rust mixin
-code dynamically loadable; each mod's source logic still needs to be ported.
-
-
 ## WIT module-manager capability (experimental API level 8)
 
 The Android overlay extends Horizon's versioned WIT contract with an explicit
