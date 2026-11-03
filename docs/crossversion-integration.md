@@ -55,3 +55,12 @@ does not load the original native-mod registry or WIT package. It ports the
 engine/decision logic, replaces desktop mixin UI with Android launcher controls,
 and applies small checked hooks to the current Horizon client. Runtime preflight
 and Cargo client tests gate each new upstream Nightly.
+
+## Supported Horizon networking API revisions
+
+The Android overlay's CrossVersion adapter recognizes two verified
+`Session::connect` API shapes: the older `view_distance` signature used by the
+stable `v0.2.81` validation pin, and the newer `ClientInformation/resources/lan`
+signature used by Nightly `c9d474d`. It requires exactly one supported shape for
+both normal and transferred connections. Unknown upstream changes stop the
+runtime build before publication.
