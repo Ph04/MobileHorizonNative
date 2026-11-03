@@ -403,6 +403,21 @@ fn configure_java_environment(command: &mut Command) {
     }
 }
 
+/// ViaProxy authenticates against the backend independently from the
+/// Horizon client. With no ViaProxy-owned Microsoft account, use its offline
+/// backend mode so an offline-mode server can decide whether to admit the name.
+fn auth_method_args(account: Option<usize>) -> Vec<String> {
+    match account {
+        Some(index) => vec![
+            "--auth-method".to_owned(),
+            "ACCOUNT".to_owned(),
+            "--minecraft-account-index".to_owned(),
+            index.to_string(),
+        ],
+        None => vec!["--auth-method".to_owned(), "NONE".to_owned()],
+    }
+}
+
 fn spawn(
     java: &Path,
     jar: &Path,
@@ -422,15 +437,7 @@ fn spawn(
         // The client never signs a session hash: a server must not be able to
         // have it sign one for somewhere else. So the proxy authenticates with
         // the account the player added to it, or not at all.
-        .args(match account {
-            Some(index) => vec![
-                "--auth-method".to_owned(),
-                "ACCOUNT".to_owned(),
-                "--minecraft-account-index".to_owned(),
-                index.to_string(),
-            ],
-            None => vec!["--auth-method".to_owned(), "NONE".to_owned()],
-        });
+        .args(auth_method_args(account));
     command
         .current_dir(jar.parent().unwrap_or(Path::new(".")))
         .stdin(Stdio::null())
@@ -1127,6 +1134,27 @@ mod tests {
     #[test]
     fn a_java_home_needs_a_release_file() {
         assert_eq!(release_major(Path::new("/nonexistent")), None);
+    }
+
+    #[test]
+    fn no_microsoft_account_uses_viaproxy_offline_backend_authentication() {
+        assert_eq!(
+            auth_method_args(None),
+            vec!["--auth-method".to_owned(), "NONE".to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_configured_viaproxy_account_is_used_only_when_selected() {
+        assert_eq!(
+            auth_method_args(Some(2)),
+            vec![
+                "--auth-method".to_owned(),
+                "ACCOUNT".to_owned(),
+                "--minecraft-account-index".to_owned(),
+                "2".to_owned(),
+            ]
+        );
     }
 
     #[test]
