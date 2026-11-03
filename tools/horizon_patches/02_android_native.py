@@ -860,17 +860,21 @@ else:
 
 impl_start = "impl ApplicationHandler for Game<'_> {"
 game_source_before_hook = game.read_text(encoding="utf-8")
-mapped_key_signature = re.search(
-    r"fn mapped_key\(\s*&mut self\s*,\s*key:\s*KeyCode\s*,"
-    r"\s*pressed:\s*bool\s*,\s*repeat:\s*bool"
-    r"(?P<raw>\s*,\s*raw:\s*KeyCode)?\s*\)\s*->\s*Result<\(\)>",
-    game_source_before_hook,
-)
-if mapped_key_signature is None:
+mapped_key_start = game_source_before_hook.find("fn mapped_key(")
+mapped_key_end = game_source_before_hook.find(") -> Result<()> ", mapped_key_start)
+if mapped_key_end < 0:
+    mapped_key_end = game_source_before_hook.find(") -> Result<()>", mapped_key_start)
+if (mapped_key_start < 0 or mapped_key_end < 0
+        or game_source_before_hook.find("fn mapped_key(", mapped_key_start + 1) >= 0):
+    raise SystemExit(f"{game}: expected exactly one supported mapped_key declaration")
+mapped_key_signature = game_source_before_hook[mapped_key_start:mapped_key_end]
+required_key_parameters = ("&mut self", "key: KeyCode", "pressed: bool", "repeat: bool")
+if not all(parameter in mapped_key_signature for parameter in required_key_parameters):
     raise SystemExit(f"{game}: unsupported mapped_key signature for Android keyboard injection")
+has_raw_key = "raw: KeyCode" in mapped_key_signature
 mapped_key_call = (
     "self.mapped_key(mapped_key, pressed, false, key)"
-    if mapped_key_signature.group("raw")
+    if has_raw_key
     else "self.mapped_key(mapped_key, pressed, false)"
 )
 idx = game_source_before_hook.find(impl_start)
