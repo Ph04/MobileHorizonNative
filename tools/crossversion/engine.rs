@@ -900,7 +900,7 @@ pub fn server_version(address: &str) -> String {
     settings
         .servers
         .iter()
-        .find(|(known, _)| known == address)
+        .find(|(known, _)| known.eq_ignore_ascii_case(address))
         .map(|(_, version)| version.clone())
         .unwrap_or_else(|| "auto".to_owned())
 }
