@@ -223,21 +223,25 @@ final class HorizonNativeModManager {
         String abi = manifest.optString("abi", "");
         String library = manifest.optString("library", "");
         String expectedHash = manifest.optString("sha256", "").toLowerCase(Locale.ROOT);
+        String game = manifest.optString("game", "");
         if (!"mobilehorizon-native-mod-runtime".equals(format)
                 || !SAFE_VERSION.matcher(version).matches()
                 || !activeBaseRuntimeVersion.equals(baseVersion)
                 || !baseCommit.matches("[0-9a-f]{40}")
                 || !mixinsCommit.matches("[0-9a-f]{40}")
                 || !overlay.matches("[0-9a-f]{8}")
+                || !baseRuntimeIdentityMatches(baseVersion, baseCommit, overlay)
+                || !"26.3".equals(game)
                 || !"arm64-v8a".equals(abi)
                 || !LIBRARY_NAME.equals(library)
                 || !SHA256.matcher(expectedHash).matches()) {
-            throw new IOException("O runtime não corresponde à versão base Horizon, ABI ou manifesto esperados.");
+            throw new IOException("O runtime não corresponde à versão base Horizon, revisão, ABI ou manifesto esperados.");
         }
 
         JSONArray recordedMods = manifest.optJSONArray("mods");
-        if (!modsMatch(selected, recordedMods)) {
-            throw new IOException("O runtime foi compilado para outro conjunto de .hnmod. Gere um build com a seleção atual.");
+        if (!modsMatch(selected, recordedMods)
+                || !modsCompatible(selected, game, baseCommit, mixinsCommit)) {
+            throw new IOException("O runtime foi compilado para outro conjunto de .hnmod ou outra revisão Horizon. Gere um build com a seleção atual.");
         }
         String actualHash = sha256(engine);
         if (!actualHash.equals(expectedHash)) {
@@ -325,11 +329,30 @@ final class HorizonNativeModManager {
     static boolean hasBuildForSelection(Context context, String instanceId,
                                         String baseRuntimeVersion) {
         try {
+            List<InstalledMod> selected = selectedMods(context, instanceId);
+            if (selected.isEmpty()) return false;
             File home = GameInstanceManager.getInstanceHome(context, instanceId).getCanonicalFile();
-            File active = new File(safeChildDirectory(home, RUNTIME_DIR), ACTIVE_FILE);
-            if (!active.isFile()) return false;
-            JSONObject json = readJson(active, 16 * 1024);
-            return baseRuntimeVersion.equals(json.optString("base_runtime_version", ""));
+            File runtimeRoot = safeChildDirectory(home, RUNTIME_DIR);
+            JSONObject active = readJson(new File(runtimeRoot, ACTIVE_FILE), 16 * 1024);
+            String version = active.optString("version", "");
+            String hash = active.optString("sha256", "").toLowerCase(Locale.ROOT);
+            if (!baseRuntimeVersion.equals(active.optString("base_runtime_version", ""))
+                    || !SAFE_VERSION.matcher(version).matches() || !SHA256.matcher(hash).matches()) {
+                return false;
+            }
+            File versionDirectory = safeChildDirectory(safeChildDirectory(runtimeRoot, "versions"), version);
+            File library = new File(versionDirectory, LIBRARY_NAME).getCanonicalFile();
+            JSONObject manifest = readJson(new File(versionDirectory, MANIFEST_FILE), MAX_MANIFEST_BYTES);
+            String baseCommit = manifest.optString("base_commit", "");
+            String mixinsCommit = manifest.optString("mixins_commit", "");
+            String game = manifest.optString("game", "");
+            return hash.equals(manifest.optString("sha256", "").toLowerCase(Locale.ROOT))
+                    && baseRuntimeVersion.equals(manifest.optString("base_runtime_version", ""))
+                    && modsMatch(selected, manifest.optJSONArray("mods"))
+                    && modsCompatible(selected, game, baseCommit, mixinsCommit)
+                    && baseRuntimeIdentityMatches(baseRuntimeVersion, baseCommit,
+                            manifest.optString("overlay", ""))
+                    && library.isFile() && sha256(library).equals(hash);
         } catch (Exception error) {
             return false;
         }
@@ -339,6 +362,28 @@ final class HorizonNativeModManager {
         ArrayList<InstalledMod> result = new ArrayList<>();
         for (InstalledMod mod : list(context, instanceId)) if (mod.enabled) result.add(mod);
         return result;
+    }
+
+    private static boolean baseRuntimeIdentityMatches(
+            String runtimeVersion, String baseCommit, String overlay) {
+        java.util.regex.Matcher matcher = Pattern.compile("-c([0-9a-f]{8})-o([0-9a-f]{8})$")
+                .matcher(runtimeVersion == null ? "" : runtimeVersion);
+        return matcher.find() && baseCommit.startsWith(matcher.group(1))
+                && overlay.equals(matcher.group(2));
+    }
+
+    private static boolean modsCompatible(List<InstalledMod> selected, String game,
+                                          String baseCommit, String mixinsCommit) {
+        if (selected.isEmpty()) return false;
+        for (InstalledMod mod : selected) {
+            HorizonNativeModArchive.Descriptor descriptor = mod.descriptor;
+            if (!game.equals(descriptor.game)
+                    || !baseCommit.equals(descriptor.horizonRevision)
+                    || !mixinsCommit.equals(descriptor.mixinsRevision)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean modsMatch(List<InstalledMod> selected, JSONArray recorded) {
