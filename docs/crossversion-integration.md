@@ -1,12 +1,47 @@
 # CrossVersion built-in integration
 
-This integration is based on the MIT-licensed horizon-crossversion project.
+MobileHorizonNative integrates the MIT-licensed `horizon-crossversion` v0.7.1
+source directly into the Horizon client runtime. It is a built-in engine feature,
+not an importable `.hnmod` or WIT `.hmod` package.
 
 - Upstream: https://github.com/JustKarkat/horizon-crossversion
-- Source revision: 83032a8b4a4d800a5c59dd63a2003519ce0f2f3b
-- Original files: mixins/crossversion/engine.rs and mixins/crossversion/decisions.rs
-- ViaProxy: 3.4.14, downloaded only when required, GPL-3.0, SHA-256 pinned in the source.
-- The app's Android adaptation launches its already-installed Java 25 runtime through /system/bin/linker64.
+- Source revision: `83032a8b4a4d800a5c59dd63a2003519ce0f2f3b`
+- Derived files: `mixins/crossversion/engine.rs` and `mixins/crossversion/decisions.rs`
+- Local sources: `tools/crossversion/engine.rs` and `tools/crossversion/decisions.rs`
+- Adapter: `tools/horizon_patches/11_crossversion_builtin.py`
+- Compatibility check: `tools/test_android_crossversion.py`
+- ViaProxy: `3.4.14`, downloaded only when needed, with its SHA-256 pinned in both
+  the app download manager and the engine source. ViaProxy is GPL-3.0 and is not
+  bundled in the APK or runtime.
+- Android Java: the adapter launches the Java 25 runtime already installed by the
+  launcher through `/system/bin/linker64`; it does not install a second JVM.
 
-The upstream MIT notice is retained verbatim at the top of each derived source file.
-ViaProxy is not bundled or modified. Its upstream licence remains applicable to the downloaded JAR.
+## Runtime behavior
+
+The patched Horizon client routes normal and transferred server connections
+through the CrossVersion decision layer. A 26.3 server stays direct. An older
+protocol is sent to a ViaProxy process bound to loopback; the client still speaks
+its own 26.3 protocol. Server-list pings can show the translated server version,
+manual per-address overrides are read from the app-owned configuration, and the
+proxy is released when the game session ends.
+
+The Android app owns `filesDir/crossversion/config.json` and the private
+ViaProxy directory. It supplies those paths and the existing Java runtime to the
+engine as process environment variables. Microsoft device-code sign-in is handled
+by the foreground Android service and the ViaProxy-owned account store.
+
+## Update isolation
+
+Only the adapter's small, checked anchors modify Horizon's `net.rs`; the Rust
+implementation is copied into separate `crossversion_engine.rs` and
+`crossversion_decisions.rs` files and included as a client module. The preflight
+checks both connection paths, disconnect cleanup, protocol badge, app/engine
+configuration agreement, Java paths, ViaProxy checksum, and Android UI/service
+registration. Upstream anchor or API drift therefore fails the runtime build
+instead of publishing a partially integrated engine.
+
+The runtime publisher fingerprints all files under `tools/crossversion/` as
+build inputs. Any CrossVersion source change creates a new immutable Android
+runtime ID, so the app's existing verified-runtime updater downloads it without
+requiring an APK update. The upstream MIT notice is retained in the derived
+source and in `tools/crossversion/LICENSE`.

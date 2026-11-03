@@ -128,8 +128,7 @@ def main() -> int:
             and ".hnmod" not in native_activity,
             "game startup must always use the normal runtime or the independent Java Bridge runtime")
     print("CrossVersion preflight passed: built-in routing, proxy lifecycle, Android Java, device login,")
-    print("server-version overrides, checksum pin, official .hmod preservation, and .hnmod cleanup.") built-in routing, proxy lifecycle, Android Java, device login,")
-    print("server-version overrides, checksum pin, app UI, and .hnmod native-only cleanup.")
+    print("server-version overrides, checksum pin, official .hmod preservation, and .hnmod cleanup.")
     print("This is a static source check; Android engine compilation and real server testing remain required.")
     return 0
 

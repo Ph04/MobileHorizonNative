@@ -21,14 +21,13 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-// This file is part of the horizon-crossversion bundle: the MIT notice above
-// ships with it, so every copy of the .hnmod carries the licence.
+// Derived from the horizon-crossversion v0.7.1 source. Keep the original MIT
+// notice with this built-in engine integration.
 
 // The proxy manager.
 //
-// Injected into `crates/horizon-client/src/net.rs` by horizon-mixins and
-// compiled into the client library, so it can reach the game's own ping,
-// account and logging code.
+// Included into `crates/horizon-client/src/net.rs` by the MobileHorizonNative
+// Android runtime overlay, so it can reach the game's ping, account and logging code.
 //
 // A join to a server that is not 26.3 is pointed at a ViaProxy instance this
 // module starts on a loopback port. The proxy speaks 26.3 to the client and the
@@ -60,8 +59,8 @@ const PING_TIMEOUT: Duration = Duration::from_secs(4);
 /// A download larger than this is not a jar.
 const DOWNLOAD_LIMIT: u64 = 128 * 1024 * 1024;
 
-/// The mod's data folder, the same place native mods keep their settings:
-/// `<game folder>/horizon-mods/.horizon-mod-data/<id>/`.
+/// App-owned private data directory supplied by the Android launcher. Desktop
+/// builds retain the upstream-compatible per-game fallback below.
 fn data_dir() -> PathBuf {
     if let Some(path) = std::env::var_os("HORIZON_CROSSVERSION_DATA_DIR") {
         return PathBuf::from(path);
