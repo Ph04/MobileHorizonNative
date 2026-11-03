@@ -232,6 +232,12 @@ fn ping_protocol(address: &str) -> Option<i32> {
     i32::try_from(json["version"]["protocol"].as_i64()?).ok()
 }
 
+/// Whether a status ping should display a translated server as compatible.
+/// Internal pings used to decide a join keep the server's real protocol.
+pub fn should_badge() -> bool {
+    !IN_ROUTE.with(|flag| flag.get()) && config().enabled
+}
+
 /// A session ended. A transfer ends one session and starts the next on the
 /// same proxy within a second, so the proxy is stopped only once nothing has
 /// used it for a few seconds.
@@ -400,7 +406,7 @@ fn spawn(
         .arg("cli")
         .args(["--bind-address", &format!("127.0.0.1:{port}")])
         .args(["--target-address", target])
-        .args(["--target-version", version.unwrap_or("auto")]);
+        .args(["--target-version", version.unwrap_or("auto")])
         // The client never signs a session hash: a server must not be able to
         // have it sign one for somewhere else. So the proxy authenticates with
         // the account the player added to it, or not at all.
@@ -412,7 +418,7 @@ fn spawn(
                 index.to_string(),
             ],
             None => vec!["--auth-method".to_owned(), "NONE".to_owned()],
-        })
+        });
     command
         .current_dir(jar.parent().unwrap_or(Path::new(".")))
         .stdin(Stdio::null())
