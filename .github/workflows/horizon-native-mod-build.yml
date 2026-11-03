@@ -365,7 +365,7 @@ jobs:
           print(json.load(open(sys.argv[1], encoding="utf-8"))[0]["mixins"])
           PY
           )"
-          if [[ \${#MIXINS_COMMIT} -ne 40 ]]; then
+          if [[ ${#MIXINS_COMMIT} -ne 40 ]]; then
             echo "::error::Invalid horizon-mixins commit in the selected modules."
             exit 1
           fi
