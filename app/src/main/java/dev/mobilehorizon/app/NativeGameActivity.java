@@ -227,6 +227,27 @@ public final class NativeGameActivity extends NativeActivity {
                 runtimeStatus = runtime.statusFile;
                 runtimeVersion = runtime.activeVersion;
             }
+            android.system.Os.unsetenv("HORIZON_NATIVE_MODS_ACTIVE");
+            if (!fabricJavaBridge) {
+                HorizonNativeModManager.PreparedRuntime nativeRuntime =
+                        HorizonNativeModManager.prepareForLaunch(
+                                this, instanceId, runtimeVersion, runtimeLibrary);
+                if (nativeRuntime != null) {
+                    runtimeRoot = nativeRuntime.root;
+                    runtimeLibrary = nativeRuntime.activeLibrary;
+                    runtimeFallback = nativeRuntime.fallbackLibrary;
+                    runtimeStatus = nativeRuntime.statusFile;
+                    runtimeVersion = nativeRuntime.activeVersion;
+                    android.system.Os.setenv("HORIZON_NATIVE_MODS_ACTIVE",
+                            Integer.toString(nativeRuntime.modCount), true);
+                    android.util.Log.i("MobileHorizon",
+                            "Native .hnmod runtime selected for instance " + instanceId
+                                    + ": " + runtimeVersion + " (" + nativeRuntime.modCount + " mods)");
+                } else if (!HorizonNativeModManager.selectedIds(this, instanceId).isEmpty()) {
+                    android.util.Log.w("MobileHorizon",
+                            "Native .hnmod selection is not built for the installed Horizon runtime; starting clean Horizon.");
+                }
+            }
             android.system.Os.setenv("HORIZON_RUNTIME_HOME", runtimeRoot.getAbsolutePath(), true);
             android.system.Os.setenv("HORIZON_RUNTIME_LIBRARY", runtimeLibrary.getAbsolutePath(), true);
             if (runtimeFallback != null) {
