@@ -17,6 +17,21 @@ for path in (net, engine_source, decisions_source):
     if not path.is_file():
         raise SystemExit(f"CrossVersion integration source is missing: {path}")
 
+def replace_one_of(text: str, variants: tuple[tuple[str, str], ...], label: str) -> str:
+    """Apply one known upstream API shape; fail if none or multiple shapes match."""
+    if any(new in text for _, new in variants):
+        return text
+    matches = [(old, new) for old, new in variants if text.count(old) == 1]
+    if len(matches) != 1:
+        counts = [text.count(old) for old, _ in variants]
+        raise SystemExit(
+            f"{net}: expected exactly one supported {label} anchor; "
+            f"matched {len(matches)} variants with counts {counts}"
+        )
+    old, new = matches[0]
+    return text.replace(old, new, 1)
+
+
 def replace_once(text: str, old: str, new: str, label: str) -> str:
     if new in text:
         return text
@@ -45,10 +60,21 @@ pub mod crossversion {
 use std::{"""
 text = replace_once(text, module_anchor, module_insert, "CrossVersion module declarations")
 
-connect_old = """        Self::start(
+connect_legacy_old = """        Self::start(address, name, auth, view_distance, lang, None, None)"""
+connect_legacy_new = """        let routed = crossversion::route(address);
+        Self::start(
+            routed.as_deref().unwrap_or(address),
+            name,
+            auth,
+            view_distance,
+            lang,
+            None,
+            None,
+        )"""
+connect_current_old = """        Self::start(
             address, name, auth, info, lang, None, None, resources, false,
         )"""
-connect_new = """        let routed = crossversion::route(address);
+connect_current_new = """        let routed = crossversion::route(address);
         Self::start(
             routed.as_deref().unwrap_or(address),
             name,
@@ -60,9 +86,35 @@ connect_new = """        let routed = crossversion::route(address);
             resources,
             false,
         )"""
-text = replace_once(text, connect_old, connect_new, "Session::connect routing")
+text = replace_one_of(
+    text,
+    (
+        (connect_legacy_old, connect_legacy_new),
+        (connect_current_old, connect_current_new),
+    ),
+    "Session::connect routing",
+)
 
-transfer_old = """        Self::start(
+transfer_legacy_old = """        Self::start(
+            address,
+            name,
+            auth,
+            view_distance,
+            lang,
+            None,
+            Some(cookies),
+        )"""
+transfer_legacy_new = """        let routed = crossversion::route(address);
+        Self::start(
+            routed.as_deref().unwrap_or(address),
+            name,
+            auth,
+            view_distance,
+            lang,
+            None,
+            Some(cookies),
+        )"""
+transfer_current_old = """        Self::start(
             address,
             name,
             auth,
@@ -73,7 +125,7 @@ transfer_old = """        Self::start(
             resources,
             false,
         )"""
-transfer_new = """        let routed = crossversion::route(address);
+transfer_current_new = """        let routed = crossversion::route(address);
         Self::start(
             routed.as_deref().unwrap_or(address),
             name,
@@ -85,7 +137,14 @@ transfer_new = """        let routed = crossversion::route(address);
             resources,
             false,
         )"""
-text = replace_once(text, transfer_old, transfer_new, "Session::connect_transferred routing")
+text = replace_one_of(
+    text,
+    (
+        (transfer_legacy_old, transfer_legacy_new),
+        (transfer_current_old, transfer_current_new),
+    ),
+    "Session::connect_transferred routing",
+)
 
 disconnect_old = """    pub fn disconnect(&mut self) {
         if let Some(w) = self.writer.lock().unwrap().take() {"""
