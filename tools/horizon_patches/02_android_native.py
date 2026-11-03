@@ -1,4 +1,6 @@
 # Ordered patch step. See README.md in this directory for scope and order.
+import re
+
 audio_source = audio.read_text(encoding="utf-8")
 audio_start_marker = '#[cfg(feature = "audio")]' + chr(10) + 'fn open_device('
 audio_end_markers = (
