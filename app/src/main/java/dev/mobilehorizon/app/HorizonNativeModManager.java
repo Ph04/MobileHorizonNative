@@ -505,7 +505,12 @@ final class HorizonNativeModManager {
                 offset += read;
             }
         }
-        if (header[0] != 0x7f || header[1] != 'E' || header[2] != 'L' || header[3] != 'F'
+        verifyAarch64Elf(header);
+    }
+
+    private static void verifyAarch64Elf(byte[] header) throws IOException {
+        if (header == null || header.length < 20
+                || header[0] != 0x7f || header[1] != 'E' || header[2] != 'L' || header[3] != 'F'
                 || header[4] != 2 || header[5] != 1
                 || ByteBuffer.wrap(header, 18, 2).order(ByteOrder.LITTLE_ENDIAN).getShort() != 183) {
             throw new IOException("A biblioteca do Native Mod não é ELF ARM64 (AArch64).");
