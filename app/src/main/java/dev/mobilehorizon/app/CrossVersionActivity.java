@@ -479,6 +479,14 @@ public final class CrossVersionActivity extends Activity {
             registerReceiver(signInReceiver, filter);
         }
         receiverRegistered = true;
+        android.content.SharedPreferences signInState =
+                getSharedPreferences("crossversion_state", MODE_PRIVATE);
+        String savedCode = signInState.getString("sign_in_code", "");
+        if (savedCode != null && !savedCode.isEmpty()
+                && !"done".equals(signInState.getString("sign_in_state", ""))) {
+            showDeviceCode(savedCode);
+            deviceCodeHint.setText("Este código ainda está salvo para a autenticação em andamento. Não o compartilhe.");
+        }
         Intent query = new Intent(this, CrossVersionService.class)
                 .setAction(CrossVersionService.ACTION_QUERY);
         startService(query);
