@@ -255,7 +255,7 @@ final class HorizonNativeModManager {
         File versionDirectory = safeChildDirectory(versions, version);
         File targetLibrary = new File(versionDirectory, LIBRARY_NAME).getCanonicalFile();
         ensureInside(versionDirectory, targetLibrary);
-        writeAtomic(new File(versionDirectory, MANIFEST_FILE), manifest.toString(2).getBytes(StandardCharsets.UTF_8));
+        writeAtomic(new File(versionDirectory, MANIFEST_FILE), manifest.toString().getBytes(StandardCharsets.UTF_8));
         File temporary = new File(versionDirectory, LIBRARY_NAME + ".partial");
         if (Files.isSymbolicLink(temporary.toPath())) throw new IOException("Arquivo parcial inseguro.");
         if (temporary.exists() && !temporary.delete()) throw new IOException("Não foi possível limpar a biblioteca parcial.");
@@ -283,7 +283,7 @@ final class HorizonNativeModManager {
         } catch (JSONException impossible) {
             throw new IOException("Não foi possível registrar o runtime nativo.", impossible);
         }
-        writeAtomic(new File(runtimeRoot, ACTIVE_FILE), active.toString(2).getBytes(StandardCharsets.UTF_8));
+        writeAtomic(new File(runtimeRoot, ACTIVE_FILE), active.toString().getBytes(StandardCharsets.UTF_8));
         return version;
     }
 
@@ -432,7 +432,7 @@ final class HorizonNativeModManager {
         } catch (JSONException impossible) {
             throw new IOException("Não foi possível salvar a seleção de Native Mods.", impossible);
         }
-        writeAtomic(new File(directory, SELECTION_FILE), json.toString(2).getBytes(StandardCharsets.UTF_8));
+        writeAtomic(new File(directory, SELECTION_FILE), json.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     private static File safeChildDirectory(File parent, String name) throws IOException {
