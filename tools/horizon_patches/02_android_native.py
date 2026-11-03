@@ -1,4 +1,5 @@
 # Ordered patch step. See README.md in this directory for scope and order.
+# Entry-point, event-loop, and keyboard adapters are revision-selected for Stable/Nightly.
 import re  # Required before adapting revision-specific keyboard signatures.
 
 audio_source = audio.read_text(encoding="utf-8")
