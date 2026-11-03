@@ -6,24 +6,25 @@ concurrency:
 
 on:
   schedule:
-    # Recheck often because upstream Horizon releases can arrive several times per hour.
-    # Publication is serialized, and each resolver exits quickly when the matching runtime already exists.
+    # Keep the default-branch scheduler aligned with the current five-minute
+    # publication cadence while building exclusively from the CrossVersion branch.
+    # The app itself still checks hourly and supports a manual runtime check.
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
 # This file exists on the GitHub default branch only because scheduled workflows
 # are restricted to that branch. The reusable workflow and all build inputs come
-# from feature/android-launcher-parity, which is the active MobileHorizonNative line.
+# from feature/fabric-java-bridge-test, which is the active MobileHorizonNative line.
 permissions:
   contents: write
   actions: write
 
 jobs:
   publish-active-branch-runtime:
-    name: Publish runtime from feature/android-launcher-parity
-    uses: Ph04/MobileHorizonNative/.github/workflows/horizon-runtime-release.yml@feature/android-launcher-parity
+    name: Publish runtime from feature/fabric-java-bridge-test
+    uses: Ph04/MobileHorizonNative/.github/workflows/horizon-runtime-release.yml@feature/fabric-java-bridge-test
     with:
-      source_ref: feature/android-launcher-parity
+      source_ref: feature/fabric-java-bridge-test
     permissions:
       contents: write
       actions: write
