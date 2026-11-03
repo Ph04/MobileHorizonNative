@@ -155,6 +155,11 @@ public final class NativeGameActivity extends NativeActivity {
             if (!gameRoot.isDirectory() && !gameRoot.mkdirs()) {
                 throw new java.io.IOException("Não foi possível criar o diretório privado do jogo.");
             }
+            // Native Rust and the C bootstrap use one app-level diagnostics directory for
+            // every profile. Instance homes are nested and must never redirect result files
+            // away from MainActivity's diagnostic exporter.
+            android.system.Os.setenv("HORIZON_DIAGNOSTICS_DIR",
+                    gameRoot.getAbsolutePath(), true);
             // Start before super.onCreate: NativeActivity starts android_main there,
             // and the native engine inherits these process environment variables.
             if (memoryGuard == null) {
