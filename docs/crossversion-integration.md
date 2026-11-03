@@ -22,8 +22,10 @@ The patched Horizon client routes normal and transferred server connections
 through the CrossVersion decision layer. A 26.3 server stays direct. An older
 protocol is sent to a ViaProxy process bound to loopback; the client still speaks
 its own 26.3 protocol. Server-list pings can show the translated server version,
-manual per-address overrides are read from the app-owned configuration, and the
-proxy is released when the game session ends.
+and manual per-address target-version overrides are read from the app-owned
+configuration. The proxy is released when the game session ends. This translates
+network protocol traffic only; it does not make old mods, worlds or resource packs
+compatible.
 
 The Android app owns `filesDir/crossversion/config.json` and the private
 ViaProxy directory. It supplies those paths and the existing Java runtime to the
@@ -45,3 +47,11 @@ build inputs. Any CrossVersion source change creates a new immutable Android
 runtime ID, so the app's existing verified-runtime updater downloads it without
 requiring an APK update. The upstream MIT notice is retained in the derived
 source and in `tools/crossversion/LICENSE`.
+
+The upstream v0.7.1 `compatibility.json` pins Horizon
+`07b7ea30d02973e7bc7579ea1e914dac2a9eca01` and horizon-mixins
+`d9c83d7096b7ea5b83678da2efdfd6161f74997e` (mixin schema 6). The Android port
+does not load the original native-mod registry or WIT package. It ports the
+engine/decision logic, replaces desktop mixin UI with Android launcher controls,
+and applies small checked hooks to the current Horizon client. Runtime preflight
+and Cargo client tests gate each new upstream Nightly.
