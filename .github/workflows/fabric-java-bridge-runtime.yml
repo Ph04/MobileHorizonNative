@@ -139,6 +139,7 @@ jobs:
             tools/horizon_patches/01_offline_server_login.py \
             tools/horizon_patches/02_android_native.py \
             tools/horizon_patches/03_java_bridge_android.py
+          # The patch selects run() or run_with() from this exact checkout; validate the wrapper afterwards.
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
           python3 tools/test_android_native_entrypoint.py --source "$SOURCE"
           python3 tools/test_android_crossversion.py --source "$SOURCE" --repo "$GITHUB_WORKSPACE"
