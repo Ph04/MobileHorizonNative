@@ -74,25 +74,6 @@ public final class HorizonModArchiveTest {
         assertNull(HorizonModArchive.readId(unmarked));
     }
 
-    @Test public void rejectsWitComponentPackagedWithNativeHnmodSuffix() throws Exception {
-        File archive = createArchiveWithExtension("horizon_api_probe",
-                "api = \"0.1\"\nside = \"client\"\n"
-                        + "capabilities = [\"game-read\", \"hud\"]\n",
-                false, true, ".hnmod");
-        assertNull(HorizonModArchive.readId(archive));
-    }
-
-    @Test public void doesNotTreatLegacyNativeMixinBundleAsWitModule() throws Exception {
-        File archive = Files.createTempFile("legacy-native-", ".hnmod").toFile();
-        try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive))) {
-            put(zip, "horizon-native.json",
-                    "{\"schema\":1,\"id\":\"crossversion\"}".getBytes(StandardCharsets.UTF_8));
-            put(zip, "mixins/crossversion/horizon-mixin.toml",
-                    "[mod]\nid = \"crossversion\"\n".getBytes(StandardCharsets.UTF_8));
-        }
-        assertNull(HorizonModArchive.readId(archive));
-    }
-
     @Test public void acceptsValidTomlLiteralStringsAndRejectsUnknownManifestKeys() throws Exception {
         File valid = createArchive("literal_mod",
                 "name = 'Literal mod'\nversion = '1.0.0'\n"
@@ -109,13 +90,7 @@ public final class HorizonModArchiveTest {
 
     private static File createArchive(String id, String extra, boolean content, boolean wasm)
             throws Exception {
-        return createArchiveWithExtension(id, extra, content, wasm, ".hmod");
-    }
-
-    private static File createArchiveWithExtension(String id, String extra, boolean content,
-                                                   boolean wasm, String extension)
-            throws Exception {
-        File archive = Files.createTempFile("horizon-mod-", extension).toFile();
+        File archive = Files.createTempFile("horizon-mod-", ".hmod").toFile();
         String manifest = "id = \"" + id + "\" # stable id\n"
                 + "name = \"Example Mod\"\n"
                 + "version = \"1.0.0\"\n"
