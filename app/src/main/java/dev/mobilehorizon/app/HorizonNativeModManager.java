@@ -154,15 +154,33 @@ final class HorizonNativeModManager {
             throw new IOException("ID de Native Mod inválido.");
         }
         File directory = modsDirectory(context, instanceId);
-        TreeSet<String> selection = readEnabled(directory);
-        selection.remove(id);
-        writeEnabled(directory, selection);
         File archive = new File(directory, id + ".hnmod");
         if (Files.isSymbolicLink(archive.toPath())) {
             throw new IOException("O pacote nativo não pode ser um link simbólico.");
         }
-        if (archive.exists() && !archive.delete()) {
-            throw new IOException("Não foi possível remover o pacote " + id + ".");
+        File tombstone = new File(directory, "." + id + ".removing");
+        if (Files.isSymbolicLink(tombstone.toPath())) {
+            throw new IOException("O arquivo temporário de remoção não é seguro.");
+        }
+        if (tombstone.exists() && !tombstone.delete()) {
+            throw new IOException("Não foi possível limpar a remoção anterior.");
+        }
+        boolean moved = archive.exists();
+        if (moved && !archive.renameTo(tombstone)) {
+            throw new IOException("Não foi possível preparar a remoção do pacote " + id + ".");
+        }
+        TreeSet<String> selection = readEnabled(directory);
+        selection.remove(id);
+        try {
+            writeEnabled(directory, selection);
+        } catch (IOException error) {
+            if (moved && tombstone.exists() && !tombstone.renameTo(archive)) {
+                error.addSuppressed(new IOException("Falha ao restaurar o pacote após a remoção abortada."));
+            }
+            throw error;
+        }
+        if (tombstone.exists() && !tombstone.delete()) {
+            Log.w(TAG, "Pacote removido da seleção; arquivo de limpeza pendente: " + tombstone);
         }
     }
 
