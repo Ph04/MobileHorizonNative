@@ -294,18 +294,8 @@ jobs:
           mkdir -p "$RELEASE_DIR"
           cp "$LIB" "$RELEASE_DIR/$FABRIC_ENGINE_ASSET"
           ENGINE_SHA="$(sha256sum "$LIB" | awk '{print $1}')"
-          # Reuse the exact overlay fingerprint computed in the preflight step.
-          # This keeps runtime rebuild decisions and the published manifest in sync.
-          OVERLAY_SHA="$LATEST_OVERLAY_SHA")
-          h = hashlib.sha256()
-          for raw in paths:
-              path = pathlib.Path(raw.decode())
-              if not path.is_file():
-                  raise SystemExit("Missing runtime input: " + str(path))
-              h.update(raw + b"\0" + path.read_bytes() + b"\0")
-          print(h.hexdigest()[:8])
-          PY
-          )"
+          # Reuse the exact overlay fingerprint computed by the upstream preflight step.
+          OVERLAY_SHA="$LATEST_OVERLAY_SHA"
           RUNTIME_VERSION="fabric-java-bridge-${FABRIC_HORIZON_COMMIT:0:8}-o${OVERLAY_SHA}"
           python3 - "$RELEASE_DIR/$FABRIC_MANIFEST_ASSET" \
             "$RUNTIME_VERSION" "$FABRIC_HORIZON_COMMIT" "$ENGINE_SHA" "$OVERLAY_SHA" \
