@@ -25,7 +25,8 @@ permissions:
 
 concurrency:
   group: horizon-wit-runtime-validation-${{ github.ref }}
-  cancel-in-progress: false
+  # Validate only the newest overlay commit; stale 90-minute engine builds are discarded.
+  cancel-in-progress: true
 
 jobs:
   build:
