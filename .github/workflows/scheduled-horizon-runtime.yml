@@ -6,9 +6,10 @@ concurrency:
 
 on:
   schedule:
-    # Check hourly. The app also checks on startup and exposes a manual runtime check.
-    # Publication is serialized, and each resolver exits quickly when the matching runtime already exists.
-    - cron: "0 * * * *"
+    # Keep the default-branch scheduler aligned with the current five-minute
+    # publication cadence while building exclusively from the CrossVersion branch.
+    # The app itself still checks hourly and supports a manual runtime check.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 # This file exists on the GitHub default branch only because scheduled workflows
