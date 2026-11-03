@@ -1408,15 +1408,28 @@ replace_once(
                 horizon_threads::stop_requests()
             );""",
 )
-replace_once(
-    game,
-    """if horizon_threads::stop_requests() > 0
+# Stable and Java Bridge forks have different split-screen stop guards.
+stable_game_signal = """if horizon_threads::stop_requests() > 0
             && self.pending_save.as_ref().is_none_or(|save| !save.quit)
         {
-            // SIGTERM, SIGINT or SIGHUP:""",
-    """if horizon_threads::stop_requests() > 0
+            // SIGTERM, SIGINT or SIGHUP:"""
+bridge_game_signal = """if horizon_threads::stop_requests() > 0
+            && !self.options.split_guest
             && self.pending_save.as_ref().is_none_or(|save| !save.quit)
         {
+            // SIGTERM, SIGINT or SIGHUP:"""
+game_signal_anchors = [
+    anchor for anchor in (stable_game_signal, bridge_game_signal)
+    if game.read_text(encoding="utf-8").count(anchor) == 1
+]
+if len(game_signal_anchors) != 1:
+    raise SystemExit(
+        f"{game}: expected one supported gameplay stop-signal block, found {len(game_signal_anchors)}"
+    )
+game_signal_anchor = game_signal_anchors[0]
+game_signal_new = game_signal_anchor.replace(
+    "        {\n            // SIGTERM, SIGINT or SIGHUP:",
+    """        {
             #[cfg(target_os = "android")]
             log::error!(
                 "Horizon Android: game loop received stop signal(s): {}",
@@ -1424,15 +1437,29 @@ replace_once(
             );
             // SIGTERM, SIGINT or SIGHUP:""",
 )
-replace_once(
-    game,
-    """WindowEvent::CloseRequested => {
-                    self.begin_closing_save(true)?;""",
+replace_once(game, game_signal_anchor, game_signal_new)
+
+# The Bridge branch checks the quit shortcut before saving; Stable does not.
+stable_close_anchor = """WindowEvent::CloseRequested => {
+                    self.begin_closing_save(true)?;"""
+bridge_close_anchor = """WindowEvent::CloseRequested => {
+                    if !self.settings.quit_shortcuts"""
+close_anchors = [
+    anchor for anchor in (stable_close_anchor, bridge_close_anchor)
+    if game.read_text(encoding="utf-8").count(anchor) == 1
+]
+if len(close_anchors) != 1:
+    raise SystemExit(
+        f"{game}: expected one supported WindowEvent::CloseRequested block, found {len(close_anchors)}"
+    )
+close_anchor = close_anchors[0]
+close_new = close_anchor.replace(
+    "WindowEvent::CloseRequested => {",
     """WindowEvent::CloseRequested => {
                     #[cfg(target_os = "android")]
-                    log::warn!("Horizon Android: WindowEvent::CloseRequested received");
-                    self.begin_closing_save(true)?;""",
+                    log::warn!("Horizon Android: WindowEvent::CloseRequested received");""",
 )
+replace_once(game, close_anchor, close_new)
 replace_once(
     game,
     "Action::Quit => event_loop.exit(),",
