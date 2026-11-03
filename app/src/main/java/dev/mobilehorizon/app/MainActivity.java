@@ -184,7 +184,7 @@ public final class MainActivity extends Activity {
                 refreshRuntimeUpdateStatus();
                 updateActionEnablement();
             });
-            runtimeUpdateHandler.postDelayed(this, 5L * 60L * 1000L);
+            runtimeUpdateHandler.postDelayed(this, 60L * 60L * 1000L);
         }
     };
 
@@ -263,7 +263,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
             updateActionEnablement();
         });
         runtimeUpdateHandler.removeCallbacks(runtimeUpdatePoll);
-        runtimeUpdateHandler.postDelayed(runtimeUpdatePoll, 5L * 60L * 1000L);
+        runtimeUpdateHandler.postDelayed(runtimeUpdatePoll, 60L * 60L * 1000L);
         if (sessionEnvSet) {
             try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;

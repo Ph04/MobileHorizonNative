@@ -25,7 +25,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Checks the project's published ARM64 Horizon-engine releases on startup and every five minutes
+ * Checks the project's published ARM64 Horizon-engine releases on startup and hourly while the launcher is open
  * while MainActivity is visible. The APK is not replaced; only a verified versioned engine is
  * installed, and it takes effect on the next game launch.
  */
@@ -58,7 +58,7 @@ public final class HorizonRuntimeUpdateService {
     private static final String PREFERENCES = "horizon_runtime_updates";
     private static final String LAST_CHECK = "last_check_ms";
     private static final String LAST_STATUS = "last_status";
-    private static final long CHECK_INTERVAL_MS = 5L * 60L * 1000L;
+    private static final long CHECK_INTERVAL_MS = 60L * 60L * 1000L;
     private static final long MAX_DOWNLOAD_BYTES = 300L * 1024L * 1024L;
 
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();

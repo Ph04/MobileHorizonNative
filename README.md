@@ -93,7 +93,7 @@ publisher resolves the official moving Horizon Nightly tag to an immutable
 runtime release with its manifest and SHA-256. The runtime ID includes the
 upstream commit and the Android overlay fingerprint.
 
-The app checks the runtime channel every five minutes, validates the release
+The app checks the runtime channel hourly, validates the release
 manifest, asset digest and ARM64 ELF, and installs only when the verified active
 runtime ID differs from the published build. A valid installed runtime is not
 downloaded again. Changes under `tools/crossversion/` are included in the
