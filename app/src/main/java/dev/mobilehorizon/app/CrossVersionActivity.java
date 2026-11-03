@@ -43,6 +43,7 @@ public final class CrossVersionActivity extends Activity {
     private Button deleteButton;
     private CheckBox enabledCheck;
     private CheckBox alwaysCheck;
+    private CheckBox offlineAuthCheck;
     private boolean busy;
     private boolean receiverRegistered;
 
@@ -138,6 +139,24 @@ public final class CrossVersionActivity extends Activity {
         account.addView(text(
                 "Para servidores online-mode, adicione uma conta diretamente ao ViaProxy pelo código de dispositivo. O token fica no saves.json do ViaProxy; a sessão do Minecraft e os códigos de autenticação do Horizon não são compartilhados.",
                 12, 0xffb9b3d1, false), top(-1, -2, 6));
+        offlineAuthCheck = checkBox("Forçar autenticação offline no ViaProxy");
+        offlineAuthCheck.setOnCheckedChangeListener((view, checked) -> {
+            try {
+                CrossVersionManager.setOfflineAuth(this, checked);
+                setStatus(checked ? "Modo offline forçado" : "Autenticação automática ativada",
+                        checked
+                                ? "O ViaProxy ignorará qualquer conta Microsoft salva. Servidores online-mode ainda exigem uma conta válida."
+                                : "Se houver uma conta Microsoft vinculada ao ViaProxy, ela será usada automaticamente.");
+                refreshAccountStatus();
+            } catch (Exception error) {
+                setStatus("Não foi possível salvar o modo de autenticação", message(error));
+                refreshState();
+            }
+        });
+        account.addView(offlineAuthCheck, top(-1, 50, 7));
+        account.addView(text(
+                "Use esta opção em servidores offline-mode. Ela não remove a conta salva; apenas impede que o ViaProxy a utilize.",
+                11, 0xffaaa2c6, false), top(-1, -2, 2));
         accountStatus = text("", 12, 0xffaaa2c6, false);
         account.addView(accountStatus, top(-1, -2, 8));
         signInButton = button("Vincular conta Microsoft", false, v -> startSignIn());
@@ -199,6 +218,7 @@ public final class CrossVersionActivity extends Activity {
             JSONObject config = CrossVersionManager.readConfig(this);
             enabledCheck.setChecked(config.optBoolean("enabled", true));
             alwaysCheck.setChecked(config.optBoolean("always", false));
+            offlineAuthCheck.setChecked(config.optBoolean("offline_auth", false));
         } catch (Exception error) {
             setStatus("Configuração inválida", message(error));
         }
@@ -233,9 +253,15 @@ public final class CrossVersionActivity extends Activity {
 
     private void refreshAccountStatus() {
         boolean signedIn = CrossVersionManager.hasMicrosoftAccount(this);
-        accountStatus.setText(signedIn
-                ? "Conta Microsoft já adicionada ao ViaProxy. Nenhum token é exibido pelo launcher."
-                : "Nenhuma conta Microsoft vinculada. Servidores offline-mode continuam sem precisar desta conta.");
+        boolean forceOffline = false;
+        try {
+            forceOffline = CrossVersionManager.readConfig(this).optBoolean("offline_auth", false);
+        } catch (Exception ignored) { }
+        accountStatus.setText(forceOffline
+                ? "Modo offline forçado: qualquer conta Microsoft salva será ignorada. Servidores online-mode exigem autenticação premium."
+                : signedIn
+                ? "Conta Microsoft vinculada ao ViaProxy; ela será usada automaticamente quando o servidor exigir autenticação online."
+                : "Sem conta Microsoft no ViaProxy: o motor usa auth-method NONE, e servidores offline-mode decidem se aceitam o perfil.");
         if (signInButton != null) {
             signInButton.setEnabled(!signedIn);
             signInButton.setText(signedIn ? "Conta Microsoft vinculada" : "Vincular conta Microsoft");
@@ -376,6 +402,7 @@ public final class CrossVersionActivity extends Activity {
         if (downloadButton != null) downloadButton.setEnabled(!value);
         if (enabledCheck != null) enabledCheck.setEnabled(!value);
         if (alwaysCheck != null) alwaysCheck.setEnabled(!value);
+        if (offlineAuthCheck != null) offlineAuthCheck.setEnabled(!value);
         if (signInButton != null) signInButton.setEnabled(!value
                 && !CrossVersionManager.hasMicrosoftAccount(this));
         if (deleteButton != null) deleteButton.setEnabled(!value);
