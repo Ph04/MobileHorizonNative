@@ -1406,6 +1406,39 @@ dst = root / "crates/mobilehorizon-android"
 shutil.copyfile(repo_root / "android-native/Cargo.toml", dst / "Cargo.toml")
 shutil.copyfile(repo_root / "android-native/src/lib.rs", dst / "src/lib.rs")
 
+# Horizon's public game entry point differs between the Stable release and
+# Nightly. Stable v0.2.81 and Nightly c9d474d expose game::run(), while the
+# current Nightly API exposes game::run_with(). Select from the checked-out
+# source instead of baking one channel's symbol into the Android overlay.
+import re
+game_api = game.read_text(encoding="utf-8")
+entrypoints = {
+    name for name in ("run", "run_with")
+    if re.search(
+        rf"(?m)^pub fn {name}\\(\\)\\s*->\\s*Result<\\(\\)>\\s*\\{{",
+        game_api,
+    )
+}
+if len(entrypoints) != 1:
+    raise SystemExit(
+        f"{game}: expected exactly one supported Android game entry point, "
+        f"found {sorted(entrypoints)}"
+    )
+android_lib = dst / "src/lib.rs"
+android_source = android_lib.read_text(encoding="utf-8")
+call_pattern = r"horizon_client::game::run(?:_with)?\\(\\)"
+android_source, call_count = re.subn(
+    call_pattern,
+    lambda _: f"horizon_client::game::{next(iter(entrypoints))}()",
+    android_source,
+)
+if call_count != 1:
+    raise SystemExit(
+        f"{android_lib}: expected exactly one game entry-point call, found {call_count}"
+    )
+android_lib.write_text(android_source, encoding="utf-8")
+print(f"Selected Horizon game entry point: game::{next(iter(entrypoints))}()")
+
 # Select only features that this exact Horizon checkout declares. The Android
 # overlay has historically requested "java-mods", but upstream v0.2.81 and
 # some stable/nightly revisions do not provide that feature. Keep it when a
