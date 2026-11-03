@@ -66,6 +66,13 @@ def main() -> int:
     require("is_loopback_address(address)" in engine
             and "forced.is_none()" in engine,
             "local servers must not be probed automatically unless an override is configured")
+    require("fn auth_method_args(account: Option<usize>) -> Vec<String>" in engine
+            and '.args(auth_method_args(account))' in engine
+            and 'None => vec!["--auth-method".to_owned(), "NONE".to_owned()]' in engine,
+            "CrossVersion must explicitly use ViaProxy offline authentication when no account is selected")
+    require("no_microsoft_account_uses_viaproxy_offline_backend_authentication" in engine
+            and "a_configured_viaproxy_account_is_used_only_when_selected" in engine,
+            "offline and selected-account authentication modes must have Rust unit tests")
     offline_login_patch = read(repo / "tools/horizon_patches/01_offline_server_login.py")
     require("offline-mode fallback did not reach the server" in offline_login_patch
             and "sending the normal encrypted response" in offline_login_patch,
