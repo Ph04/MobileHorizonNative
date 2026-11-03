@@ -9,6 +9,8 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <time.h>
 #include <string>
 
 #define LOG_TAG "HorizonBootstrap"
@@ -21,11 +23,38 @@ using NativeActivityEntry = void (*)(ANativeActivity *, void *, size_t);
 void *g_engine_handle = nullptr;
 std::string g_engine_path;
 
+void append_bootstrap_log(const std::string &message) {
+    const char *root = getenv("HORIZON_DIAGNOSTICS_DIR");
+    if (root == nullptr || *root == '\0') {
+        return;
+    }
+    const std::string log_directory = std::string(root) + "/logs";
+    mkdir(log_directory.c_str(), 0700);
+    const std::string log_path = log_directory + "/horizon-bootstrap.log";
+    FILE *file = fopen(log_path.c_str(), "a");
+    if (file == nullptr) {
+        return;
+    }
+    timespec now{};
+    clock_gettime(CLOCK_REALTIME, &now);
+    const long long timestamp =
+        static_cast<long long>(now.tv_sec) * 1000LL + now.tv_nsec / 1000000LL;
+    fprintf(file, "[%lld][pid=%d][bootstrap] %s\n",
+            timestamp, getpid(), message.c_str());
+    fflush(file);
+    fclose(file);
+}
+
+std::string env_value(const char *value) {
+    return value == nullptr ? "<unset>" : value;
+}
+
 void write_status(const char *status_path, const char *message) {
     if (status_path == nullptr || *status_path == '\0' ||
         message == nullptr || *message == '\0') {
         return;
     }
+    append_bootstrap_log(std::string("loader status: ") + message);
     FILE *file = fopen(status_path, "w");
     if (file == nullptr) {
         return;
@@ -70,26 +99,31 @@ bool canonical_runtime_path(const char *root, const char *candidate,
 bool start_engine(const std::string &path, ANativeActivity *activity,
                   void *saved_state, size_t saved_state_size,
                   const char *status_path, bool fallback) {
+    append_bootstrap_log(std::string("dlopen BEGIN: ") + path);
     dlerror();
     void *handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (handle == nullptr) {
         const char *error = dlerror();
-        LOGE("dlopen falhou para %s: %s", path.c_str(),
-             error == nullptr ? "erro sem detalhe" : error);
+        const std::string detail = error == nullptr ? "erro sem detalhe" : error;
+        append_bootstrap_log(std::string("dlopen FAIL: ") + path + " :: " + detail);
+        LOGE("dlopen falhou para %s: %s", path.c_str(), detail.c_str());
         return false;
     }
+    append_bootstrap_log(std::string("dlopen OK: ") + path);
 
     dlerror();
     auto entry = reinterpret_cast<NativeActivityEntry>(
         dlsym(handle, "ANativeActivity_onCreate"));
     const char *symbol_error = dlerror();
     if (entry == nullptr || symbol_error != nullptr) {
+        const std::string detail = symbol_error == nullptr ? "símbolo ausente" : symbol_error;
+        append_bootstrap_log(std::string("dlsym FAIL: ") + path + " :: " + detail);
         LOGE("A biblioteca %s não exporta ANativeActivity_onCreate: %s",
-             path.c_str(),
-             symbol_error == nullptr ? "símbolo ausente" : symbol_error);
+             path.c_str(), detail.c_str());
         dlclose(handle);
         return false;
     }
+    append_bootstrap_log(std::string("dlsym OK: ANativeActivity_onCreate in ") + path);
 
     // Keep the handle alive for the complete game session: Winit and JNI callbacks
     // execute code from this shared object after ANativeActivity_onCreate returns.
@@ -106,7 +140,9 @@ bool start_engine(const std::string &path, ANativeActivity *activity,
     }
     LOGI("Iniciando Horizon runtime: %s%s", path.c_str(),
          fallback ? " (fallback da runtime anterior)" : "");
+    append_bootstrap_log(std::string("calling runtime ANativeActivity_onCreate: ") + path);
     entry(activity, saved_state, saved_state_size);
+    append_bootstrap_log(std::string("runtime ANativeActivity_onCreate returned to bootstrap: ") + path);
     return true;
 }
 
@@ -134,12 +170,18 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved_state,
     const char *selected = getenv("HORIZON_RUNTIME_LIBRARY");
     const char *fallback = getenv("HORIZON_RUNTIME_FALLBACK_LIBRARY");
     const char *status_path = getenv("HORIZON_RUNTIME_STATUS_FILE");
+    append_bootstrap_log(
+        std::string("NativeActivity_onCreate invoked; root=") + env_value(root)
+        + "; selected=" + env_value(selected)
+        + "; fallback=" + env_value(fallback)
+        + "; status=" + env_value(status_path));
 
     // NativeGameActivity sets this before NativeActivity loads the engine when an
     // instance selected a compatibility loader but its Java 25/API setup failed.
     // Do not silently fall through to Vanilla: that would start the wrong profile.
     const char *startup_blocked = getenv("HORIZON_NATIVE_START_BLOCKED");
     if (startup_blocked != nullptr && *startup_blocked != '\0') {
+        append_bootstrap_log(std::string("startup blocked by launcher: ") + startup_blocked);
         write_status(status_path, startup_blocked);
         LOGE("Inicialização nativa bloqueada pelo launcher: %s", startup_blocked);
         ANativeActivity_finish(activity);
@@ -194,6 +236,7 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved_state,
     std::string active_path;
     std::string fallback_path;
     if (!canonical_runtime_path(root, selected, &active_path)) {
+        append_bootstrap_log("runtime path validation failed; active path is absent or outside root/versions");
         write_status(status_path, "ERROR: caminho do runtime ativo inválido");
         LOGE("HORIZON_RUNTIME_LIBRARY ausente ou fora do diretório privado permitido");
         ANativeActivity_finish(activity);
@@ -220,6 +263,7 @@ void ANativeActivity_onCreate(ANativeActivity *activity, void *saved_state,
         return;
     }
 
+    append_bootstrap_log("all runtime candidates failed; finishing NativeActivity");
     write_status(status_path, "ERROR: não foi possível carregar a runtime ativa nem a anterior");
     LOGE("Não foi possível iniciar Horizon com a runtime ativa ou a anterior");
     ANativeActivity_finish(activity);
