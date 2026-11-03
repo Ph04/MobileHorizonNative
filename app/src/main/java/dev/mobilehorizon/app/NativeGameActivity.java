@@ -60,6 +60,51 @@ public final class NativeGameActivity extends NativeActivity {
     private java.io.File javaBridgeLogFile;
     private GameMemoryGuard memoryGuard;
 
+    /** Exposes the app-managed Java 25 runtime to the built-in ViaProxy process. */
+    private void prepareCrossVersionEnvironment() {
+        try {
+            java.io.File data = CrossVersionManager.dataDirectory(this);
+            android.system.Os.setenv("HORIZON_CROSSVERSION_DATA_DIR",
+                    data.getAbsolutePath(), true);
+
+            CrossVersionManager.JavaRuntime runtime =
+                    CrossVersionManager.findJavaRuntime(this);
+            java.io.File proxyHome = new java.io.File(runtime.root, "home");
+            java.io.File temporary = runtime.temporaryDirectory;
+            if (!proxyHome.isDirectory() && !proxyHome.mkdirs()) {
+                throw new java.io.IOException("Não foi possível criar o HOME do ViaProxy.");
+            }
+            if (!temporary.isDirectory() && !temporary.mkdirs()) {
+                throw new java.io.IOException("Não foi possível criar o diretório temporário do ViaProxy.");
+            }
+
+            android.system.Os.setenv("HORIZON_CROSSVERSION_JAVA",
+                    runtime.java.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_CROSSVERSION_JAVA_HOME",
+                    runtime.javaHome.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_CROSSVERSION_LD_LIBRARY_PATH",
+                    runtime.environment.getOrDefault("LD_LIBRARY_PATH", ""), true);
+            android.system.Os.setenv("HORIZON_CROSSVERSION_HOME",
+                    proxyHome.getAbsolutePath(), true);
+            android.system.Os.setenv("HORIZON_CROSSVERSION_TMPDIR",
+                    temporary.getAbsolutePath(), true);
+            String options = "-Xms32m -Xmx256m -XX:ActiveProcessorCount=2 "
+                    + "-XX:ParallelGCThreads=1 -XX:ConcGCThreads=1 -XX:-UsePerfData "
+                    + "-Djava.io.tmpdir=" + temporary.getAbsolutePath();
+            android.system.Os.setenv("HORIZON_CROSSVERSION_JAVA_TOOL_OPTIONS",
+                    options, true);
+        } catch (Exception error) {
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_JAVA");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_JAVA_HOME");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_LD_LIBRARY_PATH");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_HOME");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_TMPDIR");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_JAVA_TOOL_OPTIONS");
+            android.util.Log.w("MobileHorizon", "CrossVersion will be unavailable: "
+                    + (error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage()));
+        }
+    }
+
     private void beginJavaBridgeLog(java.io.File filesDir) {
         try {
             java.io.File logDirectory = new java.io.File(filesDir, "logs");
@@ -280,6 +325,14 @@ public final class NativeGameActivity extends NativeActivity {
             android.system.Os.unsetenv("JAVA_HOME");
             android.system.Os.unsetenv("LD_LIBRARY_PATH");
             android.system.Os.unsetenv("TMPDIR");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_JAVA");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_JAVA_HOME");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_LD_LIBRARY_PATH");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_HOME");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_TMPDIR");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_JAVA_TOOL_OPTIONS");
+            android.system.Os.unsetenv("HORIZON_CROSSVERSION_DATA_DIR");
+            prepareCrossVersionEnvironment();
 
             android.system.Os.setenv("HORIZON_HOME", home.getAbsolutePath(), true);
             android.system.Os.setenv("HORIZON_INSTANCE_ID", profile.profile.instanceId, true);
