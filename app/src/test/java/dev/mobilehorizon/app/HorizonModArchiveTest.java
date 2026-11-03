@@ -74,12 +74,12 @@ public final class HorizonModArchiveTest {
         assertNull(HorizonModArchive.readId(unmarked));
     }
 
-    @Test public void acceptsWitComponentPackagedAsDynamicHnmod() throws Exception {
+    @Test public void rejectsWitComponentPackagedWithNativeHnmodSuffix() throws Exception {
         File archive = createArchiveWithExtension("horizon_api_probe",
                 "api = \"0.1\"\nside = \"client\"\n"
                         + "capabilities = [\"game-read\", \"hud\"]\n",
                 false, true, ".hnmod");
-        assertEquals("horizon_api_probe", HorizonModArchive.readId(archive));
+        assertNull(HorizonModArchive.readId(archive));
     }
 
     @Test public void doesNotTreatLegacyNativeMixinBundleAsWitModule() throws Exception {
