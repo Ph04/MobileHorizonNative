@@ -1,4 +1,4 @@
-use std::{any::Any, path::Path, sync::Arc, time::Duration};
+use std::{any::Any, fs::OpenOptions, io::Write, path::{Path, PathBuf}, sync::Arc, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 use jni::{JNIEnv, objects::{JClass, JString}};
 
 use winit::{
@@ -10,11 +10,42 @@ use winit::{
 
 use winit::platform::android::EventLoopBuilderExtAndroid;
 
+fn diagnostics_root(home: &Path) -> PathBuf {
+    std::env::var_os("HORIZON_DIAGNOSTICS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.parent().unwrap_or(home).to_path_buf())
+}
+
+fn append_native_event(home: &Path, message: &str) {
+    let logs = diagnostics_root(home).join("logs");
+    if std::fs::create_dir_all(&logs).is_err() {
+        return;
+    }
+    let path = logs.join("horizon-native-lifecycle.log");
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let _ = writeln!(
+            file,
+            "[{timestamp}][pid={}][native] {message}",
+            std::process::id()
+        );
+        let _ = file.flush();
+    }
+}
+
 fn write_result(home: &Path, file_name: &str, message: &str) {
-    // HORIZON_HOME is <filesDir>/horizon; MainActivity uses the parent filesDir.
-    if let Some(files_dir) = home.parent() {
-        let path = files_dir.join(file_name);
-        let _ = std::fs::write(path, format!("{message}\n"));
+    // All instance profiles export diagnostics to the same app-private folder.
+    // HORIZON_HOME may be filesDir/instances/<id>/game, so home.parent() is not
+    // the directory MainActivity collects from.
+    let root = diagnostics_root(home);
+    if std::fs::create_dir_all(&root).is_ok() {
+        let path = root.join(file_name);
+        if let Err(error) = std::fs::write(path, format!("{message}\n")) {
+            append_native_event(home, &format!("could not write {file_name}: {error}"));
+        }
     }
 }
 
@@ -176,6 +207,15 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
     horizon_client::telemetry::mark_start();
 
     let home = horizon_client::logging::game_home();
+    append_native_event(
+        &home,
+        &format!(
+            "android_main entered; runtimeVersion={}; fallback={}; instance={}",
+            std::env::var("HORIZON_RUNTIME_VERSION").unwrap_or_else(|_| "unknown".into()),
+            std::env::var("HORIZON_RUNTIME_USING_FALLBACK").unwrap_or_else(|_| "0".into()),
+            std::env::var("HORIZON_INSTANCE_ID").unwrap_or_else(|_| "default".into())
+        ),
+    );
     if let Err(error) = std::fs::create_dir_all(&home) {
         let message = format!(
             "FAIL: Não foi possível criar o diretório do jogo {}: {error}",
@@ -234,7 +274,24 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
             horizon_client::crash::install(home.clone(), "client");
             // The Horizon patcher selects game::run() for Stable and rewrites this
             // call to game::run_with() when the selected Nightly exports that API.
+            let game_started = Instant::now();
+            append_native_event(
+                &home,
+                &format!(
+                    "game::run BEGIN; stopRequests={}",
+                    horizon_threads::stop_requests()
+                ),
+            );
             let game_result = horizon_client::game::run();
+            append_native_event(
+                &home,
+                &format!(
+                    "game::run RETURN; result={}; elapsedMs={}; stopRequests={}",
+                    if game_result.is_ok() { "Ok" } else { "Err" },
+                    game_started.elapsed().as_millis(),
+                    horizon_threads::stop_requests()
+                ),
+            );
             if let Err(error) = game_result {
                 eprintln!("Horizon: {error}");
                 horizon_client::crash::report_error(&home, "client", &*error);
@@ -246,21 +303,27 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
 
     horizon_client::logging::flush();
     match execution {
-        Ok(Ok(())) => write_result(
-            &home,
-            "horizon-client-result.txt",
-            "EXIT: O loop do cliente Horizon terminou sem retornar um erro explícito. Isso não confirma que o Minecraft chegou a carregar um mundo.",
-        ),
-        Ok(Err(error)) => write_result(
-            &home,
-            "horizon-client-result.txt",
-            &format!("FAIL: O cliente Horizon encerrou com erro: {error:#}"),
-        ),
-        Err(payload) => write_result(
-            &home,
-            "horizon-client-result.txt",
-            &format!("FAIL: O cliente Horizon sofreu um panic Rust: {}", panic_message(&*payload)),
-        ),
+        Ok(Ok(())) => {
+            let message = format!(
+                "EXIT: O loop do cliente Horizon terminou sem retornar um erro explícito; stopRequests={}.",
+                horizon_threads::stop_requests()
+            );
+            append_native_event(&home, &message);
+            write_result(&home, "horizon-client-result.txt", &message);
+        }
+        Ok(Err(error)) => {
+            let message = format!("FAIL: O cliente Horizon encerrou com erro: {error:#}");
+            append_native_event(&home, &message);
+            write_result(&home, "horizon-client-result.txt", &message);
+        }
+        Err(payload) => {
+            let message = format!(
+                "FAIL: O cliente Horizon sofreu um panic Rust: {}",
+                panic_message(&*payload)
+            );
+            append_native_event(&home, &message);
+            write_result(&home, "horizon-client-result.txt", &message);
+        }
     }
 }
 
