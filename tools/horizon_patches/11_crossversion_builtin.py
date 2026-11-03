@@ -18,9 +18,9 @@ for path in (net, engine_source, decisions_source):
         raise SystemExit(f"CrossVersion integration source is missing: {path}")
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
-    if count == 0 and new in text:
+    if new in text:
         return text
+    count = text.count(old)
     if count != 1:
         raise SystemExit(f"{net}: expected one {label} anchor, found {count}")
     return text.replace(old, new, 1)
