@@ -206,7 +206,8 @@ final class CrossVersionManager {
                 JdkRuntimeInstaller.getInstalledIfReady(context);
         if (runtime == null) return null;
         File temporary = new File(runtime.root, "tmp");
-        if (!temporary.isDirectory() && !temporary.mkdirs()) return null;
+        File home = new File(runtime.root, "home");
+        if (!ensureDirectory(temporary) || !ensureDirectory(home)) return null;
         try {
             Map<String, String> environment = runtime.processEnvironment(temporary);
             return new JavaRuntime(runtime.root, runtime.javaHome, runtime.java,
@@ -221,6 +222,8 @@ final class CrossVersionManager {
                 PojavRuntimeInstaller.getInstalledIfReady(context);
         if (runtime == null) return null;
         File temporary = new File(runtime.root, "tmp");
+        File home = new File(runtime.root, "home");
+        if (!ensureDirectory(temporary) || !ensureDirectory(home)) return null;
         try {
             Map<String, String> environment = runtime.processEnvironment(temporary);
             return new JavaRuntime(runtime.root, runtime.javaHome, runtime.java,
@@ -228,6 +231,10 @@ final class CrossVersionManager {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private static boolean ensureDirectory(File directory) {
+        return directory.isDirectory() || (directory.mkdirs() && directory.isDirectory());
     }
 
     static JSONObject readConfig(Context context) throws IOException {
