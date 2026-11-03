@@ -4,10 +4,12 @@ These files are ordered patch steps, not reusable gameplay mods. They patch Hori
 
 ## Default Android runtime patch set
 
-Only two patch steps are active in the default Android engine:
+The default Android engine applies these integration steps in order:
 
 1. `01_offline_server_login.py` — preserves offline-nickname joining on servers configured for offline mode and lets hybrid servers decide whether a missing Microsoft session is acceptable. Servers that truly require official online authentication still require a valid Microsoft session.
-2. `02_android_native.py` — Android NativeActivity integration, touch/keyboard/clipboard support, audio fallback, GUI scale and native build configuration. It also copies the Android `cdylib` entrypoint into the pinned Horizon source tree for compilation. When the exact Horizon revision includes the official `horizon-mods/runtime` and WIT SDK, it additionally enables the existing sandboxed WebAssembly component runtime for `.hmod` code modules. Older Nightlies without that complete runtime keep the original minimal feature set.
+2. `02_android_native.py` — Android NativeActivity integration, touch/keyboard/clipboard support, audio fallback, GUI scale and native build configuration. It also copies the Android `cdylib` entrypoint into the pinned Horizon source tree for compilation. When the exact Horizon revision includes the official `horizon-mods/runtime` and WIT SDK, it enables the existing sandboxed WebAssembly component runtime for `.hmod` code modules. Older Nightlies without that complete runtime keep WIT code modules disabled.
+3. `11_crossversion_builtin.py` — compiles the CrossVersion proxy manager and protocol decisions into Horizon's own client networking module. It is a built-in engine feature, not a separate mod archive, and reuses the Java runtime managed by the Android launcher.
+4. `10_mod_manager_api.py` — optional capability-scoped WIT module-management API. It is applied only when the selected upstream checkout contains every required WIT SDK/runtime source; its absence never blocks the normal engine or CrossVersion build.
 
 The server compatibility experiments remain available in source, but are **not applied to the default runtime** while this work is paused:
 
