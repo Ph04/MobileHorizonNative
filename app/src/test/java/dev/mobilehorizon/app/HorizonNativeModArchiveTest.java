@@ -122,22 +122,9 @@ public final class HorizonNativeModArchiveTest {
                             ? override.bytes : toml.getBytes(StandardCharsets.UTF_8));
             if (override != null && !"horizon-native.json".equals(override.name)
                     && !("mixins/" + id + "/horizon-mixin.toml").equals(override.name)) {
-                put(zip, "mixins/" + id + "/" + override.name, override.bytes);
-            }
-            if (override != null && override.name.startsWith("../")) {
-                // The traversal entry is at the archive root, as an attacker would supply it.
-                // Rebuild below with the exact unsafe ZIP name.
-                zip.finish();
-            }
-        }
-        if (override != null && override.name.startsWith("../")) {
-            archive.delete();
-            archive = Files.createTempFile("horizon-native-traversal-", ".hnmod").toFile();
-            try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive))) {
-                put(zip, "horizon-native.json", manifest.getBytes(StandardCharsets.UTF_8));
-                put(zip, "mixins/" + id + "/horizon-mixin.toml",
-                        mixinToml(id, "0.3.0", horizon).getBytes(StandardCharsets.UTF_8));
-                put(zip, override.name, override.bytes);
+                String entryName = "mod.wasm".equals(override.name)
+                        ? "mod.wasm" : "mixins/" + id + "/" + override.name;
+                put(zip, entryName, override.bytes);
             }
         }
         return archive;
