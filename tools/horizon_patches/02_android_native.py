@@ -861,7 +861,7 @@ game_source_before_hook = game.read_text(encoding="utf-8")
 mapped_key_signature = re.search(
     r"fn mapped_key\(\s*&mut self\s*,\s*key:\s*KeyCode\s*,"
     r"\s*pressed:\s*bool\s*,\s*repeat:\s*bool"
-    r"(?P<raw>\s*,\s*raw:\s*KeyCode)?\s*\)\s*->\s*Result<\(\)>"
+    r"(?P<raw>\s*,\s*raw:\s*KeyCode)?\s*\)\s*->\s*Result<\(\)>",
     game_source_before_hook,
 )
 if mapped_key_signature is None:
