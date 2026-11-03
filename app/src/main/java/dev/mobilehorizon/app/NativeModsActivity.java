@@ -1,0 +1,393 @@
+package dev.mobilehorizon.app;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Intent;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.Bundle;
+import android.provider.OpenableColumns;
+import android.view.View;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/** Per-instance manager for Horizon's build-time native .hnmod bundles. */
+public final class NativeModsActivity extends Activity {
+    public static final String EXTRA_INSTANCE_ID = "instance_id";
+    private static final int PICK_HNMOD = 7101;
+    private static final int PICK_RUNTIME = 7102;
+    private static final long MAX_IMPORT_BYTES = 64L * 1024L * 1024L;
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private String instanceId;
+    private TextView status;
+    private LinearLayout list;
+    private Button importButton;
+    private Button buildButton;
+    private Button installButton;
+
+    @Override protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        LauncherButtonStyle.install(this);
+        getWindow().setStatusBarColor(0xff090911);
+        getWindow().setNavigationBarColor(0xff090911);
+        instanceId = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_INSTANCE_ID);
+        if (instanceId == null || !GameInstanceManager.isValidInstanceId(instanceId)) {
+            finish();
+            return;
+        }
+        buildUi();
+        refresh();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        refresh();
+    }
+
+    @Override protected void onDestroy() {
+        io.shutdown();
+        super.onDestroy();
+    }
+
+    private void buildUi() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(0xff090911);
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(16), dp(18), dp(16), dp(28));
+        scroll.addView(page);
+        setContentView(scroll);
+
+        page.addView(text("MOBILEHORIZON  /  NATIVE MODS", 11, 0xff9e88ff, true), params(-1, -2));
+        page.addView(text("Módulos nativos (.hnmod)", 25, 0xfff0ecff, true), top(-1, -2, 5));
+        page.addView(text("Instância: " + instanceId, 12, 0xffaaa2c6, true), top(-1, -2, 5));
+        page.addView(text(
+                "O Horizon compila os .hnmod dentro de uma cópia do motor. Eles não são plugins carregados durante o jogo. Cada conjunto selecionado precisa de um runtime ARM64 próprio para esta instância.",
+                13, 0xffb9b3d1, false), top(-1, -2, 10));
+
+        LinearLayout warning = card();
+        warning.addView(text("Aviso de segurança: código nativo", 14, 0xffffc48a, true), params(-1, -2));
+        warning.addView(text(
+                "Um .hnmod contém código Rust nativo. Ele não é isolado em sandbox e, quando compilado e executado, terá os mesmos privilégios do processo do jogo. Pode acessar arquivos privados do app, rede e memória. Importe somente módulos cujo código e autor você confia.",
+                12, 0xffd1c5b5, false), top(-1, -2, 7));
+        page.addView(warning, top(-1, -2, 10));
+
+        importButton = button("Importar .hnmod", true, v -> pick(PICK_HNMOD));
+        page.addView(importButton, top(-1, 52, 8));
+
+        buildButton = button("Como compilar os módulos", false, v -> showBuildInstructions());
+        page.addView(buildButton, top(-1, 48, 8));
+
+        installButton = button("Instalar runtime compilada (.zip)", false, v -> pick(PICK_RUNTIME));
+        page.addView(installButton, top(-1, 48, 8));
+
+        status = text("", 12, 0xffc7bce6, false);
+        page.addView(status, top(-1, -2, 10));
+
+        page.addView(text("Módulos desta instância", 14, 0xffeee9ff, true), top(-1, -2, 12));
+        list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        page.addView(list, top(-1, -2, 6));
+
+        Button back = button("Voltar", false, v -> finish());
+        page.addView(back, top(-1, 46, 14));
+    }
+
+    private void pick(int requestCode) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
+        try {
+            startActivityForResult(intent, requestCode);
+        } catch (Exception error) {
+            showError("Não foi possível abrir o seletor de arquivos", error);
+        }
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        io.execute(() -> {
+            Exception failure = null;
+            String resultText = "";
+            try {
+                File staged = copySelectedUri(uri, requestCode == PICK_HNMOD ? ".hnmod" : ".zip");
+                if (requestCode == PICK_HNMOD) {
+                    HorizonNativeModArchive.Descriptor descriptor =
+                            HorizonNativeModManager.importArchive(this, instanceId, staged);
+                    resultText = "Importado: " + descriptor.displayName()
+                            + ". O módulo começa desativado; revise a origem antes de ativá-lo.";
+                } else if (requestCode == PICK_RUNTIME) {
+                    String base = HorizonRuntimeManager.currentVersion(this);
+                    if (base == null || base.isEmpty()) {
+                        throw new IOException("Instale primeiro uma runtime Horizon limpa.");
+                    }
+                    String version = HorizonNativeModManager.installBuildArtifact(
+                            this, instanceId, staged, base);
+                    resultText = "Runtime nativa verificada e instalada: " + version
+                            + ". Será usada somente nesta instância na próxima inicialização.";
+                }
+            } catch (Exception error) {
+                failure = error;
+            }
+            final Exception error = failure;
+            final String message = resultText;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (error != null) showError("Não foi possível importar o arquivo", error);
+                else status.setText(message);
+                refresh();
+            });
+        });
+    }
+
+    private File copySelectedUri(Uri uri, String expectedExtension) throws IOException {
+        String displayName = displayName(uri);
+        if (!displayName.toLowerCase(Locale.ROOT).endsWith(expectedExtension)) {
+            throw new IOException("Selecione um arquivo " + expectedExtension + ".");
+        }
+        File staging = new File(getCacheDir(), "native-mod-import-" + android.os.Process.myPid()
+                + "-" + System.nanoTime() + expectedExtension);
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("O provedor não conseguiu abrir o arquivo selecionado.");
+            try (FileOutputStream output = new FileOutputStream(staging)) {
+                byte[] buffer = new byte[64 * 1024];
+                long total = 0;
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    total += read;
+                    if (total > MAX_IMPORT_BYTES) throw new IOException("O arquivo excede 64 MiB.");
+                    output.write(buffer, 0, read);
+                }
+                output.flush();
+                output.getFD().sync();
+            }
+        } catch (Exception error) {
+            staging.delete();
+            if (error instanceof IOException) throw (IOException) error;
+            throw new IOException("Falha ao copiar o arquivo selecionado.", error);
+        }
+        return staging;
+    }
+
+    private String displayName(Uri uri) {
+        try (Cursor cursor = getContentResolver().query(
+                uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) return cursor.getString(index);
+            }
+        } catch (Exception ignored) { }
+        String path = uri.getLastPathSegment();
+        return path == null ? "" : path;
+    }
+
+    private void refresh() {
+        if (list == null || isFinishing() || isDestroyed()) return;
+        list.removeAllViews();
+        try {
+            List<HorizonNativeModManager.InstalledMod> mods =
+                    HorizonNativeModManager.list(this, instanceId);
+            String base = HorizonRuntimeManager.currentVersion(this);
+            boolean hasSelection = false;
+            for (HorizonNativeModManager.InstalledMod item : mods) {
+                if (item.enabled) hasSelection = true;
+                list.addView(modCard(item), top(-1, -2, 7));
+            }
+            if (mods.isEmpty()) {
+                list.addView(text("Nenhum .hnmod importado nesta instância.", 12, 0xffaaa2c6, false),
+                        params(-1, -2));
+            }
+            if (hasSelection) {
+                boolean ready = HorizonNativeModManager.hasBuildForSelection(this, instanceId, base);
+                status.setText(ready
+                        ? "Há um build associado à versão Horizon instalada. A validação completa ocorre novamente ao iniciar o jogo."
+                        : "Há módulos selecionados, mas ainda não existe um runtime correspondente. Até instalar o build, a instância inicia com Horizon limpo.");
+            } else {
+                status.setText("Nenhum módulo nativo está selecionado. A instância usa o runtime Horizon limpo.");
+            }
+            buildButton.setEnabled(hasSelection && base != null && !base.isEmpty());
+            installButton.setEnabled(hasSelection && base != null && !base.isEmpty());
+        } catch (Exception error) {
+            status.setText("Não foi possível ler os .hnmod: "
+                    + (error.getMessage() == null ? error.toString() : error.getMessage()));
+        }
+    }
+
+    private View modCard(HorizonNativeModManager.InstalledMod item) {
+        LinearLayout box = card();
+        box.addView(text(item.descriptor.displayName(), 14, 0xfff0ecff, true), params(-1, -2));
+        box.addView(text("ID: " + item.descriptor.id, 11, 0xffaaa2c6, false), top(-1, -2, 3));
+        box.addView(text("Horizon: " + item.descriptor.horizonRevision.substring(0, 12)
+                + "  •  Mixins: " + item.descriptor.mixinsRevision.substring(0, 12),
+                10, 0xffaaa2c6, false), top(-1, -2, 3));
+        box.addView(text(item.enabled ? "Selecionado para a próxima compilação" : "Importado e desativado",
+                11, item.enabled ? 0xff9ee0c0 : 0xffaaa2c6, true), top(-1, -2, 7));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        box.addView(actions, top(-1, -2, 8));
+        Button toggle = button(item.enabled ? "Desativar" : "Ativar", !item.enabled,
+                v -> toggle(item));
+        actions.addView(toggle, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        Button remove = button("Remover", false, v -> confirmRemove(item));
+        LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(0, dp(42), 1f);
+        removeParams.leftMargin = dp(7);
+        actions.addView(remove, removeParams);
+        return box;
+    }
+
+    private void toggle(HorizonNativeModManager.InstalledMod item) {
+        if (item.enabled) {
+            changeEnabled(item, false);
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Confiar e ativar código nativo?")
+                .setMessage("Ativar " + item.descriptor.id + " permite que seu código Rust seja incluído no motor do jogo. Ele não é executado em sandbox e terá os privilégios do app. Continue somente se você revisou e confia no código e na origem do módulo.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Ativar", (dialog, which) -> changeEnabled(item, true))
+                .show();
+    }
+
+    private void changeEnabled(HorizonNativeModManager.InstalledMod item, boolean enabled) {
+        try {
+            HorizonNativeModManager.setEnabled(this, instanceId, item.descriptor.id, enabled);
+            status.setText(enabled
+                    ? "Módulo selecionado. Será necessário gerar e instalar um runtime para esta combinação."
+                    : "Módulo desativado. O runtime anterior não será usado se não corresponder à seleção.");
+            refresh();
+        } catch (Exception error) {
+            showError("Não foi possível alterar o módulo", error);
+        }
+    }
+
+    private void confirmRemove(HorizonNativeModManager.InstalledMod item) {
+        new AlertDialog.Builder(this)
+                .setTitle("Remover " + item.descriptor.id + "?")
+                .setMessage("O pacote será removido somente desta instância. Outros perfis não serão alterados.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Remover", (dialog, which) -> {
+                    try {
+                        HorizonNativeModManager.remove(this, instanceId, item.descriptor.id);
+                        refresh();
+                    } catch (Exception error) {
+                        showError("Não foi possível remover o módulo", error);
+                    }
+                }).show();
+    }
+
+    private void showBuildInstructions() {
+        String base;
+        try {
+            base = HorizonRuntimeManager.currentVersion(this);
+        } catch (Exception error) {
+            showError("Runtime Horizon indisponível", error);
+            return;
+        }
+        if (base == null || base.isEmpty()) {
+            showError("Runtime Horizon indisponível",
+                    new IOException("Instale primeiro a runtime Horizon limpa."));
+            return;
+        }
+        String baseTag = HorizonNativeModManager.baseRuntimeReleaseTag(base);
+        String message = "Build remoto para esta instância:\n\n"
+                + "1. Na página Releases do repositório MobileHorizonNative, crie uma release temporária com uma tag única (por exemplo hnmod-input-01) e envie como assets somente os .hnmod que estão selecionados nesta instância.\n\n"
+                + "2. Abra o workflow Build Horizon native .hnmod runtime e informe:\n"
+                + "   mod_release_tag = tag da release temporária\n"
+                + "   base_runtime_tag = " + baseTag + "\n\n"
+                + "3. Aguarde o artefato mobilehorizon-native-runtime. Baixe o ZIP e use “Instalar runtime compilada” nesta tela.\n\n"
+                + "A compilação acontece em runner isolado, sem segredos do repositório. O workflow valida cada arquivo com o parser nativo oficial do Horizon e exige que o pacote corresponda exatamente ao commit da runtime base.";
+        new AlertDialog.Builder(this)
+                .setTitle("Compilar .hnmod para esta instância")
+                .setMessage(message)
+                .setNegativeButton("Fechar", null)
+                .setNeutralButton("Copiar tag base", (dialog, which) -> {
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Horizon runtime tag", baseTag));
+                        status.setText("Tag base copiada: " + baseTag);
+                    }
+                })
+                .setPositiveButton("Abrir workflow", (dialog, which) -> {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(
+                            "https://github.com/Ph04/MobileHorizonNative/actions/workflows/horizon-native-mod-build.yml"));
+                    startActivity(intent);
+                }).show();
+    }
+
+    private void showError(String title, Exception error) {
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(error.getMessage() == null ? error.toString() : error.getMessage())
+                .setPositiveButton("Fechar", null)
+                .show();
+    }
+
+    private LinearLayout card() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(13), dp(12), dp(13), dp(12));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(0xff171622);
+        background.setCornerRadius(dp(15));
+        background.setStroke(dp(1), 0xff343044);
+        box.setBackground(background);
+        return box;
+    }
+
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextColor(color);
+        view.setTextSize(size);
+        if (bold) view.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        return view;
+    }
+
+    private Button button(String label, boolean primary, View.OnClickListener listener) {
+        Button result = new Button(this);
+        result.setText(label);
+        result.setAllCaps(false);
+        result.setTextSize(13);
+        result.setOnClickListener(listener);
+        result.setTextColor(0xfff0ecff);
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(primary ? 0xff59469b : 0xff292637);
+        background.setCornerRadius(dp(12));
+        result.setBackground(background);
+        return result;
+    }
+
+    private LinearLayout.LayoutParams params(int width, int height) {
+        return new LinearLayout.LayoutParams(width < 0 ? width : dp(width), height < 0 ? height : dp(height));
+    }
+
+    private LinearLayout.LayoutParams top(int width, int height, int margin) {
+        LinearLayout.LayoutParams p = params(width, height);
+        p.topMargin = dp(margin);
+        return p;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+}
