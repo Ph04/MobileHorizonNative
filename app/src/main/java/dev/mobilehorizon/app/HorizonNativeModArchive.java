@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Enumeration;
+import java.util.Iterator;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -179,8 +179,8 @@ final class HorizonNativeModArchive {
         allowed.add("horizon");
         allowed.add("mixins");
         allowed.add("hooks");
-        for (Enumeration<String> keys = manifest.keys(); keys.hasMoreElements();) {
-            String key = keys.nextElement();
+        for (Iterator<String> keys = manifest.keys(); keys.hasNext();) {
+            String key = keys.next();
             if (!allowed.contains(key)) throw new IOException("Campo desconhecido em horizon-native.json: " + key);
         }
     }
