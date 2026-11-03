@@ -781,8 +781,7 @@ getWindow().setStatusBarColor(0xff090911);
                     showStatus("Não foi possível alterar " + item.name + ": " + message(error));
                 }
             });
-            actions.addView(active, new LinearLayout.LayoutParams(0, dp(40), 1f));
-        }
+        actions.addView(active, new LinearLayout.LayoutParams(0, dp(40), 1f));
 
         if (item.kind == Kind.DATA_PACK) {
             Button install = button("Instalar", true, v -> chooseWorldForDataPack(item.path));

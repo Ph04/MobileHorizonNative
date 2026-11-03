@@ -45,16 +45,20 @@ pub mod crossversion {
 use std::{"""
 text = replace_once(text, module_anchor, module_insert, "CrossVersion module declarations")
 
-connect_old = """        Self::start(address, name, auth, view_distance, lang, None, None)"""
+connect_old = """        Self::start(
+            address, name, auth, info, lang, None, None, resources, false,
+        )"""
 connect_new = """        let routed = crossversion::route(address);
         Self::start(
             routed.as_deref().unwrap_or(address),
             name,
             auth,
-            view_distance,
+            info,
             lang,
             None,
             None,
+            resources,
+            false,
         )"""
 text = replace_once(text, connect_old, connect_new, "Session::connect routing")
 
@@ -62,20 +66,24 @@ transfer_old = """        Self::start(
             address,
             name,
             auth,
-            view_distance,
+            info,
             lang,
             None,
             Some(cookies),
+            resources,
+            false,
         )"""
 transfer_new = """        let routed = crossversion::route(address);
         Self::start(
             routed.as_deref().unwrap_or(address),
             name,
             auth,
-            view_distance,
+            info,
             lang,
             None,
             Some(cookies),
+            resources,
+            false,
         )"""
 text = replace_once(text, transfer_old, transfer_new, "Session::connect_transferred routing")
 
