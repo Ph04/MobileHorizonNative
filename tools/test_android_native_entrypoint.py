@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the generated Android NativeActivity wrapper matches Stable or Nightly Horizon."""
+"""Verify Stable/Nightly NativeActivity, keyboard and Winit event-loop patch shapes."""
 from __future__ import annotations
 
 import argparse
