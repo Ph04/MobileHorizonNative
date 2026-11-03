@@ -70,6 +70,11 @@ def main() -> int:
     require("offline-mode fallback did not reach the server" in offline_login_patch
             and "sending the normal encrypted response" in offline_login_patch,
             "offline-account login behavior and its matching Rust test must remain aligned")
+    android_native_patch = read(repo / "tools/horizon_patches/02_android_native.py")
+    require("entrypoints = {" in android_native_patch
+            and 'if len(entrypoints) != 1:' in android_native_patch
+            and 'call_pattern = r"horizon_client::game::run(?:_with)?\\(\\)"' in android_native_patch,
+            "the Android NativeActivity must select game::run or game::run_with from the pinned Horizon API")
     require("HORIZON_CROSSVERSION_JAVA" in engine
             and "java_command(java)" in engine,
             "ViaProxy must use the Java runtime selected by MobileHorizonNative")
