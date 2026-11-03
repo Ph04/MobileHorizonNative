@@ -325,16 +325,13 @@ public final class NativeModsActivity extends Activity {
         String overlayCommit = "4b19ed9d767bd715dda1d6092d12b9348effe8ea";
         String message = "Build remoto para esta instância:\n\n"
                 + "1. Na página Releases do repositório MobileHorizonNative, crie uma release temporária com uma tag única (por exemplo hnmod-input-01) e envie como assets somente os .hnmod que estão selecionados nesta instância.\n\n"
-                + "2. A definição do workflow Build Horizon native .hnmod runtime está na branch feature/fabric-java-bridge-test. Para aparecer o botão Run workflow na interface do GitHub, essa definição precisa primeiro entrar na branch padrão por PR/merge; main não foi alterada.\\n\\n"
-                + "3. Ao executar o workflow, informe:\\n"
-                + "   mod_release_tag = tag da release dos .hnmod\\n"
-                + "   base_runtime_tag = " + baseTag + "\\n"
-                + "   overlay_source_commit = " + overlayCommit + "\\n\\n"
+                + "2. A definição do workflow Build Horizon native .hnmod runtime está na branch feature/fabric-java-bridge-test. Para aparecer o botão Run workflow na interface do GitHub, essa definição precisa primeiro entrar na branch padrão por PR/merge; main não foi alterada.\n\n"
+                + "3. Ao executar o workflow, informe:\n"
                 + "   mod_release_tag = tag da release dos .hnmod\n"
-                + "   base_runtime_tag = " + baseTag + "\n\n"
+                + "   base_runtime_tag = " + baseTag + "\n"
                 + "   overlay_source_commit = " + overlayCommit + "\n\n"
-                + "3. Aguarde o workflow validar os pacotes com o parser Rust oficial do Horizon, aplicar os mixins e compilar ARM64.\n\n"
-                + "4. Baixe o artifact ZIP mobilehorizon-native-runtime na execução do Actions (não uma release). Depois selecione o ZIP em “Instalar runtime compilada”.\n\n"
+                + "4. Aguarde o workflow validar os pacotes com o parser Rust oficial do Horizon, aplicar os mixins e compilar ARM64.\n\n"
+                + "5. Baixe o artifact ZIP mobilehorizon-native-runtime na execução do Actions (não uma release). Depois selecione o ZIP em “Instalar runtime compilada”.\n\n"
                 + "A compilação roda em runner isolado, sem segredos e sem alterar a runtime limpa compartilhada. O build só será ativado nesta instância se o manifesto, a revisão Horizon, os módulos selecionados, o SHA-256 e o ELF ARM64 corresponderem exatamente. Módulos que declarem [[post_build]] são recusados nesta primeira versão porque a execução dessas etapas ainda não foi portada para Android.";
         new AlertDialog.Builder(this)
                 .setTitle("Compilar .hnmod para esta instância")
@@ -349,7 +346,7 @@ public final class NativeModsActivity extends Activity {
                 })
                 .setPositiveButton("Ver definição do workflow", (dialog, which) -> {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(
-                            "https://github.com/Ph04/MobileHorizonNative/actions/workflows/horizon-native-mod-build.yml"));
+                            "https://github.com/Ph04/MobileHorizonNative/blob/feature/fabric-java-bridge-test/.github/workflows/horizon-native-mod-build.yml"));
                     startActivity(intent);
                 }).show();
     }
