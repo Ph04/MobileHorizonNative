@@ -105,7 +105,7 @@ elif ("let signed_in = auth.is_some();" in auth_block
                     }
                 }"""
     net_source = net_source[:auth_start] + auth_replacement + net_source[auth_end:]
-elif "mobilehorizon_authenticate_if_present(auth" in auth_block:
+elif "mobilehorizon_authenticate_if_present(" in auth_block:
     pass
 else:
     raise SystemExit(f"{net}: unsupported online authentication block layout")
