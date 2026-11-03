@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Static preflight for the built-in CrossVersion Android integration."""
+from __future__ import annotations
+
+import argparse
+import re
+from pathlib import Path
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SystemExit("CrossVersion preflight failed: " + message)
+
+
+def read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise SystemExit(f"Cannot read {path}: {error}") from error
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", required=True, type=Path,
+                        help="patched pinned Horizon source directory")
+    parser.add_argument("--repo", required=True, type=Path,
+                        help="MobileHorizonNative checkout")
+    args = parser.parse_args()
+    source = args.source.resolve()
+    repo = args.repo.resolve()
+
+    net_path = source / "crates/horizon-client/src/net.rs"
+    engine_path = source / "crates/horizon-client/src/crossversion_engine.rs"
+    decisions_path = source / "crates/horizon-client/src/crossversion_decisions.rs"
+    cargo_path = source / "crates/horizon-client/Cargo.toml"
+    net = read(net_path)
+    engine = read(engine_path)
+    decisions = read(decisions_path)
+    cargo = read(cargo_path)
+
+    require(net.count("crossversion::route(address)") == 2,
+            "both normal and transferred server connections must be routed")
+    require("crossversion::session_ended(&self.address);" in net,
+            "Session::disconnect must release its ViaProxy reference")
+    require("crossversion::should_badge()" in net
+            and "crossversion_decisions::badge(json, address)" in net,
+            "server-list status pings must display the translated protocol")
+    require("pub mod crossversion" in net
+            and 'include!("crossversion_engine.rs")' in net,
+            "CrossVersion must be compiled into horizon-client, not loaded as a mod")
+    require("horizon_protocol::PROTOCOL_VERSION as i64" in decisions,
+            "server-list compatibility must follow the pinned Horizon protocol")
+    require("HORIZON_CROSSVERSION_DATA_DIR" in engine,
+            "the engine and app must share the same private CrossVersion directory")
+    require("HORIZON_CROSSVERSION_JAVA" in engine
+            and "java_command(java)" in engine,
+            "ViaProxy must use the Java runtime selected by MobileHorizonNative")
+    require("/system/bin/linker64" in engine,
+            "Android app-private Java must be launched through linker64")
+    require("HORIZON_CROSSVERSION_LD_LIBRARY_PATH" in engine
+            and "HORIZON_CROSSVERSION_JAVA_TOOL_OPTIONS" in engine,
+            "the ViaProxy process must receive its Java 25 environment and memory limits")
+    require("2894bbfb2f4342f8fde887af6c689313efd5b0e46a8006775eea0e21e2948ab5" in engine,
+            "ViaProxy 3.4.14 SHA-256 pin is missing")
+    require('sha2 = "0.10.9"' in cargo and 'ureq = { version = "2"' in cargo,
+            "pinned Horizon client dependencies must support checksum and HTTPS downloads")
+
+    manager_path = repo / "app/src/main/java/dev/mobilehorizon/app/CrossVersionManager.java"
+    service_path = repo / "app/src/main/java/dev/mobilehorizon/app/CrossVersionService.java"
+    activity_path = repo / "app/src/main/java/dev/mobilehorizon/app/CrossVersionActivity.java"
+    native_activity_path = repo / "app/src/main/java/dev/mobilehorizon/app/NativeGameActivity.java"
+    settings_path = repo / "app/src/main/java/dev/mobilehorizon/app/SettingsActivity.java"
+    manifest_path = repo / "app/src/main/AndroidManifest.xml"
+    manager = read(manager_path)
+    service = read(service_path)
+    activity = read(activity_path)
+    native_activity = read(native_activity_path)
+    settings = read(settings_path)
+    manifest = read(manifest_path)
+
+    rust_hash = re.search(r'const VIAPROXY_SHA256: &str = "([0-9a-f]{64})";', engine)
+    java_hash = re.search(r'VIA_PROXY_SHA256\s*=\s*\n?\s*"([0-9a-f]{64})"', manager)
+    require(rust_hash is not None and java_hash is not None
+            and rust_hash.group(1) == java_hash.group(1),
+            "Java download manager and built-in runtime must share the exact ViaProxy SHA-256")
+    require("HttpURLConnection" in manager and "getContentLengthLong" in manager
+            and "SHA-256" in manager,
+            "the app downloader must verify bounded HTTPS downloads")
+    require("accountsV4" in manager and "MicrosoftAccount" in manager,
+            "the UI must detect ViaProxy-owned Microsoft accounts without reading Horizon sessions")
+    require("account add microsoft" in service
+            and "microsoft.com/link" in activity,
+            "the Microsoft device-code login flow is missing")
+    require("runtime.java.getAbsolutePath()" in service
+            and "/system/bin/linker64" in service,
+            "the sign-in service must use the installed Android Java runtime via linker64")
+    for variable in (
+        "HORIZON_CROSSVERSION_DATA_DIR",
+        "HORIZON_CROSSVERSION_JAVA",
+        "HORIZON_CROSSVERSION_JAVA_HOME",
+        "HORIZON_CROSSVERSION_LD_LIBRARY_PATH",
+        "HORIZON_CROSSVERSION_HOME",
+        "HORIZON_CROSSVERSION_TMPDIR",
+        "HORIZON_CROSSVERSION_JAVA_TOOL_OPTIONS",
+    ):
+        require(variable in native_activity,
+                f"NativeGameActivity does not export {variable}")
+    require("CrossVersionActivity.class" in settings,
+            "launcher settings do not link to CrossVersion")
+    require('android:name=".CrossVersionActivity"' in manifest
+            and 'android:name=".CrossVersionService"' in manifest,
+            "CrossVersion activity/service are not registered in AndroidManifest.xml")
+
+    archive_path = repo / "app/src/main/java/dev/mobilehorizon/app/HorizonModArchive.java"
+    archive = read(archive_path)
+    require('endsWith(".hmod")' in archive and 'endsWith(".hnmod")' not in archive,
+            "the WIT archive reader must accept only the official .hmod suffix")
+    native_import = read(repo / "app/src/main/java/dev/mobilehorizon/app/ResourceManagerActivity.java")
+    require('if (lower.endsWith(".hnmod"))' in native_import
+            and "HorizonNativeModArchive.read(staging)" in native_import,
+            "legacy .hnmod packages must remain on their native source path")
+
+    notice = read(repo / "tools/crossversion/LICENSE")
+    require("MIT License" in notice and "Permission is hereby granted" in notice,
+            "upstream CrossVersion MIT licence notice is missing")
+    print("CrossVersion preflight passed: built-in routing, proxy lifecycle, Android Java, device login,")
+    print("server-version overrides, checksum pin, app UI, and .hnmod native-only cleanup.")
+    print("This is a static source check; Android engine compilation and real server testing remain required.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
