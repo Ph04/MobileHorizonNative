@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Stable/Nightly NativeActivity, keyboard and Winit event-loop patch shapes."""
+"""Verify the generated Android wrapper and revision-specific keyboard/event-loop adapters."""
 from __future__ import annotations
 
 import argparse
@@ -16,9 +16,7 @@ def main() -> int:
     args = parser.parse_args()
 
     source = args.source.resolve()
-    # patch_horizon_android_touch.py copies the repository template into the generated
-    # cdylib crate and rewrites that copy for the selected Horizon revision. The template
-    # intentionally remains run() so it can serve both Stable and Nightly.
+    # The patcher copies the generic template and rewrites the generated cdylib crate.
     wrapper = (args.wrapper.resolve() if args.wrapper else
                source / "crates/mobilehorizon-android/src/lib.rs")
     game = source / "crates/horizon-client/src/game.rs"
@@ -54,7 +52,7 @@ def main() -> int:
     if "pub mod game;" not in lib_text:
         raise SystemExit("Selected Horizon checkout does not publicly export the game module")
 
-    # Android keyboard injection must follow the exact Stable/Nightly API signature.
+    # Stable exposes the three-argument method; current Nightly adds the physical key.
     mapped_key_start = game_text.find("fn mapped_key(")
     mapped_key_end = game_text.find(") -> Result<()> ", mapped_key_start)
     if mapped_key_end < 0:
@@ -62,31 +60,21 @@ def main() -> int:
     if (mapped_key_start < 0 or mapped_key_end < 0
             or game_text.find("fn mapped_key(", mapped_key_start + 1) >= 0):
         raise SystemExit("Selected Horizon checkout has no unique supported mapped_key declaration")
+
     mapped_key_signature = game_text[mapped_key_start:mapped_key_end]
     required_parameters = ("&mut self", "key: KeyCode", "pressed: bool", "repeat: bool")
     if not all(parameter in mapped_key_signature for parameter in required_parameters):
         raise SystemExit("Selected Horizon checkout has an unsupported mapped_key signature")
-    has_raw_key = "raw: KeyCode" in mapped_key_signature
     mapped_key_call = (
         "self.mapped_key(mapped_key, pressed, false, key)"
-        if has_raw_key
+        if "raw: KeyCode" in mapped_key_signature
         else "self.mapped_key(mapped_key, pressed, false)"
     )
     if game_text.count(mapped_key_call) != 1:
         raise SystemExit(
             f"Generated Android keyboard adapter must call {mapped_key_call!r} exactly once"
         )
-    if mapped_key_signature is None:
-        raise SystemExit("Selected Horizon checkout has an unsupported mapped_key signature")
-    mapped_key_call = (
-        "self.mapped_key(mapped_key, pressed, false, key)"
-        if mapped_key_signature.group("raw")
-        else "self.mapped_key(mapped_key, pressed, false)"
-    )
-    if game_text.count(mapped_key_call) != 1:
-        raise SystemExit(
-            f"Generated Android keyboard adapter must call {mapped_key_call!r} exactly once"
-        )
+
     if ("fn new_event_loop<T: 'static + Send>() -> Result<EventLoop<T>>" not in game_text
             or "Ok(EventLoop::<T>::with_user_event().build()?)" not in game_text):
         raise SystemExit(
@@ -95,7 +83,7 @@ def main() -> int:
 
     print(
         f"Generated Android NativeActivity wrapper matches selected "
-        f"Horizon game::{selected}() entrypoint."
+        f"Horizon game::{selected}(), with the matching keyboard and Winit APIs."
     )
     return 0
 
