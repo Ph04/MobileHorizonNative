@@ -6,9 +6,9 @@ concurrency:
 
 on:
   schedule:
-    # Recheck often because upstream Horizon releases can arrive several times per hour.
+    # Check hourly. The app also checks on startup and exposes a manual runtime check.
     # Publication is serialized, and each resolver exits quickly when the matching runtime already exists.
-    - cron: "*/5 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 # This file exists on the GitHub default branch only because scheduled workflows
