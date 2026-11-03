@@ -96,13 +96,12 @@ def main() -> int:
     require("Mods::load_for" in game_source,
             "game startup does not load installed sandboxed mods")
 
-    # MobileHorizonNative's dynamic .hnmod package uses the same official
-    # horizon-mod.toml + mod.wasm component layout; only the archive suffix differs.
+    # The WIT loader consumes Horizon's official .hmod package format.
     manifest_source_path = root / "crates/horizon-mods/src/manifest.rs"
     require(manifest_source_path.is_file(), "Horizon mod package discovery is missing")
     manifest_source = manifest_source_path.read_text(encoding="utf-8")
-    require('e == "hnmod"' in manifest_source,
-            "the WIT loader is not patched to discover dynamic .hnmod archives")
+    require('e == "hmod"' in manifest_source,
+            "the official Horizon .hmod package discovery is missing")
 
     # The Android overlay extends the official component contract with an
     # explicit, capability-gated manager API for listing and toggling modules.
@@ -120,7 +119,7 @@ def main() -> int:
             "the game does not apply enabled-state changes after the current WIT hook returns")
 
     print("WIT modules: enabled for Android.")
-    print("Dynamic .hnmod: discovered by Horizon's official component loader.")
+    print("Official .hmod: discovered by Horizon's component loader.")
     print("Host API: game/chat/HUD/storage/UI/render/input/mod-manager via versioned WIT.")
     print("Runtime safeguards: 64 MiB per module, fuel metering, capability import checks.")
     print("This is a static source preflight, not an Android Wasmtime build/device test.")
