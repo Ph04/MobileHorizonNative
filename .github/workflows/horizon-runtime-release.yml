@@ -278,7 +278,7 @@ jobs:
         env:
           UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
           UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
-          # is the supported protocol adapter and is injected by patch group 11.
+          # Android input adaptation only; protocol translation is intentionally not part of this runtime.
           HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
         shell: bash
         run: |
