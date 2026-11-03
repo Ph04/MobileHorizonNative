@@ -990,7 +990,7 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                         self.smooth_camera = !self.smooth_camera;
                     }
                     let result = match self.settings.keys.translate(key) {
-                        Some(Ok(mapped_key)) => self.mapped_key(mapped_key, pressed, false),
+                        Some(Ok(mapped_key)) => self.mapped_key(mapped_key, pressed, false, key),
                         Some(Err(button)) if self.screen == Screen::Playing => self.play_mouse(button, pressed),
                         _ => Ok(()),
                     };
@@ -1263,7 +1263,7 @@ event_loop_factory = """fn new_event_loop<T: 'static + Send>() -> Result<EventLo
     }
     #[cfg(not(target_os = "android"))]
     {
-        Ok(EventLoop::<T>::new()?)
+        Ok(EventLoop::<T>::with_user_event().build()?)
     }
 }
 
