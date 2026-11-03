@@ -50,7 +50,7 @@ if "fn mobilehorizon_authenticate_if_present<" not in net_source:
     net_source = net_source.replace(helper_anchor, helper_source + helper_anchor, 1)
 
 auth_start_marker = "                if hello.should_authenticate {"
-auth_end_marker = "\n                status(send, &tr(lang, \\"connect.encrypting\\"));"
+auth_end_marker = '\n                status(send, &tr(lang, "connect.encrypting"));'
 auth_start = net_source.find(auth_start_marker)
 auth_end = net_source.find(auth_end_marker, auth_start + len(auth_start_marker))
 if auth_start < 0 or auth_end < 0:
