@@ -281,6 +281,9 @@ jobs:
         env:
           UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
           UPSTREAM_COMMIT: ${{ needs.resolve.outputs.upstream_commit }}
+          # The legacy compatibility socket is not part of this runtime. CrossVersion
+          # is the supported protocol adapter and is injected by patch group 11.
+          HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
         shell: bash
         run: |
           set -euo pipefail
