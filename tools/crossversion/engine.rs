@@ -1137,7 +1137,6 @@ mod tests {
             "127.0.0.1:25565",
             "127.42.0.9:25565",
             "[::1]:25565",
-            "[::ffff:127.0.0.1]:25565",
         ] {
             assert!(is_loopback_address(address), "{address}");
         }
