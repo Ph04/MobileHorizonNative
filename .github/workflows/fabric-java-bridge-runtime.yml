@@ -2,6 +2,18 @@ name: Build external Fabric Java Bridge runtime (Android ARM64)
 
 on:
   workflow_dispatch:
+  push:
+    branches: ["feature/fabric-java-bridge-test"]
+    paths:
+      - "android-native/**"
+      - "tools/patch_horizon_android_touch.py"
+      - "tools/horizon_patches/01_offline_server_login.py"
+      - "tools/horizon_patches/02_android_native.py"
+      - "tools/horizon_patches/03_java_bridge_android.py"
+      - "tools/horizon_patches/11_crossversion_builtin.py"
+      - "tools/crossversion/**"
+      - "tools/fabric-java-bridge-revision.env"
+      - ".github/workflows/fabric-java-bridge-runtime.yml"
 
 permissions:
   contents: write
@@ -12,6 +24,8 @@ concurrency:
 
 jobs:
   build-runtime:
+    # Manual runs are always allowed; pushes publish only for explicitly approved runtime stages.
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[publish-runtime-approved]')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -36,11 +50,13 @@ jobs:
           tracked = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
           paths = sorted(p for p in tracked if p and (
               p.startswith(b"android-native/")
+              or p.startswith(b"tools/crossversion/")
               or p in {
                   b"tools/patch_horizon_android_touch.py",
                   b"tools/horizon_patches/01_offline_server_login.py",
                   b"tools/horizon_patches/02_android_native.py",
                   b"tools/horizon_patches/03_java_bridge_android.py",
+                  b"tools/horizon_patches/11_crossversion_builtin.py",
                   b"tools/fabric-java-bridge-revision.env",
                   b".github/workflows/fabric-java-bridge-runtime.yml",
               }
