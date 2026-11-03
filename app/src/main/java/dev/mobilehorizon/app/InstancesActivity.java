@@ -164,6 +164,14 @@ getWindow().setStatusBarColor(0xff090911);
                 });
                 manageMods.setEnabled(!busy);
                 card.addView(manageMods, topParams(-1, 46, 8));
+            } else {
+                Button nativeMods = button("Módulos nativos (.hnmod)", false, v -> {
+                    android.content.Intent intent = new android.content.Intent(this, NativeModsActivity.class);
+                    intent.putExtra(NativeModsActivity.EXTRA_INSTANCE_ID, instance.id);
+                    startActivity(intent);
+                });
+                nativeMods.setEnabled(!busy);
+                card.addView(nativeMods, topParams(-1, 46, 8));
             }
         } catch (Exception ignored) {
             // The profile validation line above already reports malformed profiles.
