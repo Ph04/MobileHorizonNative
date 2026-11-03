@@ -101,51 +101,46 @@ impl Default for Config {
     }
 }
 
-static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
-
 fn config() -> Config {
-    let mut slot = CONFIG.lock().unwrap_or_else(|e| e.into_inner());
-    slot.get_or_insert_with(|| {
-        let defaults = Config::default();
-        let path = data_dir().join("config.json");
-        let Ok(text) = fs::read_to_string(&path) else {
-            let _ = fs::create_dir_all(data_dir());
-            let _ = fs::write(&path, "{\n  \"enabled\": true,\n  \"always\": false\n}\n");
-            return defaults;
-        };
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
-            eprintln!(
-                "[crossversion] {} is not JSON; using defaults",
-                path.display()
-            );
-            return defaults;
-        };
-        // An environment override is for experiments and wins over the file.
-        let env_on = std::env::var_os("HORIZON_CROSSVERSION").is_some();
-        Config {
-            enabled: if env_on {
-                defaults.enabled
-            } else {
-                json["enabled"].as_bool().unwrap_or(defaults.enabled)
-            },
-            always: json["always"].as_bool().unwrap_or(defaults.always) || defaults.always,
-            java: defaults
-                .java
-                .or_else(|| json["java"].as_str().map(PathBuf::from)),
-            servers: json["servers"]
-                .as_object()
-                .map(|servers| {
-                    servers
-                        .iter()
-                        .filter_map(|(address, version)| {
-                            Some((address.clone(), version.as_str()?.to_owned()))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-        }
-    })
-    .clone()
+    let defaults = Config::default();
+    let path = data_dir().join("config.json");
+    let Ok(text) = fs::read_to_string(&path) else {
+        let _ = fs::create_dir_all(data_dir());
+        let _ = fs::write(&path, "{\n  \"enabled\": true,\n  \"always\": false,\n  \"servers\": {}\n}\n");
+        return defaults;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        eprintln!(
+            "[crossversion] {} is not JSON; using defaults",
+            path.display()
+        );
+        return defaults;
+    };
+    // The launcher owns this file; reread it so toggles made in its UI take
+    // effect without rebuilding the engine or relaunching the game.
+    let env_on = std::env::var_os("HORIZON_CROSSVERSION").is_some();
+    Config {
+        enabled: if env_on {
+            defaults.enabled
+        } else {
+            json["enabled"].as_bool().unwrap_or(defaults.enabled)
+        },
+        always: json["always"].as_bool().unwrap_or(defaults.always) || defaults.always,
+        java: defaults
+            .java
+            .or_else(|| json["java"].as_str().map(PathBuf::from)),
+        servers: json["servers"]
+            .as_object()
+            .map(|servers| {
+                servers
+                    .iter()
+                    .filter_map(|(address, version)| {
+                        Some((address.clone(), version.as_str()?.to_owned()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+    }
 }
 
 struct Proxy {
@@ -187,7 +182,7 @@ pub fn route(address: &str) -> Option<String> {
     let forced = settings
         .servers
         .iter()
-        .find(|(known, _)| known == address)
+        .find(|(known, _)| known.eq_ignore_ascii_case(address))
         .map(|(_, version)| version.clone())
         .filter(|version| version != "auto");
     let protocol = if forced.is_some() {
@@ -869,12 +864,10 @@ pub fn summary() -> (bool, String, String) {
 
 /// Turn the mod on or off from its settings page, and keep it.
 pub fn toggle_enabled() -> bool {
-    let mut slot = CONFIG.lock().unwrap_or_else(|e| e.into_inner());
-    let mut settings = slot.clone().unwrap_or_else(Config::default);
+    let mut settings = config();
     settings.enabled = !settings.enabled;
     let enabled = settings.enabled;
     write_config(&settings);
-    *slot = Some(settings);
     enabled
 }
 
@@ -917,14 +910,12 @@ pub fn cycle_server_version(address: &str) -> String {
     let current = server_version(address);
     let index = VERSIONS.iter().position(|v| *v == current).unwrap_or(0);
     let next = VERSIONS[(index + 1) % VERSIONS.len()].to_owned();
-    let mut slot = CONFIG.lock().unwrap_or_else(|e| e.into_inner());
-    let mut settings = slot.clone().unwrap_or_else(Config::default);
-    settings.servers.retain(|(known, _)| known != address);
+    let mut settings = config();
+    settings.servers.retain(|(known, _)| !known.eq_ignore_ascii_case(address));
     if next != "auto" {
-        settings.servers.push((address.to_owned(), next.clone()));
+        settings.servers.push((address.to_ascii_lowercase(), next.clone()));
     }
     write_config(&settings);
-    *slot = Some(settings);
     next
 }
 
