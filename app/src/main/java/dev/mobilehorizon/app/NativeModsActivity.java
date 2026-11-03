@@ -322,7 +322,7 @@ public final class NativeModsActivity extends Activity {
             return;
         }
         String baseTag = HorizonNativeModManager.baseRuntimeReleaseTag(base);
-        String overlayCommit = "4b19ed9d767bd715dda1d6092d12b9348effe8ea";
+        String overlayCommit = "5fa8e435b6ff9e520e73f1fab4785d6b103d964a";
         String message = "Build remoto para esta instância:\n\n"
                 + "1. Na página Releases do repositório MobileHorizonNative, crie uma release temporária com uma tag única (por exemplo hnmod-input-01) e envie como assets somente os .hnmod que estão selecionados nesta instância.\n\n"
                 + "2. A definição do workflow Build Horizon native .hnmod runtime está na branch feature/fabric-java-bridge-test. Para aparecer o botão Run workflow na interface do GitHub, essa definição precisa primeiro entrar na branch padrão por PR/merge; main não foi alterada.\n\n"
