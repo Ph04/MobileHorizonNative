@@ -12,6 +12,8 @@ on:
       - "tools/horizon_patches/03_java_bridge_android.py"
       - "tools/horizon_patches/11_crossversion_builtin.py"
       - "tools/crossversion/**"
+      - "tools/test_android_crossversion.py"
+      - "tools/test_android_native_entrypoint.py"
       - "tools/fabric-java-bridge-revision.env"
       - ".github/workflows/fabric-java-bridge-runtime.yml"
 
@@ -139,6 +141,7 @@ jobs:
             tools/horizon_patches/03_java_bridge_android.py
           python3 tools/test_android_native_entrypoint.py --source "$SOURCE"
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
+          python3 tools/test_android_crossversion.py --source "$SOURCE" --repo "$GITHUB_WORKSPACE"
 
           # The Android patch step already generates crates/mobilehorizon-android
           # and registers it in the upstream Cargo workspace.
