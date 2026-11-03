@@ -64,6 +64,12 @@
             android:label="Mods Fabric" />
 
         <activity
+            android:name=".NativeModsActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="Módulos nativos" />
+
+        <activity
             android:name=".ResourceManagerActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
