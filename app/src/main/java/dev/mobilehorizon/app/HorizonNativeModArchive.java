@@ -205,8 +205,8 @@ final class HorizonNativeModArchive {
             }
             if (!section.equals(current)) continue;
             Matcher matcher = Pattern.compile("^" + Pattern.quote(key)
-                    + "\\s*=\\s*\"([^\"]*)\"\\s*(?:#.*)?$").matcher(line);
-            if (matcher.matches()) return matcher.group(1);
+                    + "\\s*=\\s*(['\"])(.*?)\\1\\s*(?:#.*)?$").matcher(line);
+            if (matcher.matches()) return matcher.group(2);
         }
         return null;
     }
