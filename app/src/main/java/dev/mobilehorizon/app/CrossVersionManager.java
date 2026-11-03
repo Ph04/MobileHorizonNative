@@ -244,6 +244,7 @@ final class CrossVersionManager {
             try {
                 defaults.put("enabled", true);
                 defaults.put("always", false);
+                defaults.put("offline_auth", false);
                 defaults.put("servers", new JSONObject());
             } catch (JSONException impossible) {
                 throw new IOException("Não foi possível criar as configurações padrão.", impossible);
@@ -306,6 +307,16 @@ final class CrossVersionManager {
             config.put("always", always);
         } catch (JSONException error) {
             throw new IOException("Não foi possível atualizar o modo sempre ViaProxy.", error);
+        }
+        writeConfig(context, config);
+    }
+
+    static synchronized void setOfflineAuth(Context context, boolean offline) throws IOException {
+        JSONObject config = readConfig(context);
+        try {
+            config.put("offline_auth", offline);
+        } catch (JSONException error) {
+            throw new IOException("Não foi possível atualizar o modo de autenticação offline.", error);
         }
         writeConfig(context, config);
     }
