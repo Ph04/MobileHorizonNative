@@ -42,10 +42,6 @@ on:
       - "tools/build_lwjgl_android.sh"
       - "settings.gradle"
       - ".github/workflows/fabric-java-bridge-app-check.yml"
-      - ".github/workflows/native-mod-android-runtime.yml"
-      - "tools/build_horizon_native_android_runtime.py"
-      - "tools/test_horizon_native_android_runtime.py"
-      - "native-mods/**"
   pull_request:
     paths:
       - "app/src/main/java/dev/mobilehorizon/app/FabricBridgeRuntimeManager.java"
@@ -70,10 +66,6 @@ on:
       - "tools/build_lwjgl_android.sh"
       - "settings.gradle"
       - ".github/workflows/fabric-java-bridge-app-check.yml"
-      - ".github/workflows/native-mod-android-runtime.yml"
-      - "tools/build_horizon_native_android_runtime.py"
-      - "tools/test_horizon_native_android_runtime.py"
-      - "native-mods/**"
   workflow_dispatch:
 
 permissions:
