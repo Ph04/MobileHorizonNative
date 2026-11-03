@@ -1396,6 +1396,71 @@ else:
         f"(current={app_source.count(current_app_loop)}, legacy={app_source.count(legacy_app_loop)})"
     )
 
+# Preserve the reason for every Android event-loop exit. This distinguishes a
+# platform close/signal from an ordinary startup failure when android_main returns.
+replace_once(
+    game,
+    "if horizon_threads::stop_requests() > 0 {",
+    """if horizon_threads::stop_requests() > 0 {
+            #[cfg(target_os = "android")]
+            log::error!(
+                "Horizon Android: loading loop received stop signal(s): {}",
+                horizon_threads::stop_requests()
+            );""",
+)
+replace_once(
+    game,
+    """if horizon_threads::stop_requests() > 0
+            && self.pending_save.as_ref().is_none_or(|save| !save.quit)
+        {
+            // SIGTERM, SIGINT or SIGHUP:""",
+    """if horizon_threads::stop_requests() > 0
+            && self.pending_save.as_ref().is_none_or(|save| !save.quit)
+        {
+            #[cfg(target_os = "android")]
+            log::error!(
+                "Horizon Android: game loop received stop signal(s): {}",
+                horizon_threads::stop_requests()
+            );
+            // SIGTERM, SIGINT or SIGHUP:""",
+)
+replace_once(
+    game,
+    """WindowEvent::CloseRequested => {
+                    self.begin_closing_save(true)?;""",
+    """WindowEvent::CloseRequested => {
+                    #[cfg(target_os = "android")]
+                    log::warn!("Horizon Android: WindowEvent::CloseRequested received");
+                    self.begin_closing_save(true)?;""",
+)
+replace_once(
+    game,
+    "Action::Quit => event_loop.exit(),",
+    """Action::Quit => {
+                            #[cfg(target_os = "android")]
+                            log::info!("Horizon Android: title-screen Quit action received");
+                            event_loop.exit()
+                        },""",
+)
+replace_once(
+    game,
+    "Step::Done => event_loop.exit(),",
+    """Step::Done => {
+                #[cfg(target_os = "android")]
+                log::error!("Horizon Android: startup event loop ended with Step::Done (no Game state)");
+                event_loop.exit()
+            },""",
+)
+replace_once(
+    game,
+    """Step::Failed(e) => {
+                if let App::Loading(loading) = self {""",
+    """Step::Failed(e) => {
+                #[cfg(target_os = "android")]
+                log::error!("Horizon Android: startup handoff failed: {e}");
+                if let App::Loading(loading) = self {""",
+)
+
 replace_once(workspace_cargo, '"crates/horizon-client",',
              '"crates/horizon-client", "crates/mobilehorizon-android",')
 
