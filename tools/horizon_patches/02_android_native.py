@@ -1415,7 +1415,7 @@ game_api = game.read_text(encoding="utf-8")
 entrypoints = {
     name for name in ("run", "run_with")
     if re.search(
-        rf"(?m)^pub fn {name}\\(\\)\\s*->\\s*Result<\\(\\)>\\s*\\{{",
+        rf"(?m)^pub fn {name}\(\)\s*->\s*Result<\(\)>\s*\{{",
         game_api,
     )
 }
@@ -1426,7 +1426,7 @@ if len(entrypoints) != 1:
     )
 android_lib = dst / "src/lib.rs"
 android_source = android_lib.read_text(encoding="utf-8")
-call_pattern = r"horizon_client::game::run(?:_with)?\\(\\)"
+call_pattern = r"horizon_client::game::run(?:_with)?\(\)"
 android_source, call_count = re.subn(
     call_pattern,
     lambda _: f"horizon_client::game::{next(iter(entrypoints))}()",
