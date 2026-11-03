@@ -857,7 +857,21 @@ else:
     raise SystemExit(f"{chat}: unsupported chat_type input method layout")
 
 impl_start = "impl ApplicationHandler for Game<'_> {"
-idx = game.read_text(encoding="utf-8").find(impl_start)
+game_source_before_hook = game.read_text(encoding="utf-8")
+mapped_key_signature = re.search(
+    r"fn mapped_key\\(\\s*&mut self\\s*,\\s*key:\\s*KeyCode\\s*,"
+    r"\\s*pressed:\\s*bool\\s*,\\s*repeat:\\s*bool"
+    r"(?P<raw>\\s*,\\s*raw:\\s*KeyCode)?\\s*\\)\\s*->\\s*Result<\\(\\)>",
+    game_source_before_hook,
+)
+if mapped_key_signature is None:
+    raise SystemExit(f"{game}: unsupported mapped_key signature for Android keyboard injection")
+mapped_key_call = (
+    "self.mapped_key(mapped_key, pressed, false, key)"
+    if mapped_key_signature.group("raw")
+    else "self.mapped_key(mapped_key, pressed, false)"
+)
+idx = game_source_before_hook.find(impl_start)
 if idx < 0:
     raise SystemExit("Could not find Game ApplicationHandler implementation")
 injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput> for Game<'_> {
@@ -990,7 +1004,7 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
                         self.smooth_camera = !self.smooth_camera;
                     }
                     let result = match self.settings.keys.translate(key) {
-                        Some(Ok(mapped_key)) => self.mapped_key(mapped_key, pressed, false, key),
+                        Some(Ok(mapped_key)) => MAPPED_KEY_CALL,
                         Some(Err(button)) if self.screen == Screen::Playing => self.play_mouse(button, pressed),
                         _ => Ok(()),
                     };
@@ -1142,6 +1156,7 @@ injected_impl = """impl ApplicationHandler<horizon_client::AndroidInjectedInput>
 
 """
 content = game.read_text(encoding="utf-8")
+injected_impl = injected_impl.replace("MAPPED_KEY_CALL", mapped_key_call)
 content = content[:idx] + content[idx:].replace(impl_start, injected_impl, 1)
 # Android touch-to-mouse emulation is handled by the native control layer.
 capture_condition = 'if pressed && !self.captured {'
