@@ -78,6 +78,8 @@ struct Config {
     enabled: bool,
     /// Use the proxy even when the server is 26.3 (diagnostics).
     always: bool,
+    /// Ignore ViaProxy-owned Microsoft accounts and authenticate to the backend offline.
+    offline_auth: bool,
     /// A `java` to use instead of finding or installing one.
     java: Option<PathBuf>,
     /// Servers the status cannot describe: address -> the target version to
@@ -94,6 +96,7 @@ impl Default for Config {
                 Ok("0") | Ok("off")
             ),
             always: std::env::var_os("HORIZON_CROSSVERSION_ALWAYS").is_some(),
+            offline_auth: false,
             java: std::env::var_os("HORIZON_CROSSVERSION_JAVA").map(PathBuf::from),
             servers: Vec::new(),
         }
@@ -105,7 +108,7 @@ fn config() -> Config {
     let path = data_dir().join("config.json");
     let Ok(text) = fs::read_to_string(&path) else {
         let _ = fs::create_dir_all(data_dir());
-        let _ = fs::write(&path, "{\n  \"enabled\": true,\n  \"always\": false,\n  \"servers\": {}\n}\n");
+        let _ = fs::write(&path, "{\n  \"enabled\": true,\n  \"always\": false,\n  \"offline_auth\": false,\n  \"servers\": {}\n}\n");
         return defaults;
     };
     let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
@@ -125,6 +128,7 @@ fn config() -> Config {
             json["enabled"].as_bool().unwrap_or(defaults.enabled)
         },
         always: json["always"].as_bool().unwrap_or(defaults.always) || defaults.always,
+        offline_auth: json["offline_auth"].as_bool().unwrap_or(defaults.offline_auth),
         java: defaults
             .java
             .or_else(|| json["java"].as_str().map(PathBuf::from)),
@@ -146,6 +150,7 @@ struct Proxy {
     port: u16,
     target: String,
     version: Option<String>,
+    account: Option<usize>,
     child: Child,
 }
 
@@ -331,10 +336,13 @@ fn stop(mut proxy: Proxy) {
 
 /// A port this instance of ViaProxy is listening on, or a fresh one.
 fn ensure_proxy(target: &str, settings: &Config, version: Option<&str>) -> Result<u16, String> {
+    let account = auth_account(settings.offline_auth, proxy_account());
     let mut proxies = PROXIES.lock().unwrap_or_else(|e| e.into_inner());
-    // Reuse a live one; drop a dead one.
+    // Reuse only a proxy with the same target, version, and authentication mode.
     if let Some(index) = proxies.iter().position(|proxy| {
-        proxy.target == target && proxy.version.as_deref() == version
+        proxy.target == target
+            && proxy.version.as_deref() == version
+            && proxy.account == account
     }) {
         if listening(proxies[index].port) {
             return Ok(proxies[index].port);
@@ -344,11 +352,12 @@ fn ensure_proxy(target: &str, settings: &Config, version: Option<&str>) -> Resul
     let port = free_port()?;
     let java = find_java(settings)?;
     let jar = ensure_assets()?;
-    let child = spawn(&java, &jar, target, port, version, proxy_account())?;
+    let child = spawn(&java, &jar, target, port, version, account)?;
     proxies.push(Proxy {
         port,
         target: target.to_owned(),
         version: version.map(str::to_owned),
+        account,
         child,
     });
     write_pid_file(&proxies);
@@ -403,9 +412,14 @@ fn configure_java_environment(command: &mut Command) {
     }
 }
 
+/// Apply the explicit offline override before choosing the saved ViaProxy account.
+fn auth_account(force_offline: bool, saved_account: Option<usize>) -> Option<usize> {
+    if force_offline { None } else { saved_account }
+}
+
 /// ViaProxy authenticates against the backend independently from the
-/// Horizon client. With no ViaProxy-owned Microsoft account, use its offline
-/// backend mode so an offline-mode server can decide whether to admit the name.
+/// Horizon client. With no selected account, use its offline backend mode so
+/// an offline-mode server can decide whether to admit the name.
 fn auth_method_args(account: Option<usize>) -> Vec<String> {
     match account {
         Some(index) => vec![
@@ -1138,16 +1152,29 @@ mod tests {
 
     #[test]
     fn no_microsoft_account_uses_viaproxy_offline_backend_authentication() {
+        let account = auth_account(false, None);
         assert_eq!(
-            auth_method_args(None),
+            auth_method_args(account),
             vec!["--auth-method".to_owned(), "NONE".to_owned()]
         );
     }
 
     #[test]
-    fn a_configured_viaproxy_account_is_used_only_when_selected() {
+    fn force_offline_mode_ignores_a_saved_microsoft_account() {
+        let account = auth_account(true, Some(2));
+        assert_eq!(account, None);
         assert_eq!(
-            auth_method_args(Some(2)),
+            auth_method_args(account),
+            vec!["--auth-method".to_owned(), "NONE".to_owned()]
+        );
+    }
+
+    #[test]
+    fn automatic_mode_uses_a_saved_microsoft_account() {
+        let account = auth_account(false, Some(2));
+        assert_eq!(account, Some(2));
+        assert_eq!(
+            auth_method_args(account),
             vec![
                 "--auth-method".to_owned(),
                 "ACCOUNT".to_owned(),
