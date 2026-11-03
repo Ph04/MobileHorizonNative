@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the Android NativeActivity wrapper uses the selected Horizon public entrypoint."""
+"""Verify the generated Android NativeActivity wrapper matches Stable or Nightly Horizon."""
 from __future__ import annotations
 
 import argparse
