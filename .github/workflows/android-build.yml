@@ -410,11 +410,13 @@ jobs:
           tracked = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
           paths = sorted(p for p in tracked if p and (
               p.startswith(b"android-native/")
+              or p.startswith(b"tools/crossversion/")
               or p in {
                   b"tools/patch_horizon_android_touch.py",
                   b"tools/horizon_patches/01_offline_server_login.py",
                   b"tools/horizon_patches/02_android_native.py",
                   b"tools/horizon_patches/03_java_bridge_android.py",
+                  b"tools/horizon_patches/11_crossversion_builtin.py",
                   b"tools/fabric-java-bridge-revision.env",
                   b".github/workflows/fabric-java-bridge-runtime.yml",
               }
