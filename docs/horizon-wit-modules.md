@@ -20,4 +20,4 @@ MobileHorizonNative adds an experimental, explicitly requested `mod-manager` cap
 
 ## Scope
 
-Legacy native Rust source/mixin packages remain in a separate build path and are outside this WIT work. Their source archives are not modified or converted.
+MobileHorizonNative does not import or compile legacy `.hnmod` source bundles. CrossVersion is integrated separately as a built-in engine feature and is not a general-purpose mod archive. The official `.hmod` package path remains reserved for Horizon's WIT components and content modules.

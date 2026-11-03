@@ -10,8 +10,8 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * Shared Horizon launcher selection file. Native and sandboxed .hmod mods use the
- * same mod.<id>:true convention as the desktop launcher.
+ * Shared Horizon .hmod selection file. Sandboxed modules and content mods use
+ * the same mod.<id>:true convention as the desktop launcher.
  */
 final class HorizonModSelection {
     private static final String FILE_NAME = "horizon-mods.txt";

@@ -116,14 +116,19 @@ def main() -> int:
     require('endsWith(".hmod")' in archive and 'endsWith(".hnmod")' not in archive,
             "the WIT archive reader must accept only the official .hmod suffix")
     native_import = read(repo / "app/src/main/java/dev/mobilehorizon/app/ResourceManagerActivity.java")
-    require('if (lower.endsWith(".hnmod"))' in native_import
-            and "HorizonNativeModArchive.read(staging)" in native_import,
-            "legacy .hnmod packages must remain on their native source path")
-
-    notice = read(repo / "tools/crossversion/LICENSE")
-    require("MIT License" in notice and "Permission is hereby granted" in notice,
-            "upstream CrossVersion MIT licence notice is missing")
+    require("HorizonNativeModArchive" not in native_import
+            and "HorizonNativeRuntimeManager" not in native_import
+            and "NATIVE_MOD" not in native_import
+            and 'lower.endsWith(".hnmod")' not in native_import,
+            "the legacy .hnmod importer and per-mod runtime compiler must be absent")
+    require("HorizonModArchive.readId(staging)" in native_import
+            and 'lower.endsWith(".hmod")' in native_import,
+            "the official Horizon .hmod import path must remain available")
+    require("HorizonNativeRuntimeManager" not in native_activity
+            and ".hnmod" not in native_activity,
+            "game startup must always use the normal runtime or the independent Java Bridge runtime")
     print("CrossVersion preflight passed: built-in routing, proxy lifecycle, Android Java, device login,")
+    print("server-version overrides, checksum pin, official .hmod preservation, and .hnmod cleanup.") built-in routing, proxy lifecycle, Android Java, device login,")
     print("server-version overrides, checksum pin, app UI, and .hnmod native-only cleanup.")
     print("This is a static source check; Android engine compilation and real server testing remain required.")
     return 0
