@@ -64,3 +64,36 @@ elif "if let Some(account) = auth" in auth_block:
     pass
 else:
     raise SystemExit(f"{net}: unsupported online authentication block layout")
+
+# The upstream assertion expects no-account rejection. MobileHorizonNative instead
+# sends the encrypted response so offline-mode servers can decide whether to admit it.
+net_source = net.read_text(encoding="utf-8")
+old_doc = """    /// No account never joins; the signed-in rule is compared with the real
+    /// client login listener by test_lan_auth_parity.py.
+    #[test]
+    fn lan_login_continues_after_authentication_failure() {"""
+new_doc = """    /// Without a Microsoft session the encrypted response reaches the server,
+    /// allowing offline-mode servers to decide whether to admit the player.
+    /// Signed-in authentication failures retain the LAN parity check below.
+    #[test]
+    fn lan_login_continues_after_authentication_failure() {"""
+old_assert = """            // Without an account nothing joins, LAN or not.
+            let sent_key = worker.join().unwrap();
+            assert!(!sent_key, "lan {lan}: joined without an account");
+            assert_eq!(reason, NOT_SIGNED_IN);"""
+new_assert = """            // Without a Microsoft session, send the encrypted response so an
+            // offline-mode server can decide whether to admit the player.
+            let sent_key = worker.join().unwrap();
+            assert!(sent_key, "lan {lan}: offline-mode fallback did not reach the server");
+            assert_ne!(
+                reason,
+                NOT_SIGNED_IN,
+                "lan {lan}: the client rejected the session before the server could decide"
+            );"""
+if old_doc in net_source and old_assert in net_source:
+    net_source = net_source.replace(old_doc, new_doc, 1).replace(old_assert, new_assert, 1)
+elif new_doc in net_source and new_assert in net_source:
+    pass
+else:
+    raise SystemExit(f"{net}: upstream LAN authentication test anchors changed")
+net.write_text(net_source, encoding="utf-8")
