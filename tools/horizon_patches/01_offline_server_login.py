@@ -2,6 +2,7 @@
 # A no-account profile sends the normal encrypted challenge response. The destination
 # server then decides whether its own online-mode policy admits the profile.
 # Signed-in accounts retain Horizon's normal session-service validation and reconnect policy.
+# Keep the same no-account helper contract across Stable and Nightly authentication APIs.
 
 net_source = net.read_text(encoding="utf-8")
 
