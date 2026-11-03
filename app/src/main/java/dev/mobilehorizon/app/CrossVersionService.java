@@ -14,9 +14,6 @@ import java.io.File;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -111,7 +108,6 @@ public final class CrossVersionService extends Service {
             long launchAt = System.currentTimeMillis();
             boolean commandSent = false;
             long expiresAt = 0L;
-            ArrayDeque<String> recent = new ArrayDeque<>();
             while (!cancelled.get()) {
                 if (CrossVersionManager.hasMicrosoftAccount(this)) {
                     success = true;
@@ -120,7 +116,7 @@ public final class CrossVersionService extends Service {
                 }
                 if (!process.isAlive()) {
                     outcome = "ViaProxy encerrou a autenticação antes de adicionar a conta. "
-                            + joinLines(recent);
+                            + "Confira se o JRE Java 25 e o download do ViaProxy estão íntegros.";
                     break;
                 }
                 if (!commandSent && System.currentTimeMillis() - launchAt >= 12_000L) {
@@ -133,10 +129,6 @@ public final class CrossVersionService extends Service {
                 String line = lines.poll(300, TimeUnit.MILLISECONDS);
                 if (line != null) {
                     String clean = stripAnsi(line).trim();
-                    if (!clean.isEmpty()) {
-                        recent.addLast(clean);
-                        while (recent.size() > 12) recent.removeFirst();
-                    }
                     String code = extractDeviceCode(clean);
                     if (code != null) {
                         String url = "https://www.microsoft.com/link";
