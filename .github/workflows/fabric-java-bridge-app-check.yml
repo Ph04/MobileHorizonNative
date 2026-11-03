@@ -26,7 +26,14 @@ on:
       - "app/src/main/java/dev/mobilehorizon/app/**"
       - "app/src/main/assets/horizon-prepare/pojav-jre-cert.pem"
       - "compatibility-api/**"
+      - "tools/horizon_patches/01_offline_server_login.py"
+      - "tools/horizon_patches/02_android_native.py"
       - "tools/horizon_patches/03_java_bridge_android.py"
+      - "tools/horizon_patches/11_crossversion_builtin.py"
+      - "tools/crossversion/**"
+      - "tools/test_android_crossversion.py"
+      - "tools/test_android_native_entrypoint.py"
+      - "tools/patch_horizon_android_touch.py"
       - "tools/patch_android_lwjgl_recipe.py"
       - "tools/build_lwjgl_android.sh"
       - "app/build.gradle"
@@ -100,13 +107,30 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Validate native mod runtime builder (no package execution)
+      - name: Validate Java Bridge and built-in CrossVersion source (no APK)
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile tools/build_horizon_native_android_runtime.py tools/test_horizon_native_android_runtime.py tools/test_native_mod_selection.py
-          python3 tools/test_horizon_native_android_runtime.py
-          python3 tools/test_native_mod_selection.py
+          source tools/fabric-java-bridge-revision.env
+          UPSTREAM_COMMIT="$(git ls-remote "https://github.com/${FABRIC_HORIZON_REPOSITORY}.git" "refs/heads/${FABRIC_HORIZON_REF}" | awk 'NR == 1 { print $1 }')"
+          if [[ ! "$UPSTREAM_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Could not resolve the external Java Bridge source."
+            exit 1
+          fi
+          SOURCE="$RUNNER_TEMP/horizon-java-bridge-preflight"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin "https://github.com/${FABRIC_HORIZON_REPOSITORY}.git"
+          git -C "$SOURCE" fetch --depth 1 origin "$UPSTREAM_COMMIT"
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$UPSTREAM_COMMIT"
+
+          export HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE=1
+          export HORIZON_ANDROID_PATCH_APPLY_JAVA_BRIDGE=1
+          python3 -m py_compile tools/patch_horizon_android_touch.py tools/horizon_patches/*.py tools/test_android_native_entrypoint.py tools/test_android_crossversion.py
+          python3 tools/patch_horizon_android_touch.py "$SOURCE"
+          python3 tools/test_android_native_entrypoint.py --source "$SOURCE"
+          python3 tools/test_android_crossversion.py --source "$SOURCE" --repo "$GITHUB_WORKSPACE"
+          echo "Java Bridge source, Android entry point, and built-in CrossVersion preflight passed."
 
       - name: Build complete ARM64 LWJGL 3.4.3 core (no APK)
         shell: bash
