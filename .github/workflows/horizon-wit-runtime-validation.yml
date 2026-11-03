@@ -92,11 +92,16 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
       - name: Compile Android app Java sources (no APK)
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon :app:compileStandardDebugJavaWithJavac
+          gradle --no-daemon :app:compileStandardDebugJavaWithJavac
 
       - name: Test Horizon's sandboxed Wasmtime runtime
         shell: bash

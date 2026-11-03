@@ -102,10 +102,10 @@ without requiring an APK update.
 
 The periodic scheduler must remain on the default branch because GitHub only
 runs scheduled workflows from there. PR #23 switches that scheduler to use
-`feature/fabric-java-bridge-test` as the runtime source. The source branch's
-push-triggered publication remains disabled while this integration is being
-validated; the reusable workflow can still be dispatched explicitly. These
-workflows publish only the Horizon engine runtime, not an APK.
+`feature/fabric-java-bridge-test` as the runtime source. Ordinary source-branch pushes do not publish a runtime. A one-shot build is
+allowed only when a commit carries the explicit
+`[publish-runtime-approved]` marker. Manual workflow dispatch remains
+available. These workflows publish only the Horizon engine runtime, not an APK.
 
 ## CrossVersion
 

@@ -46,11 +46,13 @@ The default Horizon runtime applies the Android integration and the checked Cros
 ## Updater-test APK
 
 The automatic runtime publisher builds and releases only the Android ARM64
-Horizon engine; it does not assemble an extra APK. The standard Android build
-workflow also skips APK assembly on this development branch unless an explicit
-`[build-apk-approved]` marker is present in a push commit. Any updater-test
-fixture remains isolated to explicit test variants and is ignored by the
-standard updater, which accepts published non-prerelease runtime releases only.
+Horizon engine; it does not assemble an extra APK. On this development branch,
+a push-triggered runtime build requires the explicit
+`[publish-runtime-approved]` marker; ordinary commits do not publish. The
+standard Android build workflow separately skips APK assembly unless an explicit
+`[build-apk-approved]` marker is present. Any updater-test fixture remains
+isolated to explicit test variants and is ignored by the standard updater, which
+accepts published non-prerelease runtime releases only.
 
 ## Remaining production requirements
 

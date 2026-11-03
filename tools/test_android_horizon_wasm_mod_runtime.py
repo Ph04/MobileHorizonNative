@@ -58,7 +58,7 @@ def main() -> int:
     if not has_official_runtime:
         require("mods" not in enabled,
                 "Android enables the mods feature but this Horizon revision has no complete WIT runtime")
-        print("WIT modules: not available in this upstream revision; native .hnmod path unchanged.")
+        print("WIT code modules: unavailable in this upstream revision; the legacy .hnmod importer/compiler is not part of the launcher.")
         return 0
 
     require("mods" in enabled,
@@ -103,24 +103,26 @@ def main() -> int:
     require('e == "hmod"' in manifest_source,
             "the official Horizon .hmod package discovery is missing")
 
-    # The Android overlay extends the official component contract with an
-    # explicit, capability-gated manager API for listing and toggling modules.
-    require("interface mod-manager {" in wit,
-            "WIT contract is missing the mod-manager capability interface")
-    capability_source = manifest_source
-    require("ModManager" in capability_source,
-            "manifest capability parser does not recognize mod-manager")
-    runtime_source = runtime
-    require("impl mod_manager::Host for State" in runtime_source,
-            "the Wasmtime host does not implement mod-manager")
-    require("mod-manager.modules" in (root / "crates/horizon-mods/src/api_level.rs").read_text(encoding="utf-8"),
-            "mod-manager functions are not registered in the API-level table")
-    require("Output::ModEnabled" in game_source and "self.start_mods();" in game_source,
-            "the game does not apply enabled-state changes after the current WIT hook returns")
+    # The launcher-specific mod-manager interface is an optional extension.
+    # Basic Horizon WIT/.hmod support must not depend on it.
+    has_mod_manager = "interface mod-manager {" in wit
+    if has_mod_manager:
+        require("ModManager" in manifest_source,
+                "manifest capability parser does not recognize mod-manager")
+        require("impl mod_manager::Host for State" in runtime,
+                "the Wasmtime host does not implement mod-manager")
+        require("mod-manager.modules" in (root / "crates/horizon-mods/src/api_level.rs").read_text(encoding="utf-8"),
+                "mod-manager functions are not registered in the API-level table")
+        require("Output::ModEnabled" in game_source and "self.start_mods();" in game_source,
+                "the game does not apply enabled-state changes after the current WIT hook returns")
 
     print("WIT modules: enabled for Android.")
     print("Official .hmod: discovered by Horizon's component loader.")
-    print("Host API: game/chat/HUD/storage/UI/render/input/mod-manager via versioned WIT.")
+    print("Host API: game/chat/HUD/storage/UI/render/input via versioned WIT.")
+    if has_mod_manager:
+        print("Optional host extension: capability-scoped mod-manager API enabled.")
+    else:
+        print("Optional host extension: mod-manager API omitted; official .hmod runtime remains intact.")
     print("Runtime safeguards: 64 MiB per module, fuel metering, capability import checks.")
     print("This is a static source preflight, not an Android Wasmtime build/device test.")
     return 0

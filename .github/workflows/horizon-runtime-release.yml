@@ -24,7 +24,7 @@ on:
         type: string
         default: feature/fabric-java-bridge-test
   push:
-    branches: ["feature/android-launcher-parity", "feature/horizon-runtime-loader"]
+    branches: ["feature/android-launcher-parity", "feature/horizon-runtime-loader", "feature/fabric-java-bridge-test"]
     paths:
       - "android-native/**"
       - "tools/horizon-revisions.env"
@@ -39,6 +39,9 @@ permissions:
 
 jobs:
   resolve:
+    # A development-branch push builds only when its commit explicitly carries
+    # [publish-runtime-approved]. Scheduled calls and manual dispatch remain available.
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[publish-runtime-approved]')
     runs-on: ubuntu-24.04
     permissions:
       contents: read

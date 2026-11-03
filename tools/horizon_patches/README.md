@@ -21,19 +21,25 @@ The server compatibility experiments remain available in source, but are **not a
 These paused files are not deleted, so they can be reactivated selectively after the basic launcher and runtime updater are stable. Editing a paused file does not change the default engine's overlay hash or require a new runtime build.
 
 
-## Sandboxed WIT modules versus native `.hnmod`
+## Official Horizon WIT modules (`.hmod`)
 
-On revisions that contain Horizon's `crates/horizon-mods/src/runtime.rs` and
-`crates/horizon-mod-sdk/wit/horizon.wit`, Android enables the upstream
-`horizon-client/mods` feature. These `.hmod` components call Horizon through
-versioned WIT host interfaces; the engine enforces declared capabilities, fuel
-budgets and a 64 MiB memory cap per module. The Wasmtime engine is created lazily
-when code mods are actually loaded.
+On upstream revisions that contain Horizon's complete
+`crates/horizon-mods/src/runtime.rs` and `crates/horizon-mod-sdk/wit/horizon.wit`,
+Android enables the upstream `horizon-client/mods` feature. These official
+`.hmod` components call Horizon through versioned WIT host interfaces; the
+engine enforces declared capabilities, fuel budgets and a 64 MiB memory cap per
+module. Wasmtime is created lazily when code modules are loaded.
 
-This does **not** convert the existing Rust mixin `.hnmod` packages into
-WebAssembly components. Those remain on the existing native build path, and older
-Horizon pins that lack the WIT runtime do not enable the feature. Original mod
-archives remain untouched.
+Some newer upstream Nightlies may not ship the WIT code runtime. In that case
+the Android build deliberately leaves the feature disabled; the normal engine
+and built-in CrossVersion integration still compile. The launcher retains the
+official `.hmod` import/content path, but WIT code components require a Horizon
+runtime that actually exposes the complete WIT host.
+
+The experimental legacy `.hnmod` importer and per-mod runtime compiler were
+removed from MobileHorizonNative. No `.hnmod` package is converted or compiled
+by the launcher. CrossVersion is a built-in Horizon engine feature and does not
+depend on either archive format.
 
 ## Updating Horizon
 
@@ -58,5 +64,6 @@ execution. Modules must explicitly request the capability and the user sees it
 in the manifest's permission summary.
 
 This host API is the foundation for a WIT port of `mod_menu`. It covers modules
-loaded through Horizon's WIT/content manager; it does not change how legacy
-`horizon-native.json` mixin bundles are compiled.
+loaded through Horizon's WIT/content manager. It is an optional extension and is
+applied only when the upstream checkout contains the complete WIT runtime and
+all compatible host sources.
