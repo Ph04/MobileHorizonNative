@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 
@@ -10,11 +11,16 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True, type=Path,
                         help="Exact Horizon source checkout used for this build")
-    parser.add_argument("--wrapper", type=Path, default=Path("android-native/src/lib.rs"))
+    parser.add_argument("--wrapper", type=Path, default=None,
+                        help="Optional explicit generated NativeActivity wrapper path")
     args = parser.parse_args()
 
     source = args.source.resolve()
-    wrapper = args.wrapper.resolve()
+    # patch_horizon_android_touch.py copies the repository template into the generated
+    # cdylib crate and rewrites that copy for the selected Horizon revision. The template
+    # intentionally remains run() so it can serve both Stable and Nightly.
+    wrapper = (args.wrapper.resolve() if args.wrapper else
+               source / "crates/mobilehorizon-android/src/lib.rs")
     game = source / "crates/horizon-client/src/game.rs"
     lib = source / "crates/horizon-client/src/lib.rs"
     for path in (wrapper, game, lib):
@@ -25,24 +31,33 @@ def main() -> int:
     game_text = game.read_text(encoding="utf-8")
     lib_text = lib.read_text(encoding="utf-8")
 
-    expected_call = "horizon_client::game::run_with()"
-    actual_old_call = "horizon_client::game::run()"
-    if wrapper_text.count(expected_call) != 1:
-        raise SystemExit(
-            "Android NativeActivity wrapper must call horizon_client::game::run_with() "
-            f"exactly once; found {wrapper_text.count(expected_call)}"
+    entrypoints = {
+        name for name in ("run", "run_with")
+        if re.search(
+            rf"(?m)^pub fn {name}\(\)\s*->\s*Result<\(\)>\s*\{{",
+            game_text,
         )
-    if actual_old_call in wrapper_text:
-        raise SystemExit("Obsolete horizon_client::game::run() call remains in the Android wrapper")
-    if "pub fn run_with()" not in game_text:
+    }
+    if len(entrypoints) != 1:
         raise SystemExit(
-            "Selected Horizon checkout does not export game::run_with(); "
-            "update the Android wrapper before compiling"
+            "Selected Horizon checkout must export exactly one supported game entrypoint; "
+            f"found {sorted(entrypoints)}"
+        )
+    selected = next(iter(entrypoints))
+    expected_call = f"horizon_client::game::{selected}()"
+    calls = re.findall(r"horizon_client::game::run(?:_with)?\(\)", wrapper_text)
+    if calls != [expected_call]:
+        raise SystemExit(
+            f"Generated NativeActivity wrapper must call {expected_call} exactly once; "
+            f"found {calls}"
         )
     if "pub mod game;" not in lib_text:
         raise SystemExit("Selected Horizon checkout does not publicly export the game module")
 
-    print("Android NativeActivity wrapper matches the selected Horizon game::run_with() entrypoint.")
+    print(
+        f"Generated Android NativeActivity wrapper matches selected "
+        f"Horizon game::{selected}() entrypoint."
+    )
     return 0
 
 
