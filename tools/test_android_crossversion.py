@@ -66,13 +66,16 @@ def main() -> int:
     require("is_loopback_address(address)" in engine
             and "forced.is_none()" in engine,
             "local servers must not be probed automatically unless an override is configured")
-    require("fn auth_method_args(account: Option<usize>) -> Vec<String>" in engine
+    require("fn auth_account(force_offline: bool, saved_account: Option<usize>) -> Option<usize>" in engine
+            and "auth_account(settings.offline_auth, proxy_account())" in engine
+            and "proxy.account == account" in engine
             and '.args(auth_method_args(account))' in engine
             and 'None => vec!["--auth-method".to_owned(), "NONE".to_owned()]' in engine,
-            "CrossVersion must explicitly use ViaProxy offline authentication when no account is selected")
+            "CrossVersion must force ViaProxy offline authentication on request and separate proxy processes by auth mode")
     require("no_microsoft_account_uses_viaproxy_offline_backend_authentication" in engine
-            and "a_configured_viaproxy_account_is_used_only_when_selected" in engine,
-            "offline and selected-account authentication modes must have Rust unit tests")
+            and "force_offline_mode_ignores_a_saved_microsoft_account" in engine
+            and "automatic_mode_uses_a_saved_microsoft_account" in engine,
+            "offline override, no-account, and automatic Microsoft account modes must have Rust unit tests")
     offline_login_patch = read(repo / "tools/horizon_patches/01_offline_server_login.py")
     require("offline-mode fallback did not reach the server" in offline_login_patch
             and "sending the normal encrypted response" in offline_login_patch,
@@ -119,6 +122,12 @@ def main() -> int:
             "the app downloader must verify bounded HTTPS downloads")
     require("accountsV4" in manager and "MicrosoftAccount" in manager,
             "the UI must detect ViaProxy-owned Microsoft accounts without reading Horizon sessions")
+    require('defaults.put("offline_auth", false)' in manager
+            and 'config.put("offline_auth", offline)' in manager
+            and "setOfflineAuth" in activity
+            and "Forçar autenticação offline no ViaProxy" in activity
+            and 'offlineAuthCheck.setChecked(config.optBoolean("offline_auth", false))' in activity,
+            "CrossVersion must expose and persist an offline override even when a Microsoft account is saved")
     require("account add microsoft" in service
             and "microsoft.com/link" in activity,
             "the Microsoft device-code login flow is missing")
