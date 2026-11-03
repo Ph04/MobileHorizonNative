@@ -325,7 +325,11 @@ public final class NativeModsActivity extends Activity {
         String overlayCommit = "4b19ed9d767bd715dda1d6092d12b9348effe8ea";
         String message = "Build remoto para esta instância:\n\n"
                 + "1. Na página Releases do repositório MobileHorizonNative, crie uma release temporária com uma tag única (por exemplo hnmod-input-01) e envie como assets somente os .hnmod que estão selecionados nesta instância.\n\n"
-                + "2. Abra o workflow Build Horizon native .hnmod runtime e informe:\n"
+                + "2. A definição do workflow Build Horizon native .hnmod runtime está na branch feature/fabric-java-bridge-test. Para aparecer o botão Run workflow na interface do GitHub, essa definição precisa primeiro entrar na branch padrão por PR/merge; main não foi alterada.\\n\\n"
+                + "3. Ao executar o workflow, informe:\\n"
+                + "   mod_release_tag = tag da release dos .hnmod\\n"
+                + "   base_runtime_tag = " + baseTag + "\\n"
+                + "   overlay_source_commit = " + overlayCommit + "\\n\\n"
                 + "   mod_release_tag = tag da release dos .hnmod\n"
                 + "   base_runtime_tag = " + baseTag + "\n\n"
                 + "   overlay_source_commit = " + overlayCommit + "\n\n"
@@ -343,7 +347,7 @@ public final class NativeModsActivity extends Activity {
                         status.setText("Tag base copiada: " + baseTag);
                     }
                 })
-                .setPositiveButton("Abrir workflow", (dialog, which) -> {
+                .setPositiveButton("Ver definição do workflow", (dialog, which) -> {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(
                             "https://github.com/Ph04/MobileHorizonNative/actions/workflows/horizon-native-mod-build.yml"));
                     startActivity(intent);
