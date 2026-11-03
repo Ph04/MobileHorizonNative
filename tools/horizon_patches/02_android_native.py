@@ -1,5 +1,5 @@
 # Ordered patch step. See README.md in this directory for scope and order.
-import re
+import re  # Required before adapting revision-specific keyboard signatures.
 
 audio_source = audio.read_text(encoding="utf-8")
 audio_start_marker = '#[cfg(feature = "audio")]' + chr(10) + 'fn open_device('
