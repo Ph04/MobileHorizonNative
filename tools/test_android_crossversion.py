@@ -121,7 +121,8 @@ def main() -> int:
             and "NATIVE_MOD" not in native_import
             and 'lower.endsWith(".hnmod")' not in native_import,
             "the legacy .hnmod importer and per-mod runtime compiler must be absent")
-    require("HorizonModArchive.readId(staging)" in native_import
+    require("readModId(staging)" in native_import
+            and "HorizonModArchive.readId(file)" in native_import
             and 'lower.endsWith(".hmod")' in native_import,
             "the official Horizon .hmod import path must remain available")
     require("HorizonNativeRuntimeManager" not in native_activity
