@@ -1,17 +1,6 @@
 name: Build external Fabric Java Bridge runtime (Android ARM64)
 
 on:
-  push:
-    branches: ["feature/fabric-java-bridge-test"]
-    paths:
-      - "android-native/**"
-      - "tools/test_android_native_entrypoint.py"
-      - "tools/patch_horizon_android_touch.py"
-      - "tools/horizon_patches/01_offline_server_login.py"
-      - "tools/horizon_patches/02_android_native.py"
-      - "tools/horizon_patches/03_java_bridge_android.py"
-      - "tools/fabric-java-bridge-revision.env"
-      - ".github/workflows/fabric-java-bridge-runtime.yml"
   workflow_dispatch:
 
 permissions:
