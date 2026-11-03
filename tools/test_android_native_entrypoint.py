@@ -56,9 +56,9 @@ def main() -> int:
 
     # Android keyboard injection must follow the exact Stable/Nightly API signature.
     mapped_key_signature = re.search(
-        r"fn mapped_key\\(\\s*&mut self\\s*,\\s*key:\\s*KeyCode\\s*,"
-        r"\\s*pressed:\\s*bool\\s*,\\s*repeat:\\s*bool"
-        r"(?P<raw>\\s*,\\s*raw:\\s*KeyCode)?\\s*\\)\\s*->\\s*Result<\\(\\)>",
+        r"fn mapped_key\(\s*&mut self\s*,\s*key:\s*KeyCode\s*,"
+        r"\s*pressed:\s*bool\s*,\s*repeat:\s*bool"
+        r"(?P<raw>\s*,\s*raw:\s*KeyCode)?\s*\)\s*->\s*Result<\(\)>",
         game_text,
     )
     if mapped_key_signature is None:
