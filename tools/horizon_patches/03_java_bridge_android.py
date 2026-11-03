@@ -715,6 +715,7 @@ print("Applied per-state synchronization for Minecraft structure-position initia
 
 
 # Adaptive Android memory protection, focused on the Java Bridge rather than vanilla chunks.
+# The grouped/standalone atomic import adapter is part of the published Android runtime overlay.
 # NativeGameActivity publishes a 0..=3 pressure level. The JVM receives bounded heap/CPU
 # options at creation; Fabric's server-tick bridge applies gentle backpressure at high pressure.
 threads_source_path = root / "crates/horizon-threads/src/lib.rs"
