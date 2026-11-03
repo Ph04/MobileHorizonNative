@@ -335,7 +335,7 @@ getWindow().setStatusBarColor(0xff090911);
             if (zip.getEntry("horizon-native.json") != null) return true;
             java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
-                String entry = entries.nextElement().getName().replace('\\\\', '/');
+                String entry = entries.nextElement().getName().replace('\\', '/');
                 if (entry.startsWith("mixins/") && entry.endsWith("/horizon-mixin.toml")) {
                     return true;
                 }
