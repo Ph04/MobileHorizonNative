@@ -1694,5 +1694,5 @@ if platform_worldgen_source.count(worldgen_ready_anchor) != 1:
 platform_worldgen_source = platform_worldgen_source.replace(worldgen_ready_anchor, worldgen_ready_replacement, 1)
 platform_worldgen_path.write_text(platform_worldgen_source, encoding="utf-8")
 
-print("Added pinned Cloth Config 26.3.159 + Basic Math 0.6.1 for REI; throttled only visual entity snapshots at memory pressure 2/3; removed allocations from own-entity JSON join; disabled per-call JNI timing unless profiling is explicitly enabled; removed blocking server-tick sleeps.")
+print("Applied Android LWJGL system allocator/hash policy; fail-closed GPU startup; safely published WorldData/GameRules; initialized StructureManager for vanilla dimensions; and made headless entity visibility null-safe. Existing memory-pressure snapshot/JNI/tick optimizations remain enabled.")
 
