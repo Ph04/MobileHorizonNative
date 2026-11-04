@@ -43,6 +43,9 @@ on:
       - "android-bootstrap/CMakeLists.txt"
       - "android-bootstrap/prebuilt/**"
       - "tools/build_lwjgl_android.sh"
+      - "tools/prepare_hnmod_compat.py"
+      - "tools/test_hnmod_compat.py"
+      - ".github/workflows/horizon-native-mod-build.yml"
       - "settings.gradle"
       - ".github/workflows/fabric-java-bridge-app-check.yml"
   pull_request:
@@ -77,6 +80,9 @@ on:
       - "app/build.gradle"
       - "android-bootstrap/**"
       - "tools/build_lwjgl_android.sh"
+      - "tools/prepare_hnmod_compat.py"
+      - "tools/test_hnmod_compat.py"
+      - ".github/workflows/horizon-native-mod-build.yml"
       - "settings.gradle"
       - ".github/workflows/fabric-java-bridge-app-check.yml"
   workflow_dispatch:
@@ -161,6 +167,13 @@ jobs:
         run: |
           set -euo pipefail
           gradle --no-daemon :app:compileStandardDebugJavaWithJavac :app:testStandardDebugUnitTest
+
+      - name: Test HNMOD ancestry and safe repinning rules (no APK)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/prepare_hnmod_compat.py
+          python3 -m unittest discover -s tools -p 'test_hnmod_compat.py' -v
 
       - name: Assert that no APK or bundle was assembled
         shell: bash
