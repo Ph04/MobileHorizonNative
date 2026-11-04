@@ -53,6 +53,8 @@ final class HorizonNativeModManager {
     private static final int MAX_MANIFEST_BYTES = 1024 * 1024;
     private static final Pattern SAFE_VERSION = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._+-]{0,95}");
     private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
+    private static final Pattern BASE_RUNTIME_VERSION =
+            Pattern.compile("-c([0-9a-f]{8,12})-o([0-9a-f]{8})$");
 
     static final class InstalledMod {
         final HorizonNativeModArchive.Descriptor descriptor;
@@ -478,12 +480,26 @@ final class HorizonNativeModManager {
         return result;
     }
 
-    private static boolean baseRuntimeIdentityMatches(
+    static boolean baseRuntimeIdentityMatches(
             String runtimeVersion, String baseCommit, String overlay) {
-        java.util.regex.Matcher matcher = Pattern.compile("-c([0-9a-f]{8})-o([0-9a-f]{8})$")
+        java.util.regex.Matcher matcher = BASE_RUNTIME_VERSION
                 .matcher(runtimeVersion == null ? "" : runtimeVersion);
-        return matcher.find() && baseCommit.startsWith(matcher.group(1))
-                && overlay.equals(matcher.group(2));
+        return matcher.find() && baseCommit != null
+                && baseCommit.startsWith(matcher.group(1))
+                && overlay != null && overlay.equals(matcher.group(2));
+    }
+
+    /**
+     * The release tag carries a short prefix of the exact Horizon commit. A mismatch is
+     * definitive; a match is only a preflight hint because the builder checks the full SHA.
+     */
+    static boolean matchesBaseRuntimeRevision(String modHorizonRevision, String runtimeVersion) {
+        if (modHorizonRevision == null || !modHorizonRevision.matches("[0-9a-f]{40}")) {
+            return false;
+        }
+        java.util.regex.Matcher matcher = BASE_RUNTIME_VERSION
+                .matcher(runtimeVersion == null ? "" : runtimeVersion);
+        return matcher.find() && modHorizonRevision.startsWith(matcher.group(1));
     }
 
     private static boolean modsCompatible(List<InstalledMod> selected, String game,
