@@ -54,6 +54,39 @@ class NativeHooksCompatibilityTests(unittest.TestCase):
         self.assertEqual(records[0]["horizon"], "1da354b67a509812c4141b67de2affd6de65c342")
         self.assertEqual(json.loads(self.base_path.read_text())["native_hooks_api"], 359)
 
+    def test_selected_modules_can_keep_different_mixins_pins(self):
+        target = self.base["upstream_commit"]
+        (self.mods / "mod_menu" / "mixins" / "mod_menu").mkdir(parents=True)
+        mod_menu_toml = self.mods / "mod_menu" / "mixins" / "mod_menu" / "horizon-mixin.toml"
+        mod_menu_toml.write_text(
+            '[mod]\\nid = "mod_menu"\\nversion = "0.3.0"\\n'
+            '[compatibility]\\nhorizon_revision = "' + target + '"\\n',
+            encoding="utf-8",
+        )
+        self.records.append({
+            "id": "mod_menu",
+            "version": "0.3.0",
+            "game": "26.3",
+            "horizon": target,
+            "mixins": "d9c83d7096b7ea5b83678da2efdfd6161f74997e",
+            "hooks": None,
+            "sha256": "b" * 64,
+        })
+        self.write_inputs()
+
+        api = prepare(self.records_path, self.base_path, self.source, self.mods)
+
+        self.assertEqual(api, 359)
+        records = json.loads(self.records_path.read_text())
+        self.assertEqual(
+            {item["mixins"] for item in records},
+            {
+                "0d6b103c70633d8fd9443d8d0acd3aadaacedb06",
+                "d9c83d7096b7ea5b83678da2efdfd6161f74997e",
+            },
+        )
+        self.assertIn(f'horizon_revision = "{target}"', mod_menu_toml.read_text())
+
     def test_rejects_module_when_target_hook_api_is_too_old(self):
         self.source_file.write_text(
             "pub(crate) const NATIVE_HOOKS_API: u32 = 1;\n", encoding="utf-8"
