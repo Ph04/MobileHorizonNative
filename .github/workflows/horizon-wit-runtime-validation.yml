@@ -10,6 +10,8 @@ on:
       - "tools/patch_horizon_android_touch.py"
       - "tools/horizon_patches/**"
       - "tools/test_android_horizon_wasm_mod_runtime.py"
+      - "tools/check_android_runtime_tls.py"
+      - "tools/test_android_runtime_tls.py"
       - "app/src/main/java/dev/mobilehorizon/app/NativeGameActivity.java"
       - "app/src/main/java/dev/mobilehorizon/app/SettingsActivity.java"
       - "app/src/main/java/dev/mobilehorizon/app/HorizonModArchive.java"
@@ -110,11 +112,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m unittest discover -s tools -p 'test_android_runtime_tls.py'
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang++"
           export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
           export CARGO_BUILD_JOBS=2
           export CARGO_INCREMENTAL=0
@@ -129,6 +132,7 @@ jobs:
           "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" > "$RUNNER_TEMP/horizon-wit-elf-symbols.txt"
           grep -Fq "ANativeActivity_onCreate" "$RUNNER_TEMP/horizon-wit-elf-symbols.txt"
           grep -Fq "android_main" "$RUNNER_TEMP/horizon-wit-elf-symbols.txt"
+          python3 tools/check_android_runtime_tls.py "$TOOLCHAIN/llvm-readelf" "$LIB"
 
           mkdir -p "$RUNNER_TEMP/horizon-wit-engine"
           cp "$LIB" "$RUNNER_TEMP/horizon-wit-engine/libhorizon_engine.so"
