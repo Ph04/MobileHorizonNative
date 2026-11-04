@@ -1748,9 +1748,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
             new File(getFilesDir(), "horizon-client-result.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke.flag").delete();
-            pendingNativeClientResult = true;
-            pendingNativeSmokeResult = false;
-            try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
+undefined
             sessionEnvSet = false;
             Os.setenv("HORIZON_PLAYER_NAME", playerName, true);
             offlineNameEnvSet = true;
@@ -2093,9 +2091,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                         new File(getFilesDir(), "horizon-client-result.txt").delete();
                         new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
                         new File(getFilesDir(), "horizon-native-smoke.flag").delete();
-                        pendingNativeClientResult = true;
-                        pendingNativeSmokeResult = false;
-                        sessionFile = writeOneShotSession(account);
+undefined
                         Os.setenv("HORIZON_SESSION_FILE", sessionFile.getAbsolutePath(), true);
                         sessionEnvSet = true;
                         startActivity(new Intent(this, NativeGameActivity.class)
@@ -2562,6 +2558,20 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
         updateActionEnablement();
     }
 
+    /**
+     * Leaves an explicit startup result before NativeActivity is opened. The native engine
+     * replaces this marker after android_main starts; if dlopen/bootstrap fails earlier,
+     * the marker remains and makes that early failure visible in the log viewer.
+     */
+    private void writeNativeLaunchMarker(String fileName, String message) throws IOException {
+        File target = new File(getFilesDir(), fileName);
+        try (FileOutputStream output = new FileOutputStream(target, false)) {
+            output.write((message + "\\n").getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            output.getFD().sync();
+        }
+    }
+
     private void showNativeClientResultIfAvailable() {
         File resultFile = new File(getFilesDir(), "horizon-client-result.txt");
         if (!resultFile.isFile()) return;
@@ -2581,9 +2591,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
             progressBar.setIndeterminate(false);
             progressBar.setProgress(failed ? 0 : 1000);
             progressDetails.setText(result);
-            setStatus(failed ? "O cliente Horizon não iniciou" : "Cliente Horizon encerrado",
-                    result + "\n\nEsse relatório é gerado pelo motor nativo. Um encerramento sem erro ainda não prova que um mundo foi carregado.");
-            resultFile.delete();
+undefined
         } catch (Exception error) {
             setStatus("Não foi possível ler o resultado do cliente", safeMessage(error));
         }
@@ -2608,9 +2616,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
             progressBar.setIndeterminate(false);
             progressBar.setProgress(passed ? 1000 : 0);
             progressDetails.setText(result);
-            setStatus(passed ? "Renderer Vulkan validado" : "Teste do renderer falhou",
-                    result + "\n\nEsse resultado verifica o NativeActivity e a apresentação gráfica; não comprova carregamento de recursos ou gameplay.");
-            resultFile.delete();
+undefined
         } catch (Exception error) {
             setStatus("Não foi possível ler o relatório Vulkan", safeMessage(error));
         }
@@ -2635,10 +2641,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
         marker.delete(); // Legacy flag: smoke mode is now passed explicitly in the Intent.
         new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
         new File(getFilesDir(), "horizon-client-result.txt").delete();
-        pendingNativeSmokeResult = true;
-        pendingNativeClientResult = false;
-        try {
-            String instanceId = GameInstanceManager.getSelectedInstance(this).id;
+undefined
             startActivity(new Intent(this, NativeGameActivity.class)
                     .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, false)
                     .putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instanceId)
