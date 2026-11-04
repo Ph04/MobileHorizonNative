@@ -87,7 +87,7 @@ class NativeHooksCompatibilityTests(unittest.TestCase):
         self.assertEqual(api, 359)
         self.assertIn(f'horizon_revision = "{target}"', self.toml.read_text())
         records = json.loads(self.records_path.read_text())
-        self.assertEqual(records[0]["horizon"], "1da354b67a509812c4141b67de2affd6de65c342")
+        self.assertEqual(records[0]["horizon"], self.legacy_revision)
         self.assertEqual(json.loads(self.base_path.read_text())["native_hooks_api"], 359)
 
     def test_selected_modules_can_keep_different_mixins_pins(self):
