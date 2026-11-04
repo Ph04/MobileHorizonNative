@@ -8,10 +8,15 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.DocumentsContract;
+import android.text.InputType;
 import android.provider.OpenableColumns;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -41,6 +46,16 @@ public final class NativeModsActivity extends Activity {
     private Button importButton;
     private Button buildButton;
     private Button installButton;
+    private Button githubButton;
+    private boolean buildEligible;
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable buildStateTicker = new Runnable() {
+        @Override public void run() {
+            if (isFinishing() || isDestroyed()) return;
+            refreshBuildState();
+            uiHandler.postDelayed(this, 2000L);
+        }
+    };
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -59,6 +74,13 @@ public final class NativeModsActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         refresh();
+        uiHandler.removeCallbacks(buildStateTicker);
+        uiHandler.post(buildStateTicker);
+    }
+
+    @Override protected void onPause() {
+        uiHandler.removeCallbacks(buildStateTicker);
+        super.onPause();
     }
 
     @Override protected void onDestroy() {
@@ -96,8 +118,11 @@ public final class NativeModsActivity extends Activity {
         importButton = button("Importar .hnmod", true, v -> pick(PICK_HNMOD));
         page.addView(importButton, top(-1, 52, 8));
 
-        buildButton = button("Como compilar os módulos", false, v -> showBuildInstructions());
-        page.addView(buildButton, top(-1, 48, 8));
+        githubButton = button("Conectar ao GitHub", false, v -> showGitHubTokenDialog(null));
+        page.addView(githubButton, top(-1, 48, 8));
+
+        buildButton = button("Compilar módulos selecionados no app", true, v -> beginRemoteBuild());
+        page.addView(buildButton, top(-1, 50, 8));
 
         installButton = button("Instalar runtime compilada (.zip)", false, v -> pick(PICK_RUNTIME));
         page.addView(installButton, top(-1, 48, 8));
@@ -294,12 +319,16 @@ public final class NativeModsActivity extends Activity {
             } else {
                 status.setText("Nenhum módulo nativo está selecionado. A instância usa o runtime Horizon limpo.");
             }
-            boolean canBuild = hasSelection && selectedRevisionCompatible
+            buildEligible = hasSelection && selectedRevisionCompatible
                     && !fabricJavaBridge && base != null && !base.isEmpty();
-            buildButton.setEnabled(canBuild);
-            installButton.setEnabled(canBuild);
+            buildButton.setEnabled(buildEligible
+                    && !NativeModBuildService.isRunning(this, instanceId));
+            githubButton.setText(GitHubTokenStore.hasToken(this)
+                    ? "Gerenciar acesso GitHub" : "Conectar ao GitHub");
+            installButton.setEnabled(buildEligible);
         } catch (Exception error) {
             profileNotice.setVisibility(View.GONE);
+            buildEligible = false;
             buildButton.setEnabled(false);
             installButton.setEnabled(false);
             status.setText("Não foi possível ler os .hnmod: "
@@ -388,7 +417,118 @@ public final class NativeModsActivity extends Activity {
                 }).show();
     }
 
-    private void showBuildInstructions() {
+    private void beginRemoteBuild() {
+        final String token;
+        try {
+            token = GitHubTokenStore.load(this);
+        } catch (Exception error) {
+            showError("Acesso GitHub indisponível", error);
+            return;
+        }
+        if (token == null || token.isEmpty()) {
+            showGitHubTokenDialog(this::confirmRemoteBuild);
+            return;
+        }
+        confirmRemoteBuild();
+    }
+
+    private void showGitHubTokenDialog(Runnable afterSave) {
+        boolean configured = GitHubTokenStore.hasToken(this);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(18), dp(8), dp(18), dp(4));
+        TextView help = text(
+                "Crie um Fine-grained personal access token no GitHub. Limite o acesso ao repositório "
+                        + "Ph04/MobileHorizonNative e configure somente: Contents (Read and write) e "
+                        + "Actions (Read and write). Metadata (Read-only) é concedido automaticamente. "
+                        + "Use uma validade curta, como 7 dias.\n\n"
+                        + "O token fica cifrado pelo Android Keystore deste aparelho. Ele não é enviado "
+                        + "ao nosso servidor nem gravado em logs. O app o usa apenas para criar a Release "
+                        + "temporária, iniciar a Action e baixar o artefato.",
+                12, 0xffc7bce6, false);
+        content.addView(help, params(-1, -2));
+        EditText tokenInput = new EditText(this);
+        tokenInput.setSingleLine(true);
+        tokenInput.setTextSize(13);
+        tokenInput.setHint(configured
+                ? "Token já configurado; cole outro para substituir"
+                : "github_pat_…");
+        tokenInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        tokenInput.setAutofillHints();
+        content.addView(tokenInput, top(-1, 50, 12));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(configured ? "Gerenciar acesso GitHub" : "Conectar ao GitHub")
+                .setView(content)
+                .setPositiveButton("Salvar token", null)
+                .setNeutralButton("Criar token no GitHub", null)
+                .setNegativeButton(configured ? "Remover token" : "Fechar", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getWindow().setSoftInputMode(
+                    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String value = tokenInput.getText() == null ? "" : tokenInput.getText().toString();
+                try {
+                    GitHubTokenStore.save(this, value);
+                    dialog.dismiss();
+                    status.setText("Token salvo com criptografia do Android Keystore.");
+                    refresh();
+                    if (afterSave != null) afterSave.run();
+                } catch (Exception error) {
+                    showError("Não foi possível salvar o token", error);
+                }
+            });
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(
+                            "https://github.com/settings/personal-access-tokens/new")));
+                } catch (Exception error) {
+                    showError("Não foi possível abrir o GitHub", error);
+                }
+            });
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
+                if (!configured) {
+                    dialog.dismiss();
+                    return;
+                }
+                new AlertDialog.Builder(this)
+                        .setTitle("Remover token GitHub?")
+                        .setMessage("O token cifrado e a chave local do Android Keystore serão removidos. "
+                                + "Será necessário configurar outro token para compilar novamente.")
+                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton("Remover", (confirm, which) -> {
+                            try {
+                                GitHubTokenStore.clear(this);
+                                dialog.dismiss();
+                                status.setText("Token GitHub removido deste aparelho.");
+                                refresh();
+                            } catch (Exception error) {
+                                showError("Não foi possível remover o token", error);
+                            }
+                        }).show();
+            });
+        });
+        dialog.show();
+    }
+
+    private void confirmRemoteBuild() {
+        if (NativeModBuildService.isRunning(this, instanceId)) {
+            status.setText(NativeModBuildService.message(this, instanceId));
+            return;
+        }
+        final int selectedCount;
+        final long selectedBytes;
+        try {
+            List<File> selected = HorizonNativeModManager.selectedArchiveFiles(this, instanceId);
+            selectedCount = selected.size();
+            long bytes = 0L;
+            for (File archive : selected) bytes += archive.length();
+            selectedBytes = bytes;
+        } catch (Exception error) {
+            showError("Não há módulos prontos para compilar", error);
+            return;
+        }
         String base;
         try {
             base = HorizonRuntimeManager.currentVersion(this);
@@ -401,32 +541,48 @@ public final class NativeModsActivity extends Activity {
                     new IOException("Instale primeiro a runtime Horizon limpa."));
             return;
         }
-        String baseTag = HorizonNativeModManager.baseRuntimeReleaseTag(base);
-        String message = "Build remoto para esta instância:\n\n"
-                + "1. Na página Releases do repositório MobileHorizonNative, crie uma release temporária com uma tag única (por exemplo hnmod-input-01) e envie como assets somente os .hnmod que estão selecionados nesta instância.\n\n"
-                + "2. Abra Actions > Build Horizon native .hnmod runtime > Run workflow. O workflow usa a branch feature/fabric-java-bridge-test como fonte e verifica a impressão digital do overlay contra a runtime limpa instalada. Não é necessário informar um SHA Android manualmente.\n\n"
-                + "3. Ao executar o workflow, informe:\n"
-                + "   mod_release_tag = tag da release dos .hnmod\n"
-                + "   base_runtime_tag = " + baseTag + "\n\n"
-                + "4. O workflow valida os pacotes com o parser Rust oficial do Horizon. Para um .hnmod sem declaração de hooks que tenha pin antigo, primeiro prova no Git que a revisão é ancestral da base, repina o manifesto interno e só então aplica os mixins e compila toda a runtime ARM64 isolada. Se as funções, assinaturas ou bindings tiverem mudado, o compilador falha e nenhum runtime parcial é publicado.\n\n"
-                + "5. Baixe o artifact ZIP mobilehorizon-native-runtime na execução do Actions (não uma release). Depois selecione o ZIP em “Instalar runtime compilada”.\n\n"
-                + "A compilação roda em runner isolado, sem segredos e sem alterar a runtime limpa compartilhada. O build só será ativado nesta instância se o manifesto, a revisão Horizon, os módulos selecionados, o SHA-256 e o ELF ARM64 corresponderem exatamente. Módulos que declarem [[post_build]] também são suportados: o builder compila e executa os geradores em um runner Linux isolado, valida os arquivos produzidos e os inclui no artifact. O app instala esses dados na pasta privada da runtime desta instância.";
+        String message = "O app enviará " + selectedCount + " módulo(s) ("
+                + formatMiB(selectedBytes) + ") para uma Release temporária PÚBLICA do repositório "
+                + "Ph04/MobileHorizonNative. Qualquer pessoa poderá baixar esses arquivos enquanto "
+                + "o build estiver em andamento.\n\n"
+                + "Depois de compilar e instalar a runtime, o app tentará apagar automaticamente a "
+                + "Release e a tag. O token não é incluído nos pacotes.\n\n"
+                + "A Action pode levar vários minutos e continuará em um serviço Android em primeiro "
+                + "plano, com notificação de progresso. Confirme somente se você aceita a publicação "
+                + "temporária dos módulos.";
         new AlertDialog.Builder(this)
-                .setTitle("Compilar .hnmod para esta instância")
+                .setTitle("Enviar e compilar os .hnmod?")
                 .setMessage(message)
-                .setNegativeButton("Fechar", null)
-                .setNeutralButton("Copiar tag base", (dialog, which) -> {
-                    ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                    if (clipboard != null) {
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Horizon runtime tag", baseTag));
-                        status.setText("Tag base copiada: " + baseTag);
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Enviar e compilar", (dialog, which) -> {
+                    try {
+                        NativeModBuildService.start(this, instanceId);
+                        status.setText("Compilação enviada. Acompanhe o progresso pela notificação.");
+                        refreshBuildState();
+                    } catch (Exception error) {
+                        showError("Não foi possível iniciar a compilação", error);
                     }
-                })
-                .setPositiveButton("Abrir Actions", (dialog, which) -> {
-                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(
-                            "https://github.com/Ph04/MobileHorizonNative/actions/workflows/horizon-native-mod-build.yml"));
-                    startActivity(intent);
                 }).show();
+    }
+
+    private String formatMiB(long bytes) {
+        return String.format(java.util.Locale.ROOT, "%.1f MiB", bytes / (1024.0 * 1024.0));
+    }
+
+    private void refreshBuildState() {
+        if (status == null || isFinishing() || isDestroyed()) return;
+        String state = NativeModBuildService.state(this, instanceId);
+        String message = NativeModBuildService.message(this, instanceId);
+        if ("RUNNING".equals(state) && !message.isEmpty()) {
+            status.setText("Compilação remota: " + message);
+        } else if ("SUCCESS".equals(state) && !message.isEmpty()) {
+            status.setText(message);
+        } else if ("FAILED".equals(state) && !message.isEmpty()) {
+            status.setText("Falha na compilação: " + message);
+        }
+        if (buildButton != null) {
+            buildButton.setEnabled(buildEligible && !"RUNNING".equals(state));
+        }
     }
 
     private void showError(String title, Exception error) {
