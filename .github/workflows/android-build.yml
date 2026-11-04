@@ -399,7 +399,7 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Run unit tests and build the standard APK only
+      - name: Run native .hnmod compatibility tests and build the standard APK only
         shell: bash
         env:
           HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
