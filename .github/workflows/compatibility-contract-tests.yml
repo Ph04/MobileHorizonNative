@@ -150,9 +150,9 @@ jobs:
           set -euo pipefail
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          test -x "$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang"
           export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
           export CARGO_TARGET_DIR="$RUNNER_TEMP/horizon-cargo-target"
           cargo check --locked --manifest-path "$HORIZON_COMPAT_SOURCE/crates/horizon-client/Cargo.toml" --target aarch64-linux-android
