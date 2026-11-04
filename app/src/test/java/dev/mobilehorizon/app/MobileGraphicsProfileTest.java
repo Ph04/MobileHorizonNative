@@ -41,6 +41,16 @@ public final class MobileGraphicsProfileTest {
     }
 
     @Test
+    public void fourGigabyteProfileDisablesHdrToReduceGraphicsMemory() {
+        MobileGraphicsProfile.Limits limits =
+                MobileGraphicsProfile.limitsForRam(4L * 1024L * 1024L * 1024L);
+        String merged = MobileGraphicsProfile.mergeDefaults(
+                "hdr:true\\nchunkUpdates:0\\nuploadBudgetKiB:0\\nworkers:0\\n", limits);
+        assertTrue(merged.contains("hdr:false"));
+        assertFalse(merged.contains("hdr:true"));
+    }
+
+    @Test
     public void explicitPlayerValuesArePreserved() {
         String merged = MobileGraphicsProfile.mergeDefaults(
                 "chunkUpdates:32\nuploadBudgetKiB:4096\nworkers:4\nhdr:true\n",
