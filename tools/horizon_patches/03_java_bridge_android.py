@@ -506,7 +506,30 @@ android_vm_tuning = """    // Preserve upstream G1 shrink/periodic-GC and string
     log::info!(
         "Java Bridge JVM limits: heap={}..{} MiB, processors={}, GC threads={}",
         heap_initial, heap_max, processors, gc_threads
-    );"""
+    );
+    if cfg!(target_os = "android") {
+        match std::env::var("HORIZON_LWJGL_LIBRARY_PATH") {
+            Ok(path) if !path.trim().is_empty() => {
+                // LWJGL 3 checks org.lwjgl.librarypath first, then java.library.path.
+                options.push(format!("-Dorg.lwjgl.librarypath={}", path.trim()));
+                options.push(format!("-Djava.library.path={}", path.trim()));
+                log::info!("Java Bridge LWJGL native search path: {}", path.trim());
+            }
+            _ => log::warn!(
+                "HORIZON_LWJGL_LIBRARY_PATH is missing; LWJGL native libraries may not load."
+            ),
+        }
+        match std::env::var("HORIZON_HOME") {
+            Ok(home) if !home.trim().is_empty() => {
+                // Keep mod data/cache paths inside this instance, not Termux's private home.
+                options.push(format!("-Duser.home={}", home.trim()));
+                log::info!("Java Bridge user.home redirected to instance: {}", home.trim());
+            }
+            _ => log::warn!(
+                "HORIZON_HOME is missing; Java user.home remains the provider default."
+            ),
+        }
+    }"""
 jvm_options_source = jvm_source
 if jvm_options_source.count(vm_options_anchor) == 1:
     # Older bridge source: replace the short base options with Android-aware defaults.
