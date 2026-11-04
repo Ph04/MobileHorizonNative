@@ -67,6 +67,19 @@ final class HorizonNativeModArchive {
     private HorizonNativeModArchive() { }
 
     static Descriptor read(File archive) throws IOException {
+        return read(archive, true);
+    }
+
+    /**
+     * Validates an app-created staging copy after the original user-selected .hnmod
+     * has already passed the public filename check. Internal staging files intentionally
+     * use a .partial suffix so they are never mistaken for installed modules by list().
+     */
+    static Descriptor readStaged(File archive) throws IOException {
+        return read(archive, false);
+    }
+
+    private static Descriptor read(File archive, boolean requireHnmodExtension) throws IOException {
         if (archive == null || !archive.isFile() || Files.isSymbolicLink(archive.toPath())) {
             throw new IOException("O arquivo .hnmod não existe ou não é um arquivo regular.");
         }
@@ -74,7 +87,8 @@ final class HorizonNativeModArchive {
         if (archiveSize <= 0 || archiveSize > MAX_ARCHIVE_BYTES) {
             throw new IOException("O .hnmod deve ter entre 1 byte e 64 MiB.");
         }
-        if (!"hnmod".equalsIgnoreCase(extension(archive.getName()))) {
+        if (requireHnmodExtension
+                && !"hnmod".equalsIgnoreCase(extension(archive.getName()))) {
             throw new IOException("Selecione um pacote nativo .hnmod. Arquivos .hmod e .jar são formatos diferentes.");
         }
 

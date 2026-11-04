@@ -64,6 +64,30 @@ public final class HorizonNativeModArchiveTest {
         }
     }
 
+    @Test public void validatesPartialStagingCopyWithoutWeakeningPublicExtensionCheck() throws Exception {
+        File source = createArchive("veinminer", HORIZON, MIXINS, null);
+        File staged = Files.createTempFile("horizon-native-import-", ".partial").toFile();
+        try {
+            Files.copy(source.toPath(), staged.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+            try {
+                HorizonNativeModArchive.read(staged);
+                fail("public importer must reject a non-.hnmod filename");
+            } catch (java.io.IOException expected) {
+                assertTrue(expected.getMessage().contains("Selecione um pacote nativo .hnmod"));
+            }
+
+            HorizonNativeModArchive.Descriptor descriptor =
+                    HorizonNativeModArchive.readStaged(staged);
+            assertEquals("veinminer", descriptor.id);
+            assertEquals(HORIZON, descriptor.horizonRevision);
+        } finally {
+            source.delete();
+            staged.delete();
+        }
+    }
+
     @Test public void directoryEntriesDoNotCountTowardNativeFileLimit() throws Exception {
         File archive = Files.createTempFile("horizon-native-directories-", ".hnmod").toFile();
         try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive))) {

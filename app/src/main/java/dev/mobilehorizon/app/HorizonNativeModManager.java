@@ -133,7 +133,7 @@ final class HorizonNativeModManager {
         }
         try {
             copy(source, temporary);
-            HorizonNativeModArchive.Descriptor copied = HorizonNativeModArchive.read(temporary);
+            HorizonNativeModArchive.Descriptor copied = HorizonNativeModArchive.readStaged(temporary);
             if (!descriptor.sha256.equals(copied.sha256)) {
                 throw new IOException("O .hnmod foi alterado durante a importação.");
             }
