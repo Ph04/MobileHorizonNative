@@ -61,6 +61,22 @@ public final class HorizonNativeModCompatibilityTest {
     }
 
     @Test
+    public void nativeDataPathsMustStayInsideTheSelectedModuleDirectory() {
+        java.util.Set<String> selected = new java.util.HashSet<>();
+        selected.add("mod_menu");
+        assertTrue(HorizonNativeModManager.isSafeNativeDataPath(
+                "native-data/mod_menu/tables/index.bin", selected));
+        assertFalse(HorizonNativeModManager.isSafeNativeDataPath(
+                "native-data/mod_menu/../escape.bin", selected));
+        assertFalse(HorizonNativeModManager.isSafeNativeDataPath(
+                "native-data/other/data.bin", selected));
+        assertFalse(HorizonNativeModManager.isSafeNativeDataPath(
+                "/native-data/mod_menu/data.bin", selected));
+        assertFalse(HorizonNativeModManager.isSafeNativeDataPath(
+                "native-data/mod_menu\\\\file.bin", selected));
+    }
+
+    @Test
     public void aPinnedModuleCannotUseOnlyTheShortRuntimeTagPrefixAsProof() {
         HorizonNativeModArchive.Descriptor descriptor =
                 new HorizonNativeModArchive.Descriptor(
