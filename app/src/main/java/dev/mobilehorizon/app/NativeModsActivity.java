@@ -570,6 +570,7 @@ public final class NativeModsActivity extends Activity {
 
     private void refreshBuildState() {
         if (status == null || isFinishing() || isDestroyed()) return;
+        boolean running = NativeModBuildService.isRunning(this, instanceId);
         String state = NativeModBuildService.state(this, instanceId);
         String message = NativeModBuildService.message(this, instanceId);
         if ("RUNNING".equals(state) && !message.isEmpty()) {
@@ -580,7 +581,7 @@ public final class NativeModsActivity extends Activity {
             status.setText("Falha na compilação: " + message);
         }
         if (buildButton != null) {
-            buildButton.setEnabled(buildEligible && !"RUNNING".equals(state));
+            buildButton.setEnabled(buildEligible && !running);
         }
     }
 
