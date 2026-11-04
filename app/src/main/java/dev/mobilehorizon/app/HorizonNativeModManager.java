@@ -219,7 +219,8 @@ final class HorizonNativeModManager {
             throw new IOException("O arquivo do build .hnmod não foi encontrado.");
         }
         if (artifact.length() <= 0 || artifact.length()
-                > MAX_RUNTIME_BYTES + MAX_NATIVE_DATA_BYTES + MAX_MANIFEST_BYTES) {
+                > MAX_RUNTIME_BYTES + MAX_NATIVE_DATA_BYTES + MAX_MANIFEST_BYTES
+                        + 4L * 1024L * 1024L) {
             throw new IOException("O pacote do runtime nativo e dos dados gerados excede o limite permitido.");
         }
         List<InstalledMod> selected = selectedMods(context, instanceId);
