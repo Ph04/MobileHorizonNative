@@ -130,14 +130,13 @@ final class HorizonNativeModArchive {
             long total = 0;
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
+                // Horizon's official Bundle::read skips directory records entirely.
+                if (entry.isDirectory()) continue;
                 String name = entry.getName();
-                validateArchivePath(name, entry.isDirectory());
+                validateArchivePath(name, false);
                 if (!names.add(name)) {
                     throw new IOException("O .hnmod contém um caminho duplicado: " + name);
                 }
-                // Match Horizon's Bundle::read: directory records do not count toward
-                // the 512 native-file limit and are skipped before reading file payloads.
-                if (entry.isDirectory()) continue;
                 if (++count > MAX_ENTRIES) {
                     throw new IOException("O .hnmod contém mais de 512 arquivos nativos.");
                 }
