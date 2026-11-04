@@ -1547,5 +1547,152 @@ elif profiled_call_replacement not in events_source:
     raise SystemExit(f"{events_source_path}: opt-in JNI profiling anchor changed")
 events_source_path.write_text(events_source, encoding="utf-8")
 
+
+# HorizonData is loaded on the Java-mod bootstrap thread and read from Horizon's
+# game/server thread. Publish the completed registry/world-data graph safely.
+platform_data_path = root / "crates/horizon-jvm/java/platform/dev/horizonlab/platform/HorizonData.java"
+platform_data_source = platform_data_path.read_text(encoding="utf-8")
+data_fields_anchor = """    static Loaded loaded;
+    /** The data pack repository the data came from (a server's, for mods' set-up). */
+    static PackRepository repository;"""
+data_fields_replacement = """    // Fabric bootstrap and Horizon's game tick run on different attached JVM threads.
+    // Volatile safely publishes the completed WorldLoader result and its repository.
+    static volatile Loaded loaded;
+    /** The data pack repository the data came from (a server's, for mods' set-up). */
+    static volatile PackRepository repository;"""
+if platform_data_source.count(data_fields_anchor) != 1:
+    raise SystemExit(f"{platform_data_path}: data publication fields changed")
+platform_data_source = platform_data_source.replace(data_fields_anchor, data_fields_replacement, 1)
+platform_data_path.write_text(platform_data_source, encoding="utf-8")
+
+# Never create the mirror while the data-pack registries/world data are still being
+# prepared. Otherwise a null gameRules/worldData object becomes permanent for the session.
+platform_server_path = root / "crates/horizon-jvm/java/platform/dev/horizonlab/platform/HorizonServer.java"
+platform_server_source = platform_server_path.read_text(encoding="utf-8")
+server_setup_anchor = """    private static void setUp(boolean dedicated) throws ClassNotFoundException {
+        String serverClass = dedicated"""
+server_setup_replacement = """    private static void setUp(boolean dedicated) throws ClassNotFoundException {
+        HorizonData.Loaded preparedData = HorizonData.loaded;
+        if (preparedData == null || preparedData.worldData() == null
+                || preparedData.registries() == null || preparedData.resources() == null
+                || preparedData.reloadable() == null) {
+            throw new IllegalStateException(
+                    "Horizon's server mirror was requested before Fabric's WorldLoader data was safely published.");
+        }
+        String serverClass = dedicated"""
+if platform_server_source.count(server_setup_anchor) != 1:
+    raise SystemExit(f"{platform_server_path}: setUp data guard anchor changed")
+platform_server_source = platform_server_source.replace(server_setup_anchor, server_setup_replacement, 1)
+
+server_data_anchor = """        HorizonData.Loaded data = HorizonData.loaded;
+        if (data != null) {
+            ((MinecraftServerAccess) server).horizon$setRegistries(data.registries());
+            ((MinecraftServerAccess) server).horizon$setWorldData(data.worldData());
+            // Vanilla's defaults; Horizon's own rules are mirrored over them later.
+            ((MinecraftServerAccess) server).horizon$setGameRules(MinecraftServer.DEFAULT_GAME_RULES.get());"""
+server_data_replacement = """        HorizonData.Loaded data = preparedData;
+        {
+            ((MinecraftServerAccess) server).horizon$setRegistries(data.registries());
+            ((MinecraftServerAccess) server).horizon$setWorldData(data.worldData());
+            // Start from this World's loaded data, not a possibly-uninitialized static default.
+            ((MinecraftServerAccess) server).horizon$setGameRules(data.worldData().getGameRules());"""
+if platform_server_source.count(server_data_anchor) != 1:
+    raise SystemExit(f"{platform_server_path}: server registry/world-data binding anchor changed")
+platform_server_source = platform_server_source.replace(server_data_anchor, server_data_replacement, 1)
+
+server_bound_anchor = """        for (String dimension : new String[] {"minecraft:overworld", "minecraft:the_nether", "minecraft:the_end"}) {
+            level(dimension);
+        }"""
+server_bound_replacement = """        if (server.getWorldData() != data.worldData() || server.getGameRules() == null) {
+            // Do not leave a half-constructed singleton that would skip setUp on later ticks.
+            server = null;
+            playerList = null;
+            LEVELS.clear();
+            LEVEL_PLAYERS.clear();
+            throw new IllegalStateException(
+                    "Horizon server mirror did not retain WorldData/GameRules after binding.");
+        }
+        Natives.log("Java mods: server mirror WorldData, registries and GameRules are ready.");
+        for (String dimension : new String[] {"minecraft:overworld", "minecraft:the_nether", "minecraft:the_end"}) {
+            level(dimension);
+        }"""
+if platform_server_source.count(server_bound_anchor) != 1:
+    raise SystemExit(f"{platform_server_path}: server data validation anchor changed")
+platform_server_source = platform_server_source.replace(server_bound_anchor, server_bound_replacement, 1)
+platform_server_path.write_text(platform_server_source, encoding="utf-8")
+
+# The headless Horizon client intentionally has no local player. Some renderers still
+# call Entity.isInvisibleTo with Minecraft.player; treat that null viewer as visible only
+# inside the headless client instead of allowing a mod renderer to throw on every entity.
+platform_mixins_dir = root / "crates/horizon-jvm/java/platform/dev/horizonlab/platform/mixin"
+entity_visibility_path = platform_mixins_dir / "EntityVisibilityMixin.java"
+if entity_visibility_path.exists():
+    raise SystemExit(f"{entity_visibility_path}: refusing to overwrite an upstream mixin")
+entity_visibility_path.write_text("""package dev.horizonlab.platform.mixin;
+
+import dev.horizonlab.platform.HorizonServer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+/** The headless renderer has no LocalPlayer; a null viewer must not crash entity extraction. */
+@Mixin(Entity.class)
+public abstract class EntityVisibilityMixin {
+    @Inject(
+            method = "isInvisibleTo(Lnet/minecraft/world/entity/player/Player;)Z",
+            at = @At("HEAD"),
+            cancellable = true
+    )
+    private void horizon$nullHeadlessViewer(Player player, CallbackInfoReturnable<Boolean> cir) {
+        if (player == null && HorizonServer.loop()) cir.setReturnValue(false);
+    }
+}
+""", encoding="utf-8")
+
+platform_mixins_path = root / "crates/horizon-jvm/java/platform/horizon-platform.mixins.json"
+platform_mixins_source = platform_mixins_path.read_text(encoding="utf-8")
+client_mixins_anchor = """  "client": [
+    "SkinDownloaderMixin","""
+client_mixins_replacement = """  "client": [
+    "EntityVisibilityMixin",
+    "SkinDownloaderMixin","""
+if platform_mixins_source.count(client_mixins_anchor) != 1:
+    raise SystemExit(f"{platform_mixins_path}: client mixin list anchor changed")
+platform_mixins_source = platform_mixins_source.replace(client_mixins_anchor, client_mixins_replacement, 1)
+platform_mixins_path.write_text(platform_mixins_source, encoding="utf-8")
+
+# StructureManager/StructureCheck were initialized only when a mod changed world
+# generation. Vanilla dimensions still need them for spawn rules (e.g. structure-aware
+# entities), so prepare the level adapter before the early return for an unmodified generator.
+platform_worldgen_path = root / "crates/horizon-jvm/java/platform/dev/horizonlab/platform/HorizonWorldgen.java"
+platform_worldgen_source = platform_worldgen_path.read_text(encoding="utf-8")
+worldgen_ready_anchor = """            levelHooks(level, dimension, seed);
+            List<String> mods = modded(level, generator);
+            if (mods.isEmpty()) {
+                Natives.log("Java mods: " + dimension + " generates as vanilla's (Horizon's generator)");
+                return false;
+            }
+            MinecraftServer server = HorizonServer.server();
+            PalettedContainerFactory containers = PalettedContainerFactory.create(level.registryAccess());
+            readyLevel(level, generator, server, containers, seed);"""
+worldgen_ready_replacement = """            levelHooks(level, dimension, seed);
+            MinecraftServer server = HorizonServer.server();
+            PalettedContainerFactory containers = PalettedContainerFactory.create(level.registryAccess());
+            // This also supplies StructureManager/StructureCheck for vanilla generation.
+            // Structure-aware spawn rules must work even when no mod changes the generator.
+            readyLevel(level, generator, server, containers, seed);
+            List<String> mods = modded(level, generator);
+            if (mods.isEmpty()) {
+                Natives.log("Java mods: " + dimension + " generates as vanilla's (Horizon's generator)");
+                return false;
+            }"""
+if platform_worldgen_source.count(worldgen_ready_anchor) != 1:
+    raise SystemExit(f"{platform_worldgen_path}: vanilla structure manager preparation anchor changed")
+platform_worldgen_source = platform_worldgen_source.replace(worldgen_ready_anchor, worldgen_ready_replacement, 1)
+platform_worldgen_path.write_text(platform_worldgen_source, encoding="utf-8")
+
 print("Added pinned Cloth Config 26.3.159 + Basic Math 0.6.1 for REI; throttled only visual entity snapshots at memory pressure 2/3; removed allocations from own-entity JSON join; disabled per-call JNI timing unless profiling is explicitly enabled; removed blocking server-tick sleeps.")
 
