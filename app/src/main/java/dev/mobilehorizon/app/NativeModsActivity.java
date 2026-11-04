@@ -80,7 +80,7 @@ public final class NativeModsActivity extends Activity {
         page.addView(text("Módulos nativos (.hnmod)", 25, 0xfff0ecff, true), top(-1, -2, 5));
         page.addView(text("Instância: " + instanceId, 12, 0xffaaa2c6, true), top(-1, -2, 5));
         page.addView(text(
-                "O Horizon compila os .hnmod dentro de uma cópia do motor. Eles não são plugins carregados durante o jogo. Cada conjunto selecionado precisa de um runtime ARM64 próprio para esta instância.",
+                "O Horizon compila os .hnmod dentro de uma cópia do motor. Módulos que declaram hooks podem usar revisões posteriores se a API instalada for suficiente; módulos sem essa declaração exigem o commit Horizon exato. Cada conjunto selecionado precisa de um runtime ARM64 próprio para esta instância.",
                 13, 0xffb9b3d1, false), top(-1, -2, 10));
         profileNotice = text("", 12, 0xffffd18a, false);
         profileNotice.setVisibility(View.GONE);
