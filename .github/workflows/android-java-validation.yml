@@ -1,0 +1,63 @@
+name: Android Java validation
+
+on:
+  push:
+    branches:
+      - feature/fabric-java-bridge-test
+    paths:
+      - "app/src/**"
+      - "app/build.gradle"
+      - "core/src/**"
+      - "core/build.gradle"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "gradlew"
+      - ".github/workflows/android-java-validation.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "app/src/**"
+      - "app/build.gradle"
+      - "core/src/**"
+      - "core/build.gradle"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "gradlew"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  java:
+    name: Compile Android Java and run unit tests (no APK)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;35.0.0"
+
+      - name: Compile app Java and run unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace \
+            :app:compileStandardDebugJavaWithJavac \
+            :app:testStandardDebugUnitTest
