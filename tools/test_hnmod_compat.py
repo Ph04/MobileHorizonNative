@@ -15,13 +15,13 @@ class NativeHooksCompatibilityTests(unittest.TestCase):
         self.source_file = self.source / "crates/horizon-client/src/game/native_hooks.rs"
         self.source_file.parent.mkdir(parents=True)
         self.source_file.write_text(
-            "pub(crate) const NATIVE_HOOKS_API: u32 = 359;\\n", encoding="utf-8"
+            "pub(crate) const NATIVE_HOOKS_API: u32 = 359;\n", encoding="utf-8"
         )
         (self.mods / "jei" / "mixins" / "jei").mkdir(parents=True)
         self.toml = self.mods / "jei" / "mixins" / "jei" / "horizon-mixin.toml"
         self.toml.write_text(
-            '[mod]\\nid = "jei"\\nversion = "0.1.0"\\n'
-            '[compatibility]\\nhorizon_revision = "1da354b67a509812c4141b67de2affd6de65c342"\\n',
+            '[mod]\nid = "jei"\nversion = "0.1.0"\n'
+            '[compatibility]\nhorizon_revision = "1da354b67a509812c4141b67de2affd6de65c342"\n',
             encoding="utf-8",
         )
         self.records_path = self.root / "hnmods.json"
@@ -56,7 +56,7 @@ class NativeHooksCompatibilityTests(unittest.TestCase):
 
     def test_rejects_module_when_target_hook_api_is_too_old(self):
         self.source_file.write_text(
-            "pub(crate) const NATIVE_HOOKS_API: u32 = 1;\\n", encoding="utf-8"
+            "pub(crate) const NATIVE_HOOKS_API: u32 = 1;\n", encoding="utf-8"
         )
         before = self.toml.read_text()
         with self.assertRaisesRegex(ValueError, "requires native hook points API v2"):
@@ -71,8 +71,8 @@ class NativeHooksCompatibilityTests(unittest.TestCase):
 
     def test_hook_bundle_must_match_manifest_toml_tested_revision_before_repin(self):
         self.toml.write_text(
-            '[mod]\\nid = "jei"\\nversion = "0.1.0"\\n'
-            '[compatibility]\\nhorizon_revision = "' + "b" * 40 + '"\\n',
+            '[mod]\nid = "jei"\nversion = "0.1.0"\n'
+            '[compatibility]\nhorizon_revision = "' + "b" * 40 + '"\n',
             encoding="utf-8",
         )
         with self.assertRaisesRegex(ValueError, "does not match its native bundle manifest"):
