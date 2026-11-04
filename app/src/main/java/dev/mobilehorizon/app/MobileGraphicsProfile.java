@@ -27,17 +27,23 @@ final class MobileGraphicsProfile {
         final int chunkUpdates;
         final int uploadBudgetKiB;
         final int workers;
+        final boolean disableHdr;
 
         Limits(int chunkUpdates, int uploadBudgetKiB, int workers) {
+            this(chunkUpdates, uploadBudgetKiB, workers, false);
+        }
+
+        Limits(int chunkUpdates, int uploadBudgetKiB, int workers, boolean disableHdr) {
             this.chunkUpdates = chunkUpdates;
             this.uploadBudgetKiB = uploadBudgetKiB;
             this.workers = workers;
+            this.disableHdr = disableHdr;
         }
     }
 
     static Limits limitsForRam(long totalRamBytes) {
         if (totalRamBytes <= 0 || totalRamBytes <= 5L * GIB) {
-            return new Limits(8, 1024, 2);
+            return new Limits(8, 1024, 2, true);
         }
         if (totalRamBytes <= 7L * GIB) {
             return new Limits(12, 2048, 3);
@@ -95,7 +101,8 @@ final class MobileGraphicsProfile {
 
         byte[] markerBytes = ("version=1\nchunkUpdates=" + limits.chunkUpdates
                 + "\nuploadBudgetKiB=" + limits.uploadBudgetKiB
-                + "\nworkers=" + limits.workers + "\n").getBytes(StandardCharsets.UTF_8);
+                + "\nworkers=" + limits.workers
+                + "\ndisableHdr=" + limits.disableHdr + "\n").getBytes(StandardCharsets.UTF_8);
         File markerTemp = new File(home, "." + MARKER_FILE + ".partial");
         try (FileOutputStream output = new FileOutputStream(markerTemp, false)) {
             output.write(markerBytes);
@@ -133,7 +140,9 @@ final class MobileGraphicsProfile {
                     seen.add(key);
                     String current = line.substring(separator + 1).trim();
                     boolean isDefault = current.isEmpty()
-                            || ((index <= 2) && "0".equals(current));
+                            || ((index <= 2) && "0".equals(current))
+                            || (index == 4 && limits.disableHdr
+                                    && "true".equalsIgnoreCase(current));
                     if (isDefault) {
                         output.add(keys[index] + ":" + values[index]);
                     } else {
@@ -142,7 +151,11 @@ final class MobileGraphicsProfile {
                     continue;
                 }
             }
-            if (!line.isEmpty() || output.isEmpty()) output.add(line);
+            if (!line.isEmpty()) {
+                output.add(line);
+            } else if (!output.isEmpty() && !output.get(output.size() - 1).isEmpty()) {
+                output.add("");
+            }
         }
         for (int i = 0; i < keys.length; i++) {
             if (!seen.contains(keys[i])) output.add(keys[i] + ":" + values[i]);
