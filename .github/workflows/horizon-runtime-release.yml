@@ -1,4 +1,6 @@
 name: Publish Android Horizon runtime
+# The app minSdk is API 26 and this engine is loaded with dlopen(): compile C/C++ for API 26 so NDK uses emulated TLS.
+# check_android_runtime_tls.py blocks PT_TLS segments and dynamic AArch64 TLS relocations before any release is published.
 
 # Resolve Horizon's moving Nightly pre-release; the Android runtime is published independently from APK releases.
 # Development-branch pushes build only when their commit carries [publish-runtime-approved].
