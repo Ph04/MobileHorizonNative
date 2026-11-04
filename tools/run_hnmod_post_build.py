@@ -15,7 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 MAX_STEPS = 24
 MAX_FILES = 4096
@@ -31,7 +31,9 @@ def safe_data_path(path: str) -> bool:
         return False
     if path.startswith("/") or "\\" in path or ":" in path or "\x00" in path:
         return False
-    parts = PurePosixPath(path).parts
+    # Split the original string instead of PurePosixPath.parts: pathlib normalizes
+    # some "." and empty components, while the Android ZIP installer rejects them.
+    parts = path.split("/")
     return (
         len(parts) >= 3
         and parts[0] == "native-data"
@@ -100,6 +102,15 @@ def native_data_index(output: Path) -> list[dict]:
     return records
 
 
+def _print_sanitized_log(path: Path, label: str) -> None:
+    if not path.is_file():
+        return
+    with path.open("rb") as log:
+        excerpt = log.read(128 * 1024).decode("utf-8", errors="replace")
+    for line in excerpt.splitlines():
+        print(f"[hnmod:{label}] " + line.replace("::", ": :"), flush=True)
+
+
 def run_steps(source: Path, output: Path, cache: Path, timeout: int = 600) -> list[dict]:
     steps = load_steps(source)
     output.mkdir(parents=True, exist_ok=True)
@@ -125,18 +136,26 @@ def run_steps(source: Path, output: Path, cache: Path, timeout: int = 600) -> li
         )
         build_env = dict(clean_env)
         build_env["CARGO_TARGET_DIR"] = str(target_dir)
+        program_dir = programs / str(index)
+        program_dir.mkdir(parents=True, exist_ok=True)
         command = [
             "cargo", "build", "--locked", "--release",
             "--manifest-path", str(source / "Cargo.toml"),
             "-p", step["package"], "--bin", step["bin"],
         ]
-        subprocess.run(command, cwd=source, env=build_env, check=True, timeout=timeout)
+        build_log = program_dir / "cargo-build.log"
+        try:
+            with build_log.open("wb") as log:
+                subprocess.run(command, cwd=source, env=build_env, check=True,
+                               timeout=timeout, stdout=log, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError:
+            _print_sanitized_log(build_log, step["mod"] + ":cargo")
+            raise
+        _print_sanitized_log(build_log, step["mod"] + ":cargo")
 
         built = target_dir / "release" / step["bin"]
         if not built.is_file() or built.is_symlink():
             raise RuntimeError(f"Cargo did not produce the expected host program: {built}")
-        program_dir = programs / str(index)
-        program_dir.mkdir(parents=True, exist_ok=True)
         program = program_dir / step["bin"]
         shutil.copy2(built, program)
 
@@ -158,15 +177,15 @@ def run_steps(source: Path, output: Path, cache: Path, timeout: int = 600) -> li
         print(f"Running {step['mod']} post-build generator", flush=True)
         log_path = program_dir / "post-build.log"
         with log_path.open("wb") as log:
-            subprocess.run(
-                command, cwd=output, env=env, check=True, timeout=timeout,
-                stdout=log, stderr=subprocess.STDOUT,
-            )
-        # Never forward untrusted program output as GitHub workflow commands.
-        with log_path.open("rb") as log:
-            excerpt = log.read(128 * 1024).decode("utf-8", errors="replace")
-        for line in excerpt.splitlines():
-            print(f"[hnmod:{step['mod']}] " + line.replace("::", ": :"), flush=True)
+            try:
+                subprocess.run(
+                    command, cwd=output, env=env, check=True, timeout=timeout,
+                    stdout=log, stderr=subprocess.STDOUT,
+                )
+            except subprocess.CalledProcessError:
+                _print_sanitized_log(log_path, step["mod"])
+                raise
+        _print_sanitized_log(log_path, step["mod"])
 
     records = native_data_index(output)
     index_file = output / "native-data-index.json"
