@@ -1594,8 +1594,9 @@ server_data_replacement = """        HorizonData.Loaded data = preparedData;
         {
             ((MinecraftServerAccess) server).horizon$setRegistries(data.registries());
             ((MinecraftServerAccess) server).horizon$setWorldData(data.worldData());
-            // Start from this World's loaded data, not a possibly-uninitialized static default.
-            ((MinecraftServerAccess) server).horizon$setGameRules(data.worldData().getGameRules());"""
+            // MinecraftServer's default rules are the non-null baseline; Horizon mirrors
+            // the active world's values into this object after WorldData is fully bound.
+            ((MinecraftServerAccess) server).horizon$setGameRules(MinecraftServer.DEFAULT_GAME_RULES.get());"""
 if platform_server_source.count(server_data_anchor) != 1:
     raise SystemExit(f"{platform_server_path}: server registry/world-data binding anchor changed")
 platform_server_source = platform_server_source.replace(server_data_anchor, server_data_replacement, 1)
