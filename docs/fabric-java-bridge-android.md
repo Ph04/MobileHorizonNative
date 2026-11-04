@@ -1,6 +1,6 @@
 # Testar Java Bridge By:iaxivers no MobileHorizonNative
 
-Este branch integra, como runtime opcional, o bridge do fork [iaxivers/horizon](https://github.com/iaxivers/horizon/tree/java-bridge), fixado no commit `fd41885b988f18ac4881e80d87f8fc8f9c2e6ca3`.
+Este branch integra, como runtime opcional, o bridge do fork [iaxivers/horizon](https://github.com/iaxivers/horizon/tree/java-bridge). O workflow resolve a ponta atual de `java-bridge` a cada publicação e registra o SHA completo usado no manifesto da runtime. Na auditoria de 2026-11-03, a ponta verificada era `431accb7d0e9c0d59d3719e4c58beebbfec2ccbd`; o app não depende desse SHA fixo para aceitar futuras atualizações.
 
 ## Escopo fixado
 
@@ -10,7 +10,7 @@ Este branch integra, como runtime opcional, o bridge do fork [iaxivers/horizon](
 - Fabric API fornecida pelo bridge: `0.165.0+26.3`
 - Runtime: biblioteca nativa Android ARM64 separada, instalada em `filesDir/fabric-horizon-runtime/`
 
-O código Fabric/JVM é o do commit externo fixado. O overlay MobileHorizon mantém a camada Android NativeActivity, tradução touch/mouse e login offline. O patcher pula o socket experimental `08_compatibility_bridge.py`: este perfil usa o runtime Fabric original do fork, não a API `.mhplugin` experimental do launcher.
+O código Fabric/JVM é o do commit exato registrado no manifesto de cada runtime. O overlay MobileHorizon mantém a camada Android NativeActivity, tradução touch/mouse e login offline. O patcher pula o socket experimental `08_compatibility_bridge.py`: este perfil usa o runtime Fabric original do fork, não a API `.mhplugin` experimental do launcher.
 
 ## Fluxo de teste no app
 
@@ -37,6 +37,6 @@ Não é necessário incluir outro `fabric-api` no pacote: o bridge possui uma ve
 
 ## Validação de runtime
 
-A Action `.github/workflows/fabric-java-bridge-runtime.yml` fixa o commit externo, aplica o overlay Android, prepara temporariamente os arquivos públicos de Minecraft 26.3 no runner, executa o teste Java do bridge (Fabric Loader, entrypoints e Mixins), compila o membro `mobilehorizon-android` para `aarch64-linux-android` e valida os símbolos NativeActivity/JNI antes da publicação.
+A Action `.github/workflows/fabric-java-bridge-runtime.yml` resolve e fixa para cada build o SHA atual da branch externa `java-bridge`, aplica o overlay Android, prepara temporariamente os arquivos públicos de Minecraft 26.3 no runner, executa o teste Java do bridge (Fabric Loader, entrypoints e Mixins), compila o membro `mobilehorizon-android` para `aarch64-linux-android` e valida os símbolos NativeActivity/JNI antes da publicação.
 
 Os JARs oficiais usados para compilar a camada de plataforma existem apenas no runner de CI; não são copiados para a release do runtime.
