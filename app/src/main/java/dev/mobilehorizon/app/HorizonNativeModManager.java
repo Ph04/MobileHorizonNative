@@ -52,7 +52,7 @@ final class HorizonNativeModManager {
     private static final long MAX_RUNTIME_BYTES = 300L * 1024L * 1024L;
     private static final long MAX_NATIVE_DATA_BYTES = 128L * 1024L * 1024L;
     private static final int MAX_NATIVE_DATA_FILES = 4096;
-    private static final int MAX_MANIFEST_BYTES = 1024 * 1024;
+    private static final int MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
     private static final Pattern SAFE_VERSION = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._+-]{0,95}");
     private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
     private static final Pattern BASE_RUNTIME_VERSION =
