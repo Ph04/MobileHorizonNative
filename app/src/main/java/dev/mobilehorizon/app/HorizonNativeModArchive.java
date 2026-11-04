@@ -130,15 +130,17 @@ final class HorizonNativeModArchive {
             long total = 0;
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
-                if (++count > MAX_ENTRIES) {
-                    throw new IOException("O .hnmod contém mais de 512 entradas.");
-                }
                 String name = entry.getName();
                 validateArchivePath(name, entry.isDirectory());
                 if (!names.add(name)) {
                     throw new IOException("O .hnmod contém um caminho duplicado: " + name);
                 }
+                // Match Horizon's Bundle::read: directory records do not count toward
+                // the 512 native-file limit and are skipped before reading file payloads.
                 if (entry.isDirectory()) continue;
+                if (++count > MAX_ENTRIES) {
+                    throw new IOException("O .hnmod contém mais de 512 arquivos nativos.");
+                }
                 if ("mod.wasm".equals(name)) {
                     throw new IOException("WASM não é um .hnmod nativo. O Horizon exige código Rust/mixins.");
                 }
