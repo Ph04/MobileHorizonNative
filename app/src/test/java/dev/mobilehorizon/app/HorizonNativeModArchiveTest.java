@@ -170,7 +170,7 @@ public final class HorizonNativeModArchiveTest {
         File archive = Files.createTempFile("horizon-native-", ".hnmod").toFile();
         String manifest = "{\"schema\":1,\"id\":\"" + id + "\",\"version\":\"0.3.0\","
                 + "\"game\":\"26.3\",\"horizon\":\"" + horizon
-                + "\"id\":\"jei\",\"mixins\":\"" + mixins + "\","
+                + "\",\"mixins\":\"" + mixins + "\"}";
         try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive))) {
             put(zip, "horizon-native.json",
                     override != null && "horizon-native.json".equals(override.name)
@@ -191,7 +191,7 @@ public final class HorizonNativeModArchiveTest {
 
     private static String mixinToml(String id, String version, String horizon) {
         return "[mod]\nid = \"" + id + "\"\nversion = \"" + version
-                + "\"horizon\":\"" + horizon + "\","
+                + "\"\n[compatibility]\nhorizon_revision = \"" + horizon + "\"\n";
     }
 
     private static void put(ZipOutputStream zip, String name, byte[] bytes) throws Exception {
