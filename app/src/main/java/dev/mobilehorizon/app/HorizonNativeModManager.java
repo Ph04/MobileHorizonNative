@@ -247,6 +247,7 @@ final class HorizonNativeModManager {
         String baseVersion = manifest.optString("base_runtime_version", "");
         String baseCommit = manifest.optString("base_commit", "");
         String mixinsCommit = manifest.optString("mixins_commit", "");
+        int hooksApi = manifest.optInt("hooks_api", 0);
         String overlay = manifest.optString("overlay", "");
         String abi = manifest.optString("abi", "");
         String library = manifest.optString("library", "");
@@ -257,6 +258,7 @@ final class HorizonNativeModManager {
                 || !activeBaseRuntimeVersion.equals(baseVersion)
                 || !baseCommit.matches("[0-9a-f]{40}")
                 || !mixinsCommit.matches("[0-9a-f]{40}")
+                || hooksApi < 0 || hooksApi > 10000
                 || !overlay.matches("[0-9a-f]{8}")
                 || !baseRuntimeIdentityMatches(baseVersion, baseCommit, overlay)
                 || !"26.3".equals(game)
@@ -268,7 +270,7 @@ final class HorizonNativeModManager {
 
         JSONArray recordedMods = manifest.optJSONArray("mods");
         if (!modsMatch(selected, recordedMods)
-                || !modsCompatible(selected, game, baseCommit, mixinsCommit)) {
+                || !modsCompatible(selected, game, baseCommit, mixinsCommit, hooksApi)) {
             throw new IOException("O runtime foi compilado para outro conjunto de .hnmod ou outra revisão Horizon. Gere um build com a seleção atual.");
         }
         String actualHash = sha256(engine);
@@ -343,10 +345,17 @@ final class HorizonNativeModManager {
         File library = new File(versionDirectory, LIBRARY_NAME).getCanonicalFile();
         if (!manifestFile.isFile() || !library.isFile() || Files.isSymbolicLink(library.toPath())) return null;
         JSONObject manifest = readJson(manifestFile, MAX_MANIFEST_BYTES);
+        String baseCommit = manifest.optString("base_commit", "");
+        String mixinsCommit = manifest.optString("mixins_commit", "");
+        String game = manifest.optString("game", "");
+        int hooksApi = manifest.optInt("hooks_api", 0);
         if (!version.equals(manifest.optString("version", ""))
                 || !baseRuntimeVersion.equals(manifest.optString("base_runtime_version", ""))
                 || !activeHash.equals(manifest.optString("sha256", "").toLowerCase(Locale.ROOT))
-                || !modsMatch(selected, manifest.optJSONArray("mods"))) {
+                || !modsMatch(selected, manifest.optJSONArray("mods"))
+                || !modsCompatible(selected, game, baseCommit, mixinsCommit, hooksApi)
+                || !baseRuntimeIdentityMatches(baseRuntimeVersion, baseCommit,
+                        manifest.optString("overlay", ""))) {
             return null;
         }
         ensureInside(versionDirectory, library);
@@ -401,10 +410,11 @@ final class HorizonNativeModManager {
             String baseCommit = manifest.optString("base_commit", "");
             String mixinsCommit = manifest.optString("mixins_commit", "");
             String game = manifest.optString("game", "");
+            int hooksApi = manifest.optInt("hooks_api", 0);
             return hash.equals(manifest.optString("sha256", "").toLowerCase(Locale.ROOT))
                     && baseRuntimeVersion.equals(manifest.optString("base_runtime_version", ""))
                     && modsMatch(selected, manifest.optJSONArray("mods"))
-                    && modsCompatible(selected, game, baseCommit, mixinsCommit)
+                    && modsCompatible(selected, game, baseCommit, mixinsCommit, hooksApi)
                     && baseRuntimeIdentityMatches(baseRuntimeVersion, baseCommit,
                             manifest.optString("overlay", ""))
                     && library.isFile() && sha256(library).equals(hash);
@@ -502,13 +512,43 @@ final class HorizonNativeModManager {
         return matcher.find() && modHorizonRevision.startsWith(matcher.group(1));
     }
 
+    /**
+     * A native bundle without a hooks declaration pins one exact Horizon commit. A bundle
+     * with hooks=N follows the append-only native hook API and can target a later commit
+     * exposing API N or newer, just as the PC launcher does.
+     */
+    static boolean isNativeModCompatible(
+            String game, String testedHorizon, Integer requiredHooks,
+            String targetCommit, int availableHooksApi) {
+        if (!"26.3".equals(game) || targetCommit == null
+                || !targetCommit.matches("[0-9a-f]{40}")) return false;
+        if (requiredHooks == null) {
+            return targetCommit.equals(testedHorizon);
+        }
+        return requiredHooks > 0 && availableHooksApi >= requiredHooks;
+    }
+
+    /** UI preflight: hook-API bundles are checked against the exact source by the CI builder. */
+    static boolean isPotentiallyCompatible(
+            HorizonNativeModArchive.Descriptor descriptor, String runtimeVersion) {
+        if (descriptor == null) return false;
+        java.util.regex.Matcher matcher = BASE_RUNTIME_VERSION
+                .matcher(runtimeVersion == null ? "" : runtimeVersion);
+        if (!matcher.find()) return false;
+        if (descriptor.hooks != null) {
+            return descriptor.hooks > 0 && "26.3".equals(descriptor.game);
+        }
+        return descriptor.horizonRevision.startsWith(matcher.group(1));
+    }
+
     private static boolean modsCompatible(List<InstalledMod> selected, String game,
-                                          String baseCommit, String mixinsCommit) {
+                                          String baseCommit, String mixinsCommit, int hooksApi) {
         if (selected.isEmpty()) return false;
         for (InstalledMod mod : selected) {
             HorizonNativeModArchive.Descriptor descriptor = mod.descriptor;
-            if (!game.equals(descriptor.game)
-                    || !baseCommit.equals(descriptor.horizonRevision)
+            if (!isNativeModCompatible(descriptor.game, descriptor.horizonRevision,
+                    descriptor.hooks, baseCommit, hooksApi)
+                    || !game.equals(descriptor.game)
                     || !mixinsCommit.equals(descriptor.mixinsRevision)) {
                 return false;
             }
