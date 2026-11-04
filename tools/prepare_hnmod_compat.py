@@ -72,10 +72,9 @@ def prepare(records_path: Path, base_path: Path, source_root: Path, mods_root: P
         raise ValueError("The installed base runtime has no exact Horizon source commit.")
 
     mixins = {str(item.get("mixins", "")).lower() for item in records}
-    if len(mixins) != 1 or not all(MIXIN_PINS.fullmatch(pin) for pin in mixins):
+    if not mixins or not all(MIXIN_PINS.fullmatch(pin) for pin in mixins):
         raise ValueError(
-            "This Android builder currently requires all selected modules to pin the same "
-            "exact horizon-mixins revision."
+            "Every selected module must pin one exact 40-character horizon-mixins commit."
         )
     if any(item.get("game") != "26.3" for item in records):
         raise ValueError("Every selected .hnmod must target Minecraft 26.3.")
@@ -124,7 +123,7 @@ def prepare(records_path: Path, base_path: Path, source_root: Path, mods_root: P
     print("Target native hooks API:", api)
     print("Pinned modules:", ", ".join(item["id"] for item in pinned) or "none (hook API only)")
     print("Repinned hook modules:", ", ".join(repinned) or "none")
-    print("Native mixins tool commit:", next(iter(mixins)))
+    print("Native mixins package pins:", ", ".join(sorted(mixins)))
     return api
 
 
