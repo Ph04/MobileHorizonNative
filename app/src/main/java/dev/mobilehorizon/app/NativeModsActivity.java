@@ -404,7 +404,7 @@ public final class NativeModsActivity extends Activity {
         String baseTag = HorizonNativeModManager.baseRuntimeReleaseTag(base);
         String message = "Build remoto para esta instância:\n\n"
                 + "1. Na página Releases do repositório MobileHorizonNative, crie uma release temporária com uma tag única (por exemplo hnmod-input-01) e envie como assets somente os .hnmod que estão selecionados nesta instância.\n\n"
-                + "2. A definição do workflow precisa estar na branch padrão do repositório para aparecer em Actions > Build Horizon native .hnmod runtime. Depois que o PR de disponibilização for integrado, o workflow usará a branch feature/fabric-java-bridge-test como fonte e verificará a impressão digital do overlay contra a runtime limpa instalada. Não é necessário informar um SHA Android manualmente.\n\n"
+                + "2. Abra Actions > Build Horizon native .hnmod runtime > Run workflow. O workflow usa a branch feature/fabric-java-bridge-test como fonte e verifica a impressão digital do overlay contra a runtime limpa instalada. Não é necessário informar um SHA Android manualmente.\n\n"
                 + "3. Ao executar o workflow, informe:\n"
                 + "   mod_release_tag = tag da release dos .hnmod\n"
                 + "   base_runtime_tag = " + baseTag + "\n\n"
@@ -422,9 +422,9 @@ public final class NativeModsActivity extends Activity {
                         status.setText("Tag base copiada: " + baseTag);
                     }
                 })
-                .setPositiveButton("Ver definição do workflow", (dialog, which) -> {
+                .setPositiveButton("Abrir Actions", (dialog, which) -> {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(
-                            "https://github.com/Ph04/MobileHorizonNative/blob/feature/fabric-java-bridge-test/.github/workflows/horizon-native-mod-build.yml"));
+                            "https://github.com/Ph04/MobileHorizonNative/actions/workflows/horizon-native-mod-build.yml"));
                     startActivity(intent);
                 }).show();
     }
