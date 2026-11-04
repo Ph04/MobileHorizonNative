@@ -290,7 +290,7 @@ public final class NativeModsActivity extends Activity {
                 boolean ready = HorizonNativeModManager.hasBuildForSelection(this, instanceId, base);
                 status.setText(ready
                         ? "Há um build associado à versão Horizon instalada e à API de hooks exigida. A validação completa ocorre novamente ao iniciar o jogo."
-                        : "Há módulos selecionados, mas ainda não existe um runtime correspondente. O compilador seguirá a regra oficial de hooks do launcher de PC; até instalar o build, a instância inicia com Horizon limpo.");
+                        : "Há módulos selecionados, mas ainda não existe um runtime correspondente. Para revisões antigas sem hooks declarados, o CI precisa provar que o commit é ancestral da base e recompilar todas as injeções. Se qualquer assinatura ou binding não corresponder, o build será recusado. Até instalar um build válido, a instância inicia com Horizon limpo.");
             } else {
                 status.setText("Nenhum módulo nativo está selecionado. A instância usa o runtime Horizon limpo.");
             }
@@ -322,10 +322,13 @@ public final class NativeModsActivity extends Activity {
         } else if (item.descriptor.hooks != null) {
             revisionStatus = "Requer native hooks API v" + item.descriptor.hooks
                     + "; o compilador consultará a API da revisão instalada";
+        } else if (HorizonNativeModManager.matchesBaseRuntimeRevision(
+                item.descriptor.horizonRevision, base)) {
+            revisionStatus = "Pin Horizon exato da runtime instalada";
         } else if (revisionCompatible) {
-            revisionStatus = "Revisão Horizon compatível com a runtime instalada";
+            revisionStatus = "Revisão anterior: o build verificará ancestralidade e recompilará as injeções";
         } else {
-            revisionStatus = "Revisão Horizon diferente da runtime base instalada";
+            revisionStatus = "Revisão Horizon inválida para o Minecraft/runtime selecionado";
         }
         box.addView(text(revisionStatus, 10,
                 revisionCompatible ? 0xff9ee0c0 : 0xffffb58f, true), top(-1, -2, 4));
@@ -405,7 +408,7 @@ public final class NativeModsActivity extends Activity {
                 + "3. Ao executar o workflow, informe:\n"
                 + "   mod_release_tag = tag da release dos .hnmod\n"
                 + "   base_runtime_tag = " + baseTag + "\n\n"
-                + "4. O workflow valida os pacotes com o parser Rust oficial do Horizon, aplica os mixins e compila uma runtime ARM64 isolada para esta instância.\n\n"
+                + "4. O workflow valida os pacotes com o parser Rust oficial do Horizon. Para um .hnmod sem declaração de hooks que tenha pin antigo, primeiro prova no Git que a revisão é ancestral da base, repina o manifesto interno e só então aplica os mixins e compila toda a runtime ARM64 isolada. Se as funções, assinaturas ou bindings tiverem mudado, o compilador falha e nenhum runtime parcial é publicado.\n\n"
                 + "5. Baixe o artifact ZIP mobilehorizon-native-runtime na execução do Actions (não uma release). Depois selecione o ZIP em “Instalar runtime compilada”.\n\n"
                 + "A compilação roda em runner isolado, sem segredos e sem alterar a runtime limpa compartilhada. O build só será ativado nesta instância se o manifesto, a revisão Horizon, os módulos selecionados, o SHA-256 e o ELF ARM64 corresponderem exatamente. Módulos que declarem [[post_build]] são recusados nesta primeira versão porque a execução dessas etapas ainda não foi portada para Android.";
         new AlertDialog.Builder(this)
