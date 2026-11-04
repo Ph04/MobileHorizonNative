@@ -1748,7 +1748,11 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
             new File(getFilesDir(), "horizon-client-result.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
             new File(getFilesDir(), "horizon-native-smoke.flag").delete();
-undefined
+            pendingNativeClientResult = true;
+            pendingNativeSmokeResult = false;
+            writeNativeLaunchMarker("horizon-client-result.txt",
+                    "FAIL: O NativeActivity foi solicitado pelo launcher, mas o motor nativo ainda não substituiu este marcador. Se esta mensagem persistiu, a falha aconteceu antes de android_main.");
+            try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
             sessionEnvSet = false;
             Os.setenv("HORIZON_PLAYER_NAME", playerName, true);
             offlineNameEnvSet = true;
@@ -2091,7 +2095,11 @@ undefined
                         new File(getFilesDir(), "horizon-client-result.txt").delete();
                         new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
                         new File(getFilesDir(), "horizon-native-smoke.flag").delete();
-undefined
+                        pendingNativeClientResult = true;
+                        pendingNativeSmokeResult = false;
+                        writeNativeLaunchMarker("horizon-client-result.txt",
+                                "FAIL: O NativeActivity foi solicitado pelo launcher, mas o motor nativo ainda não substituiu este marcador. Se esta mensagem persistiu, a falha aconteceu antes de android_main.");
+                        sessionFile = writeOneShotSession(account);
                         Os.setenv("HORIZON_SESSION_FILE", sessionFile.getAbsolutePath(), true);
                         sessionEnvSet = true;
                         startActivity(new Intent(this, NativeGameActivity.class)
@@ -2591,7 +2599,8 @@ undefined
             progressBar.setIndeterminate(false);
             progressBar.setProgress(failed ? 0 : 1000);
             progressDetails.setText(result);
-undefined
+            setStatus(failed ? "O cliente Horizon não iniciou" : "Cliente Horizon encerrado",
+                    result + "\n\nEsse relatório é mantido no armazenamento privado e substituído no próximo lançamento, para continuar disponível no visualizador de logs e no ZIP de diagnóstico.");
         } catch (Exception error) {
             setStatus("Não foi possível ler o resultado do cliente", safeMessage(error));
         }
@@ -2616,7 +2625,8 @@ undefined
             progressBar.setIndeterminate(false);
             progressBar.setProgress(passed ? 1000 : 0);
             progressDetails.setText(result);
-undefined
+            setStatus(passed ? "Renderer Vulkan validado" : "Teste do renderer falhou",
+                    result + "\n\nEsse resultado é mantido no armazenamento privado e substituído no próximo teste, para continuar disponível no visualizador de logs e no ZIP de diagnóstico.");
         } catch (Exception error) {
             setStatus("Não foi possível ler o relatório Vulkan", safeMessage(error));
         }
@@ -2641,7 +2651,12 @@ undefined
         marker.delete(); // Legacy flag: smoke mode is now passed explicitly in the Intent.
         new File(getFilesDir(), "horizon-native-smoke-result.txt").delete();
         new File(getFilesDir(), "horizon-client-result.txt").delete();
-undefined
+        pendingNativeSmokeResult = true;
+        pendingNativeClientResult = false;
+        try {
+            writeNativeLaunchMarker("horizon-native-smoke-result.txt",
+                    "FAIL: O teste Vulkan foi solicitado, mas o motor nativo ainda não substituiu este marcador. Se esta mensagem persistiu, a falha aconteceu antes de android_main.");
+            String instanceId = GameInstanceManager.getSelectedInstance(this).id;
             startActivity(new Intent(this, NativeGameActivity.class)
                     .putExtra(NativeGameActivity.EXTRA_TOUCH_CONTROLS, false)
                     .putExtra(NativeGameActivity.EXTRA_INSTANCE_ID, instanceId)
