@@ -37,7 +37,7 @@ public final class HorizonNativeModArchiveTest {
                 + "\"id\":\"jei\",\"mixins\":\"" + mixins + "\","
                 + "\"schema\":1,\"version\":\"0.1.0\"}";
         String mixinToml = "[mod]\nid = \"jei\"\nversion = \"0.1.0\"\n"
-                + "\"horizon\":\"" + horizon + "\","
+                + "priority = 100\n[compatibility]\nhorizon_revision = \"" + horizon + "\"\n"
                 + "[[module]]\nid = \"runtime\"\nfile = \"crates/horizon-client/src/game.rs\"\n"
                 + "name = \"jei\"\nsource = \"runtime.rs\"\n"
                 + "[[injection]]\nid = \"frame\"\nkind = \"HEAD\"\n"
