@@ -12,8 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-TLS_RELOCATION = re.compile(r"\\bR_AARCH64_(?:TLS_[A-Z0-9_]+|TLSDESC[A-Z0-9_]*)\\b")
-TLS_PROGRAM_HEADER = re.compile(r"^\\s*TLS\\s+", re.MULTILINE)
+TLS_RELOCATION = re.compile(r"\bR_AARCH64_(?:TLS_[A-Z0-9_]+|TLSDESC[A-Z0-9_]*)\b")
+TLS_PROGRAM_HEADER = re.compile(r"^\s*TLS\s+", re.MULTILINE)
 
 def find_tls_requirements(dynamic_relocations: str, program_headers: str) -> list[str]:
     findings = sorted(set(TLS_RELOCATION.findall(dynamic_relocations)))
