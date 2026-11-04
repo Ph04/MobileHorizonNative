@@ -35,7 +35,13 @@ public final class NativeModBuildService extends Service {
         setState(context, instanceId, "RUNNING", "Preparando a compilação remota…");
         Intent intent = new Intent(context, NativeModBuildService.class);
         intent.putExtra(EXTRA_INSTANCE_ID, instanceId);
-        context.startForegroundService(intent);
+        try {
+            context.startForegroundService(intent);
+        } catch (RuntimeException error) {
+            setState(context, instanceId, "FAILED",
+                    "O Android não permitiu iniciar o serviço de compilação: " + error.getMessage());
+            throw error;
+        }
     }
 
     static String state(Context context, String instanceId) {
