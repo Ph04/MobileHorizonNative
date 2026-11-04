@@ -22,6 +22,8 @@ on:
       - "tools/test_android_native_entrypoint.py"
       - "tools/check_android_runtime_tls.py"
       - "tools/test_android_runtime_tls.py"
+      - "tools/prepare_hnmod_compat.py"
+      - "tools/test_hnmod_compat.py"
       - "tools/tests/**"
       - "tools/test_android_horizon_wasm_mod_runtime.py"
       - "tools/horizon_server_packs.rs"
@@ -42,6 +44,8 @@ on:
       - "tools/patch_horizon_prepare_android_linker.py"
       - "tools/patch_horizon_prepare_asset_index.py"
       - "tools/horizon_patches/**"
+      - "tools/prepare_hnmod_compat.py"
+      - "tools/test_hnmod_compat.py"
       - "tools/tests/**"
       - "tools/horizon_server_packs.rs"
       - "tools/horizon-revisions.env"
@@ -414,6 +418,7 @@ jobs:
             args+=("-PMOBILEHORIZON_KEY_ALIAS=$MOBILEHORIZON_KEY_ALIAS")
             args+=("-PMOBILEHORIZON_KEY_PASSWORD=$MOBILEHORIZON_KEY_PASSWORD")
           fi
+          python3 -m unittest discover -s tools -p 'test_hnmod_compat.py' -v
           gradle --no-daemon "${args[@]}" test :app:assembleStandardDebug
 
       - name: Verify standard APK
