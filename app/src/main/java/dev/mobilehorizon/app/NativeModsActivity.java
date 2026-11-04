@@ -170,8 +170,9 @@ public final class NativeModsActivity extends Activity {
 
     private File copySelectedUri(Uri uri, String expectedExtension) throws IOException {
         String displayName = displayName(uri, expectedExtension);
-        if (displayName == null
-                || !displayName.toLowerCase(java.util.Locale.ROOT).endsWith(expectedExtension)) {
+        if (HorizonDocumentName.requiresFilenameExtension(expectedExtension)
+                && (displayName == null
+                || !displayName.toLowerCase(java.util.Locale.ROOT).endsWith(expectedExtension))) {
             throw new IOException("Selecione um arquivo " + expectedExtension + ".");
         }
         long maxBytes = ".hnmod".equals(expectedExtension)
