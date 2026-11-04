@@ -11,6 +11,8 @@ on:
       - "tools/horizon_patches/02_android_native.py"
       - "tools/horizon_patches/03_java_bridge_android.py"
       - "tools/test_android_native_entrypoint.py"
+      - "tools/check_android_runtime_tls.py"
+      - "tools/test_android_runtime_tls.py"
       - "tools/fabric-java-bridge-revision.env"
       - ".github/workflows/fabric-java-bridge-runtime.yml"
 
@@ -55,6 +57,7 @@ jobs:
                   b"tools/horizon_patches/02_android_native.py",
                   b"tools/horizon_patches/03_java_bridge_android.py",
                   b"tools/fabric-java-bridge-revision.env",
+                  b"tools/check_android_runtime_tls.py",
                   b".github/workflows/fabric-java-bridge-runtime.yml",
               }
           ))
@@ -133,7 +136,9 @@ jobs:
             tools/patch_horizon_android_touch.py \
             tools/horizon_patches/01_offline_server_login.py \
             tools/horizon_patches/02_android_native.py \
-            tools/horizon_patches/03_java_bridge_android.py
+            tools/horizon_patches/03_java_bridge_android.py \
+            tools/check_android_runtime_tls.py tools/test_android_runtime_tls.py
+          python3 -m unittest discover -s tools -p 'test_android_runtime_tls.py'
           # The patch selects run() or run_with() from this exact checkout; validate the wrapper afterwards.
           python3 tools/patch_horizon_android_touch.py "$SOURCE"
           python3 tools/test_android_native_entrypoint.py --source "$SOURCE"
@@ -251,10 +256,10 @@ jobs:
           SOURCE="$RUNNER_TEMP/horizon-fabric-source"
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          test -x "$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang++"
           export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
           export JAVA_HOME
           export HORIZON_JAVA_HOME="$JAVA_HOME"
@@ -271,6 +276,8 @@ jobs:
           grep -Fq "android_main" "$RUNNER_TEMP/fabric-engine-symbols.txt"
           grep -Fq "Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectCursorMove" "$RUNNER_TEMP/fabric-engine-symbols.txt"
           grep -Fq "Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectKeyboardText" "$RUNNER_TEMP/fabric-engine-symbols.txt"
+          # Fabric also uses the independently dlopen-loaded engine, so enforce the same API-26 TLS baseline.
+          python3 tools/check_android_runtime_tls.py "$TOOLCHAIN/llvm-readelf" "$LIB"
           echo "Built the Java-mods-enabled Horizon engine for Android ARM64."
 
       - name: Package and publish the versioned Fabric runtime
