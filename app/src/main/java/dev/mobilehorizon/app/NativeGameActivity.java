@@ -506,9 +506,9 @@ public final class NativeGameActivity extends NativeActivity {
             } else {
                 android.system.Os.unsetenv("HORIZON_NATIVE_SMOKE_TEST");
             }
+            // MainActivity wrote a durable startup result before this Activity was opened.
+            // Keep it until android_main replaces it; early dlopen/bootstrap failures must remain visible.
             new java.io.File(gameRoot, "horizon-native-smoke.flag").delete();
-            new java.io.File(gameRoot, "horizon-native-smoke-result.txt").delete();
-            new java.io.File(gameRoot, "horizon-client-result.txt").delete();
 
             // Player identity/session belong to the Android app process, not the NativeActivity process.
             if (launchIntent != null) {
