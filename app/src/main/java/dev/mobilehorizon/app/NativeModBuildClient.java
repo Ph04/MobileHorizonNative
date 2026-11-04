@@ -203,19 +203,26 @@ final class NativeModBuildClient {
                         "Não foi possível remover o ZIP temporário do build.");
             }
             if (releaseId > 0L) {
+                progress.update("Removendo a Release temporária com os .hnmod enviados…");
+                boolean releaseDeleted = false;
                 try {
-                    progress.update("Removendo a Release temporária com os .hnmod enviados…");
                     requestNoContent("DELETE", "/repos/" + REPOSITORY
                             + "/releases/" + releaseId, token, null);
+                    releaseDeleted = true;
+                } catch (Exception cleanupError) {
+                    android.util.Log.w("HorizonNativeBuild",
+                            "Não foi possível remover a Release temporária " + releaseTag + ".");
+                }
+                try {
                     requestNoContent("DELETE", "/repos/" + REPOSITORY
                             + "/git/refs/tags/" + urlEncode(releaseTag), token, null);
                 } catch (Exception cleanupError) {
                     android.util.Log.w("HorizonNativeBuild",
-                            "Não foi possível limpar a Release temporária. Tag: " + releaseTag);
-                    if (dispatchSent) {
-                        progress.update("Build encerrado. Atenção: a Release pública temporária "
-                                + releaseTag + " não pôde ser removida automaticamente.");
-                    }
+                            "Não foi possível remover a tag temporária " + releaseTag + ".");
+                }
+                if (dispatchSent && !releaseDeleted) {
+                    progress.update("Build encerrado. Atenção: a Release pública temporária "
+                            + releaseTag + " não pôde ser removida automaticamente.");
                 }
             }
         }
