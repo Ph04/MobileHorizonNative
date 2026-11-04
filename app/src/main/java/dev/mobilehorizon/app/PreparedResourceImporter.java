@@ -360,7 +360,7 @@ final class PreparedResourceImporter {
     }
 
     private static boolean isNativeModuleSignature(String relative) {
-        String normalized = relative == null ? "" : relative.replace('\\\\', '/');
+        String normalized = relative == null ? "" : relative.replace((char) 92, '/');
         return "horizon-native.json".equals(normalized)
                 || (normalized.startsWith("mixins/")
                 && normalized.endsWith("/horizon-mixin.toml"));
