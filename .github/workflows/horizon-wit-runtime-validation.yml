@@ -106,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --manifest-path "$HORIZON_SOURCE/Cargo.toml" \
-            -p horizon-mods --lib --features runtime
+            -p horizon-mods --lib --no-default-features
 
       - name: Build Horizon NativeActivity engine for Android ARM64
         shell: bash
