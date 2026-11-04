@@ -495,3 +495,65 @@ jobs:
             ${{ runner.temp }}/native-runtime-output/native-data/
           if-no-files-found: error
           retention-days: 30
+
+  cleanup:
+    name: Remove temporary public module upload
+    if: always()
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Delete the temporary release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MOD_RELEASE_TAG: ${{ inputs.mod_release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re, urllib.error, urllib.parse, urllib.request
+
+          repo = "Ph04/MobileHorizonNative"
+          tag = os.environ.get("MOD_RELEASE_TAG", "")
+          token = os.environ["GH_TOKEN"]
+          if not re.fullmatch(r"hnmod-input-[A-Za-z0-9._-]{1,128}", tag):
+              print("No temporary HNMOD release tag to clean.")
+              raise SystemExit(0)
+
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": "Bearer " + token,
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "MobileHorizonNative-HNMOD-cleanup",
+          }
+
+          def api(method, path):
+              request = urllib.request.Request(
+                  "https://api.github.com/repos/" + repo + path,
+                  headers=headers,
+                  method=method,
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      body = response.read(1024 * 1024)
+                      return response.status, body
+              except urllib.error.HTTPError as error:
+                  if error.code == 404:
+                      return 404, b""
+                  detail = error.read(4096).decode("utf-8", errors="replace")
+                  raise RuntimeError(f"GitHub cleanup API returned HTTP {error.code}: {detail}")
+
+          encoded = urllib.parse.quote(tag, safe="")
+          status, body = api("GET", "/releases/tags/" + encoded)
+          if status == 200:
+              release_id = json.loads(body.decode("utf-8")).get("id")
+              if release_id:
+                  api("DELETE", "/releases/" + str(int(release_id)))
+                  print("Temporary HNMOD release removed.")
+          else:
+              print("Temporary HNMOD release was already absent.")
+
+          api("DELETE", "/git/refs/tags/" + encoded)
+          print("Temporary HNMOD tag cleanup finished.")
+          PY
