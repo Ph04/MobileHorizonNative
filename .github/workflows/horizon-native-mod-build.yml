@@ -1,4 +1,5 @@
 name: Build Horizon native .hnmod runtime
+run-name: Build ${{ inputs.mod_release_tag }} for ${{ inputs.base_runtime_tag }}
 
 on:
   workflow_dispatch:
