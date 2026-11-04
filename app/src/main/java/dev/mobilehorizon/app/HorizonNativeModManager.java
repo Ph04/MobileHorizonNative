@@ -50,6 +50,8 @@ final class HorizonNativeModManager {
     private static final int MAX_INSTALLED_MODS = 24;
     private static final long MAX_TOTAL_MOD_BYTES = 256L * 1024L * 1024L;
     private static final long MAX_RUNTIME_BYTES = 300L * 1024L * 1024L;
+    private static final long MAX_NATIVE_DATA_BYTES = 128L * 1024L * 1024L;
+    private static final int MAX_NATIVE_DATA_FILES = 4096;
     private static final int MAX_MANIFEST_BYTES = 1024 * 1024;
     private static final Pattern SAFE_VERSION = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._+-]{0,95}");
     private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
@@ -70,17 +72,20 @@ final class HorizonNativeModManager {
         final File activeLibrary;
         final File fallbackLibrary;
         final File statusFile;
+        final File nativeDataDirectory;
         final String activeVersion;
         final int modCount;
 
         PreparedRuntime(File root, File activeLibrary, File fallbackLibrary,
-                        File statusFile, String activeVersion, int modCount) {
+                        File statusFile, String activeVersion, int modCount,
+                        File nativeDataDirectory) {
             this.root = root;
             this.activeLibrary = activeLibrary;
             this.fallbackLibrary = fallbackLibrary;
             this.statusFile = statusFile;
             this.activeVersion = activeVersion;
             this.modCount = modCount;
+            this.nativeDataDirectory = nativeDataDirectory;
         }
     }
 
@@ -213,8 +218,9 @@ final class HorizonNativeModManager {
         if (artifact == null || !artifact.isFile() || Files.isSymbolicLink(artifact.toPath())) {
             throw new IOException("O arquivo do build .hnmod não foi encontrado.");
         }
-        if (artifact.length() <= 0 || artifact.length() > MAX_RUNTIME_BYTES + MAX_MANIFEST_BYTES) {
-            throw new IOException("O pacote do runtime nativo excede o limite permitido.");
+        if (artifact.length() <= 0 || artifact.length()
+                > MAX_RUNTIME_BYTES + MAX_NATIVE_DATA_BYTES + MAX_MANIFEST_BYTES) {
+            throw new IOException("O pacote do runtime nativo e dos dados gerados excede o limite permitido.");
         }
         List<InstalledMod> selected = selectedMods(context, instanceId);
         if (selected.isEmpty()) {
@@ -287,6 +293,7 @@ final class HorizonNativeModManager {
         File versionDirectory = safeChildDirectory(versions, version);
         File targetLibrary = new File(versionDirectory, LIBRARY_NAME).getCanonicalFile();
         ensureInside(versionDirectory, targetLibrary);
+        installNativeData(artifact, manifest, selected, versionDirectory);
         writeAtomic(new File(versionDirectory, MANIFEST_FILE), manifest.toString().getBytes(StandardCharsets.UTF_8));
         File temporary = new File(versionDirectory, LIBRARY_NAME + ".partial");
         if (Files.isSymbolicLink(temporary.toPath())) throw new IOException("Arquivo parcial inseguro.");
@@ -367,6 +374,10 @@ final class HorizonNativeModManager {
         ensureInside(versionDirectory, library);
         if (!sha256(library).equals(activeHash)) return null;
         verifyAarch64Elf(library);
+        if (!nativeDataMatches(manifest, selected, versionDirectory)) {
+            Log.e(TAG, "Dados nativos gerados estão ausentes ou incompletos; usando Horizon limpo.");
+            return null;
+        }
 
         File status = new File(runtimeRoot, STATUS_FILE);
         File rejected = new File(runtimeRoot, REJECTED_FILE);
@@ -389,7 +400,7 @@ final class HorizonNativeModManager {
             return null;
         }
         return new PreparedRuntime(runtimeRoot, library, cleanEngine.getCanonicalFile(),
-                status, version, selected.size());
+                status, version, selected.size(), new File(versionDirectory, "native-data"));
     }
 
     static boolean hasBuildForSelection(Context context, String instanceId,
@@ -427,9 +438,185 @@ final class HorizonNativeModManager {
                             legacyRevisionsVerified, engineBuildCompleted)
                     && baseRuntimeIdentityMatches(baseRuntimeVersion, baseCommit,
                             manifest.optString("overlay", ""))
-                    && library.isFile() && sha256(library).equals(hash);
+                    && library.isFile() && sha256(library).equals(hash)
+                    && nativeDataMatches(manifest, selected, versionDirectory);
         } catch (Exception error) {
             return false;
+        }
+    }
+
+    static boolean isSafeNativeDataPath(String path, Set<String> selectedIds) {
+        if (path == null || path.isEmpty() || path.length() > 512
+                || path.startsWith("/") || path.indexOf('\\\\') >= 0
+                || path.indexOf(':') >= 0 || path.indexOf('\0') >= 0) {
+            return false;
+        }
+        String[] parts = path.split("/", -1);
+        if (parts.length < 3 || !"native-data".equals(parts[0])
+                || !parts[1].matches("[a-z0-9_]{1,64}")
+                || selectedIds == null || !selectedIds.contains(parts[1])) {
+            return false;
+        }
+        for (int i = 2; i < parts.length; i++) {
+            if (parts[i].isEmpty() || ".".equals(parts[i]) || "..".equals(parts[i])) return false;
+            for (int j = 0; j < parts[i].length(); j++) {
+                if (Character.isISOControl(parts[i].charAt(j))) return false;
+            }
+        }
+        return true;
+    }
+
+    private static void installNativeData(
+            File artifact, JSONObject manifest, List<InstalledMod> selected,
+            File versionDirectory) throws IOException {
+        JSONArray files = manifest.optJSONArray("native_data");
+        if (files == null) files = new JSONArray();
+        if (files.length() > MAX_NATIVE_DATA_FILES) {
+            throw new IOException("O build contém arquivos nativos demais.");
+        }
+
+        Set<String> selectedIds = new TreeSet<>();
+        for (InstalledMod mod : selected) selectedIds.add(mod.descriptor.id);
+        Set<String> expectedPaths = new TreeSet<>();
+        long totalBytes = 0L;
+        File staging = new File(versionDirectory, ".native-data.partial");
+        File target = new File(versionDirectory, "native-data");
+        File backup = new File(versionDirectory, ".native-data.previous");
+        if (Files.isSymbolicLink(staging.toPath()) || Files.isSymbolicLink(target.toPath())
+                || Files.isSymbolicLink(backup.toPath())) {
+            throw new IOException("Diretório de dados nativos contém um link simbólico.");
+        }
+        deleteTree(staging);
+        deleteTree(backup);
+        if (!staging.mkdirs() && !staging.isDirectory()) {
+            throw new IOException("Não foi possível preparar os dados nativos temporários.");
+        }
+
+        try (ZipFile zip = new ZipFile(artifact)) {
+            for (int i = 0; i < files.length(); i++) {
+                JSONObject record;
+                try {
+                    record = files.getJSONObject(i);
+                } catch (JSONException error) {
+                    throw new IOException("Índice de dados nativos inválido.", error);
+                }
+                String path = record.optString("path", "");
+                long size = record.optLong("size", -1L);
+                String expectedHash = record.optString("sha256", "").toLowerCase(Locale.ROOT);
+                if (!isSafeNativeDataPath(path, selectedIds)
+                        || !expectedPaths.add(path)
+                        || size < 0 || size > MAX_NATIVE_DATA_BYTES
+                        || !SHA256.matcher(expectedHash).matches()) {
+                    throw new IOException("Registro de dados nativos inválido: " + path);
+                }
+                totalBytes += size;
+                if (totalBytes > MAX_NATIVE_DATA_BYTES) {
+                    throw new IOException("Os dados nativos gerados excedem 128 MiB.");
+                }
+                ZipEntry entry = zip.getEntry(path);
+                if (entry == null || entry.isDirectory() || entry.getSize() != size) {
+                    throw new IOException("Arquivo de dados nativos ausente ou com tamanho divergente: " + path);
+                }
+                byte[] bytes = readBounded(zip.getInputStream(entry), MAX_NATIVE_DATA_BYTES);
+                if (bytes.length != size || !sha256(bytes).equals(expectedHash)) {
+                    throw new IOException("SHA-256 dos dados nativos não confere: " + path);
+                }
+                String relative = path.substring("native-data/".length());
+                File output = new File(staging, relative).getCanonicalFile();
+                ensureInside(staging, output);
+                File parent = output.getParentFile();
+                if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) {
+                    throw new IOException("Não foi possível criar a pasta para: " + path);
+                }
+                try (FileOutputStream stream = new FileOutputStream(output, false)) {
+                    stream.write(bytes);
+                    stream.flush();
+                    stream.getFD().sync();
+                }
+            }
+
+            java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
+            Set<String> archivePaths = new TreeSet<>();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                String name = entry.getName();
+                if (!archivePaths.add(name)) {
+                    throw new IOException("O artefato contém caminhos ZIP duplicados: " + name);
+                }
+                if (entry.isDirectory()) continue;
+                if (!LIBRARY_NAME.equals(name) && !MANIFEST_FILE.equals(name)
+                        && !expectedPaths.contains(name)) {
+                    throw new IOException("O artefato contém um arquivo não declarado: " + name);
+                }
+            }
+        } catch (IOException | RuntimeException error) {
+            deleteTree(staging);
+            throw error;
+        }
+
+        boolean movedOld = false;
+        try {
+            if (target.exists()) {
+                Files.move(target.toPath(), backup.toPath(), StandardCopyOption.ATOMIC_MOVE);
+                movedOld = true;
+            }
+            try {
+                Files.move(staging.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+                Files.move(staging.toPath(), target.toPath());
+            }
+            if (movedOld) deleteTree(backup);
+        } catch (Exception error) {
+            if (movedOld && backup.exists() && !target.exists()) {
+                try { Files.move(backup.toPath(), target.toPath()); }
+                catch (Exception restoreError) { error.addSuppressed(restoreError); }
+            }
+            deleteTree(staging);
+            if (error instanceof IOException) throw (IOException) error;
+            throw new IOException("Não foi possível instalar os dados nativos.", error);
+        }
+    }
+
+    private static boolean nativeDataMatches(
+            JSONObject manifest, List<InstalledMod> selected, File versionDirectory) {
+        JSONArray files = manifest.optJSONArray("native_data");
+        if (files == null) return true;
+        if (files.length() > MAX_NATIVE_DATA_FILES) return false;
+        Set<String> selectedIds = new TreeSet<>();
+        for (InstalledMod mod : selected) selectedIds.add(mod.descriptor.id);
+        long total = 0L;
+        Set<String> paths = new TreeSet<>();
+        try {
+            for (int i = 0; i < files.length(); i++) {
+                JSONObject record = files.getJSONObject(i);
+                String path = record.optString("path", "");
+                long size = record.optLong("size", -1L);
+                if (!isSafeNativeDataPath(path, selectedIds) || !paths.add(path)
+                        || size < 0 || size > MAX_NATIVE_DATA_BYTES) return false;
+                total += size;
+                if (total > MAX_NATIVE_DATA_BYTES) return false;
+                File file = new File(versionDirectory, path).getCanonicalFile();
+                ensureInside(versionDirectory, file);
+                if (!file.isFile() || file.length() != size) return false;
+            }
+            return true;
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private static void deleteTree(File path) throws IOException {
+        if (path == null || !path.exists()) return;
+        if (Files.isSymbolicLink(path.toPath())) {
+            throw new IOException("Recusa a remover link simbólico em dados nativos: " + path);
+        }
+        if (path.isDirectory()) {
+            File[] children = path.listFiles();
+            if (children == null) throw new IOException("Não foi possível listar: " + path);
+            for (File child : children) deleteTree(child);
+        }
+        if (!path.delete() && path.exists()) {
+            throw new IOException("Não foi possível remover: " + path);
         }
     }
 
