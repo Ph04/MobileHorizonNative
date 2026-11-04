@@ -330,27 +330,12 @@ jobs:
           cargo run --release --manifest-path "$VALIDATOR/Cargo.toml" -- "$MODS_DIR" $(cat "$RUNNER_TEMP/hnmod-paths.txt") \
             > "$RUNNER_TEMP/hnmods.json"
 
-          python3 - "$RUNNER_TEMP/hnmods.json" "$RUNNER_TEMP/base-runtime.json" <<'PY'
-          import json, pathlib, sys
-
-          records_path, base_path = map(pathlib.Path, sys.argv[1:])
-          records = json.loads(records_path.read_text(encoding="utf-8"))
-          base = json.loads(base_path.read_text(encoding="utf-8"))
-          if not records:
-              raise SystemExit("No native .hnmod package was validated.")
-          base_commit = base["upstream_commit"].lower()
-          mixins = {str(item["mixins"]).lower() for item in records}
-          if len(mixins) != 1:
-              raise SystemExit("This initial Android builder requires all selected modules to pin the same horizon-mixins commit.")
-          if any(item["game"] != "26.3" for item in records):
-              raise SystemExit("Every selected .hnmod must target Minecraft 26.3.")
-          if any(str(item["horizon"]).lower() != base_commit for item in records):
-              raise SystemExit("Every selected .hnmod must target the exact Horizon source commit of the installed clean runtime.")
-          records.sort(key=lambda item: item["id"])
-          pathlib.Path(sys.argv[1]).write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
-          print("Validated native modules:", ", ".join(item["id"] for item in records))
-          print("Native mixins tool commit:", next(iter(mixins)))
-          PY
+          python3 -m unittest discover -s tools -p 'test_hnmod_compat.py' -v
+          python3 tools/prepare_hnmod_compat.py \
+            "$RUNNER_TEMP/hnmods.json" \
+            "$RUNNER_TEMP/base-runtime.json" \
+            "$RUNNER_TEMP/horizon-source" \
+            "$RUNNER_TEMP/hnmod-mods"
 
       - name: Build horizon-mixins at the modules' pinned commit
         shell: bash
@@ -438,6 +423,9 @@ jobs:
           base = json.loads(pathlib.Path(base_path).read_text(encoding="utf-8"))
           mods = json.loads(pathlib.Path(mods_path).read_text(encoding="utf-8"))
           mixins_commit = mods[0]["mixins"]
+          hooks_api = int(base.get("native_hooks_api", 0))
+          if hooks_api <= 0:
+              raise SystemExit("The target Horizon native hook API was not verified.")
           overlay = base["overlay"]
           mod_set = sorted((item["id"], item["version"], item["sha256"]) for item in mods)
           digest = hashlib.sha256(json.dumps(mod_set, separators=(",", ":")).encode()).hexdigest()[:16]
@@ -448,6 +436,7 @@ jobs:
               "game": "26.3",
               "base_runtime_version": base["version"],
               "base_commit": base_commit,
+              "hooks_api": hooks_api,
               "mixins_commit": mixins_commit,
               "overlay": overlay,
               "abi": "arm64-v8a",
