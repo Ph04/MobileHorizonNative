@@ -32,7 +32,7 @@ final class NativeModBuildClient {
     private static final String API = "https://api.github.com";
     private static final long MAX_UPLOAD_BYTES = 256L * 1024L * 1024L;
     private static final long MAX_ARTIFACT_BYTES = 440L * 1024L * 1024L;
-    private static final long BUILD_TIMEOUT_MS = 90L * 60L * 1000L;
+    private static final long BUILD_TIMEOUT_MS = 100L * 60L * 1000L;
     private static final int CONNECT_TIMEOUT_MS = 30_000;
     private static final int READ_TIMEOUT_MS = 120_000;
 
@@ -295,8 +295,6 @@ final class NativeModBuildClient {
             int code = connection.getResponseCode();
             if (code == HttpURLConnection.HTTP_NOT_FOUND && "DELETE".equals(method)) return;
             if (code < 200 || code >= 300) throw httpError(connection, code, token);
-            InputStream input = connection.getInputStream();
-            if (input != null) input.close();
         } finally {
             connection.disconnect();
         }
