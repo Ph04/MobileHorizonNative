@@ -33,11 +33,11 @@ public final class HorizonNativeModArchiveTest {
         String mixins = "0d6b103c70633d8fd9443d8d0acd3aadaacedb06";
         File archive = Files.createTempFile("jei-hooks-v2-", ".hnmod").toFile();
         String manifest = "{\"game\":\"26.3\",\"hooks\":2,"
-                + "\"horizon\":\"" + horizon + "\\","
-                + "\"id\":\"jei\",\"mixins\":\"" + mixins + "\\","
+                + "\"horizon\":\"" + horizon + "\","
+                + "\"id\":\"jei\",\"mixins\":\"" + mixins + "\","
                 + "\"schema\":1,\"version\":\"0.1.0\"}";
         String mixinToml = "[mod]\nid = \"jei\"\nversion = \"0.1.0\"\n"
-                + "priority = 100\n[compatibility]\nhorizon_revision = \"" + horizon + "\"\n"
+                + "\"horizon\":\"" + horizon + "\","
                 + "[[module]]\nid = \"runtime\"\nfile = \"crates/horizon-client/src/game.rs\"\n"
                 + "name = \"jei\"\nsource = \"runtime.rs\"\n"
                 + "[[injection]]\nid = \"frame\"\nkind = \"HEAD\"\n"
@@ -170,7 +170,7 @@ public final class HorizonNativeModArchiveTest {
         File archive = Files.createTempFile("horizon-native-", ".hnmod").toFile();
         String manifest = "{\"schema\":1,\"id\":\"" + id + "\",\"version\":\"0.3.0\","
                 + "\"game\":\"26.3\",\"horizon\":\"" + horizon
-                + "\",\"mixins\":\"" + mixins + "\"}";
+                + "\"id\":\"jei\",\"mixins\":\"" + mixins + "\","
         try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive))) {
             put(zip, "horizon-native.json",
                     override != null && "horizon-native.json".equals(override.name)
@@ -191,7 +191,7 @@ public final class HorizonNativeModArchiveTest {
 
     private static String mixinToml(String id, String version, String horizon) {
         return "[mod]\nid = \"" + id + "\"\nversion = \"" + version
-                + "\"\n[compatibility]\nhorizon_revision = \"" + horizon + "\"\n";
+                + "\"horizon\":\"" + horizon + "\","
     }
 
     private static void put(ZipOutputStream zip, String name, byte[] bytes) throws Exception {
