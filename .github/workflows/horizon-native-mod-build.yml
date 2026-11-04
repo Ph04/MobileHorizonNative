@@ -11,11 +11,6 @@ on:
         description: "Clean Horizon runtime release tag installed by this instance"
         required: true
         type: string
-      overlay_source_commit:
-        description: "MobileHorizonNative overlay commit used to build the base runtime"
-        required: true
-        default: "4b19ed9d767bd715dda1d6092d12b9348effe8ea"
-        type: string
 
 permissions:
   contents: read
@@ -32,11 +27,16 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check out the exact Android overlay used by the base runtime
+      - name: Check out the current MobileHorizonNative integration branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.overlay_source_commit }}
+          ref: feature/fabric-java-bridge-test
           persist-credentials: false
+
+      - name: Record the exact overlay commit
+        id: overlay_revision
+        shell: bash
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Rust 1.95.0 and Android ARM64 target
         uses: dtolnay/rust-toolchain@master
@@ -73,7 +73,6 @@ jobs:
         env:
           BASE_RUNTIME_TAG: ${{ inputs.base_runtime_tag }}
           MOD_RELEASE_TAG: ${{ inputs.mod_release_tag }}
-          OVERLAY_SOURCE_COMMIT: ${{ inputs.overlay_source_commit }}
         shell: bash
         run: |
           set -euo pipefail
@@ -84,12 +83,9 @@ jobs:
           temp = pathlib.Path(os.environ["RUNNER_TEMP"])
           base_tag = os.environ["BASE_RUNTIME_TAG"]
           mods_tag = os.environ["MOD_RELEASE_TAG"]
-          overlay_commit = os.environ["OVERLAY_SOURCE_COMMIT"].lower()
           for label, value in (("base_runtime_tag", base_tag), ("mod_release_tag", mods_tag)):
               if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", value):
                   raise SystemExit(f"{label} contains unsupported characters.")
-          if not re.fullmatch(r"[0-9a-f]{40}", overlay_commit):
-              raise SystemExit("overlay_source_commit must be a full commit SHA.")
           if not base_tag.startswith("horizon-runtime-"):
               raise SystemExit("base_runtime_tag must identify a clean Horizon runtime release.")
 
@@ -185,7 +181,6 @@ jobs:
               out.write(f"base_version={base_version}\n")
               out.write(f"base_commit={base_commit}\n")
               out.write(f"overlay_sha={overlay}\n")
-              out.write(f"overlay_source_commit={overlay_commit}\n")
           print("Clean base runtime:", base_version)
           print("Horizon source commit:", base_commit)
           print("Overlay fingerprint:", overlay)
@@ -195,7 +190,7 @@ jobs:
       - name: Verify overlay fingerprint matches the installed base runtime
         env:
           EXPECTED_OVERLAY: ${{ steps.inputs.outputs.overlay_sha }}
-          EXPECTED_OVERLAY_COMMIT: ${{ steps.inputs.outputs.overlay_source_commit }}
+          EXPECTED_OVERLAY_COMMIT: ${{ steps.overlay_revision.outputs.commit }}
         shell: bash
         run: |
           set -euo pipefail
