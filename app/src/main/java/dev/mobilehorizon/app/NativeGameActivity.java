@@ -174,6 +174,21 @@ public final class NativeGameActivity extends NativeActivity {
                 throw new java.io.IOException("Não foi possível criar o diretório da instância Horizon.");
             }
             home = home.getCanonicalFile();
+            try {
+                android.app.ActivityManager manager = (android.app.ActivityManager)
+                        getSystemService(ACTIVITY_SERVICE);
+                android.app.ActivityManager.MemoryInfo memoryInfo =
+                        new android.app.ActivityManager.MemoryInfo();
+                if (manager != null) manager.getMemoryInfo(memoryInfo);
+                if (MobileGraphicsProfile.applyIfNeeded(home, memoryInfo.totalMem)) {
+                    android.util.Log.i("MobileHorizon",
+                            "Perfil gráfico móvel aplicado: limites adaptativos de chunks, uploads e workers.");
+                }
+            } catch (Exception profileError) {
+                android.util.Log.w("MobileHorizon",
+                        "Não foi possível aplicar o perfil gráfico móvel; mantendo as configurações atuais.",
+                        profileError);
+            }
             GameMemoryGuard launchGuard = memoryGuard;
             if (launchGuard != null) {
                 launchGuard.recordEvent("launch-profile-prepare-begin",
@@ -233,6 +248,7 @@ public final class NativeGameActivity extends NativeActivity {
                 runtimeVersion = runtime.activeVersion;
             }
             boolean nativeModsRuntimeSelected = false;
+            android.system.Os.unsetenv("HORIZON_NATIVE_DATA_ROOT");
             if (!fabricJavaBridge) {
                 HorizonNativeModManager.PreparedRuntime nativeRuntime = null;
                 try {
@@ -249,10 +265,13 @@ public final class NativeGameActivity extends NativeActivity {
                     runtimeFallback = nativeRuntime.fallbackLibrary;
                     runtimeStatus = nativeRuntime.statusFile;
                     runtimeVersion = nativeRuntime.activeVersion;
+                    android.system.Os.setenv("HORIZON_NATIVE_DATA_ROOT",
+                            nativeRuntime.nativeDataDirectory.getAbsolutePath(), true);
                     nativeModsRuntimeSelected = true;
                     android.util.Log.i("MobileHorizon",
                             "Native .hnmod runtime selected for instance " + instanceId
-                                    + ": " + runtimeVersion + " (" + nativeRuntime.modCount + " mods)");
+                                    + ": " + runtimeVersion + " (" + nativeRuntime.modCount + " mods)"
+                                    + ", native-data=" + nativeRuntime.nativeDataDirectory.getAbsolutePath());
                 } else {
                     try {
                         if (!HorizonNativeModManager.selectedIds(this, instanceId).isEmpty()) {
