@@ -32,24 +32,24 @@ public final class HorizonNativeModArchiveTest {
         String horizon = "1da354b67a509812c4141b67de2affd6de65c342";
         String mixins = "0d6b103c70633d8fd9443d8d0acd3aadaacedb06";
         File archive = Files.createTempFile("jei-hooks-v2-", ".hnmod").toFile();
-        String manifest = "{\\\"game\\\":\\\"26.3\\\",\\\"hooks\\\":2,"
-                + "\\\"horizon\\\":\\\"" + horizon + "\\","
-                + "\\\"id\\\":\\\"jei\\\",\\\"mixins\\\":\\\"" + mixins + "\\","
-                + "\\\"schema\\\":1,\\\"version\\\":\\\"0.1.0\\\"}";
-        String mixinToml = "[mod]\\nid = \\\"jei\\\"\\nversion = \\\"0.1.0\\\"\\n"
-                + "priority = 100\\n[compatibility]\\nhorizon_revision = \\\"" + horizon + "\\\"\\n"
-                + "[[module]]\\nid = \\\"runtime\\\"\\nfile = \\\"crates/horizon-client/src/game.rs\\\"\\n"
-                + "name = \\\"jei\\\"\\nsource = \\\"runtime.rs\\\"\\n"
-                + "[[injection]]\\nid = \\\"frame\\\"\\nkind = \\\"HEAD\\\"\\n"
-                + "target = \\\"horizon_client::game::native_hooks::Game<'_>::native_frame\\\"\\n"
-                + "helper = \\\"frame.rs\\\"\\n";
+        String manifest = "{\"game\":\"26.3\",\"hooks\":2,"
+                + "\"horizon\":\"" + horizon + "\\","
+                + "\"id\":\"jei\",\"mixins\":\"" + mixins + "\\","
+                + "\"schema\":1,\"version\":\"0.1.0\"}";
+        String mixinToml = "[mod]\nid = \"jei\"\nversion = \"0.1.0\"\n"
+                + "priority = 100\n[compatibility]\nhorizon_revision = \"" + horizon + "\"\n"
+                + "[[module]]\nid = \"runtime\"\nfile = \"crates/horizon-client/src/game.rs\"\n"
+                + "name = \"jei\"\nsource = \"runtime.rs\"\n"
+                + "[[injection]]\nid = \"frame\"\nkind = \"HEAD\"\n"
+                + "target = \"horizon_client::game::native_hooks::Game<'_>::native_frame\"\n"
+                + "helper = \"frame.rs\"\n";
         try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive))) {
             put(zip, "horizon-native.json", manifest.getBytes(StandardCharsets.UTF_8));
             put(zip, "mixins/jei/horizon-mixin.toml", mixinToml.getBytes(StandardCharsets.UTF_8));
             for (String source : new String[]{"click.rs", "command.rs", "event.rs", "frame.rs",
                     "glue.rs", "list.rs", "runtime.rs", "settings.rs"}) {
                 put(zip, "mixins/jei/" + source,
-                        ("// fixture for " + source + "\\n").getBytes(StandardCharsets.UTF_8));
+                        ("// fixture for " + source + "\n").getBytes(StandardCharsets.UTF_8));
             }
         }
         try {
