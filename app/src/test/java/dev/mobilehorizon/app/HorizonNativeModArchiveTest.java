@@ -111,6 +111,24 @@ public final class HorizonNativeModArchiveTest {
         }
     }
 
+    @Test public void rejectsJarExtensionEvenWhenArchiveContainsNativeManifest() throws Exception {
+        File archive = createArchive("veinminer", HORIZON, MIXINS, null);
+        File jarNamed = new File(archive.getParentFile(), "native-module.jar");
+        try {
+            Files.move(archive.toPath(), jarNamed.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            try {
+                HorizonNativeModArchive.read(jarNamed);
+                fail("a .jar must not be accepted as a native .hnmod");
+            } catch (java.io.IOException expected) {
+                assertTrue(expected.getMessage().contains("Arquivos .hmod e .jar"));
+            }
+        } finally {
+            archive.delete();
+            jarNamed.delete();
+        }
+    }
+
     @Test public void rejectsPathTraversal() throws Exception {
         File archive = createArchive("veinminer", HORIZON, MIXINS,
                 new Entry("../escape.rs", "unsafe".getBytes(StandardCharsets.UTF_8)));
