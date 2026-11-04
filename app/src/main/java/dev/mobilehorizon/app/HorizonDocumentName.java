@@ -31,7 +31,7 @@ final class HorizonDocumentName {
 
     private static String basename(String candidate) {
         if (candidate == null) return "";
-        String value = candidate.trim().replace('\\\\', '/');
+        String value = candidate.trim().replace((char) 92, '/');
         if (value.isEmpty()) return "";
         int slash = value.lastIndexOf('/');
         if (slash >= 0) value = value.substring(slash + 1);
