@@ -337,19 +337,54 @@ jobs:
             "$RUNNER_TEMP/horizon-source" \
             "$RUNNER_TEMP/hnmod-mods"
 
-      - name: Build horizon-mixins at the modules' pinned commit
+      - name: Resolve one compatible horizon-mixins compiler for all selected modules
+        id: mixins
         shell: bash
         run: |
           set -euo pipefail
-          MIXINS_COMMIT="$(python3 - "$RUNNER_TEMP/hnmods.json" <<'PY'
+          MIXINS_REPO="$RUNNER_TEMP/horizon-mixins-repo"
+          git clone --filter=blob:none --quiet https://github.com/horizon-rust/horizon-mixins.git "$MIXINS_REPO"
+          mapfile -t PINS < <(python3 - "$RUNNER_TEMP/hnmods.json" <<'PY'
           import json, sys
-          print(json.load(open(sys.argv[1], encoding="utf-8"))[0]["mixins"])
+          records = json.load(open(sys.argv[1], encoding="utf-8"))
+          print("\\n".join(sorted({str(item["mixins"]).lower() for item in records})))
           PY
-          )"
-          if [[ ${#MIXINS_COMMIT} -ne 40 ]]; then
-            echo "::error::Invalid horizon-mixins commit in the selected modules."
+          )
+          if [[ "${#PINS[@]}" -eq 0 ]]; then
+            echo "::error::No horizon-mixins pins were found in the selected modules."
             exit 1
           fi
+          for pin in "${PINS[@]}"; do
+            if [[ ! "$pin" =~ ^[0-9a-f]{40}$ ]] || ! git -C "$MIXINS_REPO" cat-file -e "$pin^{commit}" 2>/dev/null; then
+              echo "::error::The pinned horizon-mixins commit is unavailable: $pin"
+              exit 1
+            fi
+          done
+
+          # A newer pinned CLI may compile older bundles only when its commit is a
+          # descendant of every package pin. Never guess across divergent histories.
+          MIXINS_COMMIT=""
+          for candidate in "${PINS[@]}"; do
+            compatible=true
+            for pin in "${PINS[@]}"; do
+              if ! git -C "$MIXINS_REPO" merge-base --is-ancestor "$pin" "$candidate"; then
+                compatible=false
+                break
+              fi
+            done
+            if [[ "$compatible" == "true" ]]; then
+              MIXINS_COMMIT="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$MIXINS_COMMIT" ]]; then
+            echo "::error::Selected .hnmod packages pin divergent horizon-mixins histories. Use packages sharing one compiler history."
+            exit 1
+          fi
+
+          echo "Compatible package pins: ${PINS[*]}"
+          echo "Selected compiler: $MIXINS_COMMIT"
+          echo "commit=$MIXINS_COMMIT" >> "$GITHUB_OUTPUT"
           cargo install --locked --git https://github.com/horizon-rust/horizon-mixins \
             --rev "$MIXINS_COMMIT" --root "$RUNNER_TEMP/horizon-mixins" horizon-mixins-cli
           "$RUNNER_TEMP/horizon-mixins/bin/horizon-mixins" apply \
@@ -383,6 +418,7 @@ jobs:
       - name: Compile the isolated Horizon Android engine for ARM64
         env:
           BASE_COMMIT: ${{ steps.inputs.outputs.base_commit }}
+          MIXINS_COMMIT: ${{ steps.mixins.outputs.commit }}
         shell: bash
         run: |
           set -euo pipefail
@@ -416,13 +452,14 @@ jobs:
           cp "$LIB" "$OUTPUT/libhorizon_engine.so"
           ENGINE_SHA="$(sha256sum "$LIB" | awk '{print $1}')"
           python3 - "$OUTPUT/horizon-native-runtime-manifest.json" \
-            "$RUNNER_TEMP/base-runtime.json" "$RUNNER_TEMP/hnmods.json" "$ENGINE_SHA" "$BASE_COMMIT" <<'PY'
-          import hashlib, json, pathlib, sys
+            "$RUNNER_TEMP/base-runtime.json" "$RUNNER_TEMP/hnmods.json" "$ENGINE_SHA" "$BASE_COMMIT" "$MIXINS_COMMIT" <<'PY'
+          import hashlib, json, pathlib, re, sys
 
-          path, base_path, mods_path, engine_sha, base_commit = sys.argv[1:]
+          path, base_path, mods_path, engine_sha, base_commit, mixins_commit = sys.argv[1:]
           base = json.loads(pathlib.Path(base_path).read_text(encoding="utf-8"))
           mods = json.loads(pathlib.Path(mods_path).read_text(encoding="utf-8"))
-          mixins_commit = mods[0]["mixins"]
+          if not re.fullmatch(r"[0-9a-f]{40}", mixins_commit):
+              raise SystemExit("The selected compatible horizon-mixins compiler SHA is invalid.")
           hooks_api = int(base.get("native_hooks_api", 0))
           if hooks_api <= 0:
               raise SystemExit("The target Horizon native hook API was not verified.")
