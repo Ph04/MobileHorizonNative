@@ -28,6 +28,29 @@ public final class HorizonNativeModArchiveTest {
         archive.delete();
     }
 
+    @Test public void directoryEntriesDoNotCountTowardNativeFileLimit() throws Exception {
+        File archive = Files.createTempFile("horizon-native-directories-", ".hnmod").toFile();
+        try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(archive))) {
+            String manifest = "{\"schema\":1,\"id\":\"veinminer\",\"version\":\"0.3.0\","
+                    + "\"game\":\"26.3\",\"horizon\":\"" + HORIZON
+                    + "\",\"mixins\":\"" + MIXINS + "\"}";
+            put(zip, "horizon-native.json", manifest.getBytes(StandardCharsets.UTF_8));
+            put(zip, "mixins/veinminer/horizon-mixin.toml",
+                    mixinToml("veinminer", "0.3.0", HORIZON).getBytes(StandardCharsets.UTF_8));
+            for (int i = 0; i < 600; i++) {
+                zip.putNextEntry(new ZipEntry(String.format(
+                        java.util.Locale.ROOT, "mixins/veinminer/generated-%03d/", i)));
+                zip.closeEntry();
+            }
+        }
+        try {
+            HorizonNativeModArchive.Descriptor descriptor = HorizonNativeModArchive.read(archive);
+            assertEquals("veinminer", descriptor.id);
+        } finally {
+            archive.delete();
+        }
+    }
+
     @Test public void rejectsPathTraversal() throws Exception {
         File archive = createArchive("veinminer", HORIZON, MIXINS,
                 new Entry("../escape.rs", "unsafe".getBytes(StandardCharsets.UTF_8)));
