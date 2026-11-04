@@ -57,7 +57,7 @@ class HnmodPostBuildTests(unittest.TestCase):
             file = output / "native-data" / "mod_menu" / "tables.bin"
             file.parent.mkdir(parents=True)
             file.write_bytes(b"compiled-native-data")
-            records = native_data_index(output)
+            records = native_data_index(output, {"mod_menu"})
             self.assertEqual(len(records), 1)
             self.assertEqual(records[0]["path"], "native-data/mod_menu/tables.bin")
             self.assertEqual(records[0]["size"], len(b"compiled-native-data"))
