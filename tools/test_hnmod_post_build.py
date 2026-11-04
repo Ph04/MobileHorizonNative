@@ -45,7 +45,8 @@ class HnmodPostBuildTests(unittest.TestCase):
     def test_native_data_paths_reject_traversal_and_absolute_paths(self):
         for path in (
             "../escape", "/native-data/mod/a.bin", "native-data/mod/../x",
-            "native-data/../other/file", "native-data/mod\\file", "native-data/mod/",
+            "native-data/../other/file", "native-data/mod/./file", "native-data/mod//file",
+            "native-data/mod\\file", "native-data/mod/",
         ):
             self.assertFalse(safe_data_path(path), path)
         self.assertTrue(safe_data_path("native-data/mod_menu/tables/index.bin"))
