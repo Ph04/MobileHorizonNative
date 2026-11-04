@@ -78,6 +78,8 @@ def load_steps(source: Path) -> list[dict]:
 
 def native_data_index(output: Path) -> list[dict]:
     root = output / "native-data"
+    if root.is_symlink():
+        raise ValueError("The native-data output root may not be a symlink.")
     root.mkdir(parents=True, exist_ok=True)
     records: list[dict] = []
     total = 0
@@ -163,6 +165,8 @@ def run_steps(source: Path, output: Path, cache: Path, timeout: int = 600) -> li
         mod_cache = cache / step["mod"]
         bundle_data = source / "native-data" / step["mod"]
         for directory in (data_dir, mod_cache, bundle_data):
+            if directory.is_symlink():
+                raise ValueError(f"Post-build directory may not be a symlink: {directory}")
             directory.mkdir(parents=True, exist_ok=True)
 
         env = dict(clean_env)
@@ -189,6 +193,8 @@ def run_steps(source: Path, output: Path, cache: Path, timeout: int = 600) -> li
 
     records = native_data_index(output)
     index_file = output / "native-data-index.json"
+    if index_file.is_symlink() or (index_file.exists() and not index_file.is_file()):
+        raise ValueError("Native-data index output is not a regular file.")
     index_file.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
     print(f"Post-build completed: {len(steps)} step(s), {len(records)} data file(s).", flush=True)
     return records
