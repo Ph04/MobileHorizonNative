@@ -65,6 +65,9 @@ final class MobileGraphicsProfile {
         if (Files.isSymbolicLink(marker.toPath())) {
             throw new IOException("Marcador do perfil gráfico móvel não é seguro.");
         }
+        if (marker.exists() && !marker.isFile()) {
+            throw new IOException("Marcador do perfil gráfico móvel tem tipo inválido.");
+        }
         if (marker.isFile()) return false;
 
         File settings = new File(home, SETTINGS_FILE);
@@ -104,6 +107,9 @@ final class MobileGraphicsProfile {
                 + "\nworkers=" + limits.workers
                 + "\ndisableHdr=" + limits.disableHdr + "\n").getBytes(StandardCharsets.UTF_8);
         File markerTemp = new File(home, "." + MARKER_FILE + ".partial");
+        if (Files.isSymbolicLink(markerTemp.toPath())) {
+            throw new IOException("Arquivo temporário do marcador gráfico não é seguro.");
+        }
         try (FileOutputStream output = new FileOutputStream(markerTemp, false)) {
             output.write(markerBytes);
             output.flush();
