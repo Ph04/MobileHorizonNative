@@ -31,7 +31,11 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Per-instance manager for Horizon's build-time native .hnmod bundles. */
+/**
+ * Per-instance manager for Horizon's build-time native .hnmod bundles.
+ * The GitHub Actions runner builds the Android ARM64 engine; the launcher only
+ * uploads selected archives, tracks that build and validates the resulting artifact.
+ */
 public final class NativeModsActivity extends Activity {
     public static final String EXTRA_INSTANCE_ID = "instance_id";
     private static final int PICK_HNMOD = 7101;
