@@ -45,7 +45,7 @@ public final class MobileGraphicsProfileTest {
         MobileGraphicsProfile.Limits limits =
                 MobileGraphicsProfile.limitsForRam(4L * 1024L * 1024L * 1024L);
         String merged = MobileGraphicsProfile.mergeDefaults(
-                "hdr:true\\nchunkUpdates:0\\nuploadBudgetKiB:0\\nworkers:0\\n", limits);
+                "hdr:true\nchunkUpdates:0\nuploadBudgetKiB:0\nworkers:0\n", limits);
         assertTrue(merged.contains("hdr:false"));
         assertFalse(merged.contains("hdr:true"));
     }
