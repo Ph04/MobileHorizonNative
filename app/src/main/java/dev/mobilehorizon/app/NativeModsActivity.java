@@ -36,6 +36,7 @@ public final class NativeModsActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private String instanceId;
     private TextView status;
+    private TextView profileNotice;
     private LinearLayout list;
     private Button importButton;
     private Button buildButton;
@@ -81,6 +82,9 @@ public final class NativeModsActivity extends Activity {
         page.addView(text(
                 "O Horizon compila os .hnmod dentro de uma cópia do motor. Eles não são plugins carregados durante o jogo. Cada conjunto selecionado precisa de um runtime ARM64 próprio para esta instância.",
                 13, 0xffb9b3d1, false), top(-1, -2, 10));
+        profileNotice = text("", 12, 0xffffd18a, false);
+        profileNotice.setVisibility(View.GONE);
+        page.addView(profileNotice, top(-1, -2, 10));
 
         LinearLayout warning = card();
         warning.addView(text("Aviso de segurança: código nativo", 14, 0xffffc48a, true), params(-1, -2));
@@ -233,19 +237,50 @@ public final class NativeModsActivity extends Activity {
         if (list == null || isFinishing() || isDestroyed()) return;
         list.removeAllViews();
         try {
+            GameProfileManager.Profile profile =
+                    GameProfileManager.getProfile(this, instanceId);
+            boolean fabricJavaBridge = profile.isFabricJavaBridge();
+            String base = HorizonRuntimeManager.currentVersion(this);
+            if (fabricJavaBridge) {
+                profileNotice.setText(
+                        "Esta instância está usando Fabric Java Bridge. Os .hnmod são extensões nativas do Horizon e não são carregados pelo Java Bridge. A importação fica armazenada; para compilar e executar esses módulos, altere o perfil desta instância para Horizon/Vanilla.");
+                profileNotice.setVisibility(View.VISIBLE);
+            } else {
+                profileNotice.setVisibility(View.GONE);
+            }
+
             List<HorizonNativeModManager.InstalledMod> mods =
                     HorizonNativeModManager.list(this, instanceId);
-            String base = HorizonRuntimeManager.currentVersion(this);
             boolean hasSelection = false;
+            boolean selectedRevisionCompatible = true;
+            String firstMismatch = null;
             for (HorizonNativeModManager.InstalledMod item : mods) {
-                if (item.enabled) hasSelection = true;
-                list.addView(modCard(item), top(-1, -2, 7));
+                boolean revisionCompatible = HorizonNativeModManager
+                        .matchesBaseRuntimeRevision(item.descriptor.horizonRevision, base);
+                if (item.enabled) {
+                    hasSelection = true;
+                    if (!revisionCompatible) {
+                        selectedRevisionCompatible = false;
+                        if (firstMismatch == null) firstMismatch = item.descriptor.horizonRevision;
+                    }
+                }
+                list.addView(modCard(item, base), top(-1, -2, 7));
             }
             if (mods.isEmpty()) {
                 list.addView(text("Nenhum .hnmod importado nesta instância.", 12, 0xffaaa2c6, false),
                         params(-1, -2));
             }
-            if (hasSelection) {
+
+            if (fabricJavaBridge) {
+                status.setText(hasSelection
+                        ? "Há módulos .hnmod selecionados, mas eles não são aplicados ao perfil Fabric Java Bridge. Altere o loader para Horizon/Vanilla antes de compilar ou iniciar com esses módulos."
+                        : "Nenhum .hnmod selecionado. Esta tela mantém os módulos nativos separados dos mods Fabric (.jar).");
+            } else if (hasSelection && !selectedRevisionCompatible) {
+                String basePrefix = base == null ? "indisponível" : base;
+                status.setText("A revisão Horizon do módulo selecionado (" + firstMismatch.substring(0, 12)
+                        + "…) não corresponde ao prefixo da runtime instalada (" + basePrefix
+                        + "). O compilador exige a revisão completa idêntica; use um .hnmod criado para esta runtime ou uma base compatível.");
+            } else if (hasSelection) {
                 boolean ready = HorizonNativeModManager.hasBuildForSelection(this, instanceId, base);
                 status.setText(ready
                         ? "Há um build associado à versão Horizon instalada. A validação completa ocorre novamente ao iniciar o jogo."
@@ -253,21 +288,35 @@ public final class NativeModsActivity extends Activity {
             } else {
                 status.setText("Nenhum módulo nativo está selecionado. A instância usa o runtime Horizon limpo.");
             }
-            buildButton.setEnabled(hasSelection && base != null && !base.isEmpty());
-            installButton.setEnabled(hasSelection && base != null && !base.isEmpty());
+            boolean canBuild = hasSelection && selectedRevisionCompatible
+                    && !fabricJavaBridge && base != null && !base.isEmpty();
+            buildButton.setEnabled(canBuild);
+            installButton.setEnabled(canBuild);
         } catch (Exception error) {
+            profileNotice.setVisibility(View.GONE);
+            buildButton.setEnabled(false);
+            installButton.setEnabled(false);
             status.setText("Não foi possível ler os .hnmod: "
                     + (error.getMessage() == null ? error.toString() : error.getMessage()));
         }
     }
 
-    private View modCard(HorizonNativeModManager.InstalledMod item) {
+    private View modCard(HorizonNativeModManager.InstalledMod item, String base) {
         LinearLayout box = card();
         box.addView(text(item.descriptor.displayName(), 14, 0xfff0ecff, true), params(-1, -2));
         box.addView(text("ID: " + item.descriptor.id, 11, 0xffaaa2c6, false), top(-1, -2, 3));
         box.addView(text("Horizon: " + item.descriptor.horizonRevision.substring(0, 12)
                 + "  •  Mixins: " + item.descriptor.mixinsRevision.substring(0, 12),
                 10, 0xffaaa2c6, false), top(-1, -2, 3));
+        boolean revisionCompatible = HorizonNativeModManager
+                .matchesBaseRuntimeRevision(item.descriptor.horizonRevision, base);
+        String revisionStatus = base == null || base.isEmpty()
+                ? "Compatibilidade com a runtime base não verificada"
+                : revisionCompatible
+                        ? "Prefixo Horizon compatível; o build validará o SHA completo"
+                        : "Revisão Horizon diferente da runtime base instalada";
+        box.addView(text(revisionStatus, 10,
+                revisionCompatible ? 0xff9ee0c0 : 0xffffb58f, true), top(-1, -2, 4));
         box.addView(text(item.enabled ? "Selecionado para a próxima compilação" : "Importado e desativado",
                 11, item.enabled ? 0xff9ee0c0 : 0xffaaa2c6, true), top(-1, -2, 7));
 
