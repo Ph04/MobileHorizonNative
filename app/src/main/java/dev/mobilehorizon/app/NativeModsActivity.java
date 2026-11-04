@@ -210,7 +210,13 @@ public final class NativeModsActivity extends Activity {
             }
         } catch (Exception ignored) { }
         String path = uri.getLastPathSegment();
-        return path == null ? "" : path;
+        if (path == null) return "";
+        path = Uri.decode(path);
+        int slash = path.lastIndexOf('/');
+        if (slash >= 0) path = path.substring(slash + 1);
+        int colon = path.lastIndexOf(':');
+        if (colon >= 0) path = path.substring(colon + 1);
+        return path;
     }
 
     private void refresh() {
@@ -322,15 +328,13 @@ public final class NativeModsActivity extends Activity {
             return;
         }
         String baseTag = HorizonNativeModManager.baseRuntimeReleaseTag(base);
-        String overlayCommit = "5fa8e435b6ff9e520e73f1fab4785d6b103d964a";
         String message = "Build remoto para esta instância:\n\n"
                 + "1. Na página Releases do repositório MobileHorizonNative, crie uma release temporária com uma tag única (por exemplo hnmod-input-01) e envie como assets somente os .hnmod que estão selecionados nesta instância.\n\n"
-                + "2. A definição do workflow Build Horizon native .hnmod runtime está na branch feature/fabric-java-bridge-test. Para aparecer o botão Run workflow na interface do GitHub, essa definição precisa primeiro entrar na branch padrão por PR/merge; main não foi alterada.\n\n"
+                + "2. O workflow Build Horizon native .hnmod runtime usa a branch feature/fabric-java-bridge-test e confere automaticamente a impressão digital do overlay contra a runtime limpa instalada. Não é necessário informar um SHA de código Android manualmente. Para usar Run workflow na interface do GitHub, a definição precisa primeiro entrar na branch padrão por PR/merge.\n\n"
                 + "3. Ao executar o workflow, informe:\n"
                 + "   mod_release_tag = tag da release dos .hnmod\n"
-                + "   base_runtime_tag = " + baseTag + "\n"
-                + "   overlay_source_commit = " + overlayCommit + "\n\n"
-                + "4. Aguarde o workflow validar os pacotes com o parser Rust oficial do Horizon, aplicar os mixins e compilar ARM64.\n\n"
+                + "   base_runtime_tag = " + baseTag + "\n\n"
+                + "4. O workflow valida os pacotes com o parser Rust oficial do Horizon, aplica os mixins e compila uma runtime ARM64 isolada para esta instância.\n\n"
                 + "5. Baixe o artifact ZIP mobilehorizon-native-runtime na execução do Actions (não uma release). Depois selecione o ZIP em “Instalar runtime compilada”.\n\n"
                 + "A compilação roda em runner isolado, sem segredos e sem alterar a runtime limpa compartilhada. O build só será ativado nesta instância se o manifesto, a revisão Horizon, os módulos selecionados, o SHA-256 e o ELF ARM64 corresponderem exatamente. Módulos que declarem [[post_build]] são recusados nesta primeira versão porque a execução dessas etapas ainda não foi portada para Android.";
         new AlertDialog.Builder(this)
