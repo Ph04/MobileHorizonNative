@@ -474,6 +474,8 @@ jobs:
               "base_runtime_version": base["version"],
               "base_commit": base_commit,
               "hooks_api": hooks_api,
+              "legacy_horizon_revisions_verified": bool(base.get("legacy_horizon_revisions_verified", False)),
+              "engine_build_completed": True,
               "mixins_commit": mixins_commit,
               "overlay": overlay,
               "abi": "arm64-v8a",
