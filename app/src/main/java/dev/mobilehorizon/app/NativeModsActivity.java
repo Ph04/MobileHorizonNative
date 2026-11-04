@@ -32,7 +32,7 @@ public final class NativeModsActivity extends Activity {
     private static final int PICK_HNMOD = 7101;
     private static final int PICK_RUNTIME = 7102;
     private static final long MAX_HNMOD_BYTES = 64L * 1024L * 1024L;
-    private static final long MAX_RUNTIME_ARTIFACT_BYTES = 430L * 1024L * 1024L;
+    private static final long MAX_RUNTIME_ARTIFACT_BYTES = 435L * 1024L * 1024L;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private String instanceId;
     private TextView status;
