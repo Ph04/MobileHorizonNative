@@ -256,7 +256,7 @@ public final class NativeModsActivity extends Activity {
             String firstMismatch = null;
             for (HorizonNativeModManager.InstalledMod item : mods) {
                 boolean revisionCompatible = HorizonNativeModManager
-                        .matchesBaseRuntimeRevision(item.descriptor.horizonRevision, base);
+                        .isPotentiallyCompatible(item.descriptor, base);
                 if (item.enabled) {
                     hasSelection = true;
                     if (!revisionCompatible) {
@@ -283,8 +283,8 @@ public final class NativeModsActivity extends Activity {
             } else if (hasSelection) {
                 boolean ready = HorizonNativeModManager.hasBuildForSelection(this, instanceId, base);
                 status.setText(ready
-                        ? "Há um build associado à versão Horizon instalada. A validação completa ocorre novamente ao iniciar o jogo."
-                        : "Há módulos selecionados, mas ainda não existe um runtime correspondente. Até instalar o build, a instância inicia com Horizon limpo.");
+                        ? "Há um build associado à versão Horizon instalada e à API de hooks exigida. A validação completa ocorre novamente ao iniciar o jogo."
+                        : "Há módulos selecionados, mas ainda não existe um runtime correspondente. O compilador seguirá a regra oficial de hooks do launcher de PC; até instalar o build, a instância inicia com Horizon limpo.");
             } else {
                 status.setText("Nenhum módulo nativo está selecionado. A instância usa o runtime Horizon limpo.");
             }
@@ -309,12 +309,18 @@ public final class NativeModsActivity extends Activity {
                 + "  •  Mixins: " + item.descriptor.mixinsRevision.substring(0, 12),
                 10, 0xffaaa2c6, false), top(-1, -2, 3));
         boolean revisionCompatible = HorizonNativeModManager
-                .matchesBaseRuntimeRevision(item.descriptor.horizonRevision, base);
-        String revisionStatus = base == null || base.isEmpty()
-                ? "Compatibilidade com a runtime base não verificada"
-                : revisionCompatible
-                        ? "Prefixo Horizon compatível; o build validará o SHA completo"
-                        : "Revisão Horizon diferente da runtime base instalada";
+                .isPotentiallyCompatible(item.descriptor, base);
+        String revisionStatus;
+        if (base == null || base.isEmpty()) {
+            revisionStatus = "Compatibilidade com a runtime base não verificada";
+        } else if (item.descriptor.hooks != null) {
+            revisionStatus = "Requer native hooks API v" + item.descriptor.hooks
+                    + "; o compilador consultará a API da revisão instalada";
+        } else if (revisionCompatible) {
+            revisionStatus = "Revisão Horizon compatível com a runtime instalada";
+        } else {
+            revisionStatus = "Revisão Horizon diferente da runtime base instalada";
+        }
         box.addView(text(revisionStatus, 10,
                 revisionCompatible ? 0xff9ee0c0 : 0xffffb58f, true), top(-1, -2, 4));
         box.addView(text(item.enabled ? "Selecionado para a próxima compilação" : "Importado e desativado",
