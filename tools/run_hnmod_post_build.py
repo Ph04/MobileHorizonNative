@@ -110,11 +110,12 @@ def run_steps(source: Path, output: Path, cache: Path, timeout: int = 600) -> li
 
     # No checkout credential, action token, or OIDC token is passed to mod code.
     clean_env = dict(os.environ)
-    for key in (
-        "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN",
-        "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL",
-    ):
-        clean_env.pop(key, None)
+    # Native .hnmod code is executable. Do not expose GitHub/ACTIONS/runner
+    # credentials or workflow-command file paths to its build scripts or binaries.
+    for key in list(clean_env):
+        if key.startswith(("GITHUB_", "ACTIONS_", "RUNNER_", "INPUT_", "STATE_")):
+            clean_env.pop(key, None)
+    clean_env["GIT_TERMINAL_PROMPT"] = "0"
 
     for index, step in enumerate(steps):
         print(
@@ -155,7 +156,17 @@ def run_steps(source: Path, output: Path, cache: Path, timeout: int = 600) -> li
         })
         command = [str(program), *step["args"]]
         print(f"Running {step['mod']} post-build generator", flush=True)
-        subprocess.run(command, cwd=output, env=env, check=True, timeout=timeout)
+        log_path = program_dir / "post-build.log"
+        with log_path.open("wb") as log:
+            subprocess.run(
+                command, cwd=output, env=env, check=True, timeout=timeout,
+                stdout=log, stderr=subprocess.STDOUT,
+            )
+        # Never forward untrusted program output as GitHub workflow commands.
+        with log_path.open("rb") as log:
+            excerpt = log.read(128 * 1024).decode("utf-8", errors="replace")
+        for line in excerpt.splitlines():
+            print(f"[hnmod:{step['mod']}] " + line.replace("::", ": :"), flush=True)
 
     records = native_data_index(output)
     index_file = output / "native-data-index.json"
