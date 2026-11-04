@@ -29,6 +29,16 @@ final class HorizonDocumentName {
         return fallback;
     }
 
+    /**
+     * Native bundles are validated from their ZIP manifest and source layout, not from
+     * a SAF filename that may be hidden by cloud/download providers. Binary runtime
+     * assets still require their expected suffix.
+     */
+    static boolean requiresFilenameExtension(String expectedExtension) {
+        return !".hnmod".equalsIgnoreCase(
+                expectedExtension == null ? "" : expectedExtension.trim());
+    }
+
     private static String basename(String candidate) {
         if (candidate == null) return "";
         String value = candidate.trim().replace((char) 92, '/');
