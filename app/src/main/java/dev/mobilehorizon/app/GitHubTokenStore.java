@@ -25,7 +25,14 @@ final class GitHubTokenStore {
 
     static void save(Context context, String rawToken) throws Exception {
         String token = rawToken == null ? "" : rawToken.trim();
-        if (token.length() < 30 || token.length() > 300 || token.matches(".*\\\\s+.*")) {
+        boolean hasWhitespace = false;
+        for (int i = 0; i < token.length(); i++) {
+            if (Character.isWhitespace(token.charAt(i))) {
+                hasWhitespace = true;
+                break;
+            }
+        }
+        if (token.length() < 30 || token.length() > 300 || hasWhitespace) {
             throw new IOException("O token informado parece inválido. Cole o token Fine-grained completo.");
         }
         SecretKey key = getOrCreateKey();
