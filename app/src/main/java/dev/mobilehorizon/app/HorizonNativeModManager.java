@@ -543,13 +543,17 @@ final class HorizonNativeModManager {
 
     private static boolean modsCompatible(List<InstalledMod> selected, String game,
                                           String baseCommit, String mixinsCommit, int hooksApi) {
-        if (selected.isEmpty()) return false;
+        // The builder may use a newer horizon-mixins CLI when CI proves that the selected
+        // compiler commit descends from every package pin. Each package pin is checked
+        // independently by modsMatch() below; equality with the single compiler SHA is
+        // therefore neither required nor correct for mixed compatible bundles.
+        if (selected.isEmpty() || mixinsCommit == null
+                || !mixinsCommit.matches("[0-9a-f]{40}")) return false;
         for (InstalledMod mod : selected) {
             HorizonNativeModArchive.Descriptor descriptor = mod.descriptor;
             if (!isNativeModCompatible(descriptor.game, descriptor.horizonRevision,
                     descriptor.hooks, baseCommit, hooksApi)
-                    || !game.equals(descriptor.game)
-                    || !mixinsCommit.equals(descriptor.mixinsRevision)) {
+                    || !game.equals(descriptor.game)) {
                 return false;
             }
         }
@@ -561,13 +565,15 @@ final class HorizonNativeModManager {
         try {
             ArrayList<String> expected = new ArrayList<>();
             for (InstalledMod mod : selected) {
-                expected.add(mod.descriptor.id + "|" + mod.descriptor.version + "|" + mod.descriptor.sha256);
+                expected.add(mod.descriptor.id + "|" + mod.descriptor.version + "|"
+                        + mod.descriptor.sha256 + "|" + mod.descriptor.mixinsRevision);
             }
             ArrayList<String> actual = new ArrayList<>();
             for (int i = 0; i < recorded.length(); i++) {
                 JSONObject mod = recorded.getJSONObject(i);
                 actual.add(mod.optString("id", "") + "|" + mod.optString("version", "") + "|"
-                        + mod.optString("sha256", "").toLowerCase(Locale.ROOT));
+                        + mod.optString("sha256", "").toLowerCase(Locale.ROOT) + "|"
+                        + mod.optString("mixins", "").toLowerCase(Locale.ROOT));
             }
             Collections.sort(expected);
             Collections.sort(actual);
