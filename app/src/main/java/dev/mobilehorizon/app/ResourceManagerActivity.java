@@ -276,6 +276,11 @@ getWindow().setStatusBarColor(0xff090911);
     private String importOne(Uri uri) throws Exception {
         String name = displayName(uri);
         String lower = name.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".hnmod")) {
+            throw new IllegalArgumentException(
+                    "Arquivos .hnmod são módulos nativos compilados em uma runtime própria. "
+                            + "Importe-os em Instâncias → Módulos nativos.");
+        }
         File staging = File.createTempFile("mh-resource-", ".part", getCacheDir());
         try {
             try (InputStream input = getContentResolver().openInputStream(uri)) {
@@ -285,7 +290,8 @@ getWindow().setStatusBarColor(0xff090911);
             if (lower.endsWith(".hmod")) {
                 if (containsLegacyNativePayload(staging)) {
                     throw new IllegalArgumentException(
-                            "Pacotes nativos antigos não são módulos .hmod oficiais do Horizon e não são importados.");
+                            "Este pacote contém a estrutura de um .hnmod nativo, não de um .hmod. "
+                                    + "Use Instâncias → Módulos nativos.");
                 }
                 String contentId = readModId(staging);
                 if (contentId == null) {
@@ -329,7 +335,7 @@ getWindow().setStatusBarColor(0xff090911);
         } finally { staging.delete(); }
     }
 
-    /** Rejects legacy native source bundles disguised with the official .hmod suffix. */
+    /** Detects native-bundle signatures even when a file was renamed to .hmod or .zip. */
     private boolean containsLegacyNativePayload(File archive) throws IOException {
         try (ZipFile zip = new ZipFile(archive)) {
             if (zip.getEntry("horizon-native.json") != null) return true;
@@ -345,6 +351,11 @@ getWindow().setStatusBarColor(0xff090911);
     }
 
     private ArchiveKind inspectZip(File file) throws Exception {
+        if (containsLegacyNativePayload(file)) {
+            throw new IllegalArgumentException(
+                    "Este ZIP contém a estrutura de um .hnmod nativo. "
+                            + "Importe-o em Instâncias → Módulos nativos.");
+        }
         boolean packMeta = false, assets = false, shaders = false, horizonToml = false;
         try (ZipFile zip = new ZipFile(file)) {
             java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
