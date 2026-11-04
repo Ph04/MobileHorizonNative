@@ -8,7 +8,7 @@ import static org.junit.Assert.assertTrue;
 public final class HorizonNativeModManagerIdentityTest {
     @Test
     public void acceptsCurrentEightCharacterCommitPrefix() {
-        String version = "horizon-nightly-c67dad0d-o8a869a3e";
+        String version = "horizon-nightly-c67dad0d1-o8a869a3e";
         String commit = "67dad0d1" + "a".repeat(32);
 
         assertTrue(HorizonNativeModManager.baseRuntimeIdentityMatches(
