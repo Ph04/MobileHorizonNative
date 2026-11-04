@@ -157,22 +157,24 @@ getWindow().setStatusBarColor(0xff090911);
         try {
             GameProfileManager.Profile profile = GameProfileManager.getProfile(this, instance.id);
             if (profile.isFabricJavaBridge()) {
-                Button manageMods = button("Gerenciar mods Fabric", false, v -> {
+                Button manageMods = button("Gerenciar mods Fabric (.jar)", false, v -> {
                     android.content.Intent intent = new android.content.Intent(this, FabricModsActivity.class);
                     intent.putExtra(FabricModsActivity.EXTRA_INSTANCE_ID, instance.id);
                     startActivity(intent);
                 });
                 manageMods.setEnabled(!busy);
                 card.addView(manageMods, topParams(-1, 46, 8));
-            } else {
-                Button nativeMods = button("Módulos nativos (.hnmod)", false, v -> {
-                    android.content.Intent intent = new android.content.Intent(this, NativeModsActivity.class);
-                    intent.putExtra(NativeModsActivity.EXTRA_INSTANCE_ID, instance.id);
-                    startActivity(intent);
-                });
-                nativeMods.setEnabled(!busy);
-                card.addView(nativeMods, topParams(-1, 46, 8));
             }
+            // Native .hnmod bundles are a separate Horizon engine extension, not Fabric JARs.
+            // Keep their importer reachable on every profile, while NativeModsActivity prevents
+            // building/installing a native runtime when this instance currently uses Java Bridge.
+            Button nativeMods = button("Módulos nativos (.hnmod)", false, v -> {
+                android.content.Intent intent = new android.content.Intent(this, NativeModsActivity.class);
+                intent.putExtra(NativeModsActivity.EXTRA_INSTANCE_ID, instance.id);
+                startActivity(intent);
+            });
+            nativeMods.setEnabled(!busy);
+            card.addView(nativeMods, topParams(-1, 46, 8));
         } catch (Exception ignored) {
             // The profile validation line above already reports malformed profiles.
         }
