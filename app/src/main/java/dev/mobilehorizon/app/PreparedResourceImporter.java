@@ -4,6 +4,7 @@ import android.content.ContentResolver;
 import android.database.Cursor;
 import android.net.Uri;
 import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
 
 import org.json.JSONObject;
 
@@ -17,6 +18,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.ZipEntry;
@@ -103,6 +105,7 @@ final class PreparedResourceImporter {
 
     static ImportSummary importZip(ContentResolver resolver, Uri zipUri, File filesDir,
                                    AtomicBoolean cancelled, ProgressListener listener) throws Exception {
+        validatePreparedZipName(displayName(resolver, zipUri));
         return withStaging(filesDir, cancelled, listener, stage -> {
             Counter copied = new Counter();
             report(listener, new Progress("Lendo arquivo ZIP", 0, -1, 0, -1));
@@ -118,6 +121,11 @@ final class PreparedResourceImporter {
                         throw new IllegalArgumentException("O ZIP contém itens demais; limite seguro: " + MAX_ENTRIES + ".");
                     }
                     String relative = safeRelativePath(entry.getName());
+                    if (isNativeModuleSignature(relative)) {
+                        throw new IllegalArgumentException(
+                                "Este arquivo contém a estrutura de um .hnmod nativo. "
+                                        + "Importe-o em Instâncias → Módulos nativos; não em Recursos preparados.");
+                    }
                     if (!seenPaths.add(relative)) {
                         throw new IllegalArgumentException("O ZIP contém um caminho repetido: " + relative);
                     }
@@ -312,6 +320,50 @@ final class PreparedResourceImporter {
 
     private static String validateManifestIfPresent(File root) throws Exception {
         return HorizonResourceConverter.validatePreparedResources(root);
+    }
+
+    static void validatePreparedZipName(String displayName) {
+        String name = displayName == null ? "" : displayName.trim().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".hnmod")) {
+            throw new IllegalArgumentException(
+                    "Arquivos .hnmod são módulos nativos e não podem ser extraídos como recursos. "
+                            + "Use Instâncias → Módulos nativos.");
+        }
+        if (name.endsWith(".hmod")) {
+            throw new IllegalArgumentException(
+                    "Arquivos .hmod são módulos Horizon, não um pacote de recursos preparados. "
+                            + "Use o Gerenciador de recursos → Importar módulos.");
+        }
+        if (!name.endsWith(".zip")) {
+            throw new IllegalArgumentException("Selecione um arquivo .zip de recursos preparados.");
+        }
+    }
+
+    private static String displayName(ContentResolver resolver, Uri uri) {
+        try (Cursor cursor = resolver.query(uri,
+                new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) {
+                    String value = cursor.getString(index);
+                    if (value != null && !value.trim().isEmpty()) return value;
+                }
+            }
+        } catch (Exception ignored) { }
+        String fallback = uri == null ? null : Uri.decode(uri.getLastPathSegment());
+        if (fallback == null) return "";
+        int slash = fallback.lastIndexOf('/');
+        if (slash >= 0) fallback = fallback.substring(slash + 1);
+        int colon = fallback.lastIndexOf(':');
+        if (colon >= 0) fallback = fallback.substring(colon + 1);
+        return fallback;
+    }
+
+    private static boolean isNativeModuleSignature(String relative) {
+        String normalized = relative == null ? "" : relative.replace('\\\\', '/');
+        return "horizon-native.json".equals(normalized)
+                || (normalized.startsWith("mixins/")
+                && normalized.endsWith("/horizon-mixin.toml"));
     }
 
     private static String safeRelativePath(String raw) {
