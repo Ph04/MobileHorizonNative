@@ -275,21 +275,14 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
             // The Horizon patcher selects game::run() for Stable and rewrites this
             // call to game::run_with() when the selected Nightly exports that API.
             let game_started = Instant::now();
-            append_native_event(
-                &home,
-                &format!(
-                    "game::run BEGIN; stopRequests={}",
-                    horizon_threads::stop_requests()
-                ),
-            );
+            append_native_event(&home, "game::run BEGIN");
             let game_result = horizon_client::game::run();
             append_native_event(
                 &home,
                 &format!(
-                    "game::run RETURN; result={}; elapsedMs={}; stopRequests={}",
+                    "game::run RETURN; result={}; elapsedMs={}",
                     if game_result.is_ok() { "Ok" } else { "Err" },
-                    game_started.elapsed().as_millis(),
-                    horizon_threads::stop_requests()
+                    game_started.elapsed().as_millis()
                 ),
             );
             if let Err(error) = game_result {
@@ -304,10 +297,8 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
     horizon_client::logging::flush();
     match execution {
         Ok(Ok(())) => {
-            let message = format!(
-                "EXIT: O loop do cliente Horizon terminou sem retornar um erro explícito; stopRequests={}.",
-                horizon_threads::stop_requests()
-            );
+            let message =
+                "EXIT: O loop do cliente Horizon terminou sem retornar um erro explícito.".to_owned();
             append_native_event(&home, &message);
             write_result(&home, "horizon-client-result.txt", &message);
         }
