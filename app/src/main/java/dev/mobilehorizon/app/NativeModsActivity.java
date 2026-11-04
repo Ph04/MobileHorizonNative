@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.view.View;
 import android.widget.Button;
@@ -22,7 +23,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -201,22 +201,30 @@ public final class NativeModsActivity extends Activity {
         return staging;
     }
 
-    private String displayName(Uri uri) {
+    /**
+     * SAF providers are inconsistent: DISPLAY_NAME may be null or an opaque label such as
+     * "document", while the document ID or URI segment still contains the real filename.
+     * Prefer the first candidate that actually has the requested extension.
+     */
+    private String displayName(Uri uri, String expectedExtension) {
+        String providerName = null;
+        String documentId = null;
+        String lastPathSegment = null;
         try (Cursor cursor = getContentResolver().query(
                 uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
             if (cursor != null && cursor.moveToFirst()) {
                 int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                if (index >= 0) return cursor.getString(index);
+                if (index >= 0) providerName = cursor.getString(index);
             }
         } catch (Exception ignored) { }
-        String path = uri.getLastPathSegment();
-        if (path == null) return "";
-        path = Uri.decode(path);
-        int slash = path.lastIndexOf('/');
-        if (slash >= 0) path = path.substring(slash + 1);
-        int colon = path.lastIndexOf(':');
-        if (colon >= 0) path = path.substring(colon + 1);
-        return path;
+        try {
+            documentId = DocumentsContract.getDocumentId(uri);
+        } catch (Exception ignored) { }
+        try {
+            lastPathSegment = Uri.decode(uri.getLastPathSegment());
+        } catch (Exception ignored) { }
+        return HorizonDocumentName.resolve(
+                providerName, documentId, lastPathSegment, expectedExtension);
     }
 
     private void refresh() {
