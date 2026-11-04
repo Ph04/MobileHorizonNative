@@ -16,23 +16,35 @@ public final class HorizonNativeModCompatibilityTest {
     @Test
     public void jeiHooksV2IsCompatibleWithLaterInstalledNativeHooksApi() {
         assertTrue(HorizonNativeModManager.isNativeModCompatible(
-                "26.3", TESTED_HORIZON, 2, INSTALLED_HORIZON, 359));
+                "26.3", TESTED_HORIZON, 2, INSTALLED_HORIZON, 359, false, false));
     }
 
     @Test
     public void nativeHookApiMustMeetTheModulesDeclaredMinimum() {
         assertFalse(HorizonNativeModManager.isNativeModCompatible(
-                "26.3", TESTED_HORIZON, 2, INSTALLED_HORIZON, 1));
+                "26.3", TESTED_HORIZON, 2, INSTALLED_HORIZON, 1, false, false));
         assertFalse(HorizonNativeModManager.isNativeModCompatible(
-                "26.3", TESTED_HORIZON, 3, INSTALLED_HORIZON, 2));
+                "26.3", TESTED_HORIZON, 3, INSTALLED_HORIZON, 2, false, false));
     }
 
     @Test
     public void moduleWithoutHooksKeepsExactHorizonCommitRequirement() {
         assertTrue(HorizonNativeModManager.isNativeModCompatible(
-                "26.3", INSTALLED_HORIZON, null, INSTALLED_HORIZON, 359));
+                "26.3", INSTALLED_HORIZON, null, INSTALLED_HORIZON, 359, false, false));
         assertFalse(HorizonNativeModManager.isNativeModCompatible(
-                "26.3", TESTED_HORIZON, null, INSTALLED_HORIZON, 359));
+                "26.3", TESTED_HORIZON, null, INSTALLED_HORIZON, 359, false, false));
+    }
+
+    @Test
+    public void legacyPinCanOnlyActivateAfterVerifiedAncestryAndFullBuild() {
+        assertFalse(HorizonNativeModManager.isNativeModCompatible(
+                "26.3", TESTED_HORIZON, null, INSTALLED_HORIZON, 359, false, false));
+        assertTrue(HorizonNativeModManager.isNativeModCompatible(
+                "26.3", TESTED_HORIZON, null, INSTALLED_HORIZON, 359, true, true));
+        assertFalse(HorizonNativeModManager.isNativeModCompatible(
+                "26.3", TESTED_HORIZON, null, INSTALLED_HORIZON, 359, true, false));
+        assertFalse(HorizonNativeModManager.isNativeModCompatible(
+                "26.3", TESTED_HORIZON, null, INSTALLED_HORIZON, 359, false, true));
     }
 
     @Test
@@ -55,7 +67,7 @@ public final class HorizonNativeModCompatibilityTest {
                         "veinminer", "0.3.0", "26.3", TESTED_HORIZON, MIXINS,
                         null, "b".repeat(64), 1000L);
 
-        assertFalse(HorizonNativeModManager.isPotentiallyCompatible(
+        assertTrue(HorizonNativeModManager.isPotentiallyCompatible(
                 descriptor, "horizon-nightly-c67dad0d1-o8a869a3e"));
         assertTrue(HorizonNativeModManager.isPotentiallyCompatible(
                 new HorizonNativeModArchive.Descriptor(
