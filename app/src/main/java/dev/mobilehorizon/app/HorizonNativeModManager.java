@@ -270,7 +270,9 @@ final class HorizonNativeModManager {
 
         JSONArray recordedMods = manifest.optJSONArray("mods");
         if (!modsMatch(selected, recordedMods)
-                || !modsCompatible(selected, game, baseCommit, mixinsCommit, hooksApi)) {
+                || !modsCompatible(selected, game, baseCommit, mixinsCommit, hooksApi,
+                        manifest.optBoolean("legacy_horizon_revisions_verified", false),
+                        manifest.optBoolean("engine_build_completed", false))) {
             throw new IOException("O runtime foi compilado para outro conjunto de .hnmod ou outra revisão Horizon. Gere um build com a seleção atual.");
         }
         String actualHash = sha256(engine);
@@ -349,11 +351,15 @@ final class HorizonNativeModManager {
         String mixinsCommit = manifest.optString("mixins_commit", "");
         String game = manifest.optString("game", "");
         int hooksApi = manifest.optInt("hooks_api", 0);
+        boolean legacyRevisionsVerified =
+                manifest.optBoolean("legacy_horizon_revisions_verified", false);
+        boolean engineBuildCompleted = manifest.optBoolean("engine_build_completed", false);
         if (!version.equals(manifest.optString("version", ""))
                 || !baseRuntimeVersion.equals(manifest.optString("base_runtime_version", ""))
                 || !activeHash.equals(manifest.optString("sha256", "").toLowerCase(Locale.ROOT))
                 || !modsMatch(selected, manifest.optJSONArray("mods"))
-                || !modsCompatible(selected, game, baseCommit, mixinsCommit, hooksApi)
+                || !modsCompatible(selected, game, baseCommit, mixinsCommit, hooksApi,
+                        legacyRevisionsVerified, engineBuildCompleted)
                 || !baseRuntimeIdentityMatches(baseRuntimeVersion, baseCommit,
                         manifest.optString("overlay", ""))) {
             return null;
@@ -411,10 +417,14 @@ final class HorizonNativeModManager {
             String mixinsCommit = manifest.optString("mixins_commit", "");
             String game = manifest.optString("game", "");
             int hooksApi = manifest.optInt("hooks_api", 0);
+            boolean legacyRevisionsVerified =
+                    manifest.optBoolean("legacy_horizon_revisions_verified", false);
+            boolean engineBuildCompleted = manifest.optBoolean("engine_build_completed", false);
             return hash.equals(manifest.optString("sha256", "").toLowerCase(Locale.ROOT))
                     && baseRuntimeVersion.equals(manifest.optString("base_runtime_version", ""))
                     && modsMatch(selected, manifest.optJSONArray("mods"))
-                    && modsCompatible(selected, game, baseCommit, mixinsCommit, hooksApi)
+                    && modsCompatible(selected, game, baseCommit, mixinsCommit, hooksApi,
+                            legacyRevisionsVerified, engineBuildCompleted)
                     && baseRuntimeIdentityMatches(baseRuntimeVersion, baseCommit,
                             manifest.optString("overlay", ""))
                     && library.isFile() && sha256(library).equals(hash);
@@ -542,18 +552,22 @@ final class HorizonNativeModManager {
     }
 
     private static boolean modsCompatible(List<InstalledMod> selected, String game,
-                                          String baseCommit, String mixinsCommit, int hooksApi) {
-        // The builder may use a newer horizon-mixins CLI when CI proves that the selected
-        // compiler commit descends from every package pin. Each package pin is checked
-        // independently by modsMatch() below; equality with the single compiler SHA is
-        // therefore neither required nor correct for mixed compatible bundles.
-        if (selected.isEmpty() || mixinsCommit == null
-                || !mixinsCommit.matches("[0-9a-f]{40}")) return false;
+                                          String baseCommit, String mixinsCommit, int hooksApi,
+                                          boolean legacyRevisionsVerified,
+                                          boolean engineBuildCompleted) {
+        if (selected.isEmpty() || !"26.3".equals(game)
+                || baseCommit == null || !baseCommit.matches("[0-9a-f]{40}")
+                || mixinsCommit == null || !mixinsCommit.matches("[0-9a-f]{40}")) return false;
         for (InstalledMod mod : selected) {
             HorizonNativeModArchive.Descriptor descriptor = mod.descriptor;
-            if (!isNativeModCompatible(descriptor.game, descriptor.horizonRevision,
-                    descriptor.hooks, baseCommit, hooksApi)
-                    || !game.equals(descriptor.game)) {
+            if (!game.equals(descriptor.game)) return false;
+            if (descriptor.hooks != null) {
+                if (descriptor.hooks <= 0 || descriptor.hooks > hooksApi) return false;
+            } else if (!baseCommit.equals(descriptor.horizonRevision)
+                    && !(legacyRevisionsVerified && engineBuildCompleted)) {
+                // Legacy modules are only eligible after CI has proven the old source SHA
+                // is an ancestor of this base, repinned the mixin TOML, and compiled the
+                // complete ARM64 engine successfully.
                 return false;
             }
         }
@@ -565,15 +579,21 @@ final class HorizonNativeModManager {
         try {
             ArrayList<String> expected = new ArrayList<>();
             for (InstalledMod mod : selected) {
-                expected.add(mod.descriptor.id + "|" + mod.descriptor.version + "|"
-                        + mod.descriptor.sha256 + "|" + mod.descriptor.mixinsRevision);
+                HorizonNativeModArchive.Descriptor descriptor = mod.descriptor;
+                expected.add(descriptor.id + "|" + descriptor.version + "|"
+                        + descriptor.sha256 + "|" + descriptor.mixinsRevision + "|"
+                        + descriptor.game + "|" + descriptor.horizonRevision + "|"
+                        + (descriptor.hooks == null ? "" : descriptor.hooks.toString()));
             }
             ArrayList<String> actual = new ArrayList<>();
             for (int i = 0; i < recorded.length(); i++) {
                 JSONObject mod = recorded.getJSONObject(i);
                 actual.add(mod.optString("id", "") + "|" + mod.optString("version", "") + "|"
                         + mod.optString("sha256", "").toLowerCase(Locale.ROOT) + "|"
-                        + mod.optString("mixins", "").toLowerCase(Locale.ROOT));
+                        + mod.optString("mixins", "").toLowerCase(Locale.ROOT) + "|"
+                        + mod.optString("game", "") + "|"
+                        + mod.optString("horizon", "").toLowerCase(Locale.ROOT) + "|"
+                        + mod.optString("hooks", ""));
             }
             Collections.sort(expected);
             Collections.sort(actual);
