@@ -1,0 +1,501 @@
+name: Build Horizon native .hnmod runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      mod_release_tag:
+        description: "Release tag containing only the .hnmod files selected for this instance"
+        required: true
+        type: string
+      base_runtime_tag:
+        description: "Clean Horizon runtime release tag installed by this instance"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hnmod-build-${{ inputs.base_runtime_tag }}-${{ inputs.mod_release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate and compile native modules (ARM64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the current MobileHorizonNative integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/fabric-java-bridge-test
+          persist-credentials: false
+
+      - name: Record the exact overlay commit
+        id: overlay_revision
+        shell: bash
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Rust 1.95.0 and Android ARM64 target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95.0
+          targets: aarch64-linux-android
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;35.0.0"
+
+      - name: Install Android NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          for attempt in 1 2 3 4; do
+            rm -rf "$ANDROID_HOME/temp"
+            if "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "ndk;27.2.12479018"; then
+              break
+            fi
+            if [[ "$attempt" == 4 ]]; then
+              echo "::error::Android NDK installation failed after four attempts."
+              exit 1
+            fi
+            echo "::warning::NDK download failed (attempt $attempt); retrying."
+          done
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          test -x "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+
+      - name: Resolve and verify base runtime and selected .hnmod release
+        id: inputs
+        env:
+          BASE_RUNTIME_TAG: ${{ inputs.base_runtime_tag }}
+          MOD_RELEASE_TAG: ${{ inputs.mod_release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, urllib.parse, urllib.request
+
+          repo = "Ph04/MobileHorizonNative"
+          temp = pathlib.Path(os.environ["RUNNER_TEMP"])
+          base_tag = os.environ["BASE_RUNTIME_TAG"]
+          mods_tag = os.environ["MOD_RELEASE_TAG"]
+          for label, value in (("base_runtime_tag", base_tag), ("mod_release_tag", mods_tag)):
+              if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", value):
+                  raise SystemExit(f"{label} contains unsupported characters.")
+          if not base_tag.startswith("horizon-runtime-"):
+              raise SystemExit("base_runtime_tag must identify a clean Horizon runtime release.")
+
+          headers = {"Accept": "application/vnd.github+json",
+                     "User-Agent": "MobileHorizonNative-hnmod-builder"}
+
+          def get_json(url):
+              req = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(req, timeout=45) as response:
+                  data = response.read(4 * 1024 * 1024 + 1)
+              if len(data) > 4 * 1024 * 1024:
+                  raise SystemExit("Release metadata exceeded the safety limit.")
+              return json.loads(data.decode("utf-8"))
+
+          def download(url, dest, size, expected_digest=None, limit=64 * 1024 * 1024):
+              if not url.startswith(f"https://github.com/{repo}/releases/download/"):
+                  raise SystemExit("Asset URL is not from the expected repository.")
+              if size <= 0 or size > limit:
+                  raise SystemExit(f"Invalid asset size: {dest.name}")
+              req = urllib.request.Request(url, headers={"User-Agent": "MobileHorizonNative-hnmod-builder"})
+              digest, total = hashlib.sha256(), 0
+              with urllib.request.urlopen(req, timeout=120) as response, dest.open("wb") as output:
+                  while True:
+                      block = response.read(1024 * 1024)
+                      if not block:
+                          break
+                      total += len(block)
+                      if total > limit or total > size:
+                          raise SystemExit(f"Asset exceeded declared size: {dest.name}")
+                      digest.update(block)
+                      output.write(block)
+              if total != size:
+                  raise SystemExit(f"Asset size mismatch: {dest.name}")
+              actual = digest.hexdigest()
+              if expected_digest:
+                  if not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", expected_digest):
+                      raise SystemExit(f"Unsupported GitHub digest: {dest.name}")
+                  if actual.lower() != expected_digest.split(":", 1)[1].lower():
+                      raise SystemExit(f"GitHub SHA-256 mismatch: {dest.name}")
+
+          api = f"https://api.github.com/repos/{repo}/releases/tags/"
+          base_release = get_json(api + urllib.parse.quote(base_tag, safe=""))
+          if base_release.get("draft") or not base_release.get("assets"):
+              raise SystemExit("The base runtime release is missing or is a draft.")
+          base_manifest_asset = next((a for a in base_release["assets"]
+                                      if a.get("name") == "horizon-runtime-manifest.json"), None)
+          engine_asset = next((a for a in base_release["assets"]
+                               if a.get("name") == "horizon-runtime-arm64-v8a.so"), None)
+          if base_manifest_asset is None or engine_asset is None:
+              raise SystemExit("The base runtime release is missing its manifest or engine.")
+          base_manifest_path = temp / "base-runtime-manifest.json"
+          download(base_manifest_asset["browser_download_url"], base_manifest_path,
+                   int(base_manifest_asset.get("size", 0)), base_manifest_asset.get("digest"), 64 * 1024)
+          base = json.loads(base_manifest_path.read_text(encoding="utf-8"))
+          base_version = base_tag[len("horizon-runtime-"):]
+          base_commit = str(base.get("upstream_commit", "")).lower()
+          overlay = str(base.get("overlay", "")).lower()
+          if (base.get("format") != 1 or base.get("version") != base_version
+                  or base.get("abi") != "arm64-v8a"
+                  or base.get("library") != "horizon-runtime-arm64-v8a.so"
+                  or not re.fullmatch(r"[0-9a-f]{40}", base_commit)
+                  or not re.fullmatch(r"[0-9a-f]{8}", overlay)
+                  or str(base.get("sha256", "")).lower()
+                     != str(engine_asset.get("digest", "")).split(":", 1)[-1].lower()):
+              raise SystemExit("The clean base runtime manifest did not pass verification.")
+
+          modules_release = get_json(api + urllib.parse.quote(mods_tag, safe=""))
+          if modules_release.get("draft") or not modules_release.get("assets"):
+              raise SystemExit("The selected .hnmod release is missing or is a draft.")
+          assets = [a for a in modules_release["assets"]
+                    if str(a.get("name", "")).lower().endswith(".hnmod")]
+          if not assets or len(assets) > 24:
+              raise SystemExit("Select between 1 and 24 .hnmod assets.")
+          archive_dir = temp / "hnmod-archives"
+          archive_dir.mkdir(parents=True, exist_ok=True)
+          paths, total = [], 0
+          for i, asset in enumerate(assets, 1):
+              name = str(asset.get("name", ""))
+              if pathlib.PurePosixPath(name).name != name or not re.fullmatch(
+                      r"[A-Za-z0-9][A-Za-z0-9._ -]{0,119}\.hnmod", name, re.IGNORECASE):
+                  raise SystemExit(f"Unsafe .hnmod asset name: {name!r}")
+              size = int(asset.get("size", 0))
+              total += size
+              if total > 256 * 1024 * 1024:
+                  raise SystemExit("Selected .hnmod archives exceed 256 MiB in total.")
+              path = archive_dir / f"module-{i:03d}.hnmod"
+              download(asset.get("browser_download_url", ""), path, size, asset.get("digest"))
+              paths.append(str(path))
+
+          (temp / "hnmod-paths.txt").write_text("\n".join(paths) + "\n", encoding="utf-8")
+          (temp / "base-runtime.json").write_text(json.dumps(base, indent=2) + "\n", encoding="utf-8")
+          with pathlib.Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+              out.write(f"base_version={base_version}\n")
+              out.write(f"base_commit={base_commit}\n")
+              out.write(f"overlay_sha={overlay}\n")
+          print("Clean base runtime:", base_version)
+          print("Horizon source commit:", base_commit)
+          print("Overlay fingerprint:", overlay)
+          print("Selected .hnmod files:", len(paths))
+          PY
+
+      - name: Verify overlay fingerprint matches the installed base runtime
+        env:
+          EXPECTED_OVERLAY: ${{ steps.inputs.outputs.overlay_sha }}
+          EXPECTED_OVERLAY_COMMIT: ${{ steps.overlay_revision.outputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_OVERLAY_COMMIT"
+          python3 - <<'PY'
+          import hashlib, os, pathlib, subprocess
+
+          exact_inputs = {
+              b"tools/patch_horizon_android_touch.py",
+              b"tools/horizon-revisions.env",
+              b".github/workflows/horizon-runtime-release.yml",
+          }
+          tracked = subprocess.check_output(["git", "ls-files", "-z"])
+          paths = [p for p in tracked.split(b"\0") if p]
+          overlay_paths = sorted(
+              p for p in paths
+              if p in exact_inputs or p.startswith(b"android-native/")
+              or p.startswith(b"tools/horizon_patches/")
+          )
+          if not overlay_paths:
+              raise SystemExit("No Android runtime overlay inputs were found.")
+          digest = hashlib.sha256()
+          for raw in overlay_paths:
+              path = pathlib.Path(os.fsdecode(raw))
+              if not path.is_file():
+                  raise SystemExit("Missing runtime input: " + str(path))
+              digest.update(raw)
+              digest.update(b"\0")
+              digest.update(path.read_bytes())
+              digest.update(b"\0")
+          actual = digest.hexdigest()[:8]
+          expected = os.environ["EXPECTED_OVERLAY"].lower()
+          print("Expected overlay:", expected, "| checked out:", actual)
+          if actual != expected:
+              raise SystemExit("The overlay does not match the clean Horizon runtime installed in this instance.")
+          PY
+
+      - name: Fetch the exact upstream Horizon source revision
+        env:
+          BASE_COMMIT: ${{ steps.inputs.outputs.base_commit }}
+          HORIZON_ANDROID_PATCH_SKIP_CUSTOM_BRIDGE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/horizon-source"
+          git init "$SOURCE"
+          git -C "$SOURCE" remote add origin https://github.com/horizon-rust/horizon.git
+          git -C "$SOURCE" fetch --depth 1 origin "$BASE_COMMIT"
+          git -C "$SOURCE" checkout --detach FETCH_HEAD
+          test "$(git -C "$SOURCE" rev-parse HEAD)" = "$BASE_COMMIT"
+          python3 tools/patch_horizon_android_touch.py "$SOURCE"
+          cargo test --manifest-path "$SOURCE/Cargo.toml" -p horizon-mods --lib --features index
+
+      - name: Validate and extract .hnmod with Horizon's official parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          VALIDATOR="$RUNNER_TEMP/hnmod-validator"
+          MODS_DIR="$RUNNER_TEMP/hnmod-mods"
+          SOURCE="$RUNNER_TEMP/horizon-source"
+          mkdir -p "$VALIDATOR/src" "$MODS_DIR"
+
+          cat > "$VALIDATOR/Cargo.toml" <<EOF
+          [package]
+          name = "mobilehorizon-hnmod-validator"
+          version = "0.1.0"
+          edition = "2024"
+
+          [dependencies]
+          horizon-mods = { path = "$SOURCE/crates/horizon-mods", features = ["index"] }
+          serde_json = "1"
+          sha2 = "0.10"
+          EOF
+
+          cat > "$VALIDATOR/src/main.rs" <<'RS'
+          use horizon_mods::index::native::Bundle;
+          use serde_json::json;
+          use sha2::{Digest, Sha256};
+          use std::{collections::HashSet, env, error::Error, fs, io, path::PathBuf};
+
+          fn main() -> Result<(), Box<dyn Error>> {
+              let mut args = env::args().skip(1);
+              let output = PathBuf::from(args.next().ok_or("missing output directory")?);
+              fs::create_dir_all(&output)?;
+              let mut seen = HashSet::new();
+              let mut records = Vec::new();
+
+              for archive_arg in args {
+                  let archive = PathBuf::from(archive_arg);
+                  let bundle = Bundle::read(&archive).map_err(|e| {
+                      io::Error::new(io::ErrorKind::InvalidData, format!("{}: {e}", archive.display()))
+                  })?;
+                  let id = bundle.manifest.id.clone();
+                  if !seen.insert(id.clone()) {
+                      return Err(format!("duplicate native mod id: {id}").into());
+                  }
+                  let destination = output.join(&id);
+                  if destination.exists() {
+                      return Err(format!("destination already exists for {id}").into());
+                  }
+                  fs::create_dir_all(&destination)?;
+                  for (relative, bytes) in &bundle.files {
+                      let path = PathBuf::from(relative);
+                      if path.is_absolute() || path.components().any(|c| {
+                          matches!(c, std::path::Component::ParentDir | std::path::Component::RootDir)
+                      }) {
+                          return Err(format!("unsafe path from official parser: {relative}").into());
+                      }
+                      let target = destination.join(path);
+                      if let Some(parent) = target.parent() {
+                          fs::create_dir_all(parent)?;
+                      }
+                      fs::write(target, bytes)?;
+                  }
+                  let bytes = fs::read(&archive)?;
+                  let sha = format!("{:x}", Sha256::digest(&bytes));
+                  records.push(json!({
+                      "id": bundle.manifest.id,
+                      "version": bundle.manifest.version,
+                      "game": bundle.manifest.game,
+                      "horizon": bundle.manifest.horizon,
+                      "mixins": bundle.manifest.mixins,
+                      "hooks": bundle.manifest.hooks,
+                      "sha256": sha
+                  }));
+              }
+              println!("{}", serde_json::to_string(&records)?);
+              Ok(())
+          }
+          RS
+
+          if [[ ! -s "$RUNNER_TEMP/hnmod-paths.txt" ]]; then
+            echo "::error::No .hnmod files were selected."
+            exit 1
+          fi
+          set -f
+          cargo run --release --manifest-path "$VALIDATOR/Cargo.toml" -- "$MODS_DIR" $(cat "$RUNNER_TEMP/hnmod-paths.txt") \
+            > "$RUNNER_TEMP/hnmods.json"
+
+          python3 -m unittest discover -s tools -p 'test_hnmod_compat.py' -v
+          python3 tools/prepare_hnmod_compat.py \
+            "$RUNNER_TEMP/hnmods.json" \
+            "$RUNNER_TEMP/base-runtime.json" \
+            "$RUNNER_TEMP/horizon-source" \
+            "$RUNNER_TEMP/hnmod-mods"
+
+      - name: Resolve one compatible horizon-mixins compiler for all selected modules
+        id: mixins
+        shell: bash
+        run: |
+          set -euo pipefail
+          MIXINS_REPO="$RUNNER_TEMP/horizon-mixins-repo"
+          git clone --filter=blob:none --quiet https://github.com/horizon-rust/horizon-mixins.git "$MIXINS_REPO"
+          mapfile -t PINS < <(python3 - "$RUNNER_TEMP/hnmods.json" <<'PY'
+          import json, sys
+          records = json.load(open(sys.argv[1], encoding="utf-8"))
+          print("\n".join(sorted({str(item["mixins"]).lower() for item in records})))
+          PY
+          )
+          if [[ "${#PINS[@]}" -eq 0 ]]; then
+            echo "::error::No horizon-mixins pins were found in the selected modules."
+            exit 1
+          fi
+          for pin in "${PINS[@]}"; do
+            if [[ ! "$pin" =~ ^[0-9a-f]{40}$ ]] || ! git -C "$MIXINS_REPO" cat-file -e "$pin^{commit}" 2>/dev/null; then
+              echo "::error::The pinned horizon-mixins commit is unavailable: $pin"
+              exit 1
+            fi
+          done
+
+          # A newer pinned CLI may compile older bundles only when its commit is a
+          # descendant of every package pin. Never guess across divergent histories.
+          MIXINS_COMMIT=""
+          for candidate in "${PINS[@]}"; do
+            compatible=true
+            for pin in "${PINS[@]}"; do
+              if ! git -C "$MIXINS_REPO" merge-base --is-ancestor "$pin" "$candidate"; then
+                compatible=false
+                break
+              fi
+            done
+            if [[ "$compatible" == "true" ]]; then
+              MIXINS_COMMIT="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$MIXINS_COMMIT" ]]; then
+            echo "::error::Selected .hnmod packages pin divergent horizon-mixins histories. Use packages sharing one compiler history."
+            exit 1
+          fi
+
+          echo "Compatible package pins: ${PINS[*]}"
+          echo "Selected compiler: $MIXINS_COMMIT"
+          echo "commit=$MIXINS_COMMIT" >> "$GITHUB_OUTPUT"
+          cargo install --locked --git https://github.com/horizon-rust/horizon-mixins \
+            --rev "$MIXINS_COMMIT" --root "$RUNNER_TEMP/horizon-mixins" horizon-mixins-cli
+          "$RUNNER_TEMP/horizon-mixins/bin/horizon-mixins" apply \
+            --workspace "$RUNNER_TEMP/horizon-source" \
+            --mods "$RUNNER_TEMP/hnmod-mods" \
+            --out "$RUNNER_TEMP/horizon-native-source"
+
+          # The PC launcher compiles and executes these separately after the game build.
+          # Until that isolated post-build runtime exists on Android, fail closed.
+          python3 - "$RUNNER_TEMP/horizon-native-source/native-post-build.json" <<'PY'
+          import json, pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          if not path.exists():
+              print("Native post-build steps: none")
+              raise SystemExit(0)
+          try:
+              steps = json.loads(path.read_text(encoding="utf-8"))
+          except Exception as error:
+              raise SystemExit("Cannot validate native-post-build.json: " + str(error))
+          if not isinstance(steps, list):
+              raise SystemExit("native-post-build.json must contain an array.")
+          if steps:
+              raise SystemExit(
+                  "Selected .hnmod packages declare [[post_build]] steps. "
+                  "This initial Android builder does not execute post-build programs; "
+                  "refusing to publish an incomplete runtime."
+              )
+          print("Native post-build steps: none")
+          PY
+
+      - name: Compile the isolated Horizon Android engine for ARM64
+        env:
+          BASE_COMMIT: ${{ steps.inputs.outputs.base_commit }}
+          MIXINS_COMMIT: ${{ steps.mixins.outputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools -p 'test_android_runtime_tls.py'
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+          export CARGO_BUILD_JOBS=2
+          export CARGO_INCREMENTAL=0
+          SOURCE="$RUNNER_TEMP/horizon-native-source"
+          cargo build --release --no-default-features \
+            --manifest-path "$SOURCE/Cargo.toml" \
+            -p mobilehorizon-android --target aarch64-linux-android
+
+          LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_engine.so"
+          test -s "$LIB"
+          "$TOOLCHAIN/llvm-readelf" -h "$LIB" > "$RUNNER_TEMP/native-engine-header.txt"
+          grep -Fq "AArch64" "$RUNNER_TEMP/native-engine-header.txt"
+          "$TOOLCHAIN/llvm-readelf" -Ws "$LIB" > "$RUNNER_TEMP/native-engine-symbols.txt"
+          grep -Fq "ANativeActivity_onCreate" "$RUNNER_TEMP/native-engine-symbols.txt"
+          grep -Fq "android_main" "$RUNNER_TEMP/native-engine-symbols.txt"
+          grep -Fq "Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectCursorMove" \
+            "$RUNNER_TEMP/native-engine-symbols.txt"
+          python3 tools/check_android_runtime_tls.py "$TOOLCHAIN/llvm-readelf" "$LIB"
+
+          OUTPUT="$RUNNER_TEMP/native-runtime-output"
+          mkdir -p "$OUTPUT"
+          cp "$LIB" "$OUTPUT/libhorizon_engine.so"
+          ENGINE_SHA="$(sha256sum "$LIB" | awk '{print $1}')"
+          python3 - "$OUTPUT/horizon-native-runtime-manifest.json" \
+            "$RUNNER_TEMP/base-runtime.json" "$RUNNER_TEMP/hnmods.json" "$ENGINE_SHA" "$BASE_COMMIT" "$MIXINS_COMMIT" <<'PY'
+          import hashlib, json, pathlib, re, sys
+
+          path, base_path, mods_path, engine_sha, base_commit, mixins_commit = sys.argv[1:]
+          base = json.loads(pathlib.Path(base_path).read_text(encoding="utf-8"))
+          mods = json.loads(pathlib.Path(mods_path).read_text(encoding="utf-8"))
+          if not re.fullmatch(r"[0-9a-f]{40}", mixins_commit):
+              raise SystemExit("The selected compatible horizon-mixins compiler SHA is invalid.")
+          hooks_api = int(base.get("native_hooks_api", 0))
+          if hooks_api <= 0:
+              raise SystemExit("The target Horizon native hook API was not verified.")
+          overlay = base["overlay"]
+          mod_set = sorted((item["id"], item["version"], item["sha256"]) for item in mods)
+          digest = hashlib.sha256(json.dumps(mod_set, separators=(",", ":")).encode()).hexdigest()[:16]
+          version = "native-" + base_commit[:8] + "-" + digest + "-" + overlay
+          manifest = {
+              "format": "mobilehorizon-native-mod-runtime",
+              "version": version,
+              "game": "26.3",
+              "base_runtime_version": base["version"],
+              "base_commit": base_commit,
+              "hooks_api": hooks_api,
+              "legacy_horizon_revisions_verified": bool(base.get("legacy_horizon_revisions_verified", False)),
+              "engine_build_completed": True,
+              "mixins_commit": mixins_commit,
+              "overlay": overlay,
+              "abi": "arm64-v8a",
+              "library": "libhorizon_engine.so",
+              "sha256": engine_sha.lower(),
+              "mods": sorted(mods, key=lambda item: item["id"]),
+          }
+          with open(path, "w", encoding="utf-8") as stream:
+              json.dump(manifest, stream, indent=2)
+              stream.write("\n")
+          print("Built native runtime:", version)
+          print("Modules:", ", ".join(item["id"] for item in manifest["mods"]))
+          PY
+
+      - name: Upload the verified per-instance runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobilehorizon-native-runtime
+          path: |
+            ${{ runner.temp }}/native-runtime-output/libhorizon_engine.so
+            ${{ runner.temp }}/native-runtime-output/horizon-native-runtime-manifest.json
+          if-no-files-found: error
+          retention-days: 30
