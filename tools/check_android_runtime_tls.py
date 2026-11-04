@@ -15,15 +15,19 @@ from pathlib import Path
 TLS_RELOCATION = re.compile(r"\bR_AARCH64_(?:TLS_[A-Z0-9_]+|TLSDESC[A-Z0-9_]*)\b")
 TLS_PROGRAM_HEADER = re.compile(r"^\s*TLS\s+", re.MULTILINE)
 
+
 def find_tls_requirements(dynamic_relocations: str, program_headers: str) -> list[str]:
     findings = sorted(set(TLS_RELOCATION.findall(dynamic_relocations)))
     if TLS_PROGRAM_HEADER.search(program_headers):
         findings.append("PT_TLS program header (ELF TLS segment)")
     return findings
 
+
 def audit(readelf: str, library: Path) -> list[str]:
+    # llvm-readelf (including the NDK's bundled version) uses --dyn-relocations.
+    # --use-dynamic is a GNU readelf option and is rejected by llvm-readelf.
     dynamic_relocations = subprocess.run(
-        [readelf, "--use-dynamic", "-rW", str(library)],
+        [readelf, "--dyn-relocations", "-W", str(library)],
         check=True, capture_output=True, text=True,
     ).stdout
     program_headers = subprocess.run(
@@ -31,6 +35,7 @@ def audit(readelf: str, library: Path) -> list[str]:
         check=True, capture_output=True, text=True,
     ).stdout
     return find_tls_requirements(dynamic_relocations, program_headers)
+
 
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
@@ -60,6 +65,7 @@ def main(argv: list[str]) -> int:
         "and no PT_TLS segment (compatible with minSdk 26 and late dlopen)."
     )
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))

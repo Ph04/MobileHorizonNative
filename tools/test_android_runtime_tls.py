@@ -1,5 +1,10 @@
 import unittest
-from check_android_runtime_tls import find_tls_requirements
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import call, patch
+
+from check_android_runtime_tls import audit, find_tls_requirements
+
 
 class DynamicTlsAuditTests(unittest.TestCase):
     def test_normal_dynamic_relocations_pass(self):
@@ -32,6 +37,34 @@ Program Headers:
 
     def test_no_dynamic_tls_requirements_pass(self):
         self.assertEqual(find_tls_requirements("", ""), [])
+
+    def test_audit_uses_llvm_readelf_dynamic_relocation_option(self):
+        with patch(
+            "check_android_runtime_tls.subprocess.run",
+            side_effect=[
+                SimpleNamespace(stdout="Relocation section '.rela.dyn' contains 0 entries:\n"),
+                SimpleNamespace(stdout="Program Headers:\n  LOAD 0x0 0x0 0x0\n"),
+            ],
+        ) as run:
+            self.assertEqual(audit("llvm-readelf", Path("engine.so")), [])
+        self.assertEqual(
+            run.call_args_list,
+            [
+                call(
+                    ["llvm-readelf", "--dyn-relocations", "-W", "engine.so"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ),
+                call(
+                    ["llvm-readelf", "-lW", "engine.so"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
