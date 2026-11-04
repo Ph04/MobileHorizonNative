@@ -97,6 +97,11 @@
         </activity>
 
         <service
+            android:name=".NativeModBuildService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
             android:name=".OfficialDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
