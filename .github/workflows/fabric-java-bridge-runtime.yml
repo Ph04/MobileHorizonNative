@@ -1,4 +1,5 @@
 name: Build external Fabric Java Bridge runtime (Android ARM64)
+# The Java Bridge engine is also dlopen-loaded: keep the Android API-26 emulated-TLS baseline and audit the final ELF before upload.
 
 on:
   workflow_dispatch:
