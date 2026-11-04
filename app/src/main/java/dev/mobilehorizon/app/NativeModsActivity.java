@@ -254,6 +254,7 @@ public final class NativeModsActivity extends Activity {
             boolean hasSelection = false;
             boolean selectedRevisionCompatible = true;
             String firstMismatch = null;
+            String firstMismatchId = null;
             for (HorizonNativeModManager.InstalledMod item : mods) {
                 boolean revisionCompatible = HorizonNativeModManager
                         .isPotentiallyCompatible(item.descriptor, base);
@@ -261,7 +262,10 @@ public final class NativeModsActivity extends Activity {
                     hasSelection = true;
                     if (!revisionCompatible) {
                         selectedRevisionCompatible = false;
-                        if (firstMismatch == null) firstMismatch = item.descriptor.horizonRevision;
+                        if (firstMismatch == null) {
+                            firstMismatch = item.descriptor.horizonRevision;
+                            firstMismatchId = item.descriptor.id;
+                        }
                     }
                 }
                 list.addView(modCard(item, base), top(-1, -2, 7));
@@ -277,9 +281,11 @@ public final class NativeModsActivity extends Activity {
                         : "Nenhum .hnmod selecionado. Esta tela mantém os módulos nativos separados dos mods Fabric (.jar).");
             } else if (hasSelection && !selectedRevisionCompatible) {
                 String basePrefix = base == null ? "indisponível" : base;
-                status.setText("A revisão Horizon do módulo selecionado (" + firstMismatch.substring(0, 12)
-                        + "…) não corresponde ao prefixo da runtime instalada (" + basePrefix
-                        + "). O compilador exige a revisão completa idêntica; use um .hnmod criado para esta runtime ou uma base compatível.");
+                status.setText("O módulo " + firstMismatchId + " exige exatamente Horizon "
+                        + firstMismatch.substring(0, 12) + "…; a runtime desta instância é "
+                        + basePrefix + ". Como o pacote não declara uma API de hooks compatível, "
+                        + "não é seguro repiná-lo automaticamente. Desative-o ou importe uma versão "
+                        + "do módulo atualizada para esta revisão do Horizon.");
             } else if (hasSelection) {
                 boolean ready = HorizonNativeModManager.hasBuildForSelection(this, instanceId, base);
                 status.setText(ready
@@ -395,7 +401,7 @@ public final class NativeModsActivity extends Activity {
         String baseTag = HorizonNativeModManager.baseRuntimeReleaseTag(base);
         String message = "Build remoto para esta instância:\n\n"
                 + "1. Na página Releases do repositório MobileHorizonNative, crie uma release temporária com uma tag única (por exemplo hnmod-input-01) e envie como assets somente os .hnmod que estão selecionados nesta instância.\n\n"
-                + "2. O workflow Build Horizon native .hnmod runtime usa a branch feature/fabric-java-bridge-test e confere automaticamente a impressão digital do overlay contra a runtime limpa instalada. Não é necessário informar um SHA de código Android manualmente. Para usar Run workflow na interface do GitHub, a definição precisa primeiro entrar na branch padrão por PR/merge.\n\n"
+                + "2. A definição do workflow precisa estar na branch padrão do repositório para aparecer em Actions > Build Horizon native .hnmod runtime. Depois que o PR de disponibilização for integrado, o workflow usará a branch feature/fabric-java-bridge-test como fonte e verificará a impressão digital do overlay contra a runtime limpa instalada. Não é necessário informar um SHA Android manualmente.\n\n"
                 + "3. Ao executar o workflow, informe:\n"
                 + "   mod_release_tag = tag da release dos .hnmod\n"
                 + "   base_runtime_tag = " + baseTag + "\n\n"
