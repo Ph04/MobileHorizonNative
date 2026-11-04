@@ -20,6 +20,8 @@ on:
       - "tools/patch_horizon_prepare_asset_index.py"
       - "tools/horizon_patches/**"
       - "tools/test_android_native_entrypoint.py"
+      - "tools/check_android_runtime_tls.py"
+      - "tools/test_android_runtime_tls.py"
       - "tools/tests/**"
       - "tools/test_android_horizon_wasm_mod_runtime.py"
       - "tools/horizon_server_packs.rs"
@@ -98,7 +100,7 @@ jobs:
             fi
             echo "::warning::Android NDK download failed (attempt $attempt); retrying."
           done
-          test -x "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang"
+          test -x "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
 
       - name: Set up Rust toolchain for Android ARM64
         uses: dtolnay/rust-toolchain@stable
@@ -153,9 +155,9 @@ jobs:
 
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
+          test -x "$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang"
           export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
           cargo build --locked --release --manifest-path "$SOURCE/crates/horizon-prepare/Cargo.toml" --target aarch64-linux-android
 
@@ -330,10 +332,10 @@ jobs:
           cargo test --manifest-path "$SOURCE/Cargo.toml" -p horizon-client --lib --no-default-features
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          test -x "$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          test -x "$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang++"
           export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
           cargo build --release --no-default-features --manifest-path "$SOURCE/Cargo.toml" -p mobilehorizon-android --target aarch64-linux-android
           LIB="$SOURCE/target/aarch64-linux-android/release/libhorizon_engine.so"
@@ -354,6 +356,8 @@ jobs:
             echo "::error::The native engine is missing the touch/mouse JNI bridge."
             exit 1
           }
+          python3 -m unittest discover -s tools -p 'test_android_runtime_tls.py'
+          python3 tools/check_android_runtime_tls.py "$TOOLCHAIN/llvm-readelf" "$LIB"
           RUNTIME_STAGE="$RUNNER_TEMP/horizon-runtime-stage"
           mkdir -p "$RUNTIME_STAGE"
           cp "$LIB" "$RUNTIME_STAGE/libhorizon_engine.so"
