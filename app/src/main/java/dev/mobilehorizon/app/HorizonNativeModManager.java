@@ -229,7 +229,6 @@ final class HorizonNativeModManager {
         }
 
         JSONObject manifest;
-        byte[] engine;
         try (ZipFile zip = new ZipFile(artifact)) {
             ZipEntry manifestEntry = zip.getEntry(MANIFEST_FILE);
             ZipEntry engineEntry = zip.getEntry(LIBRARY_NAME);
@@ -246,7 +245,6 @@ final class HorizonNativeModManager {
             } catch (JSONException error) {
                 throw new IOException("Manifesto do runtime nativo inválido.", error);
             }
-            engine = readBounded(zip.getInputStream(engineEntry), MAX_RUNTIME_BYTES);
         }
 
         String format = manifest.optString("format", "");
@@ -282,12 +280,6 @@ final class HorizonNativeModManager {
                         manifest.optBoolean("engine_build_completed", false))) {
             throw new IOException("O runtime foi compilado para outro conjunto de .hnmod ou outra revisão Horizon. Gere um build com a seleção atual.");
         }
-        String actualHash = sha256(engine);
-        if (!actualHash.equals(expectedHash)) {
-            throw new IOException("SHA-256 da biblioteca compilada não confere com o manifesto.");
-        }
-        verifyAarch64Elf(engine);
-
         File home = GameInstanceManager.getInstanceHome(context, instanceId).getCanonicalFile();
         File runtimeRoot = safeChildDirectory(home, RUNTIME_DIR);
         File versions = safeChildDirectory(runtimeRoot, "versions");
@@ -299,19 +291,21 @@ final class HorizonNativeModManager {
         File temporary = new File(versionDirectory, LIBRARY_NAME + ".partial");
         if (Files.isSymbolicLink(temporary.toPath())) throw new IOException("Arquivo parcial inseguro.");
         if (temporary.exists() && !temporary.delete()) throw new IOException("Não foi possível limpar a biblioteca parcial.");
-        try (FileOutputStream output = new FileOutputStream(temporary)) {
-            output.write(engine);
-            output.getFD().sync();
-        }
-        try {
-            if (!sha256(temporary).equals(expectedHash)) {
-                throw new IOException("SHA-256 mudou durante a instalação do runtime.");
+        try (ZipFile zip = new ZipFile(artifact)) {
+            ZipEntry engineEntry = zip.getEntry(LIBRARY_NAME);
+            if (engineEntry == null || engineEntry.isDirectory()
+                    || engineEntry.getSize() <= 0 || engineEntry.getSize() > MAX_RUNTIME_BYTES) {
+                throw new IOException("A biblioteca ARM64 do artefato está ausente ou excede o limite.");
             }
+            copyVerifiedNativeData(zip.getInputStream(engineEntry), temporary,
+                    engineEntry.getSize(), expectedHash, LIBRARY_NAME);
             verifyAarch64Elf(temporary);
-            Files.move(temporary.toPath(), targetLibrary.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
-            Files.move(temporary.toPath(), targetLibrary.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            try {
+                Files.move(temporary.toPath(), targetLibrary.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+                Files.move(temporary.toPath(), targetLibrary.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
         } finally {
             if (temporary.exists()) temporary.delete();
         }
@@ -719,6 +713,37 @@ final class HorizonNativeModManager {
         ArrayList<InstalledMod> result = new ArrayList<>();
         for (InstalledMod mod : list(context, instanceId)) if (mod.enabled) result.add(mod);
         return result;
+    }
+
+    /** Returns the exact, revalidated archives selected for a remote native build. */
+    static List<File> selectedArchiveFiles(Context context, String instanceId) throws IOException {
+        File directory = modsDirectory(context, instanceId);
+        List<InstalledMod> selected = selectedMods(context, instanceId);
+        if (selected.isEmpty()) {
+            throw new IOException("Ative pelo menos um módulo .hnmod antes de compilar.");
+        }
+        ArrayList<File> result = new ArrayList<>();
+        long totalBytes = 0L;
+        for (InstalledMod item : selected) {
+            File archive = new File(directory, item.descriptor.id + ".hnmod").getCanonicalFile();
+            ensureInside(directory, archive);
+            if (Files.isSymbolicLink(archive.toPath()) || !archive.isFile()) {
+                throw new IOException("O arquivo selecionado não existe ou não é seguro: "
+                        + item.descriptor.id);
+            }
+            HorizonNativeModArchive.Descriptor verified = HorizonNativeModArchive.read(archive);
+            if (!item.descriptor.sha256.equals(verified.sha256)
+                    || !item.descriptor.id.equals(verified.id)
+                    || !item.descriptor.version.equals(verified.version)) {
+                throw new IOException("O .hnmod mudou depois de ser importado: " + item.descriptor.id);
+            }
+            totalBytes += archive.length();
+            if (totalBytes > MAX_TOTAL_MOD_BYTES) {
+                throw new IOException("Os .hnmod selecionados excedem o limite total de 256 MiB.");
+            }
+            result.add(archive);
+        }
+        return Collections.unmodifiableList(result);
     }
 
     static boolean baseRuntimeIdentityMatches(
