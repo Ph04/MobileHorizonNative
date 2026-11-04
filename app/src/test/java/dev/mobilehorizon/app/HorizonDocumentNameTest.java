@@ -30,6 +30,15 @@ public final class HorizonDocumentNameTest {
                 "  download-item  ", null, null, ".hnmod"));
     }
 
+    @Test public void validatesHnmodByContentsWhenSafDoesNotExposeItsName() {
+        assertEquals(false, HorizonDocumentName.requiresFilenameExtension(".hnmod"));
+        assertEquals(false, HorizonDocumentName.requiresFilenameExtension(".HNMOD"));
+    }
+
+    @Test public void stillRequiresRuntimeBinaryExtension() {
+        assertEquals(true, HorizonDocumentName.requiresFilenameExtension(".so"));
+    }
+
     @Test public void returnsEmptyWhenProviderSuppliesNoName() {
         assertEquals("", HorizonDocumentName.resolve(null, null, "  ", ".hnmod"));
     }
