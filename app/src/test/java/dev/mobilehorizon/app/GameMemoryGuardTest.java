@@ -9,6 +9,14 @@ public final class GameMemoryGuardTest {
     private static final long GIB = 1024L * MIB;
 
     @Test
+    public void detailedMemorySamplesAreThrottledButPressureTransitionsAreImmediate() {
+        assertEquals(true, GameMemoryGuard.shouldCaptureDetailedSample(0L, 1_000L, false));
+        assertEquals(false, GameMemoryGuard.shouldCaptureDetailedSample(1_000L, 29_999L, false));
+        assertEquals(true, GameMemoryGuard.shouldCaptureDetailedSample(1_000L, 31_000L, false));
+        assertEquals(true, GameMemoryGuard.shouldCaptureDetailedSample(29_000L, 29_001L, true));
+    }
+
+    @Test
     public void fourGigabyteDeviceGetsConservativeJavaBridgeLimits() {
         long ram = 4L * GIB;
         assertEquals(128, GameMemoryGuard.recommendedJavaHeapInitialMiB(ram));
