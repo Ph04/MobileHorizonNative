@@ -2574,7 +2574,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
     private void writeNativeLaunchMarker(String fileName, String message) throws IOException {
         File target = new File(getFilesDir(), fileName);
         try (FileOutputStream output = new FileOutputStream(target, false)) {
-            output.write((message + "\\n").getBytes(StandardCharsets.UTF_8));
+            output.write((message + "\n").getBytes(StandardCharsets.UTF_8));
             output.flush();
             output.getFD().sync();
         }
