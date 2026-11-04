@@ -10,8 +10,7 @@ name = "horizon_engine"
 crate-type = ["cdylib"]
 
 [dependencies]
-horizon-client = { path = "../horizon-client", default-features = false, features = ["audio", "java-mods"] }
-horizon-threads = { path = "../horizon-threads" }
+horizon-client = { path = "../horizon-client", default-features = false, features = ["audio"] }
 jni = "0.21.1"
 pollster = "0.4"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "wgsl"] }
@@ -19,4 +18,3 @@ winit = { version = "0.30.13", features = ["android-native-activity"] }
 
 [lints]
 workspace = true
-# Diagnostic runtime rebuild approved 2026-11-03.
