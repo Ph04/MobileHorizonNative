@@ -66,7 +66,7 @@ jobs:
             echo "::warning::NDK download failed (attempt $attempt); retrying."
           done
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
-          test -x "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang"
+          test -x "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
 
       - name: Resolve and verify base runtime and selected .hnmod release
         id: inputs
@@ -401,11 +401,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m unittest discover -s tools -p 'test_android_runtime_tls.py'
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang"
-          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android35-clang++"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android26-clang++"
           export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
           export CARGO_BUILD_JOBS=2
           export CARGO_INCREMENTAL=0
@@ -423,6 +424,7 @@ jobs:
           grep -Fq "android_main" "$RUNNER_TEMP/native-engine-symbols.txt"
           grep -Fq "Java_dev_mobilehorizon_app_NativeGameActivity_nativeInjectCursorMove" \
             "$RUNNER_TEMP/native-engine-symbols.txt"
+          python3 tools/check_android_runtime_tls.py "$TOOLCHAIN/llvm-readelf" "$LIB"
 
           OUTPUT="$RUNNER_TEMP/native-runtime-output"
           mkdir -p "$OUTPUT"
