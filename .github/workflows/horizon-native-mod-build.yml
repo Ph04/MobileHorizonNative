@@ -347,7 +347,7 @@ jobs:
           mapfile -t PINS < <(python3 - "$RUNNER_TEMP/hnmods.json" <<'PY'
           import json, sys
           records = json.load(open(sys.argv[1], encoding="utf-8"))
-          print("\\n".join(sorted({str(item["mixins"]).lower() for item in records})))
+          print("\n".join(sorted({str(item["mixins"]).lower() for item in records})))
           PY
           )
           if [[ "${#PINS[@]}" -eq 0 ]]; then
