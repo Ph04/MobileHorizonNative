@@ -518,10 +518,6 @@ final class HorizonNativeModManager {
                 if (entry == null || entry.isDirectory() || entry.getSize() != size) {
                     throw new IOException("Arquivo de dados nativos ausente ou com tamanho divergente: " + path);
                 }
-                byte[] bytes = readBounded(zip.getInputStream(entry), MAX_NATIVE_DATA_BYTES);
-                if (bytes.length != size || !sha256(bytes).equals(expectedHash)) {
-                    throw new IOException("SHA-256 dos dados nativos não confere: " + path);
-                }
                 String relative = path.substring("native-data/".length());
                 File output = new File(staging, relative).getCanonicalFile();
                 ensureInside(staging, output);
@@ -529,11 +525,7 @@ final class HorizonNativeModManager {
                 if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) {
                     throw new IOException("Não foi possível criar a pasta para: " + path);
                 }
-                try (FileOutputStream stream = new FileOutputStream(output, false)) {
-                    stream.write(bytes);
-                    stream.flush();
-                    stream.getFD().sync();
-                }
+                copyVerifiedNativeData(zip.getInputStream(entry), output, size, expectedHash, path);
             }
 
             java.util.Enumeration<? extends ZipEntry> entries = zip.entries();
@@ -575,6 +567,47 @@ final class HorizonNativeModManager {
             deleteTree(staging);
             if (error instanceof IOException) throw (IOException) error;
             throw new IOException("Não foi possível instalar os dados nativos.", error);
+        }
+    }
+
+    private static void copyVerifiedNativeData(
+            InputStream input, File output, long expectedSize, String expectedHash,
+            String displayPath) throws IOException {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (Exception error) {
+            throw new IOException("SHA-256 indisponível para dados nativos.", error);
+        }
+        long copied = 0L;
+        try (InputStream in = input; FileOutputStream out = new FileOutputStream(output, false)) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                copied += read;
+                if (copied > expectedSize || copied > MAX_NATIVE_DATA_BYTES) {
+                    throw new IOException("Arquivo de dados nativos excedeu o tamanho declarado: "
+                            + displayPath);
+                }
+                digest.update(buffer, 0, read);
+                out.write(buffer, 0, read);
+            }
+            out.flush();
+            out.getFD().sync();
+        } catch (IOException error) {
+            // A staging directory is not active yet; remove any partially copied file.
+            //noinspection ResultOfMethodCallIgnored
+            output.delete();
+            throw error;
+        }
+        StringBuilder actual = new StringBuilder(64);
+        for (byte value : digest.digest()) {
+            actual.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        }
+        if (copied != expectedSize || !actual.toString().equals(expectedHash)) {
+            //noinspection ResultOfMethodCallIgnored
+            output.delete();
+            throw new IOException("Tamanho ou SHA-256 dos dados nativos não confere: " + displayPath);
         }
     }
 
