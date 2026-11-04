@@ -1396,98 +1396,8 @@ else:
         f"(current={app_source.count(current_app_loop)}, legacy={app_source.count(legacy_app_loop)})"
     )
 
-# Preserve the reason for every Android event-loop exit. This distinguishes a
-# platform close/signal from an ordinary startup failure when android_main returns.
-replace_once(
-    game,
-    "if horizon_threads::stop_requests() > 0 {",
-    """if horizon_threads::stop_requests() > 0 {
-            #[cfg(target_os = "android")]
-            log::error!(
-                "Horizon Android: loading loop received stop signal(s): {}",
-                horizon_threads::stop_requests()
-            );""",
-)
-# Stable and Java Bridge forks have different split-screen stop guards.
-stable_game_signal = """if horizon_threads::stop_requests() > 0
-            && self.pending_save.as_ref().is_none_or(|save| !save.quit)
-        {
-            // SIGTERM, SIGINT or SIGHUP:"""
-bridge_game_signal = """if horizon_threads::stop_requests() > 0
-            && !self.options.split_guest
-            && self.pending_save.as_ref().is_none_or(|save| !save.quit)
-        {
-            // SIGTERM, SIGINT or SIGHUP:"""
-game_signal_anchors = [
-    anchor for anchor in (stable_game_signal, bridge_game_signal)
-    if game.read_text(encoding="utf-8").count(anchor) == 1
-]
-if len(game_signal_anchors) != 1:
-    raise SystemExit(
-        f"{game}: expected one supported gameplay stop-signal block, found {len(game_signal_anchors)}"
-    )
-game_signal_anchor = game_signal_anchors[0]
-game_signal_new = game_signal_anchor.replace(
-    "        {\n            // SIGTERM, SIGINT or SIGHUP:",
-    """        {
-            #[cfg(target_os = "android")]
-            log::error!(
-                "Horizon Android: game loop received stop signal(s): {}",
-                horizon_threads::stop_requests()
-            );
-            // SIGTERM, SIGINT or SIGHUP:""",
-)
-replace_once(game, game_signal_anchor, game_signal_new)
-
-# The Bridge branch checks the quit shortcut before saving; Stable does not.
-stable_close_anchor = """WindowEvent::CloseRequested => {
-                    self.begin_closing_save(true)?;"""
-bridge_close_anchor = """WindowEvent::CloseRequested => {
-                    if !self.settings.quit_shortcuts"""
-close_anchors = [
-    anchor for anchor in (stable_close_anchor, bridge_close_anchor)
-    if game.read_text(encoding="utf-8").count(anchor) == 1
-]
-if len(close_anchors) != 1:
-    raise SystemExit(
-        f"{game}: expected one supported WindowEvent::CloseRequested block, found {len(close_anchors)}"
-    )
-close_anchor = close_anchors[0]
-close_new = close_anchor.replace(
-    "WindowEvent::CloseRequested => {",
-    """WindowEvent::CloseRequested => {
-                    #[cfg(target_os = "android")]
-                    log::warn!("Horizon Android: WindowEvent::CloseRequested received");""",
-)
-replace_once(game, close_anchor, close_new)
-replace_once(
-    game,
-    "Action::Quit => event_loop.exit(),",
-    """Action::Quit => {
-                            #[cfg(target_os = "android")]
-                            log::info!("Horizon Android: title-screen Quit action received");
-                            event_loop.exit()
-                        },""",
-)
-replace_once(
-    game,
-    "Step::Done => event_loop.exit(),",
-    """Step::Done => {
-                #[cfg(target_os = "android")]
-                log::error!("Horizon Android: startup event loop ended with Step::Done (no Game state)");
-                event_loop.exit()
-            },""",
-)
-replace_once(
-    game,
-    """Step::Failed(e) => {
-                if let App::Loading(loading) = self {""",
-    """Step::Failed(e) => {
-                #[cfg(target_os = "android")]
-                log::error!("Horizon Android: startup handoff failed: {e}");
-                if let App::Loading(loading) = self {""",
-)
-
+# Native exit reasons are recorded by the Android cdylib and bootstrap wrapper.
+# Avoid patching Winit close/quit internals: those event branches evolve upstream.
 replace_once(workspace_cargo, '"crates/horizon-client",',
              '"crates/horizon-client", "crates/mobilehorizon-android",')
 
@@ -1573,24 +1483,29 @@ android_manifest = dst / "Cargo.toml"
 android_text = android_manifest.read_text(encoding="utf-8")
 try:
     android_manifest_data = tomllib.loads(android_text)
-    requested_features = android_manifest_data["dependencies"]["horizon-client"]["features"]
+    requested_features = list(android_manifest_data["dependencies"]["horizon-client"]["features"])
 except (tomllib.TOMLDecodeError, KeyError, TypeError) as error:
     raise SystemExit(f"{android_manifest}: cannot read horizon-client feature selection: {error}")
 
+# The standard runtime is always a clean Horizon engine. Only the dedicated
+# iaxivers/java-bridge build opts into Java-mods; never leak that feature into
+# the automatically updated vanilla runtime.
+bridge_build = os.environ.get("HORIZON_ANDROID_PATCH_APPLY_JAVA_BRIDGE") == "1"
+if bridge_build:
+    if "java-mods" not in client_features:
+        raise SystemExit(
+            f"{client_cargo}: Java Bridge build requested, but this fork has no 'java-mods' feature"
+        )
+    if "java-mods" not in requested_features:
+        requested_features.append("java-mods")
+else:
+    requested_features = [feature for feature in requested_features if feature != "java-mods"]
+
 unsupported = sorted(set(requested_features) - client_features)
-# java-mods is an optional bridge integration from selected Horizon forks,
-# not a feature every official Horizon release has. Other unknown features
-# are treated as real integration errors instead of being silently hidden.
-unexpected = [feature for feature in unsupported if feature != "java-mods"]
-if unexpected:
+if unsupported:
     raise SystemExit(
         f"{client_cargo}: Android overlay requests unsupported Horizon features: "
-        + ", ".join(unexpected)
-    )
-if "java-mods" in unsupported:
-    print(
-        "Horizon revision has no java-mods feature; omitting it from this engine. "
-        "The Java compatibility bridge is not enabled by this upstream revision."
+        + ", ".join(unsupported)
     )
 
 # The official sandboxed WIT/WebAssembly runtime is optional. Enable it only
