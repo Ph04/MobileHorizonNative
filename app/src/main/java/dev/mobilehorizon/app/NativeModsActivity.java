@@ -217,7 +217,7 @@ public final class NativeModsActivity extends Activity {
                 while ((read = input.read(buffer)) != -1) {
                     total += read;
                     if (total > maxBytes) {
-                        throw new IOException(".hnmod limitado a 64 MiB; artifact de runtime com dados gerados limitado a 430 MiB.");
+                        throw new IOException(".hnmod limitado a 64 MiB; artifact de runtime com dados gerados limitado a 440 MiB.");
                     }
                     output.write(buffer, 0, read);
                 }
