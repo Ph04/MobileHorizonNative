@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Apply the PC Horizon launcher's native-hook compatibility rule to Android builds.
+"""Validate native .hnmod compatibility and repin source manifests for Android builds.
 
-A bundle declaring "hooks": N depends on the append-only native hook API, not on the
-exact Horizon commit where it was tested. When the target revision exposes API >= N,
-the bundle's TOML is repinned to that target revision before horizon-mixins runs.
-Bundles without "hooks" keep the exact tested-commit requirement.
+A bundle declaring "hooks": N follows the append-only native hook API. A legacy bundle
+without that declaration may target an older Horizon commit only when Git proves that
+commit is an ancestor of the installed base; its Rust injections are then recompiled
+against the exact target checkout. The compiler and final ARM64 build must still pass.
 """
 from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -32,6 +33,38 @@ def native_hooks_api(source_root: Path) -> int:
             "Cannot determine NATIVE_HOOKS_API from the exact target Horizon source."
         )
     return int(matches[0])
+
+
+
+def git_run(source_root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(source_root), *args],
+        check=check,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def horizon_revision_is_ancestor(source_root: Path, old_revision: str, target_revision: str) -> bool:
+    if old_revision == target_revision:
+        return True
+    if not REVISION.fullmatch(old_revision):
+        return False
+    try:
+        git_run(source_root, "cat-file", "-e", f"{old_revision}^{{commit}}")
+    except subprocess.CalledProcessError:
+        # The base checkout is intentionally shallow. Deepen a bounded amount so old
+        # package pins can be verified without cloning the entire Horizon history.
+        git_run(source_root, "fetch", "--quiet", "--deepen=12000", "origin", target_revision)
+    try:
+        git_run(source_root, "cat-file", "-e", f"{old_revision}^{{commit}}")
+    except subprocess.CalledProcessError:
+        return False
+    result = git_run(
+        source_root, "merge-base", "--is-ancestor", old_revision, target_revision, check=False
+    )
+    return result.returncode == 0
 
 
 def repin_hook_bundle(toml_path: Path, expected_old_revision: str, target_revision: str) -> None:
@@ -81,19 +114,27 @@ def prepare(records_path: Path, base_path: Path, source_root: Path, mods_root: P
 
     api = native_hooks_api(source_root)
     pinned = [item for item in records if item.get("hooks") is None]
-    mismatched = [
-        item for item in pinned
-        if str(item.get("horizon", "")).lower() != target_revision
-    ]
-    if mismatched:
-        details = ", ".join(
-            f"{item.get('id', '<unknown>')} → {str(item.get('horizon', ''))[:12]}"
-            for item in mismatched
-        )
-        raise ValueError(
-            "Modules without a hooks API declaration must target the exact installed "
-            f"Horizon commit ({target_revision[:12]}). Mismatched: {details}."
-        )
+    repinned_legacy = []
+    for item in pinned:
+        old_revision = str(item.get("horizon", "")).lower()
+        if not REVISION.fullmatch(old_revision):
+            raise ValueError(
+                f"{item.get('id', '<unknown>')}: legacy Horizon revision must be an exact 40-character SHA."
+            )
+        if old_revision == target_revision:
+            continue
+        if not horizon_revision_is_ancestor(source_root, old_revision, target_revision):
+            raise ValueError(
+                f"{item.get('id', '<unknown>')} targets Horizon {old_revision[:12]}, which is "
+                f"not a verified ancestor of installed revision {target_revision[:12]}. "
+                "The package cannot be safely repinned."
+            )
+        mod_id = str(item.get("id", ""))
+        toml_path = mods_root / mod_id / "mixins" / mod_id / "horizon-mixin.toml"
+        if not toml_path.is_file():
+            raise ValueError(f"{mod_id}: extracted horizon-mixin.toml is missing.")
+        repin_hook_bundle(toml_path, old_revision, target_revision)
+        repinned_legacy.append(f"{mod_id} ({old_revision[:8]} → {target_revision[:8]})")
 
     repinned = []
     for item in records:
@@ -118,10 +159,12 @@ def prepare(records_path: Path, base_path: Path, source_root: Path, mods_root: P
     records.sort(key=lambda item: str(item.get("id", "")))
     records_path.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
     base["native_hooks_api"] = api
+    base["legacy_horizon_revisions_verified"] = True
     base_path.write_text(json.dumps(base, indent=2) + "\n", encoding="utf-8")
     print("Target Horizon:", target_revision)
     print("Target native hooks API:", api)
-    print("Pinned modules:", ", ".join(item["id"] for item in pinned) or "none (hook API only)")
+    print("Pinned legacy modules:", ", ".join(item["id"] for item in pinned) or "none")
+    print("Repinned legacy modules after Git ancestry verification:", ", ".join(repinned_legacy) or "none")
     print("Repinned hook modules:", ", ".join(repinned) or "none")
     print("Native mixins package pins:", ", ".join(sorted(mixins)))
     return api
