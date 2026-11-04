@@ -523,32 +523,40 @@ final class HorizonNativeModManager {
     }
 
     /**
-     * A native bundle without a hooks declaration pins one exact Horizon commit. A bundle
-     * with hooks=N follows the append-only native hook API and can target a later commit
-     * exposing API N or newer, just as the PC launcher does.
+     * Compatibility for a compiled artifact. A legacy pin may differ from the exact base
+     * only when its runtime manifest records successful ancestry verification and a completed
+     * full engine build. The package's original pin is separately matched in modsMatch().
      */
     static boolean isNativeModCompatible(
             String game, String testedHorizon, Integer requiredHooks,
-            String targetCommit, int availableHooksApi) {
+            String targetCommit, int availableHooksApi,
+            boolean legacyRevisionsVerified, boolean engineBuildCompleted) {
         if (!"26.3".equals(game) || targetCommit == null
                 || !targetCommit.matches("[0-9a-f]{40}")) return false;
-        if (requiredHooks == null) {
-            return targetCommit.equals(testedHorizon);
+        if (requiredHooks != null) {
+            return requiredHooks > 0 && availableHooksApi >= requiredHooks;
         }
-        return requiredHooks > 0 && availableHooksApi >= requiredHooks;
+        return targetCommit.equals(testedHorizon)
+                || (legacyRevisionsVerified && engineBuildCompleted
+                    && testedHorizon != null && testedHorizon.matches("[0-9a-f]{40}"));
     }
 
-    /** UI preflight: hook-API bundles are checked against the exact source by the CI builder. */
+    /**
+     * UI preflight only: it enables the build flow for a valid legacy SHA. The isolated CI
+     * builder performs the real Git ancestry proof and compiles every injection against the
+     * installed base before it can emit an installable runtime.
+     */
     static boolean isPotentiallyCompatible(
             HorizonNativeModArchive.Descriptor descriptor, String runtimeVersion) {
-        if (descriptor == null) return false;
+        if (descriptor == null || !"26.3".equals(descriptor.game)) return false;
         java.util.regex.Matcher matcher = BASE_RUNTIME_VERSION
                 .matcher(runtimeVersion == null ? "" : runtimeVersion);
         if (!matcher.find()) return false;
         if (descriptor.hooks != null) {
-            return descriptor.hooks > 0 && "26.3".equals(descriptor.game);
+            return descriptor.hooks > 0;
         }
-        return descriptor.horizonRevision.startsWith(matcher.group(1));
+        return descriptor.horizonRevision != null
+                && descriptor.horizonRevision.matches("[0-9a-f]{40}");
     }
 
     private static boolean modsCompatible(List<InstalledMod> selected, String game,
