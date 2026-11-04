@@ -1768,6 +1768,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                             + "\n\nA primeira abertura pode ter pequenas pausas enquanto o renderer inicializa e cria caches. O perfil não autentica uma conta Microsoft nem concede licença online.");
         } catch (Exception error) {
             pendingNativeClientResult = false;
+            recordNativeLaunchFailure("horizon-client-result.txt", error);
             try { Os.unsetenv("HORIZON_PLAYER_NAME"); } catch (Exception ignored) {}
             offlineNameEnvSet = false;
             showRuntimeError("Não foi possível iniciar offline",
@@ -2113,6 +2114,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
                                 "A sessão oficial foi verificada. A inicialização ainda depende de recursos derivados completos e validação real de gameplay.");
                     } catch (Exception error) {
                         pendingNativeClientResult = false;
+                        recordNativeLaunchFailure("horizon-client-result.txt", error);
                         try { Os.unsetenv("HORIZON_SESSION_FILE"); } catch (Exception ignored) {}
                         if (sessionFile != null && sessionFile.exists()) sessionFile.delete();
                         sessionEnvSet = false;
@@ -2582,6 +2584,17 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
         }
     }
 
+    private void recordNativeLaunchFailure(String fileName, Exception error) {
+        try {
+            writeNativeLaunchMarker(fileName,
+                    "FAIL: O launcher não conseguiu concluir a abertura do NativeActivity: "
+                            + safeMessage(error));
+        } catch (IOException writeError) {
+            android.util.Log.e("MobileHorizon",
+                    "Não foi possível preservar o erro da inicialização nativa.", writeError);
+        }
+    }
+
     private void showNativeClientResultIfAvailable() {
         File resultFile = new File(getFilesDir(), "horizon-client-result.txt");
         if (!resultFile.isFile()) return;
@@ -2666,6 +2679,7 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
             setStatus("Teste Vulkan iniciado", "Este teste cria uma superfície WGPU, solicita um adaptador Vulkan e tenta apresentar um frame de cor simples; não carrega os recursos do Minecraft.");
         } catch (Exception error) {
             pendingNativeSmokeResult = false;
+            recordNativeLaunchFailure("horizon-native-smoke-result.txt", error);
             showRuntimeError("Não foi possível abrir NativeActivity", safeMessage(error));
         }
     }
