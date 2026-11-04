@@ -127,6 +127,9 @@ final class NativeModBuildClient {
                                     || !BUILD_REF.equals(candidate.optString("head_branch", ""))) {
                                 continue;
                             }
+                            String runTitle = candidate.optString("display_title",
+                                    candidate.optString("name", ""));
+                            if (!runTitle.contains(releaseTag)) continue;
                             String created = candidate.optString("created_at", "");
                             try {
                                 if (Instant.parse(created).toEpochMilli() >= dispatchTime - 60_000L) {
