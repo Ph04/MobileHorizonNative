@@ -23,7 +23,7 @@ def find_tls_requirements(dynamic_relocations: str, program_headers: str) -> lis
 
 def audit(readelf: str, library: Path) -> list[str]:
     dynamic_relocations = subprocess.run(
-        [readelf, "-D", "-rW", str(library)],
+        [readelf, "--use-dynamic", "-rW", str(library)],
         check=True, capture_output=True, text=True,
     ).stdout
     program_headers = subprocess.run(
