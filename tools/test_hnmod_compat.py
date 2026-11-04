@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,11 +18,46 @@ class NativeHooksCompatibilityTests(unittest.TestCase):
         self.source_file.write_text(
             "pub(crate) const NATIVE_HOOKS_API: u32 = 359;\n", encoding="utf-8"
         )
+        subprocess.run(["git", "init", "-q"], cwd=self.source, check=True)
+        subprocess.run(["git", "config", "user.email", "hnmod-tests@example.invalid"],
+                       cwd=self.source, check=True)
+        subprocess.run(["git", "config", "user.name", "HNMOD tests"],
+                       cwd=self.source, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.source, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "legacy Horizon revision"],
+                       cwd=self.source, check=True)
+        self.legacy_revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.source, text=True
+        ).strip()
+        self.main_branch = subprocess.check_output(
+            ["git", "branch", "--show-current"], cwd=self.source, text=True
+        ).strip()
+        subprocess.run(["git", "branch", "divergent"], cwd=self.source, check=True)
+        self.source_file.write_text(
+            "pub(crate) const NATIVE_HOOKS_API: u32 = 359;\n// target revision\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "."], cwd=self.source, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "target Horizon revision"],
+                       cwd=self.source, check=True)
+        self.target_revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.source, text=True
+        ).strip()
+        subprocess.run(["git", "checkout", "-q", "divergent"], cwd=self.source, check=True)
+        (self.source / "divergent.txt").write_text("not an ancestor\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.source, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "divergent Horizon revision"],
+                       cwd=self.source, check=True)
+        self.divergent_revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.source, text=True
+        ).strip()
+        subprocess.run(["git", "checkout", "-q", self.main_branch], cwd=self.source, check=True)
+
         (self.mods / "jei" / "mixins" / "jei").mkdir(parents=True)
         self.toml = self.mods / "jei" / "mixins" / "jei" / "horizon-mixin.toml"
         self.toml.write_text(
             '[mod]\nid = "jei"\nversion = "0.1.0"\n'
-            '[compatibility]\nhorizon_revision = "1da354b67a509812c4141b67de2affd6de65c342"\n',
+            '[compatibility]\nhorizon_revision = "' + self.legacy_revision + '"\n',
             encoding="utf-8",
         )
         self.records_path = self.root / "hnmods.json"
@@ -30,12 +66,12 @@ class NativeHooksCompatibilityTests(unittest.TestCase):
             "id": "jei",
             "version": "0.1.0",
             "game": "26.3",
-            "horizon": "1da354b67a509812c4141b67de2affd6de65c342",
+            "horizon": self.legacy_revision,
             "mixins": "0d6b103c70633d8fd9443d8d0acd3aadaacedb06",
             "hooks": 2,
             "sha256": "a" * 64,
         }]
-        self.base = {"upstream_commit": "67dad0d1a5adca139b426c8114e74a33b376ba64"}
+        self.base = {"upstream_commit": self.target_revision}
         self.write_inputs()
 
     def tearDown(self):
@@ -96,10 +132,30 @@ class NativeHooksCompatibilityTests(unittest.TestCase):
             prepare(self.records_path, self.base_path, self.source, self.mods)
         self.assertEqual(self.toml.read_text(), before)
 
-    def test_modules_without_hooks_keep_exact_horizon_pin(self):
+    def test_legacy_bundle_is_repinned_only_after_git_ancestry_proof(self):
         self.records[0]["hooks"] = None
         self.write_inputs()
-        with self.assertRaisesRegex(ValueError, "must target the exact installed Horizon"):
+
+        api = prepare(self.records_path, self.base_path, self.source, self.mods)
+
+        self.assertEqual(api, 359)
+        self.assertIn(f'horizon_revision = "{self.target_revision}"', self.toml.read_text())
+        records = json.loads(self.records_path.read_text())
+        self.assertEqual(records[0]["horizon"], self.legacy_revision)
+        base = json.loads(self.base_path.read_text())
+        self.assertTrue(base["legacy_horizon_revisions_verified"])
+
+    def test_legacy_bundle_from_divergent_horizon_history_is_rejected(self):
+        self.records[0]["hooks"] = None
+        self.records[0]["horizon"] = self.divergent_revision
+        self.toml.write_text(
+            '[mod]\nid = "jei"\nversion = "0.1.0"\n'
+            '[compatibility]\nhorizon_revision = "' + self.divergent_revision + '"\n',
+            encoding="utf-8",
+        )
+        self.write_inputs()
+
+        with self.assertRaisesRegex(ValueError, "not a verified ancestor"):
             prepare(self.records_path, self.base_path, self.source, self.mods)
 
     def test_hook_bundle_must_match_manifest_toml_tested_revision_before_repin(self):
