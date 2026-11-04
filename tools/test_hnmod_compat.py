@@ -59,8 +59,8 @@ class NativeHooksCompatibilityTests(unittest.TestCase):
         (self.mods / "mod_menu" / "mixins" / "mod_menu").mkdir(parents=True)
         mod_menu_toml = self.mods / "mod_menu" / "mixins" / "mod_menu" / "horizon-mixin.toml"
         mod_menu_toml.write_text(
-            '[mod]\\nid = "mod_menu"\\nversion = "0.3.0"\\n'
-            '[compatibility]\\nhorizon_revision = "' + target + '"\\n',
+            '[mod]\nid = "mod_menu"\nversion = "0.3.0"\n'
+            '[compatibility]\nhorizon_revision = "' + target + '"\n',
             encoding="utf-8",
         )
         self.records.append({
