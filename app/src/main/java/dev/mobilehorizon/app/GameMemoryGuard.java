@@ -41,7 +41,10 @@ final class GameMemoryGuard {
     private static final String TAG = "MobileHorizon-Memory";
     private static final long MIB = 1024L * 1024L;
     private static final long GIB = 1024L * MIB;
-    private static final long SAMPLE_SECONDS = 3L;
+    // Memory sampling is deliberately decoupled from the render/tick cadence.
+    // Full procfs/PSS breakdowns are expensive on low-memory Android devices.
+    private static final long SAMPLE_SECONDS = 8L;
+    private static final long DETAIL_SAMPLE_INTERVAL_MS = 30_000L;
     private static final int RECOVERY_SAMPLES = 3;
 
     private final Context appContext;
@@ -203,27 +206,48 @@ final class GameMemoryGuard {
         }
     }
 
+    private long lastDetailedSampleElapsedMs;
+
+    static boolean shouldCaptureDetailedSample(
+            long lastDetailedSampleAt, long nowElapsedMs, boolean pressureChanged) {
+        return pressureChanged || lastDetailedSampleAt <= 0L
+                || nowElapsedMs - lastDetailedSampleAt >= DETAIL_SAMPLE_INTERVAL_MS;
+    }
+
     private void sampleSafely() {
         try {
             ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
             if (activityManager != null) activityManager.getMemoryInfo(info);
             long total = info.totalMem > 0 ? info.totalMem : readTotalRam();
             long available = info.availMem;
-            long pssKb = 0L;
-            Debug.MemoryInfo processMemory = new Debug.MemoryInfo();
+            long pssKb;
             try {
-                // PSS includes ART, HotSpot, native and mapped pages visible to the kernel.
+                // PSS is enough for the frequent pressure decision. The expensive split
+                // breakdown and procfs reads are captured only periodically or on transitions.
                 pssKb = Math.max(0L, Debug.getPss());
-                Debug.getMemoryInfo(processMemory);
             } catch (RuntimeException error) {
-                appendLog("MEMORY_SAMPLE_WARNING Debug.MemoryInfo failed: " + error);
+                pssKb = 0L;
+                appendLog("MEMORY_SAMPLE_WARNING Debug.getPss failed: " + error);
             }
             int memoryClass = activityManager == null
                     ? 256 : Math.max(128, activityManager.getMemoryClass());
+            int previousLevel = currentLevel;
             int observed = classifyPressure(
                     total, available, pssKb, memoryClass, info.lowMemory);
             updateObservedLevel(observed, total, available, pssKb);
-            appendDetailedSample(info, processMemory, pssKb, memoryClass);
+
+            long now = SystemClock.elapsedRealtime();
+            if (shouldCaptureDetailedSample(lastDetailedSampleElapsedMs, now,
+                    currentLevel != previousLevel)) {
+                Debug.MemoryInfo processMemory = new Debug.MemoryInfo();
+                try {
+                    Debug.getMemoryInfo(processMemory);
+                    appendDetailedSample(info, processMemory, pssKb, memoryClass);
+                    lastDetailedSampleElapsedMs = now;
+                } catch (RuntimeException error) {
+                    appendLog("MEMORY_SAMPLE_WARNING detailed Debug.MemoryInfo failed: " + error);
+                }
+            }
         } catch (RuntimeException error) {
             appendLog("MEMORY_SAMPLE_ERROR type=" + error.getClass().getName()
                     + ", message=" + error.getMessage());
