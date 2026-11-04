@@ -447,7 +447,7 @@ final class HorizonNativeModManager {
 
     static boolean isSafeNativeDataPath(String path, Set<String> selectedIds) {
         if (path == null || path.isEmpty() || path.length() > 512
-                || path.startsWith("/") || path.indexOf('\\\\') >= 0
+                || path.startsWith("/") || path.indexOf('\\') >= 0
                 || path.indexOf(':') >= 0 || path.indexOf('\0') >= 0) {
             return false;
         }
