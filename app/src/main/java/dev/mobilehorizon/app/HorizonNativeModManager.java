@@ -286,20 +286,25 @@ final class HorizonNativeModManager {
         File versionDirectory = safeChildDirectory(versions, version);
         File targetLibrary = new File(versionDirectory, LIBRARY_NAME).getCanonicalFile();
         ensureInside(versionDirectory, targetLibrary);
-        installNativeData(artifact, manifest, selected, versionDirectory);
-        writeAtomic(new File(versionDirectory, MANIFEST_FILE), manifest.toString().getBytes(StandardCharsets.UTF_8));
         File temporary = new File(versionDirectory, LIBRARY_NAME + ".partial");
         if (Files.isSymbolicLink(temporary.toPath())) throw new IOException("Arquivo parcial inseguro.");
         if (temporary.exists() && !temporary.delete()) throw new IOException("Não foi possível limpar a biblioteca parcial.");
-        try (ZipFile zip = new ZipFile(artifact)) {
-            ZipEntry engineEntry = zip.getEntry(LIBRARY_NAME);
-            if (engineEntry == null || engineEntry.isDirectory()
-                    || engineEntry.getSize() <= 0 || engineEntry.getSize() > MAX_RUNTIME_BYTES) {
-                throw new IOException("A biblioteca ARM64 do artefato está ausente ou excede o limite.");
+        try {
+            // Verify the large ELF before touching an existing per-instance build.
+            try (ZipFile zip = new ZipFile(artifact)) {
+                ZipEntry engineEntry = zip.getEntry(LIBRARY_NAME);
+                if (engineEntry == null || engineEntry.isDirectory()
+                        || engineEntry.getSize() <= 0 || engineEntry.getSize() > MAX_RUNTIME_BYTES) {
+                    throw new IOException("A biblioteca ARM64 do artefato está ausente ou excede o limite.");
+                }
+                copyVerifiedNativeData(zip.getInputStream(engineEntry), temporary,
+                        engineEntry.getSize(), expectedHash, LIBRARY_NAME);
+                verifyAarch64Elf(temporary);
             }
-            copyVerifiedNativeData(zip.getInputStream(engineEntry), temporary,
-                    engineEntry.getSize(), expectedHash, LIBRARY_NAME);
-            verifyAarch64Elf(temporary);
+
+            installNativeData(artifact, manifest, selected, versionDirectory);
+            writeAtomic(new File(versionDirectory, MANIFEST_FILE),
+                    manifest.toString().getBytes(StandardCharsets.UTF_8));
             try {
                 Files.move(temporary.toPath(), targetLibrary.toPath(),
                         StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
