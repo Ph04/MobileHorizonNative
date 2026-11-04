@@ -1,3 +1,4 @@
+# Runtime model restored to the Oct 31 clean-engine build; Nightly publisher approved 2026-11-03.
 # Ordered patch step. See README.md in this directory for scope and order.
 # Entry-point, event-loop, and keyboard adapters are revision-selected for Stable/Nightly.
 import re  # Required before adapting revision-specific keyboard signatures.
