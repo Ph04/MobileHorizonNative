@@ -76,7 +76,7 @@ def load_steps(source: Path) -> list[dict]:
     return steps
 
 
-def native_data_index(output: Path) -> list[dict]:
+def native_data_index(output: Path, allowed_mods: set[str]) -> list[dict]:
     root = output / "native-data"
     if root.is_symlink():
         raise ValueError("The native-data output root may not be a symlink.")
@@ -93,6 +93,9 @@ def native_data_index(output: Path) -> list[dict]:
         relative = path.relative_to(output).as_posix()
         if not safe_data_path(relative):
             raise ValueError(f"Unsafe native-data output path: {relative}")
+        mod_id = relative.split("/", 2)[1]
+        if mod_id not in allowed_mods:
+            raise ValueError(f"Native-data output belongs to an unselected module: {mod_id}")
         size = path.stat().st_size
         if size > MAX_FILE_BYTES:
             raise ValueError(f"Native-data file exceeds 64 MiB: {relative}")
@@ -120,6 +123,10 @@ def run_steps(source: Path, output: Path, cache: Path, timeout: int = 600) -> li
     programs = cache.parent / "hnmod-post-build-programs"
     shutil.rmtree(programs, ignore_errors=True)
     target_dir = source / "target"
+    native_root = output / "native-data"
+    if native_root.is_symlink():
+        raise ValueError("The native-data output root may not be a symlink.")
+    native_root.mkdir(parents=True, exist_ok=True)
 
     # No checkout credential, action token, or OIDC token is passed to mod code.
     clean_env = dict(os.environ)
@@ -191,7 +198,7 @@ def run_steps(source: Path, output: Path, cache: Path, timeout: int = 600) -> li
                 raise
         _print_sanitized_log(log_path, step["mod"])
 
-    records = native_data_index(output)
+    records = native_data_index(output, {step["mod"] for step in steps})
     index_file = output / "native-data-index.json"
     if index_file.is_symlink() or (index_file.exists() and not index_file.is_file()):
         raise ValueError("Native-data index output is not a regular file.")
