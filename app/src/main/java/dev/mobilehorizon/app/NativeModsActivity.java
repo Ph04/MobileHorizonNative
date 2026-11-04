@@ -32,7 +32,7 @@ public final class NativeModsActivity extends Activity {
     private static final int PICK_HNMOD = 7101;
     private static final int PICK_RUNTIME = 7102;
     private static final long MAX_HNMOD_BYTES = 64L * 1024L * 1024L;
-    private static final long MAX_RUNTIME_ARTIFACT_BYTES = 301L * 1024L * 1024L;
+    private static final long MAX_RUNTIME_ARTIFACT_BYTES = 430L * 1024L * 1024L;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private String instanceId;
     private TextView status;
@@ -192,7 +192,7 @@ public final class NativeModsActivity extends Activity {
                 while ((read = input.read(buffer)) != -1) {
                     total += read;
                     if (total > maxBytes) {
-                        throw new IOException(".hnmod limitado a 64 MiB; artefato de runtime limitado a 301 MiB.");
+                        throw new IOException(".hnmod limitado a 64 MiB; artifact de runtime com dados gerados limitado a 430 MiB.");
                     }
                     output.write(buffer, 0, read);
                 }
@@ -410,7 +410,7 @@ public final class NativeModsActivity extends Activity {
                 + "   base_runtime_tag = " + baseTag + "\n\n"
                 + "4. O workflow valida os pacotes com o parser Rust oficial do Horizon. Para um .hnmod sem declaração de hooks que tenha pin antigo, primeiro prova no Git que a revisão é ancestral da base, repina o manifesto interno e só então aplica os mixins e compila toda a runtime ARM64 isolada. Se as funções, assinaturas ou bindings tiverem mudado, o compilador falha e nenhum runtime parcial é publicado.\n\n"
                 + "5. Baixe o artifact ZIP mobilehorizon-native-runtime na execução do Actions (não uma release). Depois selecione o ZIP em “Instalar runtime compilada”.\n\n"
-                + "A compilação roda em runner isolado, sem segredos e sem alterar a runtime limpa compartilhada. O build só será ativado nesta instância se o manifesto, a revisão Horizon, os módulos selecionados, o SHA-256 e o ELF ARM64 corresponderem exatamente. Módulos que declarem [[post_build]] são recusados nesta primeira versão porque a execução dessas etapas ainda não foi portada para Android.";
+                + "A compilação roda em runner isolado, sem segredos e sem alterar a runtime limpa compartilhada. O build só será ativado nesta instância se o manifesto, a revisão Horizon, os módulos selecionados, o SHA-256 e o ELF ARM64 corresponderem exatamente. Módulos que declarem [[post_build]] também são suportados: o builder compila e executa os geradores em um runner Linux isolado, valida os arquivos produzidos e os inclui no artifact. O app instala esses dados na pasta privada da runtime desta instância.";
         new AlertDialog.Builder(this)
                 .setTitle("Compilar .hnmod para esta instância")
                 .setMessage(message)
