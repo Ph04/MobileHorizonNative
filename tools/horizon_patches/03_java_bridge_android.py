@@ -508,6 +508,15 @@ android_vm_tuning = """    // Preserve upstream G1 shrink/periodic-GC and string
         heap_initial, heap_max, processors, gc_threads
     );
     if cfg!(target_os = "android") {
+        // Android's LWJGL 3.4.3 core is built specifically for ARM64/bionic and is
+        // verified by the launcher with an APK SHA-256 + ELF check. Its hash therefore
+        // differs from the desktop native hash embedded in Mojang's LWJGL jars.
+        options.push("-Dorg.lwjgl.util.NoHashChecks=true".into());
+        // The Android package intentionally ships the core binding only. Select LWJGL's
+        // supported system allocator before any LWJGL class initializes; this prevents
+        // optional jemalloc/mimalloc/rpmalloc natives from being probed on Android.
+        options.push("-Dorg.lwjgl.system.allocator=system".into());
+        log::info!("Java Bridge Android LWJGL: system allocator enabled; desktop-native hash comparison disabled for the verified Android core.");
         match std::env::var("HORIZON_LWJGL_LIBRARY_PATH") {
             Ok(path) if !path.trim().is_empty() => {
                 // LWJGL 3 checks org.lwjgl.librarypath first, then java.library.path.
@@ -1432,8 +1441,11 @@ options_start_replacement = """        Minecraft mc = minecraft;
         // Options.load applies the saved graphics preset, which reads RenderSystem.getDevice().
         // Create Horizon's headless GPU device before reading options.txt.
         boolean gpuReadyBeforeOptions = HorizonGpu.install();
-        Natives.log("Horizon's client: GPU device "
-                + (gpuReadyBeforeOptions ? "ready before Options load" : "unavailable before Options load"));
+        if (!gpuReadyBeforeOptions) {
+            throw new IllegalStateException(
+                    "Horizon headless GPU backend could not initialize; refusing to load Minecraft Options without RenderSystem's device.");
+        }
+        Natives.log("Horizon's client: GPU device ready before Options load");
         // options.txt is brought up to date by the game's data fixer, as the server's saves are.
         set(Minecraft.class, mc, "fixerUpper", net.minecraft.util.datafix.DataFixers.getDataFixer());
         set(Minecraft.class, mc, "options", new net.minecraft.client.Options(mc, mc.gameDirectory));"""
