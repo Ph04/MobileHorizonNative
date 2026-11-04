@@ -274,11 +274,11 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
         }
         boolean smokeResultExists = new File(getFilesDir(), "horizon-native-smoke-result.txt").isFile();
         boolean clientResultExists = new File(getFilesDir(), "horizon-client-result.txt").isFile();
-        showNativeSmokeResultIfAvailable();
-        showNativeClientResultIfAvailable();
         if (pendingNativeSmokeResult) {
             pendingNativeSmokeResult = false;
-            if (!smokeResultExists) {
+            if (smokeResultExists) {
+                showNativeSmokeResultIfAvailable();
+            } else {
                 new File(getFilesDir(), "horizon-native-smoke.flag").delete();
                 setStatus("Teste Vulkan terminou sem relatório",
                         "A atividade nativa voltou sem gravar o resultado do teste. Isso pode indicar uma falha antes do início do código nativo ou encerramento do processo; ainda não identifica a causa. Confira os registros Android se puder.");
@@ -286,7 +286,9 @@ getWindow().setStatusBarColor(Color.rgb(244, 246, 251));
         }
         if (pendingNativeClientResult) {
             pendingNativeClientResult = false;
-            if (!clientResultExists) {
+            if (clientResultExists) {
+                showNativeClientResultIfAvailable();
+            } else {
                 String loaderStatus = readRuntimeLoaderStatus();
                 String details = "A atividade do jogo voltou sem entregar um relatório de inicialização. "
                         + "Isso sugere que o processo nativo terminou antes de registrar o resultado.";
