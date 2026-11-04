@@ -60,7 +60,15 @@ public final class NativeModBuildService extends Service {
     }
 
     static boolean isRunning(Context context, String instanceId) {
-        return "RUNNING".equals(state(context, instanceId));
+        if (!"RUNNING".equals(state(context, instanceId))) return false;
+        long lastUpdate = updatedAt(context, instanceId);
+        if (lastUpdate > 0L && System.currentTimeMillis() - lastUpdate > 20L * 60L * 1000L) {
+            setState(context, instanceId, "FAILED",
+                    "A tarefa foi interrompida pelo Android ou perdeu a conexão por mais de 20 minutos. "
+                            + "A Release temporária será limpa pelo GitHub Actions; tente novamente.");
+            return false;
+        }
+        return true;
     }
 
     private static void setState(Context context, String instanceId,
