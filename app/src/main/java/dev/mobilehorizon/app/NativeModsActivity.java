@@ -454,7 +454,6 @@ public final class NativeModsActivity extends Activity {
                 ? "Token já configurado; cole outro para substituir"
                 : "github_pat_…");
         tokenInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        tokenInput.setAutofillHints();
         content.addView(tokenInput, top(-1, 50, 12));
 
         AlertDialog dialog = new AlertDialog.Builder(this)
