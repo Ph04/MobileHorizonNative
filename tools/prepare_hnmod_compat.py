@@ -56,7 +56,7 @@ def horizon_revision_is_ancestor(source_root: Path, old_revision: str, target_re
     except subprocess.CalledProcessError:
         # The base checkout is intentionally shallow. Deepen a bounded amount so old
         # package pins can be verified without cloning the entire Horizon history.
-        git_run(source_root, "fetch", "--quiet", "--deepen=12000", "origin", target_revision)
+        git_run(source_root, "fetch", "--quiet", "--filter=blob:none", "--deepen=12000", "origin", target_revision)
     try:
         git_run(source_root, "cat-file", "-e", f"{old_revision}^{{commit}}")
     except subprocess.CalledProcessError:
